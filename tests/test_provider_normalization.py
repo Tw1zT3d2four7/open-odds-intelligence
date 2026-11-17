@@ -94,3 +94,57 @@ def test_provider_supports_multiple_regions_when_bookmakers_not_set(monkeypatch)
     )
     assert seen["query"]["regions"] == ["us,us2"]
     assert "bookmakers" not in seen["query"]
+
+
+def test_therundown_normalizes_v2_events(monkeypatch):
+    from app.providers import therundown
+    from app.providers.therundown import TheRundownProvider
+    import json
+
+    class FakeResponse:
+        headers = {"X-Datapoints-Used": "120", "X-Datapoints-Remaining": "19880"}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps({"events": [{
+                "event_id": "evt-1", "sport_id": 2,
+                "event_date": "2026-11-20T18:00:00Z",
+                "teams": [
+                    {"name": "Away Team", "is_home": False},
+                    {"name": "Home Team", "is_home": True},
+                ],
+                "markets": [{
+                    "market_id": 1, "period_id": 0, "name": "moneyline",
+                    "participants": [
+                        {"id": 10, "name": "Away Team", "lines": [{"prices": {
+                            "19": {"price": 105, "updated_at": "2026-11-17T12:00:00Z"}
+                        }}]},
+                        {"id": 11, "name": "Home Team", "lines": [{"prices": {
+                            "19": {"price": -115, "updated_at": "2026-11-17T12:00:00Z"}
+                        }}]},
+                    ],
+                }],
+            }]}).encode()
+
+    seen = {}
+    def fake_urlopen(request, timeout):
+        seen["url"] = request.full_url
+        seen["headers"] = dict(request.header_items())
+        return FakeResponse()
+    monkeypatch.setattr(therundown, "urlopen", fake_urlopen)
+    provider = TheRundownProvider("CaseSensitiveRundownKey")
+    events = provider.fetch_odds("americanfootball_nfl")
+    assert events[0]["id"] == "evt-1"
+    assert events[0]["home_team"] == "Home Team"
+    assert events[0]["away_team"] == "Away Team"
+    assert events[0]["bookmakers"][0]["key"] == "draftkings"
+    assert events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] == 105
+    assert provider.usage["datapoints_remaining"] == "19880"
+    assert seen["headers"]["X-therundown-key"] == "CaseSensitiveRundownKey"
+    assert "affiliate_ids=19%2C22%2C23" in seen["url"]
+
+
+def test_therundown_rejects_unknown_sports():
+    from app.providers.therundown import TheRundownProvider, ProviderError
+    with pytest.raises(ProviderError):
+        TheRundownProvider("key").fetch_odds("unknown_league")
