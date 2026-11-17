@@ -23,7 +23,8 @@ class OddsService:
                 "last_error": self._last_error, "sports": config.ODDS_SPORTS,
                 "live_data_available": bool(stored.get("events")) or bool(self._cache),
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
-                "provider_usage": self._provider_usage}
+                "provider_usage": self._provider_usage,
+                "refresh_interval_seconds": config.ODDS_REFRESH_INTERVAL_SECONDS}
 
     def refresh(self, sport=None):
         if not self.configured:
