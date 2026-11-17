@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse
 from . import config
 from .service import service
 from .math import market_consensus, expected_value_percent
+from .markets import market_board
 
 app = FastAPI(title=config.APP_NAME, version="0.2.0",
               description="Self-hosted open-source odds comparison and market intelligence.")
@@ -28,6 +29,11 @@ def odds(sport: str | None = None):
 @app.post("/api/refresh")
 def refresh(sport: str | None = None):
     return service.refresh(sport)
+
+
+@app.get("/api/market-board")
+def market_board_api(sport: str | None = None):
+    return {"quotes": market_board(service.events(sport))}
 
 
 @app.get("/api/history")
