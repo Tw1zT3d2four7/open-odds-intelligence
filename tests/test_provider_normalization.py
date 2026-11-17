@@ -133,7 +133,7 @@ def test_therundown_normalizes_v2_events(monkeypatch):
                         }}]},
                     ],
                 }],
-            }]}, {"X-Datapoints-Used": "120", "X-Datapoints-Remaining": "19880"})
+            }]}, {"X-Datapoints": "123", "X-Datapoints-Used": "120", "X-Datapoints-Remaining": "19880", "X-Data-Delay-Seconds": "300"})
 
     seen = {}
     def capture_urlopen(request, timeout):
@@ -149,6 +149,8 @@ def test_therundown_normalizes_v2_events(monkeypatch):
     assert events[0]["bookmakers"][0]["key"] == "draftkings"
     assert events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] == 105
     assert provider.usage["datapoints_remaining"] == "19880"
+    assert provider.usage["datapoints_total"] == "123"
+    assert provider.usage["data_delay_seconds"] == "300"
     assert seen["headers"]["X-therundown-key"] == "CaseSensitiveRundownKey"
     assert "affiliate_ids=19%2C22%2C23" in seen["url"]
     assert len(calls) == 2
