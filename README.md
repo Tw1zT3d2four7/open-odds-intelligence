@@ -65,11 +65,13 @@ The default provider is disabled. To use The Odds API, configure:
 ODDS_PROVIDER=the_odds_api
 THE_ODDS_API_KEY=your_exact_case_sensitive_key
 ODDS_REGIONS=us
+# Optional: exact comma-separated bookmaker keys; overrides regions when set.
+ODDS_BOOKMAKERS=
 ODDS_MARKETS=h2h,spreads,totals
 ODDS_FORMAT=american
 ```
 
-Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, historical access, market availability and permitted use depend on the provider's current plan and terms. Request usage can increase with the number of sports, regions and markets requested.
+Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, historical access, market availability and permitted use depend on the provider's current plan and terms. Set ODDS_REGIONS=us,us2 to include the additional-US bookmaker group. Alternatively, set ODDS_BOOKMAKERS to comma-separated provider bookmaker keys; this takes precedence over regions. Usage is charged by market and region, while explicit bookmaker selection is billed in groups of up to 10 bookmakers per region-equivalent. Wider coverage can increase usage, and some books are plan-restricted or unavailable for certain sports.
 
 ## API
 
