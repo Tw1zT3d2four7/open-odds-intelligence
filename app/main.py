@@ -3,10 +3,9 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 from . import config
 from .service import service
-from .math import market_consensus, expected_value_percent
-from .markets import market_board
+from .markets import market_board, analyze_markets
 
-app = FastAPI(title=config.APP_NAME, version="0.2.0",
+app = FastAPI(title=config.APP_NAME, version="0.3.0",
               description="Self-hosted open-source odds comparison and market intelligence.")
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
@@ -44,32 +43,16 @@ def history(event_id: str, market: str, outcome: str,
 
 
 @app.get("/api/opportunities")
-def opportunities(sport: str | None = None, min_ev: float = Query(1.0, ge=-100, le=100)):
-    events = service.events(sport)
-    rows = []
-    for event in events:
-        best = {}
-        for book in event.get("bookmakers", []):
-            fair = market_consensus(
-                [event], "h2h", exclude_bookmaker_key=book.get("key")
-            ).get(event["id"], {})
-            market = next((m for m in book.get("markets", []) if m.get("key") == "h2h"), None)
-            if not market:
-                continue
-            for outcome in market.get("outcomes", []):
-                name = outcome["name"]
-                if name not in fair:
-                    continue
-                try:
-                    ev = expected_value_percent(outcome["price"], fair[name])
-                except (TypeError, ValueError, ZeroDivisionError):
-                    continue
-                if ev >= min_ev and (name not in best or outcome["price"] > best[name]["price"]):
-                    best[name] = {"outcome": name, "bookmaker": book["title"], "price": outcome["price"],
-                                  "fair_probability": round(fair[name], 5), "ev_percent": round(ev, 2)}
-        for item in best.values():
-            rows.append({"event_id": event["id"], "sport": event["sport_title"],
-                         "matchup": f'{event["away_team"]} @ {event["home_team"]}',
-                         "commence_time": event["commence_time"], **item})
-    return {"opportunities": rows,
-            "note": "EV is an estimate against available-book consensus, not a guaranteed edge."}
+def opportunities(sport: str | None = None,
+                  min_ev: float = Query(1.0, ge=-100, le=100),
+                  min_consensus_books: int = Query(2, ge=1, le=20)):
+    result = analyze_markets(service.events(sport), min_ev, min_consensus_books)
+    return {"opportunities": result["opportunities"],
+            "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
+
+
+@app.get("/api/arbitrage")
+def arbitrage(sport: str | None = None):
+    result = analyze_markets(service.events(sport), min_ev=101)
+    return {"arbitrage": result["arbitrage"],
+            "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
