@@ -148,6 +148,7 @@ def test_therundown_normalizes_v2_events(monkeypatch):
     assert events[0]["away_team"] == "Away Team"
     assert events[0]["bookmakers"][0]["key"] == "draftkings"
     assert events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] == 105
+    assert events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["updated_at"] == "2026-11-17T12:00:00Z"
     assert provider.usage["datapoints_remaining"] == "19880"
     assert provider.usage["datapoints_total"] == "123"
     assert provider.usage["data_delay_seconds"] == "300"
