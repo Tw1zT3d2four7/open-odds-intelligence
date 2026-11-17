@@ -13,11 +13,14 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Estimated EV screening across moneyline, spreads and totals when the provider supplies complete markets.
 - Leave-one-sportsbook-out consensus: a quote is evaluated against other books, not its own price.
 - Two-outcome cross-book arbitrage scanning with suggested equal-payout stake percentages.
-- Persistent SQLite snapshots and quote history.\n- Consolidated opening-to-latest sportsbook price / line movement summaries, with exact alternate-line separation.
+- Persistent SQLite snapshots and quote history.
+- Consolidated opening-to-latest sportsbook price / line movement summaries, with exact alternate-line separation.
 - Clickable movement timelines showing every saved line and price observation for a selection.
 - Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
-- Opt-in scheduled refresh at a configurable interval (disabled by default).\n- Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.\n- Docker Compose deployment and GitHub Actions tests.
+- Opt-in scheduled refresh at a configurable interval (disabled by default).
+- Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.
+- Docker Compose deployment and GitHub Actions tests.
 
 The EV calculation uses the median of other sportsbooks' no-vig probabilities for the same event, market, outcome and line. The default requires at least two other books (three books total). Results are estimates, not guarantees. Arbitrage candidates are mathematical price discrepancies only; verify both prices, limits, settlement rules and availability before acting.
 
@@ -27,7 +30,11 @@ This is an active development build, not a feature-complete OddsLogic replacemen
 
 No fabricated odds are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
-## Controlled testing\n\nSee [docs/TESTING_PLAN.md](docs/TESTING_PLAN.md) for the test stages, spot-check method, alert-delivery checks and pass criteria. This is an observational, paper-only validation phase; EV and arbitrage estimates are not guarantees.\n\n## Quick start
+## Controlled testing
+
+See [docs/TESTING_PLAN.md](docs/TESTING_PLAN.md) for the test stages, spot-check method, alert-delivery checks and pass criteria. This is an observational, paper-only validation phase; EV and arbitrage estimates are not guarantees.
+
+## Quick start
 
 ```bash
 cp .env.example .env
@@ -72,7 +79,8 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 - `GET /api/market-board?sport=...` — best price for each exact market / outcome / line.
 - `GET /api/opportunities?sport=...&min_ev=1.0&min_consensus_books=2` — estimated EV opportunities.
 - `GET /api/arbitrage?sport=...` — two-outcome cross-book arbitrage candidates.
-- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.\n- `GET /api/movement?sport=...` — consolidated opening-to-latest price and line movement summaries.
+- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.
+- `GET /api/movement?sport=...` — consolidated opening-to-latest price and line movement summaries.
 - `GET /api/movement/history?event_id=...&market=...&outcome=...&bookmaker=...` — chronological price and line observations for one sportsbook selection.
 
 ## Development roadmap
