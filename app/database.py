@@ -35,7 +35,8 @@ class OddsDatabase:
                     commence_time TEXT NOT NULL DEFAULT '', home_team TEXT NOT NULL DEFAULT '',
                     away_team TEXT NOT NULL DEFAULT '', bookmaker_key TEXT NOT NULL,
                     bookmaker_title TEXT NOT NULL DEFAULT '', market_key TEXT NOT NULL,
-                    outcome_name TEXT NOT NULL, point REAL, price INTEGER NOT NULL
+                    outcome_name TEXT NOT NULL, point REAL, price INTEGER NOT NULL,
+                    source_updated_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_quotes_lookup
                     ON quotes(event_id, market_key, outcome_name, point, bookmaker_key);
@@ -45,6 +46,9 @@ class OddsDatabase:
                     alert_type TEXT NOT NULL, summary TEXT NOT NULL
                 );
             """)
+            quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
+            if "source_updated_at" not in quote_columns:
+                db.execute("ALTER TABLE quotes ADD COLUMN source_updated_at TEXT")
 
     def save_snapshot(self, sport, events, provider="unknown", fetched_at=None):
         fetched_at = fetched_at or datetime.now(timezone.utc).isoformat()
@@ -68,10 +72,13 @@ class OddsDatabase:
                                 event.get("sport_title", ""), event.get("commence_time", ""),
                                 event.get("home_team", ""), event.get("away_team", ""),
                                 book["key"], book.get("title", book["key"]), market["key"],
-                                outcome["name"], outcome.get("point"), price))
+                                outcome["name"], outcome.get("point"), price,
+                                outcome.get("source_updated_at") or outcome.get("updated_at") or
+                                market.get("last_update") or book.get("last_update")))
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
-                home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,point,price)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
+                home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,
+                source_updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
         return snapshot_id
 
     def latest_events(self, sport=None):
@@ -106,6 +113,8 @@ class OddsDatabase:
                         market = {"key": row["market_key"], "outcomes": []}
                         book["markets"].append(market)
                     outcome = {"name": row["outcome_name"], "price": row["price"]}
+                    if row["source_updated_at"]:
+                        outcome["updated_at"] = row["source_updated_at"]
                     if row["point"] is not None:
                         outcome["point"] = row["point"]
                     market["outcomes"].append(outcome)
@@ -114,7 +123,7 @@ class OddsDatabase:
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None, limit=100):
         sql = """SELECT s.fetched_at,q.bookmaker_key,q.bookmaker_title,q.market_key,
-                 q.outcome_name,q.point,q.price FROM quotes q
+                 q.outcome_name,q.point,q.price,q.source_updated_at FROM quotes q
                  JOIN snapshots s ON s.id=q.snapshot_id
                  WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?"""
         args = [event_id, market_key, outcome_name]
@@ -139,7 +148,8 @@ class OddsDatabase:
         for another. The full quote timeline remains available via history().
         """
         sql = """
-            SELECT s.id AS snapshot_id, s.fetched_at, q.event_id, q.sport,
+            SELECT s.id AS snapshot_id, s.fetched_at, q.source_updated_at,
+                   q.event_id, q.sport,
                    q.sport_title, q.commence_time, q.home_team, q.away_team,
                    q.bookmaker_key, q.bookmaker_title, q.market_key,
                    q.outcome_name, q.point, q.price
@@ -222,6 +232,9 @@ class OddsDatabase:
                     "implied_probability_change": probability_delta,
                     "implied_probability_change_from_open": open_delta,
                     "previous_at": previous["fetched_at"], "updated_at": current["fetched_at"],
+                    "source_updated_at": current.get("source_updated_at"),
+                    "opening_source_updated_at": opening.get("source_updated_at"),
+                    "timestamp_basis": "sportsbook" if current.get("source_updated_at") else "retrieved",
                     "opening_at": opening["fetched_at"], "first_seen": opening["fetched_at"],
                     "observations": len(timeline), "price_changes": price_changes,
                     "line_changes": line_changes, "move_count": price_changes + line_changes,
@@ -241,7 +254,7 @@ class OddsDatabase:
         """Return a chronological quote timeline, including every observed line."""
         with self.connect() as db:
             rows = db.execute(
-                """SELECT s.fetched_at, q.point, q.price
+                """SELECT s.fetched_at, q.source_updated_at, q.point, q.price
                    FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
                    WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?
                      AND q.bookmaker_key=?
