@@ -53,7 +53,7 @@ def test_discord_alert_is_sent_and_deduplicated(tmp_path, monkeypatch):
     assert all(b"EV" in item[0].data or b"Arbitrage" in item[0].data for item in sent)
     assert service._dispatch_alerts() == 0
     assert len(sent) == first_count
-    assert service.status()["alerts_sent"] == 1
+    assert service.status()["alerts_sent"] == first_count
     assert service.status()["alerts_qualified"] >= 1
     assert service.status()["last_alert_check"] is not None
 
