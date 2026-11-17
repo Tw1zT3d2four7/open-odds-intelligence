@@ -13,7 +13,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Estimated EV screening across moneyline, spreads and totals when the provider supplies complete markets.
 - Leave-one-sportsbook-out consensus: a quote is evaluated against other books, not its own price.
 - Two-outcome cross-book arbitrage scanning with suggested equal-payout stake percentages.
-- Persistent SQLite snapshots and quote history.
+- Persistent SQLite snapshots and quote history.\n- Per-sportsbook price / line movement comparison between the latest two saved snapshots.
 - Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
 - Opt-in scheduled refresh at a configurable interval (disabled by default).\n- Docker Compose deployment and GitHub Actions tests.
@@ -70,7 +70,7 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 - `GET /api/market-board?sport=...` — best price for each exact market / outcome / line.
 - `GET /api/opportunities?sport=...&min_ev=1.0&min_consensus_books=2` — estimated EV opportunities.
 - `GET /api/arbitrage?sport=...` — two-outcome cross-book arbitrage candidates.
-- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.
+- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.\n- `GET /api/movement?sport=...` — price and line changes versus the previous stored snapshot.
 
 ## Development roadmap
 
