@@ -50,3 +50,47 @@ def test_provider_preserves_key_and_captures_quota_headers(monkeypatch):
         "requests_used": "3",
         "requests_last": "1",
     }
+
+
+def test_provider_uses_explicit_bookmakers_instead_of_regions(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return b"[]"
+
+    seen = {}
+    def fake_urlopen(request, timeout):
+        seen["query"] = parse_qs(urlparse(request.full_url).query)
+        return FakeResponse()
+
+    monkeypatch.setattr(the_odds_api, "urlopen", fake_urlopen)
+    provider = TheOddsAPIProvider("CaseSensitiveKey", regions="us",
+                                  bookmakers="draftkings,fanduel,betmgm")
+    provider.fetch_odds("americanfootball_nfl")
+    assert seen["query"]["bookmakers"] == ["draftkings,fanduel,betmgm"]
+    assert "regions" not in seen["query"]
+
+
+def test_provider_supports_multiple_regions_when_bookmakers_not_set(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return b"[]"
+
+    seen = {}
+    def fake_urlopen(request, timeout):
+        seen["query"] = parse_qs(urlparse(request.full_url).query)
+        return FakeResponse()
+
+    monkeypatch.setattr(the_odds_api, "urlopen", fake_urlopen)
+    TheOddsAPIProvider("CaseSensitiveKey", regions="us,us2").fetch_odds(
+        "americanfootball_nfl"
+    )
+    assert seen["query"]["regions"] == ["us,us2"]
+    assert "bookmakers" not in seen["query"]
