@@ -1,12 +1,44 @@
 from pathlib import Path
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 from . import config
 from .service import service
 from .markets import market_board, analyze_markets
 
-app = FastAPI(title=config.APP_NAME, version="0.3.0",
-              description="Self-hosted open-source odds comparison and market intelligence.")
+async def _automatic_refresh_loop():
+    interval = config.ODDS_REFRESH_INTERVAL_SECONDS
+    while True:
+        await asyncio.sleep(interval)
+        # Keep provider I/O and SQLite work off the ASGI event loop.
+        try:
+            await asyncio.to_thread(service.refresh)
+        except Exception:
+            # A transient storage/runtime failure must not silently kill the scheduler.
+            # The next interval retries; manual refresh remains available.
+            continue
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = None
+    if config.ODDS_REFRESH_INTERVAL_SECONDS > 0 and service.configured:
+        task = asyncio.create_task(_automatic_refresh_loop())
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
+app = FastAPI(title=config.APP_NAME, version="0.4.0",
+              description="Self-hosted open-source odds comparison and market intelligence.",
+              lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
 
