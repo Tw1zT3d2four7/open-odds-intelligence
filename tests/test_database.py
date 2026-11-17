@@ -205,8 +205,9 @@ def test_source_bookmaker_timestamp_is_preserved_in_latest_history_and_movement(
     second[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = -105
     second[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["updated_at"] = "2026-11-17T12:04:00Z"
     db.save_snapshot("basketball_nba", second, "test", "2026-11-17T12:05:00Z")
-    outcomes = db.latest_events("basketball_nba")[0]["bookmakers"][0]["markets"][0]["outcomes"]
-    outcome = next(item for item in outcomes if item["name"] == "Home")
+    markets = db.latest_events("basketball_nba")[0]["bookmakers"][0]["markets"]
+    spreads = next(market for market in markets if market["key"] == "spreads")
+    outcome = next(item for item in spreads["outcomes"] if item["name"] == "Home")
     assert outcome["updated_at"] == "2026-11-17T12:04:00Z"
     history = db.movement_history("evt", "spreads", "Home", "book-a")
     assert history[-1]["source_updated_at"] == "2026-11-17T12:04:00Z"
