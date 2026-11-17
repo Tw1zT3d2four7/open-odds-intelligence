@@ -16,7 +16,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Persistent SQLite snapshots and quote history.
 - Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
-- Docker Compose deployment and GitHub Actions tests.
+- Opt-in scheduled refresh at a configurable interval (disabled by default).\n- Docker Compose deployment and GitHub Actions tests.
 
 The EV calculation uses the median of other sportsbooks' no-vig probabilities for the same event, market, outcome and line. The default requires at least two other books (three books total). Results are estimates, not guarantees. Arbitrage candidates are mathematical price discrepancies only; verify both prices, limits, settlement rules and availability before acting.
 
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8765
 ```
 
-Set `DATABASE_PATH` to change the SQLite file location.
+Set `DATABASE_PATH` to change the SQLite file location. Set `ODDS_REFRESH_INTERVAL_SECONDS` to a positive number of seconds (for example, `300`) to enable automatic refresh across configured sports. The default `0` keeps refresh manual. Automatic refresh starts only when a provider and API key are configured.
 
 ## Provider configuration
 
