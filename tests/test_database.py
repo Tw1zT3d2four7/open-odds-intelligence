@@ -59,6 +59,54 @@ def test_movement_compares_latest_two_quotes_and_detects_line_change(tmp_path):
     assert home_spread["implied_probability_change"] < 0
 
 
+
+def test_movement_returns_one_open_to_latest_summary_after_many_snapshots(tmp_path):
+    db = OddsDatabase(tmp_path / "history.sqlite3")
+    prices = [-120, -110, -115, -105]
+    for index, price in enumerate(prices):
+        current = fixture()
+        current[0]["bookmakers"][0]["markets"][1]["outcomes"][0]["price"] = price
+        db.save_snapshot(
+            "basketball_nba", current, "test",
+            f"2026-11-17T12:{index * 5:02d}:00Z",
+        )
+
+    rows = [row for row in db.movement("basketball_nba")
+            if row["market"] == "h2h" and row["outcome"] == "Home"]
+    assert len(rows) == 1
+    movement = rows[0]
+    assert movement["opening_price"] == -120
+    assert movement["previous_price"] == -115
+    assert movement["price"] == -105
+    assert movement["observations"] == 4
+    assert movement["price_changes"] == 3
+    assert movement["line_changes"] == 0
+    assert movement["move_count"] == 3
+    assert movement["first_seen"] == "2026-11-17T12:00:00Z"
+    assert movement["updated_at"] == "2026-11-17T12:15:00Z"
+
+
+def test_movement_aggregates_single_line_transitions_without_ladder_confusion(tmp_path):
+    db = OddsDatabase(tmp_path / "history.sqlite3")
+    for index, point in enumerate([-3.5, -4.0, -4.5]):
+        current = fixture()
+        current[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["point"] = point
+        current[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = -110 + index * 5
+        db.save_snapshot(
+            "basketball_nba", current, "test",
+            f"2026-11-17T12:{index * 5:02d}:00Z",
+        )
+
+    rows = [row for row in db.movement("basketball_nba")
+            if row["market"] == "spreads" and row["outcome"] == "Home"]
+    assert len(rows) == 1
+    assert rows[0]["opening_point"] == -3.5
+    assert rows[0]["point"] == -4.5
+    assert rows[0]["line_changes"] == 2
+    assert rows[0]["price_changes"] == 2
+    assert rows[0]["change_type"] == "line_and_price"
+
+
 def test_movement_ignores_single_snapshot_quotes(tmp_path):
     db = OddsDatabase(tmp_path / "history.sqlite3")
     db.save_snapshot("basketball_nba", fixture(), "test", "2026-11-17T12:00:00Z")
