@@ -100,13 +100,22 @@ def test_therundown_normalizes_v2_events(monkeypatch):
     from app.providers import therundown
     from app.providers.therundown import TheRundownProvider
     import json
+    from datetime import datetime, timezone
 
     class FakeResponse:
-        headers = {"X-Datapoints-Used": "120", "X-Datapoints-Remaining": "19880"}
+        def __init__(self, payload, headers=None):
+            self.payload = payload
+            self.headers = headers or {}
         def __enter__(self): return self
         def __exit__(self, *args): return False
-        def read(self):
-            return json.dumps({"events": [{
+        def read(self): return json.dumps(self.payload).encode()
+
+    calls = []
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        if "/sports/dates?" in request.full_url:
+            return FakeResponse({"2": {"dates": [datetime.now(timezone.utc).timestamp() + 86400]}})
+        return FakeResponse({"events": [{
                 "event_id": "evt-1", "sport_id": 2,
                 "event_date": "2026-11-20T18:00:00Z",
                 "teams": [
@@ -124,14 +133,14 @@ def test_therundown_normalizes_v2_events(monkeypatch):
                         }}]},
                     ],
                 }],
-            }]}).encode()
+            }]}, {"X-Datapoints-Used": "120", "X-Datapoints-Remaining": "19880"})
 
     seen = {}
-    def fake_urlopen(request, timeout):
+    def capture_urlopen(request, timeout):
         seen["url"] = request.full_url
         seen["headers"] = dict(request.header_items())
-        return FakeResponse()
-    monkeypatch.setattr(therundown, "urlopen", fake_urlopen)
+        return fake_urlopen(request, timeout)
+    monkeypatch.setattr(therundown, "urlopen", capture_urlopen)
     provider = TheRundownProvider("CaseSensitiveRundownKey")
     events = provider.fetch_odds("americanfootball_nfl")
     assert events[0]["id"] == "evt-1"
@@ -142,6 +151,7 @@ def test_therundown_normalizes_v2_events(monkeypatch):
     assert provider.usage["datapoints_remaining"] == "19880"
     assert seen["headers"]["X-therundown-key"] == "CaseSensitiveRundownKey"
     assert "affiliate_ids=19%2C22%2C23" in seen["url"]
+    assert len(calls) == 2
 
 
 def test_therundown_rejects_unknown_sports():
