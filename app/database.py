@@ -40,6 +40,10 @@ class OddsDatabase:
                 CREATE INDEX IF NOT EXISTS idx_quotes_lookup
                     ON quotes(event_id, market_key, outcome_name, point, bookmaker_key);
                 CREATE INDEX IF NOT EXISTS idx_quotes_snapshot ON quotes(snapshot_id);
+                CREATE TABLE IF NOT EXISTS sent_alerts (
+                    fingerprint TEXT PRIMARY KEY, sent_at TEXT NOT NULL,
+                    alert_type TEXT NOT NULL, summary TEXT NOT NULL
+                );
             """)
 
     def save_snapshot(self, sport, events, provider="unknown", fetched_at=None):
@@ -173,6 +177,21 @@ class OddsDatabase:
             })
         results.sort(key=lambda x: x["updated_at"], reverse=True)
         return results[:max(1, min(int(limit), 1000))]
+
+
+    def claim_alert(self, fingerprint, alert_type, summary, sent_at=None):
+        """Atomically claim an alert fingerprint; returns False if already sent."""
+        sent_at = sent_at or datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            cur = db.execute(
+                "INSERT OR IGNORE INTO sent_alerts(fingerprint,sent_at,alert_type,summary) VALUES(?,?,?,?)",
+                (fingerprint, sent_at, alert_type, summary))
+            return cur.rowcount == 1
+
+    def alert_status(self):
+        with self.connect() as db:
+            row = db.execute("SELECT COUNT(*) AS sent, MAX(sent_at) AS last_sent FROM sent_alerts").fetchone()
+            return dict(row)
 
     def snapshot_status(self):
         with self.connect() as db:
