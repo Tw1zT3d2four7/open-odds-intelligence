@@ -90,7 +90,7 @@ class TheRundownProvider:
         if sport not in self.SPORTS:
             raise ProviderError(f"TheRundown does not currently map sport '{sport}'")
         sport_id, sport_title = self.SPORTS[sport]
-        date = self._next_event_date(sport_id)
+        event_sport_id, date = self._next_event_slate(sport_id)
         if not date:
             return []
         params = urlencode({
@@ -101,7 +101,7 @@ class TheRundownProvider:
             "offset": str(self.utc_offset_minutes),
         })
         payload = self._request(
-            f"{self.base_url}/sports/{sport_id}/events/{date}?{params}"
+            f"{self.base_url}/sports/{event_sport_id}/events/{date}?{params}"
         )
         raw_events = payload.get("events", []) if isinstance(payload, dict) else payload
         if not isinstance(raw_events, list):
@@ -109,7 +109,7 @@ class TheRundownProvider:
         return [self._normalize_event(raw, sport, sport_title) for raw in raw_events
                 if isinstance(raw, dict)]
 
-    def _next_event_date(self, sport_id):
+    def _next_event_slate(self, sport_id):
         # Schedule/date discovery is reference data; choose the next actual slate.
         date_sports = [sport_id]
         if sport_id == 2:
@@ -123,8 +123,12 @@ class TheRundownProvider:
         now = datetime.now(timezone.utc).timestamp()
         candidates = []
         if isinstance(payload, dict):
-            for body in payload.values():
+            for returned_sport, body in payload.items():
                 if not isinstance(body, dict):
+                    continue
+                try:
+                    returned_id = int(returned_sport)
+                except (TypeError, ValueError):
                     continue
                 for stamp in body.get("dates") or []:
                     try:
@@ -132,10 +136,11 @@ class TheRundownProvider:
                     except (TypeError, ValueError):
                         continue
                     if epoch >= now - 3600:
-                        candidates.append(epoch)
+                        candidates.append((epoch, returned_id))
         if not candidates:
-            return None
-        return datetime.fromtimestamp(min(candidates), timezone.utc).date().isoformat()
+            return sport_id, None
+        epoch, selected_sport_id = min(candidates)
+        return selected_sport_id, datetime.fromtimestamp(epoch, timezone.utc).date().isoformat()
 
     def _normalize_event(self, raw, sport, sport_title):
         event_id = raw.get("event_id") or raw.get("id") or ""
