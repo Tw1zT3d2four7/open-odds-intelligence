@@ -61,3 +61,17 @@ def test_spread_consensus_aligns_opposite_signed_points():
     spread_rows = [row for row in result["opportunities"] if row["market"] == "spreads"]
     assert spread_rows
     assert {row["point"] for row in spread_rows} == {-3.5, 3.5}
+
+
+def test_arbitrage_requires_distinct_sportsbooks():
+    event = [{
+        "id": "same-book-only", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "a", "title": "Book A", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 110}, {"name": "Away", "price": 110}]}]},
+            {"key": "b", "title": "Book B", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -300}, {"name": "Away", "price": -300}]}]},
+        ],
+    }]
+    result = analyze_markets(event, min_ev=101)
+    assert result["arbitrage"] == []
