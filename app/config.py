@@ -7,6 +7,8 @@ ODDS_PROVIDER = os.getenv("ODDS_PROVIDER", "none").strip().lower()
 # Do not normalize or change API key case: provider keys are case-sensitive.
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY", "")
 ODDS_REGIONS = os.getenv("ODDS_REGIONS", "us")
+# Optional explicit bookmaker keys; when set, this overrides region selection.
+ODDS_BOOKMAKERS = os.getenv("ODDS_BOOKMAKERS", "").strip()
 ODDS_MARKETS = os.getenv("ODDS_MARKETS", "h2h,spreads,totals")
 ODDS_FORMAT = os.getenv("ODDS_FORMAT", "american")
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/odds_history.sqlite3")
