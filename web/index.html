@@ -27,9 +27,9 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
 <div class="bar"><select id="sport"><option value="">All configured sports</option></select><button class="primary" id="refresh">Refresh odds</button><button id="reload">Reload view</button><span class="pill" id="updated">Waiting for data</span></div>
 <div class="notice" id="notice">Checking provider status…</div>
 <section class="cards">
-<div class="card"><small>EVENTS</small><div class="value" id="events">—</div></div>
+<div class="card"><small>EVENTS WITH QUOTES</small><div class="value" id="events">—</div></div>
 <div class="card"><small>SPORTSBOOKS</small><div class="value" id="books">—</div></div>
-<div class="card"><small>POSITIVE EV FLAGS</small><div class="value" id="edges">—</div></div>
+<div class="card"><small>EV OPPORTUNITIES</small><div class="value" id="edges">—</div></div>
 <div class="card"><small>ARBITRAGE FLAGS</small><div class="value" id="arbs">—</div></div>
 </section>
 <div class="filters"><label class="muted" for="minEv">Minimum EV %</label><input id="minEv" type="number" min="-100" max="100" step=".25" value="1"><label class="muted" for="consensus">Other books</label><select id="consensus"><option value="1">1+</option><option value="2" selected>2+</option><option value="3">3+</option><option value="4">4+</option></select><button id="apply">Apply filters</button></div>
