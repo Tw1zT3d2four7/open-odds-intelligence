@@ -81,7 +81,7 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 5. Historical line-movement views, closing-line value and backtesting.
 6. Player props where licensed data feeds support correct player / line identity.
 7. Deduplicated Discord/webhook alerts and injury/news integrations where licensed feeds exist.
-8. Additional providers, quota visibility, robust validation and optional authentication.
+8. Additional providers, richer provider diagnostics, robust validation and optional authentication.
 
 ## License
 
