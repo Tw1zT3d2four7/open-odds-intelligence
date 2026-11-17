@@ -178,3 +178,19 @@ def test_movement_retains_full_timeline_and_opening_baseline(tmp_path):
     assert rows[0]["observations"] == 3
     assert rows[0]["implied_probability_change_from_open"] < 0
     assert rows[0]["direction"] == "drifting"
+
+
+def test_movement_history_includes_line_transitions_in_chronological_order(tmp_path):
+    db = OddsDatabase(tmp_path / "history.sqlite3")
+    for index, point in enumerate([-3.5, -4.0, -4.5]):
+        current = fixture()
+        current[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["point"] = point
+        current[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = -110 + index * 5
+        db.save_snapshot(
+            "basketball_nba", current, "test",
+            f"2026-11-17T12:{index * 5:02d}:00Z",
+        )
+
+    history = db.movement_history("evt", "spreads", "Home", "book-a")
+    assert [row["point"] for row in history] == [-3.5, -4.0, -4.5]
+    assert [row["price"] for row in history] == [-110, -105, -100]
