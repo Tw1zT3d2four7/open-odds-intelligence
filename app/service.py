@@ -20,6 +20,10 @@ class OddsService:
         self._alerts_evaluated = 0
         self._alerts_qualified = 0
         self._last_alert_check = None
+        self._last_alert_evaluated = 0
+        self._last_alert_qualified = 0
+        self._last_alert_sent = 0
+        self._last_alert_error = None
 
     @property
     def configured(self):
@@ -38,6 +42,10 @@ class OddsService:
                 "alerts_evaluated": self._alerts_evaluated,
                 "alerts_qualified": self._alerts_qualified,
                 "last_alert_check": self._last_alert_check,
+                "last_alert_evaluated": self._last_alert_evaluated,
+                "last_alert_qualified": self._last_alert_qualified,
+                "last_alert_sent": self._last_alert_sent,
+                "last_alert_error": self._last_alert_error,
                 "alerts_enabled": bool(config.DISCORD_WEBHOOK_URL),
                 "alerts_sent": self.db.alert_status()["sent"],
                 "last_alert_at": self.db.alert_status()["last_sent"],
@@ -65,64 +73,89 @@ class OddsService:
             return {"ok": True, "events": count, "updated_at": self._updated_at,
                     "alerts_sent": alerts_sent,
                     "alerts_enabled": alert_status["alerts_enabled"],
-                    "alerts_evaluated": alert_status["alerts_evaluated"],
-                    "alerts_qualified": alert_status["alerts_qualified"],
-                    "alert_error": alert_status["alert_error"]}
+                    "alerts_evaluated": alert_status["last_alert_evaluated"],
+                    "alerts_qualified": alert_status["last_alert_qualified"],
+                    "alert_error": alert_status["last_alert_error"]}
         except ProviderError as exc:
             self._last_error = str(exc)
             return {"ok": False, "error": self._last_error, "events": count}
 
 
     def _dispatch_alerts(self):
-        """Send newly observed EV/arb candidates to Discord once per exact fingerprint."""
+        """Send newly observed EV/arb candidates once; isolate failures per delivery."""
+        self._last_alert_check = datetime.now(timezone.utc).isoformat()
+        self._last_alert_evaluated = 0
+        self._last_alert_qualified = 0
+        self._last_alert_sent = 0
+        self._last_alert_error = None
         if not config.DISCORD_WEBHOOK_URL:
             return 0
-        self._last_alert_check = datetime.now(timezone.utc).isoformat()
+
+        errors = []
         sent = 0
-        claimed_fingerprint = None
-        try:
-            for event in self.events():
-                result = analyze_markets([event], min_ev=config.ALERT_MIN_EV_PERCENT, min_consensus_books=2)
-                candidates = []
-                for row in result["opportunities"]:
-                    identity = ["ev", row["event_id"], row["market"], row["outcome"],
-                                row.get("point"), row["bookmaker_key"], row["price"]]
-                    candidates.append(("ev", identity,
-                        f'**EV {row["ev_percent"]:.2f}%** · {row["matchup"]} · {row["market"]} '
-                        f'{row["outcome"]} {row.get("point") if row.get("point") is not None else ""} '
-                        f'@ {row["bookmaker"]} ({row["price"]:+d}) · '
-                        f'fair {row["fair_probability"]*100:.1f}% · {row["consensus_books"]} other books'))
-                for row in result["arbitrage"]:
-                    if row["arb_percent"] < config.ALERT_MIN_ARB_PERCENT:
-                        continue
-                    identity = ["arb", row["event_id"], row["market"], row.get("line"),
-                                sorted((leg["bookmaker_key"], leg["outcome"], leg["price"]) for leg in row["legs"])]
-                    legs = " / ".join(f'{leg["outcome"]} {leg["price"]:+d} at {leg["bookmaker"]}'
-                                      for leg in row["legs"])
-                    candidates.append(("arbitrage", identity,
-                        f'**Arbitrage {row["arb_percent"]:.3f}%** · {row["matchup"]} · {row["market"]} · {legs}'))
-                self._alerts_evaluated += len(result["opportunities"]) + len(result["arbitrage"])
-                self._alerts_qualified += len(candidates)
-                for alert_type, identity, message in candidates:
-                    fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+        for event in self.events():
+            try:
+                result = analyze_markets(
+                    [event], min_ev=config.ALERT_MIN_EV_PERCENT,
+                    min_consensus_books=2,
+                )
+            except Exception as exc:
+                errors.append(f"Analysis for {event.get('id', 'unknown event')}: {exc}")
+                continue
+
+            candidates = []
+            for row in result["opportunities"]:
+                identity = ["ev", row["event_id"], row["market"], row["outcome"],
+                            row.get("point"), row["bookmaker_key"], row["price"]]
+                candidates.append(("ev", identity,
+                    f'**EV {row["ev_percent"]:.2f}%** · {row["matchup"]} · {row["market"]} '
+                    f'{row["outcome"]} {row.get("point") if row.get("point") is not None else ""} '
+                    f'@ {row["bookmaker"]} ({row["price"]:+d}) · '
+                    f'fair {row["fair_probability"]*100:.1f}% · {row["consensus_books"]} other books'))
+            for row in result["arbitrage"]:
+                if row["arb_percent"] < config.ALERT_MIN_ARB_PERCENT:
+                    continue
+                identity = ["arb", row["event_id"], row["market"], row.get("line"),
+                            sorted((leg["bookmaker_key"], leg["outcome"], leg["price"])
+                                   for leg in row["legs"])]
+                legs = " / ".join(
+                    f'{leg["outcome"]} {leg["price"]:+d} at {leg["bookmaker"]}'
+                    for leg in row["legs"]
+                )
+                candidates.append(("arbitrage", identity,
+                    f'**Arbitrage {row["arb_percent"]:.3f}%** · {row["matchup"]} · {row["market"]} · {legs}'))
+
+            self._last_alert_evaluated += len(result["opportunities"]) + len(result["arbitrage"])
+            self._last_alert_qualified += len(candidates)
+            for alert_type, identity, message in candidates:
+                fingerprint = hashlib.sha256(
+                    json.dumps(identity, sort_keys=True).encode()
+                ).hexdigest()
+                try:
                     if not self.db.claim_alert(fingerprint, alert_type, message):
                         continue
-                    claimed_fingerprint = fingerprint
                     payload = json.dumps({"content": message[:1900]}).encode()
-                    request = Request(config.DISCORD_WEBHOOK_URL, data=payload,
-                                      headers={"Content-Type": "application/json",
-                                               "User-Agent": "OpenOddsIntelligence/0.4"},
-                                      method="POST")
+                    request = Request(
+                        config.DISCORD_WEBHOOK_URL, data=payload,
+                        headers={"Content-Type": "application/json",
+                                 "User-Agent": "OpenOddsIntelligence/0.4"},
+                        method="POST",
+                    )
                     with urlopen(request, timeout=8) as response:
                         if response.status not in (200, 204):
-                            raise RuntimeError(f"Discord webhook returned HTTP {response.status}")
+                            raise RuntimeError(
+                                f"Discord webhook returned HTTP {response.status}"
+                            )
                     sent += 1
-                    claimed_fingerprint = None
-            self._alert_error = None
-        except Exception as exc:
-            if claimed_fingerprint:
-                self.db.release_alert(claimed_fingerprint)
-            self._alert_error = str(exc)[:300]
+                except Exception as exc:
+                    self.db.release_alert(fingerprint)
+                    errors.append(str(exc)[:300])
+
+        self._last_alert_sent = sent
+        self._alerts_evaluated += self._last_alert_evaluated
+        self._alerts_qualified += self._last_alert_qualified
+        self._last_alert_error = "; ".join(errors)[:1000] if errors else None
+        self._alert_error = self._last_alert_error
         return sent
 
     def events(self, sport=None):
