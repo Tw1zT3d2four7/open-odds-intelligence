@@ -194,3 +194,34 @@ def test_movement_history_includes_line_transitions_in_chronological_order(tmp_p
     history = db.movement_history("evt", "spreads", "Home", "book-a")
     assert [row["point"] for row in history] == [-3.5, -4.0, -4.5]
     assert [row["price"] for row in history] == [-110, -105, -100]
+
+
+def test_source_bookmaker_timestamp_is_preserved_in_latest_history_and_movement(tmp_path):
+    db = OddsDatabase(tmp_path / "timestamps.sqlite3")
+    first = fixture()
+    first[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["updated_at"] = "2026-11-17T11:58:00Z"
+    db.save_snapshot("basketball_nba", first, "test", "2026-11-17T12:00:00Z")
+    second = fixture()
+    second[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = -105
+    second[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["updated_at"] = "2026-11-17T12:04:00Z"
+    db.save_snapshot("basketball_nba", second, "test", "2026-11-17T12:05:00Z")
+    outcome = db.latest_events("basketball_nba")[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert outcome["updated_at"] == "2026-11-17T12:04:00Z"
+    history = db.movement_history("evt", "spreads", "Home", "book-a")
+    assert history[-1]["source_updated_at"] == "2026-11-17T12:04:00Z"
+    movement = next(x for x in db.movement("basketball_nba") if x["market"] == "spreads")
+    assert movement["timestamp_basis"] == "sportsbook"
+    assert movement["source_updated_at"] == "2026-11-17T12:04:00Z"
+    assert movement["updated_at"] == "2026-11-17T12:05:00Z"
+
+
+def test_legacy_quote_table_gets_timestamp_column_migration(tmp_path):
+    import sqlite3
+    path = tmp_path / "legacy.sqlite3"
+    db = OddsDatabase(path)
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE quotes DROP COLUMN source_updated_at")
+    migrated = OddsDatabase(path)
+    with migrated.connect() as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(quotes)")}
+    assert "source_updated_at" in columns
