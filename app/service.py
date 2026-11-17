@@ -17,6 +17,9 @@ class OddsService:
         self._updated_at = None
         self._provider_usage = {}
         self._alert_error = None
+        self._alerts_evaluated = 0
+        self._alerts_qualified = 0
+        self._last_alert_check = None
 
     @property
     def configured(self):
@@ -30,7 +33,11 @@ class OddsService:
                 "live_data_available": bool(stored.get("events")) or bool(self._cache),
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
-                "refresh_interval_seconds": config.ODDS_REFRESH_INTERVAL_SECONDS,
+                "refresh_interval_seconds": config.ODDS_REFRESH_INTERVAL_SECONDS or (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0),
+                "alert_refresh_interval_seconds": config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0,
+                "alerts_evaluated": self._alerts_evaluated,
+                "alerts_qualified": self._alerts_qualified,
+                "last_alert_check": self._last_alert_check,
                 "alerts_enabled": bool(config.DISCORD_WEBHOOK_URL),
                 "alerts_sent": self.db.alert_status()["sent"],
                 "last_alert_at": self.db.alert_status()["last_sent"],
@@ -65,6 +72,7 @@ class OddsService:
         """Send newly observed EV/arb candidates to Discord once per exact fingerprint."""
         if not config.DISCORD_WEBHOOK_URL:
             return 0
+        self._last_alert_check = datetime.now(timezone.utc).isoformat()
         sent = 0
         claimed_fingerprint = None
         try:
@@ -88,6 +96,8 @@ class OddsService:
                                       for leg in row["legs"])
                     candidates.append(("arbitrage", identity,
                         f'**Arbitrage {row["arb_percent"]:.3f}%** · {row["matchup"]} · {row["market"]} · {legs}'))
+                self._alerts_evaluated += len(result["opportunities"]) + len(result["arbitrage"])
+                self._alerts_qualified += len(candidates)
                 for alert_type, identity, message in candidates:
                     fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
                     if not self.db.claim_alert(fingerprint, alert_type, message):
@@ -104,7 +114,7 @@ class OddsService:
                     sent += 1
                     claimed_fingerprint = None
             self._alert_error = None
-        except (URLError, HTTPError, TimeoutError, RuntimeError, ValueError) as exc:
+        except Exception as exc:
             if claimed_fingerprint:
                 self.db.release_alert(claimed_fingerprint)
             self._alert_error = str(exc)[:300]
