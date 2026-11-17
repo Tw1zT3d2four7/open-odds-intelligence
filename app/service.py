@@ -34,6 +34,8 @@ class OddsService:
         return {"provider": config.ODDS_PROVIDER, "configured": self.configured,
                 "last_updated": self._updated_at or stored.get("last_updated"),
                 "last_error": self._last_error, "sports": config.ODDS_SPORTS,
+                "odds_regions": config.ODDS_REGIONS,
+                "odds_bookmakers": config.ODDS_BOOKMAKERS,
                 "live_data_available": bool(stored.get("events")) or bool(self._cache),
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
@@ -56,7 +58,8 @@ class OddsService:
             self._last_error = "No live odds provider configured. Configure a supported provider and API key."
             return {"ok": False, "error": self._last_error, "events": 0}
         provider = TheOddsAPIProvider(config.THE_ODDS_API_KEY, config.ODDS_REGIONS,
-                                      config.ODDS_MARKETS, config.ODDS_FORMAT)
+                                      config.ODDS_MARKETS, config.ODDS_FORMAT,
+                                      config.ODDS_BOOKMAKERS)
         count = 0
         try:
             for key in ([sport] if sport else config.ODDS_SPORTS):
