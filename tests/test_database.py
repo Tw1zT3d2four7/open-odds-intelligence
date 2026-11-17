@@ -128,5 +128,5 @@ def test_movement_retains_full_timeline_and_opening_baseline(tmp_path):
     assert rows[0]["opening_price"] == -120
     assert rows[0]["price"] == -110
     assert rows[0]["observations"] == 3
-    assert rows[0]["implied_probability_change_from_open"] > 0
-    assert rows[0]["direction"] == "shortening"
+    assert rows[0]["implied_probability_change_from_open"] < 0
+    assert rows[0]["direction"] == "drifting"
