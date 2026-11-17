@@ -59,7 +59,9 @@ class TheOddsAPIProvider(OddsProvider):
                     outcomes = [{"name": o.get("name", ""), "price": int(o["price"]),
                                  "point": o.get("point")} for o in m.get("outcomes", [])
                                 if isinstance(o, dict) and isinstance(o.get("price"), (int, float))]
-                    markets.append({"key": m.get("key", ""), "outcomes": outcomes})
+                    for outcome in outcomes:
+                        outcome["updated_at"] = m.get("last_update") or b.get("last_update")
+                    markets.append({"key": m.get("key", ""), "last_update": m.get("last_update"), "outcomes": outcomes})
                 books.append({"key": b.get("key", ""), "title": b.get("title", b.get("key", "")),
                               "last_update": b.get("last_update"), "markets": markets})
             events.append({"id": raw.get("id", ""), "sport_key": raw.get("sport_key", sport),
