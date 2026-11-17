@@ -14,3 +14,6 @@ ODDS_SPORTS = [s.strip() for s in os.getenv(
     "ODDS_SPORTS",
     "americanfootball_nfl,basketball_nba,icehockey_nhl,baseball_mlb,soccer_epl"
 ).split(",") if s.strip()]
+
+# Automatic refresh is opt-in; 0 keeps refreshes manual.
+ODDS_REFRESH_INTERVAL_SECONDS = max(0, int(os.getenv("ODDS_REFRESH_INTERVAL_SECONDS", "0")))
