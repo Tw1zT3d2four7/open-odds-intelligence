@@ -131,50 +131,71 @@ class OddsDatabase:
 
 
     def movement(self, sport=None, limit=200):
-        """Return the latest quote observation and its prior observation per market side."""
+        """Compare the latest two snapshots without mixing alternate lines."""
         sql = """
             WITH ranked AS (
                 SELECT s.fetched_at, s.id AS snapshot_id, q.event_id, q.sport,
                        q.sport_title, q.commence_time, q.home_team, q.away_team,
                        q.bookmaker_key, q.bookmaker_title, q.market_key,
                        q.outcome_name, q.point, q.price,
-                       ROW_NUMBER() OVER (
+                       DENSE_RANK() OVER (
                            PARTITION BY q.event_id, q.bookmaker_key, q.market_key, q.outcome_name
-                           ORDER BY s.fetched_at DESC, s.id DESC
-                       ) AS rn
+                           ORDER BY s.id DESC
+                       ) AS snapshot_rank
                 FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
                 WHERE (? IS NULL OR q.sport=?)
             )
-            SELECT * FROM ranked WHERE rn <= 2
-            ORDER BY event_id, bookmaker_key, market_key, outcome_name, rn
+            SELECT * FROM ranked WHERE snapshot_rank <= 2
+            ORDER BY event_id, bookmaker_key, market_key, outcome_name,
+                     snapshot_rank, point
         """
         with self.connect() as db:
             rows = [dict(row) for row in db.execute(sql, (sport, sport)).fetchall()]
+
         grouped = {}
         for row in rows:
-            key = (row["event_id"], row["bookmaker_key"], row["market_key"], row["outcome_name"])
-            grouped.setdefault(key, []).append(row)
+            key = (row["event_id"], row["bookmaker_key"],
+                   row["market_key"], row["outcome_name"])
+            snapshots = grouped.setdefault(key, {})
+            snapshots.setdefault(row["snapshot_rank"], {})[row["point"]] = row
+
         results = []
-        for observations in grouped.values():
-            if len(observations) < 2:
+        for snapshots in grouped.values():
+            current_lines = snapshots.get(1, {})
+            previous_lines = snapshots.get(2, {})
+            if not current_lines or not previous_lines:
                 continue
-            current, previous = observations[0], observations[1]
-            old_price, new_price = previous["price"], current["price"]
-            old_prob = 100 * (100 / (old_price + 100) if old_price > 0 else abs(old_price) / (abs(old_price) + 100))
-            new_prob = 100 * (100 / (new_price + 100) if new_price > 0 else abs(new_price) / (abs(new_price) + 100))
-            results.append({
-                "event_id": current["event_id"], "sport": current["sport"],
-                "matchup": f'{current["away_team"]} @ {current["home_team"]}',
-                "commence_time": current["commence_time"], "market": current["market_key"],
-                "outcome": current["outcome_name"], "bookmaker": current["bookmaker_title"],
-                "bookmaker_key": current["bookmaker_key"],
-                "previous_point": previous["point"], "point": current["point"],
-                "previous_price": old_price, "price": new_price,
-                "price_change": new_price - old_price,
-                "implied_probability_change": round(new_prob - old_prob, 3),
-                "previous_at": previous["fetched_at"], "updated_at": current["fetched_at"],
-                "change_type": "line_and_price" if previous["point"] != current["point"] else "price",
-            })
+
+            common_points = set(current_lines).intersection(previous_lines)
+            comparisons = [
+                (previous_lines[point], current_lines[point])
+                for point in common_points
+            ]
+            # A lone line changing between snapshots is a genuine line move.
+            # With alternate lines present, only compare matching exact lines.
+            if not comparisons and len(current_lines) == 1 and len(previous_lines) == 1:
+                comparisons = [(next(iter(previous_lines.values())),
+                                next(iter(current_lines.values())))]
+
+            for previous, current in comparisons:
+                old_price, new_price = previous["price"], current["price"]
+                old_prob = 100 * (100 / (old_price + 100) if old_price > 0
+                                  else abs(old_price) / (abs(old_price) + 100))
+                new_prob = 100 * (100 / (new_price + 100) if new_price > 0
+                                  else abs(new_price) / (abs(new_price) + 100))
+                results.append({
+                    "event_id": current["event_id"], "sport": current["sport"],
+                    "matchup": f'{current["away_team"]} @ {current["home_team"]}',
+                    "commence_time": current["commence_time"], "market": current["market_key"],
+                    "outcome": current["outcome_name"], "bookmaker": current["bookmaker_title"],
+                    "bookmaker_key": current["bookmaker_key"],
+                    "previous_point": previous["point"], "point": current["point"],
+                    "previous_price": old_price, "price": new_price,
+                    "price_change": new_price - old_price,
+                    "implied_probability_change": round(new_prob - old_prob, 3),
+                    "previous_at": previous["fetched_at"], "updated_at": current["fetched_at"],
+                    "change_type": "line_and_price" if previous["point"] != current["point"] else "price",
+                })
         results.sort(key=lambda x: x["updated_at"], reverse=True)
         return results[:max(1, min(int(limit), 1000))]
 
