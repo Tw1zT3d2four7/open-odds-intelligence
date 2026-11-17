@@ -28,12 +28,14 @@ def refresh(sport: str | None = None):
 @app.get("/api/opportunities")
 def opportunities(sport: str | None = None, min_ev: float = Query(1.0, ge=-100, le=100)):
     events = service.events(sport)
-    consensus = market_consensus(events, "h2h")
     rows = []
     for event in events:
-        fair = consensus.get(event["id"], {})
         best = {}
         for book in event.get("bookmakers", []):
+            # Leave the evaluated book out of the fair-price estimate.
+            fair = market_consensus(
+                [event], "h2h", exclude_bookmaker_key=book.get("key")
+            ).get(event["id"], {})
             market = next((m for m in book.get("markets", []) if m.get("key") == "h2h"), None)
             if not market:
                 continue
