@@ -6,6 +6,7 @@ from urllib.error import URLError, HTTPError
 from . import config
 from .database import OddsDatabase
 from .providers.the_odds_api import TheOddsAPIProvider, ProviderError
+from .providers.therundown import TheRundownProvider
 from .markets import analyze_markets
 
 
@@ -27,7 +28,11 @@ class OddsService:
 
     @property
     def configured(self):
-        return config.ODDS_PROVIDER == "the_odds_api" and bool(config.THE_ODDS_API_KEY)
+        if config.ODDS_PROVIDER == "the_odds_api":
+            return bool(config.THE_ODDS_API_KEY)
+        if config.ODDS_PROVIDER == "therundown":
+            return bool(config.THERUNDOWN_API_KEY)
+        return False
 
     def status(self):
         stored = self.db.snapshot_status()
@@ -39,7 +44,7 @@ class OddsService:
                 "live_data_available": bool(stored.get("events")) or bool(self._cache),
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
-                "refresh_interval_seconds": config.ODDS_REFRESH_INTERVAL_SECONDS or (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0),
+                "refresh_interval_seconds": config.ODDS_REFRESH_INTERVAL_SECONDS or (config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown" else (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0)),
                 "alert_refresh_interval_seconds": config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0,
                 "alerts_evaluated": self._alerts_evaluated,
                 "alerts_qualified": self._alerts_qualified,
@@ -57,9 +62,18 @@ class OddsService:
         if not self.configured:
             self._last_error = "No live odds provider configured. Configure a supported provider and API key."
             return {"ok": False, "error": self._last_error, "events": 0}
-        provider = TheOddsAPIProvider(config.THE_ODDS_API_KEY, config.ODDS_REGIONS,
-                                      config.ODDS_MARKETS, config.ODDS_FORMAT,
-                                      config.ODDS_BOOKMAKERS)
+        if config.ODDS_PROVIDER == "therundown":
+            provider = TheRundownProvider(
+                config.THERUNDOWN_API_KEY,
+                utc_offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES,
+            )
+        elif config.ODDS_PROVIDER == "the_odds_api":
+            provider = TheOddsAPIProvider(config.THE_ODDS_API_KEY, config.ODDS_REGIONS,
+                                          config.ODDS_MARKETS, config.ODDS_FORMAT,
+                                          config.ODDS_BOOKMAKERS)
+        else:
+            self._last_error = f"Unsupported odds provider: {config.ODDS_PROVIDER}"
+            return {"ok": False, "error": self._last_error, "events": 0}
         count = 0
         try:
             for key in ([sport] if sport else config.ODDS_SPORTS):
