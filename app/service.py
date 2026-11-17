@@ -66,6 +66,7 @@ class OddsService:
         if not config.DISCORD_WEBHOOK_URL:
             return 0
         sent = 0
+        claimed_fingerprint = None
         try:
             for event in self.events():
                 result = analyze_markets([event], min_ev=config.ALERT_MIN_EV_PERCENT, min_consensus_books=2)
@@ -91,6 +92,7 @@ class OddsService:
                     fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
                     if not self.db.claim_alert(fingerprint, alert_type, message):
                         continue
+                    claimed_fingerprint = fingerprint
                     payload = json.dumps({"content": message[:1900]}).encode()
                     request = Request(config.DISCORD_WEBHOOK_URL, data=payload,
                                       headers={"Content-Type": "application/json",
@@ -100,8 +102,11 @@ class OddsService:
                         if response.status not in (200, 204):
                             raise RuntimeError(f"Discord webhook returned HTTP {response.status}")
                     sent += 1
+                    claimed_fingerprint = None
             self._alert_error = None
         except (URLError, HTTPError, TimeoutError, RuntimeError, ValueError) as exc:
+            if claimed_fingerprint:
+                self.db.release_alert(claimed_fingerprint)
             self._alert_error = str(exc)[:300]
         return sent
 
