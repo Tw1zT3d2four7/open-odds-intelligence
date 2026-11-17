@@ -26,7 +26,7 @@ This is an active development build, not a feature-complete OddsLogic replacemen
 
 No fabricated odds are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
-## Quick start
+## Controlled testing\n\nSee [docs/TESTING_PLAN.md](docs/TESTING_PLAN.md) for the test stages, spot-check method, alert-delivery checks and pass criteria. This is an observational, paper-only validation phase; EV and arbitrage estimates are not guarantees.\n\n## Quick start
 
 ```bash
 cp .env.example .env
