@@ -46,7 +46,7 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8765
 ```
 
-Set `DATABASE_PATH` to change the SQLite file location. Set `ODDS_REFRESH_INTERVAL_SECONDS` to a positive number of seconds (for example, `300`) to enable automatic refresh across configured sports. The default `0` keeps refresh manual. Automatic refresh starts only when a provider and API key are configured. To enable Discord alerts, set `DISCORD_WEBHOOK_URL`, `ALERT_MIN_EV_PERCENT` and `ALERT_MIN_ARB_PERCENT`. Alerts are disabled when no webhook URL is set. Alert fingerprints are stored in SQLite to prevent repeated notifications for the same exact quote; a changed price creates a new alert.
+Set `DATABASE_PATH` to change the SQLite file location. Set `ODDS_REFRESH_INTERVAL_SECONDS` to a positive number of seconds (for example, `300`) for general automatic refresh. When a Discord webhook is configured, the app automatically refreshes odds every 5 minutes by default even if general auto-refresh is disabled; change this with `DISCORD_ALERT_REFRESH_INTERVAL_SECONDS` (minimum 60 seconds). Automatic refresh starts only when a provider and API key are configured. To enable Discord alerts, set `DISCORD_WEBHOOK_URL`, `ALERT_MIN_EV_PERCENT` and `ALERT_MIN_ARB_PERCENT`. The health endpoint reports the last alert check, evaluated candidates, qualifying candidates and delivery errors. Alerts are disabled when no webhook URL is set. Alert fingerprints are stored in SQLite to prevent repeated notifications for the same exact quote; a changed price creates a new alert.
 
 ## Provider configuration
 
