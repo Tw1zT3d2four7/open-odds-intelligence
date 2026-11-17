@@ -8,10 +8,12 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Pluggable odds-provider interface and optional The Odds API adapter.
 - Normalized event, bookmaker, market and outcome data.
 - American-odds conversion, no-vig calculations, estimated EV screening and two-way arbitrage math.
+- **Persistent SQLite odds snapshots**: each successful provider refresh is stored on disk with quote history keyed by event, bookmaker, market, outcome and line/point.
+- Historical quote endpoint: `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...`.
 - Docker Compose deployment and automated test workflow.
 - No fabricated live data: live quotes remain unavailable until a supported provider is configured.
 
-This is an early foundation, **not yet a feature-complete OddsLogic replacement**. Current dashboard opportunity screening is moneyline-only and the cache is in memory. Historical storage, line movement, alerts, props and production-grade multi-provider consensus remain development work. EV is an estimate, not a guarantee or betting advice.
+This remains an early development build, **not yet a feature-complete OddsLogic replacement**. Opportunity screening is still moneyline-only. Spreads/totals are stored with their line points but are not yet fully evaluated for EV or arbitrage. Scheduled refresh, line-movement UI, alerts, player props and production-grade multi-provider consensus remain development work. EV is an estimate, not a guarantee or betting advice.
 
 ## Quick start
 
@@ -22,7 +24,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open http://localhost:8765
+Open http://localhost:8765. SQLite data persists in `./data/odds_history.sqlite3` through the Compose data volume.
 
 Local install:
 
@@ -33,6 +35,8 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8765
 ```
 
+Set `DATABASE_PATH` to change the SQLite file location.
+
 ## Provider configuration
 
 Configure `ODDS_PROVIDER=the_odds_api`, `THE_ODDS_API_KEY`, regions, markets and sports in `.env`. Provider coverage, quota, historical access and permitted use depend on the provider's current plan and terms. The application does not scrape sportsbook websites.
@@ -41,12 +45,13 @@ Configure `ODDS_PROVIDER=the_odds_api`, `THE_ODDS_API_KEY`, regions, markets and
 
 - `GET /api/health`
 - `GET /api/odds?sport=...`
+- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...`
 - `GET /api/opportunities?sport=...&min_ev=1.0`
 - `POST /api/refresh?sport=...`
 
 ## Development roadmap
 
-1. Persistent SQLite quote/event storage and scheduled refresh.
+1. ~~Persistent SQLite quote/event storage~~ (implemented).
 2. Correct market/point matching and best-price comparison for moneyline, spreads and totals.
 3. Multi-provider consensus with leave-one-book-out fair probability estimates.
 4. Arbitrage scanning across aligned outcomes and books.
