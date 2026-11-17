@@ -13,7 +13,8 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Estimated EV screening across moneyline, spreads and totals when the provider supplies complete markets.
 - Leave-one-sportsbook-out consensus: a quote is evaluated against other books, not its own price.
 - Two-outcome cross-book arbitrage scanning with suggested equal-payout stake percentages.
-- Persistent SQLite snapshots and quote history.\n- Per-sportsbook price / line movement comparison between the latest two saved snapshots.
+- Persistent SQLite snapshots and quote history.\n- Consolidated opening-to-latest sportsbook price / line movement summaries, with exact alternate-line separation.
+- Clickable movement timelines showing every saved line and price observation for a selection.
 - Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
 - Opt-in scheduled refresh at a configurable interval (disabled by default).\n- Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.\n- Docker Compose deployment and GitHub Actions tests.
@@ -32,7 +33,8 @@ No fabricated odds are generated. Live quotes remain unavailable until a support
 cp .env.example .env
 # Set ODDS_PROVIDER=the_odds_api and THE_ODDS_API_KEY in .env.
 # Preserve the API key exactly; keys are case-sensitive.
-docker compose up --build
+docker compose pull
+docker compose up -d
 ```
 
 Open http://localhost:8765. SQLite data persists in `./data/odds_history.sqlite3` through the Compose data volume.
@@ -70,7 +72,8 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 - `GET /api/market-board?sport=...` — best price for each exact market / outcome / line.
 - `GET /api/opportunities?sport=...&min_ev=1.0&min_consensus_books=2` — estimated EV opportunities.
 - `GET /api/arbitrage?sport=...` — two-outcome cross-book arbitrage candidates.
-- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.\n- `GET /api/movement?sport=...` — price and line changes versus the previous stored snapshot.
+- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.\n- `GET /api/movement?sport=...` — consolidated opening-to-latest price and line movement summaries.
+- `GET /api/movement/history?event_id=...&market=...&outcome=...&bookmaker=...` — chronological price and line observations for one sportsbook selection.
 
 ## Development roadmap
 
@@ -78,10 +81,11 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 2. ~~Exact-line best-price comparison~~
 3. ~~Multi-market EV screening using other-book consensus~~
 4. ~~Two-outcome cross-book arbitrage scanning~~
-5. Historical line-movement views, closing-line value and backtesting.
-6. Player props where licensed data feeds support correct player / line identity.
-7. Deduplicated Discord/webhook alerts and injury/news integrations where licensed feeds exist.
-8. Additional providers, richer provider diagnostics, robust validation and optional authentication.
+5. ~~Consolidated line movement and quote timelines~~
+6. Closing-line value tracking and historical backtesting.
+7. Player props where licensed data feeds support correct player / line identity.
+8. Deduplicated Discord/webhook alerts and injury/news integrations where licensed feeds exist.
+9. Additional providers, richer provider diagnostics, robust validation and optional authentication.
 
 ## License
 
