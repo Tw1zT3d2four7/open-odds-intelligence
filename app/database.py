@@ -236,6 +236,22 @@ class OddsDatabase:
         return results[:max(1, min(int(limit), 1000))]
 
 
+    def movement_history(self, event_id, market_key, outcome_name,
+                         bookmaker_key, limit=500):
+        """Return a chronological quote timeline, including every observed line."""
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT s.fetched_at, q.point, q.price
+                   FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
+                   WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?
+                     AND q.bookmaker_key=?
+                   ORDER BY s.id DESC LIMIT ?""",
+                (event_id, market_key, outcome_name, bookmaker_key,
+                 max(1, min(int(limit), 1000))),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
+
     def claim_alert(self, fingerprint, alert_type, summary, sent_at=None):
         """Atomically claim an alert fingerprint; returns False if already sent."""
         sent_at = sent_at or datetime.now(timezone.utc).isoformat()
