@@ -1,4 +1,5 @@
 from collections import defaultdict
+from statistics import median
 
 def american_to_decimal(price: int) -> float:
     if price == 0:
@@ -38,17 +39,38 @@ def two_way_arbitrage(prices: list[int]) -> dict | None:
             "stake_percentages": [p / total * 100 for p in implied],
             "implied_sum": total}
 
-def market_consensus(events: list[dict], market_key: str = "h2h") -> dict:
+def market_consensus(
+    events: list[dict],
+    market_key: str = "h2h",
+    exclude_bookmaker_key: str | None = None,
+) -> dict:
+    """Build robust no-vig consensus, optionally excluding one sportsbook.
+
+    Excluding the evaluated sportsbook prevents its own quote from feeding the
+    fair-probability estimate used to calculate its expected value.
+    """
     result = {}
     for event in events:
         accum = defaultdict(list)
         for book in event.get("bookmakers", []):
+            if exclude_bookmaker_key and book.get("key") == exclude_bookmaker_key:
+                continue
             market = next((m for m in book.get("markets", []) if m.get("key") == market_key), None)
             if not market:
                 continue
             outcomes = market.get("outcomes", [])
-            probs = no_vig_probabilities([o["price"] for o in outcomes])
-            for outcome, prob in zip(outcomes, probs):
-                accum[outcome["name"]].append(prob)
-        result[event["id"]] = {name: sum(vals) / len(vals) for name, vals in accum.items() if vals}
+            if len(outcomes) < 2:
+                continue
+            names = [o.get("name") for o in outcomes]
+            prices = [o.get("price") for o in outcomes]
+            if any(not name for name in names) or any(
+                not isinstance(price, int) or price == 0 for price in prices
+            ):
+                continue
+            probs = no_vig_probabilities(prices)
+            for name, probability in zip(names, probs):
+                accum[name].append(probability)
+        result[event["id"]] = {
+            name: median(values) for name, values in accum.items() if values
+        }
     return result
