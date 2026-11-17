@@ -72,3 +72,37 @@ def test_alert_fingerprint_is_persistently_deduplicated_and_retryable(tmp_path):
     assert db.alert_status()["sent"] == 1
     db.release_alert("fingerprint-1")
     assert db.claim_alert("fingerprint-1", "ev", "test alert")
+
+
+def test_movement_keeps_alternate_totals_lines_separate(tmp_path):
+    db = OddsDatabase(tmp_path / "history.sqlite3")
+    old = fixture()
+    old[0]["bookmakers"][0]["markets"].append({
+        "key": "totals",
+        "outcomes": [
+            {"name": "Over", "price": -110, "point": 44.5},
+            {"name": "Under", "price": -110, "point": 44.5},
+            {"name": "Over", "price": 105, "point": 45.5},
+            {"name": "Under", "price": -125, "point": 45.5},
+        ],
+    })
+    db.save_snapshot("basketball_nba", old, "test", "2026-11-17T12:00:00Z")
+
+    newer = fixture()
+    newer[0]["bookmakers"][0]["markets"].append({
+        "key": "totals",
+        "outcomes": [
+            {"name": "Over", "price": -105, "point": 44.5},
+            {"name": "Under", "price": -115, "point": 44.5},
+            {"name": "Over", "price": 110, "point": 45.5},
+            {"name": "Under", "price": -130, "point": 45.5},
+        ],
+    })
+    db.save_snapshot("basketball_nba", newer, "test", "2026-11-17T12:05:00Z")
+
+    over = [row for row in db.movement("basketball_nba")
+            if row["market"] == "totals" and row["outcome"] == "Over"]
+    assert len(over) == 2
+    assert {row["point"] for row in over} == {44.5, 45.5}
+    assert all(row["previous_point"] == row["point"] for row in over)
+    assert all(row["change_type"] == "price" for row in over)
