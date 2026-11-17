@@ -45,6 +45,7 @@ Configure `ODDS_PROVIDER=the_odds_api`, `THE_ODDS_API_KEY`, regions, markets and
 
 - `GET /api/health`
 - `GET /api/odds?sport=...`
+- `GET /api/market-board?sport=...` (best price for each exact market/outcome/line; alternate points remain separate)
 - `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...`
 - `GET /api/opportunities?sport=...&min_ev=1.0`
 - `POST /api/refresh?sport=...`
@@ -52,7 +53,7 @@ Configure `ODDS_PROVIDER=the_odds_api`, `THE_ODDS_API_KEY`, regions, markets and
 ## Development roadmap
 
 1. ~~Persistent SQLite quote/event storage~~ (implemented).
-2. Correct market/point matching and best-price comparison for moneyline, spreads and totals.
+2. ~~Exact-line best-price comparison for available markets~~ (implemented; market-specific EV and arbitrage remain).
 3. Multi-provider consensus with leave-one-book-out fair probability estimates.
 4. Arbitrage scanning across aligned outcomes and books.
 5. Historical line movement, closing-line value and backtesting.
