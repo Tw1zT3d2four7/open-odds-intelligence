@@ -5,7 +5,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 ## Current working features
 
 - FastAPI backend and responsive dark dashboard.
-- Pluggable odds-provider interface and The Odds API adapter.
+- Pluggable odds-provider interface with The Odds API and TheRundown V2 adapters.
 - Configurable sports, regions and supported market keys.
 - Normalized event, sportsbook, market and outcome quotes.
 - Best available price for each exact event / market / outcome / line.
@@ -55,7 +55,7 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8765
 ```
 
-Set `DATABASE_PATH` to change the SQLite file location. Set `ODDS_REFRESH_INTERVAL_SECONDS` to a positive number of seconds (for example, `300`) for general automatic refresh. When a Discord webhook is configured, the app automatically refreshes odds every 5 minutes by default even if general auto-refresh is disabled; change this with `DISCORD_ALERT_REFRESH_INTERVAL_SECONDS` (minimum 60 seconds). Automatic refresh starts only when a provider and API key are configured. To enable Discord alerts, set `DISCORD_WEBHOOK_URL`, `ALERT_MIN_EV_PERCENT` and `ALERT_MIN_ARB_PERCENT`. The health endpoint reports the last alert check, evaluated candidates, qualifying candidates and delivery errors. Alerts are disabled when no webhook URL is set. Alert fingerprints are stored in SQLite to prevent repeated notifications for the same exact quote; a changed price creates a new alert.
+Set `DATABASE_PATH` to change the SQLite file location. For TheRundown Free, set `ODDS_PROVIDER=therundown` and `THERUNDOWN_API_KEY` in `.env`; the key is sent in the `X-TheRundown-Key` header and is preserved exactly. The free plan currently provides delayed pre-match moneyline, spread and total odds from DraftKings, BetMGM and FanDuel, with a five-minute delay, 20,000 data points per UTC day and 200,000 per UTC calendar month. TheRundown data points are returned price rows plus event/score rows, not API calls. The app defaults to one refresh per hour (`RUNDOWN_REFRESH_INTERVAL_SECONDS=3600`) and requests only the three free books and main lines. Increase polling only after reviewing usage in your provider dashboard. `RUNDOWN_UTC_OFFSET_MINUTES` controls the event-date offset (default `0`). Set `ODDS_REFRESH_INTERVAL_SECONDS` to a positive number of seconds (for example, `300`) for general automatic refresh. When a Discord webhook is configured, the app automatically refreshes odds every 5 minutes by default even if general auto-refresh is disabled; change this with `DISCORD_ALERT_REFRESH_INTERVAL_SECONDS` (minimum 60 seconds). Automatic refresh starts only when a provider and API key are configured. To enable Discord alerts, set `DISCORD_WEBHOOK_URL`, `ALERT_MIN_EV_PERCENT` and `ALERT_MIN_ARB_PERCENT`. The health endpoint reports the last alert check, evaluated candidates, qualifying candidates and delivery errors. Alerts are disabled when no webhook URL is set. Alert fingerprints are stored in SQLite to prevent repeated notifications for the same exact quote; a changed price creates a new alert.
 
 ## Provider configuration
 
