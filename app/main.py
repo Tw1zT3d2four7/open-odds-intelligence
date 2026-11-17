@@ -8,7 +8,10 @@ from .service import service
 from .markets import market_board, analyze_markets
 
 async def _automatic_refresh_loop():
-    interval = config.ODDS_REFRESH_INTERVAL_SECONDS or (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0)
+    interval = config.ODDS_REFRESH_INTERVAL_SECONDS or (
+        config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown"
+        else (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0)
+    )
     while True:
         await asyncio.sleep(interval)
         # Keep provider I/O and SQLite work off the ASGI event loop.
@@ -23,7 +26,7 @@ async def _automatic_refresh_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = None
-    if (config.ODDS_REFRESH_INTERVAL_SECONDS > 0 or config.DISCORD_WEBHOOK_URL) and service.configured:
+    if (config.ODDS_REFRESH_INTERVAL_SECONDS > 0 or config.DISCORD_WEBHOOK_URL or config.ODDS_PROVIDER == "therundown") and service.configured:
         task = asyncio.create_task(_automatic_refresh_loop())
     try:
         yield
