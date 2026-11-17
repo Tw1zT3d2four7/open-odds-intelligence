@@ -39,3 +39,27 @@ def test_current_view_uses_latest_snapshot(tmp_path):
     db.save_snapshot("basketball_nba", newer, "test", "2026-11-17T12:05:00Z")
     assert db.latest_events()[0]["home_team"] == "New Home"
     assert len(db.history("evt", "h2h", "Home", "book-a")) == 2
+
+
+def test_movement_compares_latest_two_quotes_and_detects_line_change(tmp_path):
+    db = OddsDatabase(tmp_path / "history.sqlite3")
+    db.save_snapshot("basketball_nba", fixture(), "test", "2026-11-17T12:00:00Z")
+    newer = fixture()
+    newer[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = -105
+    newer[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["point"] = -4.5
+    db.save_snapshot("basketball_nba", newer, "test", "2026-11-17T12:05:00Z")
+
+    movement = db.movement("basketball_nba")
+    home_spread = next(x for x in movement if x["market"] == "spreads" and x["outcome"] == "Home")
+    assert home_spread["previous_price"] == -110
+    assert home_spread["price"] == -105
+    assert home_spread["previous_point"] == -3.5
+    assert home_spread["point"] == -4.5
+    assert home_spread["change_type"] == "line_and_price"
+    assert home_spread["implied_probability_change"] < 0
+
+
+def test_movement_ignores_single_snapshot_quotes(tmp_path):
+    db = OddsDatabase(tmp_path / "history.sqlite3")
+    db.save_snapshot("basketball_nba", fixture(), "test", "2026-11-17T12:00:00Z")
+    assert db.movement() == []
