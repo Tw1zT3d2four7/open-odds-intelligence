@@ -59,5 +59,8 @@ class OddsService:
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None, limit=100):
         return self.db.history(event_id, market_key, outcome_name, bookmaker_key, point, limit)
 
+    def movement(self, sport=None, limit=200):
+        return self.db.movement(sport, limit)
+
 
 service = OddsService()
