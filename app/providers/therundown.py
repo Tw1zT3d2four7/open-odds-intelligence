@@ -55,14 +55,14 @@ class TheRundownProvider:
             with urlopen(request, timeout=25) as response:
                 payload = json.loads(response.read().decode("utf-8"))
                 headers = response.headers
-                self.usage = {
+                new_usage = {
                     "datapoints_used": headers.get("X-Datapoints-Used"),
                     "datapoints_remaining": headers.get("X-Datapoints-Remaining"),
                     "datapoints_limit": headers.get("X-Datapoints-Limit"),
                     "datapoints_period": headers.get("X-Datapoints-Period"),
                     "datapoints_last": headers.get("X-Datapoints"),
                 }
-                self.usage = {k: v for k, v in self.usage.items() if v is not None}
+                self.usage.update({k: v for k, v in new_usage.items() if v is not None})
                 return payload
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
@@ -90,7 +90,9 @@ class TheRundownProvider:
         if sport not in self.SPORTS:
             raise ProviderError(f"TheRundown does not currently map sport '{sport}'")
         sport_id, sport_title = self.SPORTS[sport]
-        date = datetime.now(timezone.utc).date().isoformat()
+        date = self._next_event_date(sport_id)
+        if not date:
+            return []
         params = urlencode({
             "market_ids": "1,2,3",
             "affiliate_ids": "19,22,23",
@@ -106,6 +108,34 @@ class TheRundownProvider:
             raise ProviderError("TheRundown returned an unexpected events response")
         return [self._normalize_event(raw, sport, sport_title) for raw in raw_events
                 if isinstance(raw, dict)]
+
+    def _next_event_date(self, sport_id):
+        # Schedule/date discovery is reference data; choose the next actual slate.
+        date_sports = [sport_id]
+        if sport_id == 2:
+            date_sports = [2, 25, 26]
+        params = urlencode({
+            "sport_ids": ",".join(str(value) for value in date_sports),
+            "format": "epoch",
+            "exclude_canceled": "true",
+        })
+        payload = self._request(f"{self.base_url}/sports/dates?{params}")
+        now = datetime.now(timezone.utc).timestamp()
+        candidates = []
+        if isinstance(payload, dict):
+            for body in payload.values():
+                if not isinstance(body, dict):
+                    continue
+                for stamp in body.get("dates") or []:
+                    try:
+                        epoch = float(stamp)
+                    except (TypeError, ValueError):
+                        continue
+                    if epoch >= now - 3600:
+                        candidates.append(epoch)
+        if not candidates:
+            return None
+        return datetime.fromtimestamp(min(candidates), timezone.utc).date().isoformat()
 
     def _normalize_event(self, raw, sport, sport_title):
         event_id = raw.get("event_id") or raw.get("id") or ""
