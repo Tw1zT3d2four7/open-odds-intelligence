@@ -21,3 +21,18 @@ def test_arbitrage():
 def test_invalid_odds():
     with pytest.raises(ValueError):
         american_to_decimal(0)
+
+def test_consensus_can_exclude_book_and_uses_median():
+    from app.math import market_consensus
+    event = {"id": "game-1", "bookmakers": [
+        {"key": "book-a", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": -110}, {"name": "Away", "price": -110}]}]},
+        {"key": "book-b", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": -150}, {"name": "Away", "price": 130}]}]},
+        {"key": "book-c", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": -160}, {"name": "Away", "price": 140}]}]},
+    ]}
+    all_books = market_consensus([event])["game-1"]
+    without_a = market_consensus([event], exclude_bookmaker_key="book-a")["game-1"]
+    assert all_books["Home"] != pytest.approx(without_a["Home"])
+    assert without_a["Home"] > 0.5
