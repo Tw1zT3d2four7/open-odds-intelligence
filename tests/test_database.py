@@ -106,3 +106,27 @@ def test_movement_keeps_alternate_totals_lines_separate(tmp_path):
     assert {row["point"] for row in over} == {44.5, 45.5}
     assert all(row["previous_point"] == row["point"] for row in over)
     assert all(row["change_type"] == "price" for row in over)
+
+
+def test_movement_retains_full_timeline_and_opening_baseline(tmp_path):
+    db = OddsDatabase(tmp_path / "history.sqlite3")
+    first = fixture()
+    first[0]["bookmakers"][0]["markets"][1]["outcomes"][0]["price"] = -120
+    db.save_snapshot("basketball_nba", first, "test", "2026-11-17T12:00:00Z")
+
+    second = fixture()
+    second[0]["bookmakers"][0]["markets"][1]["outcomes"][0]["price"] = -110
+    db.save_snapshot("basketball_nba", second, "test", "2026-11-17T12:05:00Z")
+
+    third = fixture()
+    third[0]["bookmakers"][0]["markets"][1]["outcomes"][0]["price"] = -110
+    db.save_snapshot("basketball_nba", third, "test", "2026-11-17T12:10:00Z")
+
+    rows = [x for x in db.movement("basketball_nba")
+            if x["market"] == "h2h" and x["outcome"] == "Home"]
+    assert len(rows) == 1
+    assert rows[0]["opening_price"] == -120
+    assert rows[0]["price"] == -110
+    assert rows[0]["observations"] == 3
+    assert rows[0]["implied_probability_change_from_open"] > 0
+    assert rows[0]["direction"] == "shortening"
