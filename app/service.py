@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
 from . import config
+from .database import OddsDatabase
 from .providers.the_odds_api import TheOddsAPIProvider, ProviderError
 
+
 class OddsService:
-    def __init__(self):
-        self._cache: dict[str, list[dict]] = {}
+    def __init__(self, database=None):
+        self.db = database or OddsDatabase()
+        self._cache = {}
         self._last_error = None
         self._updated_at = None
 
@@ -13,9 +16,12 @@ class OddsService:
         return config.ODDS_PROVIDER == "the_odds_api" and bool(config.THE_ODDS_API_KEY)
 
     def status(self):
+        stored = self.db.snapshot_status()
         return {"provider": config.ODDS_PROVIDER, "configured": self.configured,
-                "last_updated": self._updated_at, "last_error": self._last_error,
-                "sports": config.ODDS_SPORTS, "live_data_available": bool(self._cache)}
+                "last_updated": self._updated_at or stored.get("last_updated"),
+                "last_error": self._last_error, "sports": config.ODDS_SPORTS,
+                "live_data_available": bool(stored.get("events")) or bool(self._cache),
+                "stored_snapshots": stored["snapshots"], "stored_events": stored["events"]}
 
     def refresh(self, sport=None):
         if not self.configured:
@@ -26,8 +32,11 @@ class OddsService:
         count = 0
         try:
             for key in ([sport] if sport else config.ODDS_SPORTS):
-                self._cache[key] = provider.fetch_odds(key)
-                count += len(self._cache[key])
+                events = provider.fetch_odds(key)
+                fetched_at = datetime.now(timezone.utc).isoformat()
+                self.db.save_snapshot(key, events, provider.name, fetched_at)
+                self._cache[key] = events
+                count += len(events)
             self._updated_at = datetime.now(timezone.utc).isoformat()
             self._last_error = None
             return {"ok": True, "events": count, "updated_at": self._updated_at}
@@ -36,8 +45,15 @@ class OddsService:
             return {"ok": False, "error": self._last_error, "events": count}
 
     def events(self, sport=None):
+        stored = self.db.latest_events(sport)
+        if stored:
+            return stored
         if sport:
             return list(self._cache.get(sport, []))
         return [event for group in self._cache.values() for event in group]
+
+    def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None, limit=100):
+        return self.db.history(event_id, market_key, outcome_name, bookmaker_key, point, limit)
+
 
 service = OddsService()
