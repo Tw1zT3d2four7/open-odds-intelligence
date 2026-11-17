@@ -1,26 +1,37 @@
 # Open Odds Intelligence
 
-Open-source, self-hosted sports odds comparison and market-monitoring platform. It is independent of OddsLogic and sportsbooks.
+Open-source, self-hosted sports odds comparison and market-monitoring platform. Independent of OddsLogic and sportsbooks.
 
-## Current foundation
+## Current working features
 
-- FastAPI service and dark browser dashboard.
-- Pluggable odds-provider interface and optional The Odds API adapter.
-- Normalized event, bookmaker, market and outcome data.
-- American-odds conversion, no-vig calculations, estimated EV screening and two-way arbitrage math.
-- **Persistent SQLite odds snapshots**: each successful provider refresh is stored on disk with quote history keyed by event, bookmaker, market, outcome and line/point.
-- Historical quote endpoint: `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...`.
-- Docker Compose deployment and automated test workflow.
-- No fabricated live data: live quotes remain unavailable until a supported provider is configured.
+- FastAPI backend and responsive dark dashboard.
+- Pluggable odds-provider interface and The Odds API adapter.
+- Configurable sports, regions and supported market keys.
+- Normalized event, sportsbook, market and outcome quotes.
+- Best available price for each exact event / market / outcome / line.
+- American-odds conversion and no-vig probability calculations.
+- Estimated EV screening across moneyline, spreads and totals when the provider supplies complete markets.
+- Leave-one-sportsbook-out consensus: a quote is evaluated against other books, not its own price.
+- Two-outcome cross-book arbitrage scanning with suggested equal-payout stake percentages.
+- Persistent SQLite snapshots and quote history.
+- Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
+- Sport filter, EV threshold and minimum independent-book consensus controls.
+- Docker Compose deployment and GitHub Actions tests.
 
-This remains an early development build, **not yet a feature-complete OddsLogic replacement**. Opportunity screening is still moneyline-only. Spreads/totals are stored with their line points but are not yet fully evaluated for EV or arbitrage. Scheduled refresh, line-movement UI, alerts, player props and production-grade multi-provider consensus remain development work. EV is an estimate, not a guarantee or betting advice.
+The EV calculation uses the median of other sportsbooks' no-vig probabilities for the same event, market, outcome and line. The default requires at least two other books (three books total). Results are estimates, not guarantees. Arbitrage candidates are mathematical price discrepancies only; verify both prices, limits, settlement rules and availability before acting.
+
+## Not implemented yet
+
+This is an active development build, not a feature-complete OddsLogic replacement. Scheduled background refresh, interactive line-movement charts, closing-line value tracking, player props, deduplicated Discord/webhook alerts, additional provider integrations, authentication and full historical backtesting remain future work. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
+
+No fabricated odds are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-# Set ODDS_PROVIDER=the_odds_api and THE_ODDS_API_KEY if you have a key.
-# Preserve the key exactly; API keys are case-sensitive.
+# Set ODDS_PROVIDER=the_odds_api and THE_ODDS_API_KEY in .env.
+# Preserve the API key exactly; keys are case-sensitive.
 docker compose up --build
 ```
 
@@ -39,27 +50,38 @@ Set `DATABASE_PATH` to change the SQLite file location.
 
 ## Provider configuration
 
-Configure `ODDS_PROVIDER=the_odds_api`, `THE_ODDS_API_KEY`, regions, markets and sports in `.env`. Provider coverage, quota, historical access and permitted use depend on the provider's current plan and terms. The application does not scrape sportsbook websites.
+The default provider is disabled. To use The Odds API, configure:
+
+```dotenv
+ODDS_PROVIDER=the_odds_api
+THE_ODDS_API_KEY=your_exact_case_sensitive_key
+ODDS_REGIONS=us
+ODDS_MARKETS=h2h,spreads,totals
+ODDS_FORMAT=american
+```
+
+Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, historical access, market availability and permitted use depend on the provider's current plan and terms. Request usage can increase with the number of sports, regions and markets requested.
 
 ## API
 
-- `GET /api/health`
-- `GET /api/odds?sport=...`
-- `GET /api/market-board?sport=...` (best price for each exact market/outcome/line; alternate points remain separate)
-- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...`
-- `GET /api/opportunities?sport=...&min_ev=1.0`
-- `POST /api/refresh?sport=...`
+- `GET /api/health` — provider configuration and stored-data status.
+- `GET /api/odds?sport=...` — latest stored event quotes.
+- `POST /api/refresh?sport=...` — request a provider refresh.
+- `GET /api/market-board?sport=...` — best price for each exact market / outcome / line.
+- `GET /api/opportunities?sport=...&min_ev=1.0&min_consensus_books=2` — estimated EV opportunities.
+- `GET /api/arbitrage?sport=...` — two-outcome cross-book arbitrage candidates.
+- `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.
 
 ## Development roadmap
 
-1. ~~Persistent SQLite quote/event storage~~ (implemented).
-2. ~~Exact-line best-price comparison for available markets~~ (implemented; market-specific EV and arbitrage remain).
-3. Multi-provider consensus with leave-one-book-out fair probability estimates.
-4. Arbitrage scanning across aligned outcomes and books.
-5. Historical line movement, closing-line value and backtesting.
-6. Player props where data feeds support them.
+1. ~~Persistent SQLite quote and event storage~~
+2. ~~Exact-line best-price comparison~~
+3. ~~Multi-market EV screening using other-book consensus~~
+4. ~~Two-outcome cross-book arbitrage scanning~~
+5. Historical line-movement views, closing-line value and backtesting.
+6. Player props where licensed data feeds support correct player / line identity.
 7. Deduplicated Discord/webhook alerts and injury/news integrations where licensed feeds exist.
-8. Provider health, quota visibility, robust validation and optional remote authentication.
+8. Additional providers, quota visibility, robust validation and optional authentication.
 
 ## License
 
