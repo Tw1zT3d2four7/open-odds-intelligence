@@ -15,7 +15,8 @@ def test_snapshot_round_trip_and_points(tmp_path):
     events = db.latest_events("basketball_nba")
     assert len(events) == 1
     spread = next(m for m in events[0]["bookmakers"][0]["markets"] if m["key"] == "spreads")
-    assert spread["outcomes"][0]["point"] == -3.5
+    home = next(o for o in spread["outcomes"] if o["name"] == "Home")
+    assert home["point"] == -3.5
     assert db.snapshot_status()["snapshots"] == 1
 
 
