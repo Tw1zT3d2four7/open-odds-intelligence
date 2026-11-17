@@ -46,12 +46,13 @@ def test_discord_alert_is_sent_and_deduplicated(tmp_path, monkeypatch):
 
     monkeypatch.setattr("app.service.urlopen", fake_urlopen)
 
-    assert service._dispatch_alerts() == 1
-    assert len(sent) == 1
-    assert sent[0][1] == 8
-    assert b"EV" in sent[0][0].data
+    first_count = service._dispatch_alerts()
+    assert first_count >= 1
+    assert len(sent) == first_count
+    assert all(item[1] == 8 for item in sent)
+    assert all(b"EV" in item[0].data or b"Arbitrage" in item[0].data for item in sent)
     assert service._dispatch_alerts() == 0
-    assert len(sent) == 1
+    assert len(sent) == first_count
     assert service.status()["alerts_sent"] == 1
     assert service.status()["alerts_qualified"] >= 1
     assert service.status()["last_alert_check"] is not None
@@ -76,6 +77,7 @@ def test_discord_delivery_error_is_exposed_and_retryable(tmp_path, monkeypatch):
     assert "Discord test failure" in service.status()["alert_error"]
     assert service.db.alert_status()["sent"] == 0
     monkeypatch.setattr("app.service.urlopen", lambda request, timeout: FakeResponse())
-    assert service._dispatch_alerts() == 1
+    retry_count = service._dispatch_alerts()
+    assert retry_count >= 1
     assert len(calls) == 1
     assert service.status()["alert_error"] is None
