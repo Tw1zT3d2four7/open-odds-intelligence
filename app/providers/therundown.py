@@ -192,6 +192,8 @@ class TheRundownProvider:
                             "name": outcome_name,
                             "price": price,
                             "point": point,
+                            "updated_at": quote.get("updated_at") or quote.get("last_update") or
+                                          quote.get("updated") or line.get("updated_at"),
                         })
         bookmakers = []
         for book in books.values():
