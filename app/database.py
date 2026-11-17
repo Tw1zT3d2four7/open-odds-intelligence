@@ -131,10 +131,15 @@ class OddsDatabase:
 
 
     def movement(self, sport=None, limit=200):
-        """Compare the latest two snapshots without mixing alternate lines."""
+        """Summarize meaningful sportsbook moves against the earliest observed quote.
+
+        Exact alternate lines are tracked independently. A line transition is
+        inferred only when both adjacent snapshots contain a single line for
+        that event/book/market/outcome, avoiding false matches across ladders.
+        """
         sql = """
             WITH ranked AS (
-                SELECT s.fetched_at, s.id AS snapshot_id, q.event_id, q.sport,
+                SELECT s.id AS snapshot_id, s.fetched_at, q.event_id, q.sport,
                        q.sport_title, q.commence_time, q.home_team, q.away_team,
                        q.bookmaker_key, q.bookmaker_title, q.market_key,
                        q.outcome_name, q.point, q.price,
@@ -145,9 +150,9 @@ class OddsDatabase:
                 FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
                 WHERE (? IS NULL OR q.sport=?)
             )
-            SELECT * FROM ranked WHERE snapshot_rank <= 2
+            SELECT * FROM ranked
             ORDER BY event_id, bookmaker_key, market_key, outcome_name,
-                     snapshot_rank, point
+                     snapshot_rank DESC, point
         """
         with self.connect() as db:
             rows = [dict(row) for row in db.execute(sql, (sport, sport)).fetchall()]
@@ -156,47 +161,67 @@ class OddsDatabase:
         for row in rows:
             key = (row["event_id"], row["bookmaker_key"],
                    row["market_key"], row["outcome_name"])
-            snapshots = grouped.setdefault(key, {})
-            snapshots.setdefault(row["snapshot_rank"], {})[row["point"]] = row
+            grouped.setdefault(key, {}).setdefault(row["snapshot_rank"], {})[row["point"]] = row
+
+        def implied(price):
+            return 100 * (100 / (price + 100) if price > 0
+                          else abs(price) / (abs(price) + 100))
 
         results = []
         for snapshots in grouped.values():
-            current_lines = snapshots.get(1, {})
-            previous_lines = snapshots.get(2, {})
-            if not current_lines or not previous_lines:
+            ranks = sorted(snapshots)
+            if len(ranks) < 2:
                 continue
-
+            current_lines = snapshots[ranks[0]]
+            previous_lines = snapshots[ranks[1]]
             common_points = set(current_lines).intersection(previous_lines)
-            comparisons = [
-                (previous_lines[point], current_lines[point])
-                for point in common_points
-            ]
-            # A lone line changing between snapshots is a genuine line move.
-            # With alternate lines present, only compare matching exact lines.
+            comparisons = [(previous_lines[p], current_lines[p]) for p in common_points]
             if not comparisons and len(current_lines) == 1 and len(previous_lines) == 1:
                 comparisons = [(next(iter(previous_lines.values())),
                                 next(iter(current_lines.values())))]
 
             for previous, current in comparisons:
-                old_price, new_price = previous["price"], current["price"]
-                old_prob = 100 * (100 / (old_price + 100) if old_price > 0
-                                  else abs(old_price) / (abs(old_price) + 100))
-                new_prob = 100 * (100 / (new_price + 100) if new_price > 0
-                                  else abs(new_price) / (abs(new_price) + 100))
+                if previous["point"] == current["point"] and previous["price"] == current["price"]:
+                    continue
+
+                # Opening baseline is the first saved observation at this exact
+                # line. For an unambiguous single-line transition, use the
+                # earliest observation in the quote's line history.
+                line_history = [
+                    snap[current["point"]] for snap in snapshots.values()
+                    if current["point"] in snap
+                ]
+                opening = min(line_history, key=lambda x: x["snapshot_id"]) if line_history else None
+                if opening is None and len(current_lines) == 1 and len(previous_lines) == 1:
+                    all_rows = [row for snap in snapshots.values() for row in snap.values()]
+                    opening = min(all_rows, key=lambda x: x["snapshot_id"])
+
+                old_prob, new_prob = implied(previous["price"]), implied(current["price"])
+                opening_prob = implied(opening["price"]) if opening else old_prob
+                probability_delta = round(new_prob - old_prob, 3)
+                open_delta = round(new_prob - opening_prob, 3)
                 results.append({
                     "event_id": current["event_id"], "sport": current["sport"],
                     "matchup": f'{current["away_team"]} @ {current["home_team"]}',
                     "commence_time": current["commence_time"], "market": current["market_key"],
                     "outcome": current["outcome_name"], "bookmaker": current["bookmaker_title"],
                     "bookmaker_key": current["bookmaker_key"],
+                    "opening_point": opening["point"] if opening else previous["point"],
                     "previous_point": previous["point"], "point": current["point"],
-                    "previous_price": old_price, "price": new_price,
-                    "price_change": new_price - old_price,
-                    "implied_probability_change": round(new_prob - old_prob, 3),
+                    "opening_price": opening["price"] if opening else previous["price"],
+                    "previous_price": previous["price"], "price": current["price"],
+                    "price_change": current["price"] - previous["price"],
+                    "price_change_from_open": current["price"] - (opening["price"] if opening else previous["price"]),
+                    "implied_probability_change": probability_delta,
+                    "implied_probability_change_from_open": open_delta,
                     "previous_at": previous["fetched_at"], "updated_at": current["fetched_at"],
+                    "opening_at": opening["fetched_at"] if opening else previous["fetched_at"],
+                    "observations": len(line_history) if line_history else len(ranks),
                     "change_type": "line_and_price" if previous["point"] != current["point"] else "price",
+                    "direction": "shortening" if probability_delta > 0 else "drifting" if probability_delta < 0 else "line_only",
                 })
-        results.sort(key=lambda x: x["updated_at"], reverse=True)
+        results.sort(key=lambda x: (abs(x["implied_probability_change_from_open"]),
+                                    x["updated_at"]), reverse=True)
         return results[:max(1, min(int(limit), 1000))]
 
 
