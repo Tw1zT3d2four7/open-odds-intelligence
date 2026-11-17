@@ -10,6 +10,7 @@ class OddsService:
         self._cache = {}
         self._last_error = None
         self._updated_at = None
+        self._provider_usage = {}
 
     @property
     def configured(self):
@@ -21,7 +22,8 @@ class OddsService:
                 "last_updated": self._updated_at or stored.get("last_updated"),
                 "last_error": self._last_error, "sports": config.ODDS_SPORTS,
                 "live_data_available": bool(stored.get("events")) or bool(self._cache),
-                "stored_snapshots": stored["snapshots"], "stored_events": stored["events"]}
+                "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
+                "provider_usage": self._provider_usage}
 
     def refresh(self, sport=None):
         if not self.configured:
@@ -33,6 +35,7 @@ class OddsService:
         try:
             for key in ([sport] if sport else config.ODDS_SPORTS):
                 events = provider.fetch_odds(key)
+                self._provider_usage = dict(provider.usage)
                 fetched_at = datetime.now(timezone.utc).isoformat()
                 self.db.save_snapshot(key, events, provider.name, fetched_at)
                 self._cache[key] = events
