@@ -17,3 +17,8 @@ ODDS_SPORTS = [s.strip() for s in os.getenv(
 
 # Automatic refresh is opt-in; 0 keeps refreshes manual.
 ODDS_REFRESH_INTERVAL_SECONDS = max(0, int(os.getenv("ODDS_REFRESH_INTERVAL_SECONDS", "0")))
+
+# Discord webhook alerts are disabled unless a URL is configured.
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+ALERT_MIN_EV_PERCENT = float(os.getenv("ALERT_MIN_EV_PERCENT", "3.0"))
+ALERT_MIN_ARB_PERCENT = float(os.getenv("ALERT_MIN_ARB_PERCENT", "0.5"))
