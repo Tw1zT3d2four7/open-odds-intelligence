@@ -55,18 +55,22 @@ class TheRundownProvider:
             with urlopen(request, timeout=25) as response:
                 payload = json.loads(response.read().decode("utf-8"))
                 headers = response.headers
+                # X-Datapoints is the authoritative billed total for this response.
                 new_usage = {
+                    "datapoints_total": headers.get("X-Datapoints"),
                     "datapoints_used": headers.get("X-Datapoints-Used"),
                     "datapoints_remaining": headers.get("X-Datapoints-Remaining"),
                     "datapoints_limit": headers.get("X-Datapoints-Limit"),
                     "datapoints_period": headers.get("X-Datapoints-Period"),
-                    "datapoints_last": headers.get("X-Datapoints"),
+                    "data_delay_seconds": headers.get("X-Data-Delay-Seconds"),
                 }
                 self.usage.update({k: v for k, v in new_usage.items() if v is not None})
                 return payload
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
-            raise ProviderError(f"TheRundown HTTP {exc.code}: {detail}") from exc
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            suffix = f" (Retry-After: {retry_after}s)" if retry_after else ""
+            raise ProviderError(f"TheRundown HTTP {exc.code}{suffix}: {detail}") from exc
         except (URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise ProviderError(f"TheRundown request failed: {exc}") from exc
 
