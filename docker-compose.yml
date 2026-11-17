@@ -1,0 +1,11 @@
+services:
+  open-odds-intelligence:
+    build: .
+    container_name: open-odds-intelligence
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./data:/app/data
