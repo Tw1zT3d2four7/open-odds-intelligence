@@ -73,6 +73,14 @@ def movement(sport: str | None = None, limit: int = Query(200, ge=1, le=1000)):
             "note": "Movement reports meaningful changes across consecutive stored snapshots, with opening baselines at the first observed exact line. It is not proof of sharp-money activity."}
 
 
+@app.get("/api/movement/history")
+def movement_history(event_id: str, market: str, outcome: str, bookmaker: str,
+                     limit: int = Query(500, ge=1, le=1000)):
+    return {"quotes": service.movement_history(
+        event_id, market, outcome, bookmaker, limit
+    )}
+
+
 @app.get("/api/history")
 def history(event_id: str, market: str, outcome: str,
             bookmaker: str | None = None, point: float | None = None,
