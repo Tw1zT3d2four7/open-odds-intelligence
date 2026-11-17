@@ -81,3 +81,34 @@ def test_discord_delivery_error_is_exposed_and_retryable(tmp_path, monkeypatch):
     assert retry_count >= 1
     assert len(calls) == 1
     assert service.status()["alert_error"] is None
+
+
+def test_one_failed_delivery_does_not_block_other_alerts_and_is_retryable(tmp_path, monkeypatch):
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    db.save_snapshot("basketball_nba", [sample_event()])
+    service = OddsService(db)
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monkeypatch.setattr(config, "ALERT_MIN_EV_PERCENT", 3.0)
+    monkeypatch.setattr(config, "ALERT_MIN_ARB_PERCENT", 0.5)
+    calls = []
+
+    def fail_once(request, timeout):
+        calls.append(request)
+        if len(calls) == 1:
+            raise RuntimeError("temporary Discord failure")
+        return FakeResponse()
+
+    monkeypatch.setattr("app.service.urlopen", fail_once)
+    delivered = service._dispatch_alerts()
+    assert delivered >= 1
+    assert len(calls) > delivered
+    assert "temporary Discord failure" in service.status()["last_alert_error"]
+    assert service.status()["last_alert_sent"] == delivered
+    assert service.status()["last_alert_qualified"] >= delivered
+
+    previous_calls = len(calls)
+    retry_delivered = service._dispatch_alerts()
+    assert retry_delivered == 1
+    assert len(calls) == previous_calls + 1
+    assert service.status()["last_alert_error"] is None
+    assert service.status()["last_alert_sent"] == 1
