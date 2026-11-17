@@ -17,6 +17,7 @@ class TheOddsAPIProvider(OddsProvider):
             raise ProviderError("THE_ODDS_API_KEY is not configured")
         self.api_key = api_key
         self.regions, self.markets, self.odds_format = regions, markets, odds_format
+        self.usage = {}
 
     def fetch_odds(self, sport: str) -> list[dict]:
         query = urlencode({"apiKey": self.api_key, "regions": self.regions,
@@ -26,6 +27,11 @@ class TheOddsAPIProvider(OddsProvider):
         try:
             with urlopen(req, timeout=15) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+                self.usage = {key: response.headers.get(header) for key, header in {
+                    "requests_remaining": "x-requests-remaining",
+                    "requests_used": "x-requests-used",
+                    "requests_last": "x-requests-last",
+                }.items() if response.headers.get(header) is not None}
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
             raise ProviderError(f"Odds provider HTTP {exc.code}: {detail}") from exc
