@@ -114,18 +114,34 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
         opportunities.extend(best.values())
 
         # Arbitrage: best price for every side of a true two-outcome line.
-        for (market_key, line), quotes in line_sets.items():
+        for (market_key_line, quotes) in line_sets.items():
+            market_key, line = market_key_line
             sides = defaultdict(list)
             for quote in quotes:
                 sides[quote["identity"]].append(quote)
             if len(sides) != 2:
                 continue
-            side_quotes = [max(items, key=lambda q: american_to_decimal(q["outcome"]["price"]))
-                           for items in sides.values()]
-            decimals = [american_to_decimal(q["outcome"]["price"]) for q in side_quotes]
-            implied_sum = sum(1 / d for d in decimals)
+            side_items = list(sides.values())
+            # Require distinct books for the two legs. Selecting the best price
+            # independently can otherwise report a same-book pair as cross-book.
+            pairs = []
+            for first in side_items[0]:
+                for second in side_items[1]:
+                    first_book = first["book"].get("key")
+                    second_book = second["book"].get("key")
+                    if not first_book or not second_book or first_book == second_book:
+                        continue
+                    first_decimal = american_to_decimal(first["outcome"]["price"])
+                    second_decimal = american_to_decimal(second["outcome"]["price"])
+                    implied = 1 / first_decimal + 1 / second_decimal
+                    pairs.append((implied, first, second, first_decimal, second_decimal))
+            if not pairs:
+                continue
+            implied_sum, first, second, first_decimal, second_decimal = min(pairs, key=lambda p: p[0])
             if implied_sum >= 1:
                 continue
+            side_quotes = [first, second]
+            decimals = [first_decimal, second_decimal]
             arbitrage.append({
                 "event_id": event.get("id"), "sport": event.get("sport_title"),
                 "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
