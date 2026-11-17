@@ -16,13 +16,13 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Persistent SQLite snapshots and quote history.\n- Per-sportsbook price / line movement comparison between the latest two saved snapshots.
 - Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
-- Opt-in scheduled refresh at a configurable interval (disabled by default).\n- Docker Compose deployment and GitHub Actions tests.
+- Opt-in scheduled refresh at a configurable interval (disabled by default).\n- Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.\n- Docker Compose deployment and GitHub Actions tests.
 
 The EV calculation uses the median of other sportsbooks' no-vig probabilities for the same event, market, outcome and line. The default requires at least two other books (three books total). Results are estimates, not guarantees. Arbitrage candidates are mathematical price discrepancies only; verify both prices, limits, settlement rules and availability before acting.
 
 ## Not implemented yet
 
-This is an active development build, not a feature-complete OddsLogic replacement. Scheduled background refresh, interactive line-movement charts, closing-line value tracking, player props, deduplicated Discord/webhook alerts, additional provider integrations, authentication and full historical backtesting remain future work. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
+This is an active development build, not a feature-complete OddsLogic replacement. Closing-line value tracking, player props, additional provider integrations, authentication and full historical backtesting remain future work. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
 
 No fabricated odds are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8765
 ```
 
-Set `DATABASE_PATH` to change the SQLite file location. Set `ODDS_REFRESH_INTERVAL_SECONDS` to a positive number of seconds (for example, `300`) to enable automatic refresh across configured sports. The default `0` keeps refresh manual. Automatic refresh starts only when a provider and API key are configured.
+Set `DATABASE_PATH` to change the SQLite file location. Set `ODDS_REFRESH_INTERVAL_SECONDS` to a positive number of seconds (for example, `300`) to enable automatic refresh across configured sports. The default `0` keeps refresh manual. Automatic refresh starts only when a provider and API key are configured. To enable Discord alerts, set `DISCORD_WEBHOOK_URL`, `ALERT_MIN_EV_PERCENT` and `ALERT_MIN_ARB_PERCENT`. Alerts are disabled when no webhook URL is set. Alert fingerprints are stored in SQLite to prevent repeated notifications for the same exact quote; a changed price creates a new alert.
 
 ## Provider configuration
 
