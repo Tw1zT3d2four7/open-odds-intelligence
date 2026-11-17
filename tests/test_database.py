@@ -210,7 +210,8 @@ def test_source_bookmaker_timestamp_is_preserved_in_latest_history_and_movement(
     assert outcome["updated_at"] == "2026-11-17T12:04:00Z"
     history = db.movement_history("evt", "spreads", "Home", "book-a")
     assert history[-1]["source_updated_at"] == "2026-11-17T12:04:00Z"
-    movement = next(x for x in db.movement("basketball_nba") if x["market"] == "spreads")
+    movement = next(x for x in db.movement("basketball_nba")
+                    if x["market"] == "spreads" and x["outcome"] == "Home")
     assert movement["timestamp_basis"] == "sportsbook"
     assert movement["source_updated_at"] == "2026-11-17T12:04:00Z"
     assert movement["updated_at"] == "2026-11-17T12:05:00Z"
