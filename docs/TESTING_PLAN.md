@@ -88,6 +88,10 @@ For each reviewed candidate, record:
 - Whether the candidate was a duplicate, changed quote or delivery retry
 - Any data or calculation discrepancy
 
+## Deployment safety
+
+The current dashboard and API do not implement user authentication. Keep the test instance on a trusted private network. Do not port-forward it or expose it through a public reverse proxy until access control is added at the proxy or application layer. Anyone who can reach the refresh endpoint can consume the configured odds-provider quota.
+
 ## Important interpretation limits
 
 - EV is an estimate derived from currently available sportsbook quotes; it is not a verified win probability.
