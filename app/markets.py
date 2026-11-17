@@ -1,11 +1,22 @@
 from collections import defaultdict
+from statistics import median
+
+from .math import american_to_decimal, no_vig_probabilities
+
+
+def _line_group(market_key, point):
+    if market_key == "h2h":
+        return None
+    if point is None:
+        return None
+    # Spread sides carry opposite signed points; compare the same handicap.
+    if market_key == "spreads":
+        return abs(float(point))
+    return float(point)
 
 
 def market_board(events):
-    """Return best available quote for each exact market/outcome/line identity.
-
-    Lines are never mixed: e.g. Over 44.5 is not compared with Over 45.5.
-    """
+    """Best quote for each exact market/outcome/line identity."""
     grouped = defaultdict(list)
     for event in events:
         for book in event.get("bookmakers", []):
@@ -29,12 +40,104 @@ def market_board(events):
                     })
     rows = []
     for quotes in grouped.values():
-        # American odds are monotonic in decimal payout, but compare decimal odds
-        # to avoid treating positive and negative prices as ordinary integers.
-        from .math import american_to_decimal
-        best = max(quotes, key=lambda q: american_to_decimal(q["price"]))
-        rows.append(best)
+        rows.append(max(quotes, key=lambda q: american_to_decimal(q["price"])))
     return sorted(rows, key=lambda row: (
         row["commence_time"] or "", row["matchup"], row["market"],
         row["outcome"], row["point"] if row["point"] is not None else -999
     ))
+
+
+def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
+    """Calculate leave-one-book-out EV and cross-book two-way arbitrage.
+
+    Fair probabilities are formed only from complete two-or-more-outcome
+    markets at the same line. A quote is not evaluated against its own book.
+    """
+    opportunities, arbitrage = [], []
+    for event in events:
+        # Each book contributes a no-vig probability set for a specific line.
+        line_sets = defaultdict(list)
+        for book in event.get("bookmakers", []):
+            for market in book.get("markets", []):
+                market_key = market.get("key")
+                if not market_key:
+                    continue
+                outcomes = market.get("outcomes", [])
+                valid = [o for o in outcomes if o.get("name") and
+                         isinstance(o.get("price"), int) and o.get("price") != 0]
+                if len(valid) < 2:
+                    continue
+                groups = defaultdict(list)
+                for outcome in valid:
+                    groups[_line_group(market_key, outcome.get("point"))].append(outcome)
+                for line, items in groups.items():
+                    if len(items) < 2:
+                        continue
+                    probs = no_vig_probabilities([o["price"] for o in items])
+                    for outcome, probability in zip(items, probs):
+                        identity = (outcome["name"], outcome.get("point"))
+                        line_sets[(market_key, line)].append({
+                            "book": book, "outcome": outcome,
+                            "identity": identity, "probability": probability,
+                        })
+
+        # EV: median of other books' no-vig probabilities for the same outcome/line.
+        best = {}
+        for (market_key, line), quotes in line_sets.items():
+            for quote in quotes:
+                peers = [q["probability"] for q in quotes
+                         if q["book"].get("key") != quote["book"].get("key")
+                         and q["identity"] == quote["identity"]]
+                peer_books = {q["book"].get("key") for q in quotes
+                              if q["book"].get("key") != quote["book"].get("key")
+                              and q["identity"] == quote["identity"]}
+                if len(peer_books) < min_consensus_books:
+                    continue
+                fair = median(peers)
+                price = quote["outcome"]["price"]
+                ev = (fair * american_to_decimal(price) - 1) * 100
+                if ev < min_ev:
+                    continue
+                identity = (market_key, line, quote["identity"])
+                row = {
+                    "event_id": event.get("id"), "sport": event.get("sport_title"),
+                    "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
+                    "commence_time": event.get("commence_time"), "market": market_key,
+                    "outcome": quote["outcome"]["name"], "point": quote["outcome"].get("point"),
+                    "bookmaker": quote["book"].get("title", quote["book"].get("key")),
+                    "bookmaker_key": quote["book"].get("key"), "price": price,
+                    "fair_probability": round(fair, 6), "consensus_books": len(peer_books),
+                    "ev_percent": round(ev, 2),
+                }
+                if identity not in best or american_to_decimal(price) > american_to_decimal(best[identity]["price"]):
+                    best[identity] = row
+        opportunities.extend(best.values())
+
+        # Arbitrage: best price for every side of a true two-outcome line.
+        for (market_key, line), quotes in line_sets.items():
+            sides = defaultdict(list)
+            for quote in quotes:
+                sides[quote["identity"]].append(quote)
+            if len(sides) != 2:
+                continue
+            side_quotes = [max(items, key=lambda q: american_to_decimal(q["outcome"]["price"]))
+                           for items in sides.values()]
+            decimals = [american_to_decimal(q["outcome"]["price"]) for q in side_quotes]
+            implied_sum = sum(1 / d for d in decimals)
+            if implied_sum >= 1:
+                continue
+            arbitrage.append({
+                "event_id": event.get("id"), "sport": event.get("sport_title"),
+                "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
+                "commence_time": event.get("commence_time"), "market": market_key,
+                "line": line, "arb_percent": round((1 - implied_sum) * 100, 3),
+                "legs": [{
+                    "outcome": q["outcome"]["name"], "point": q["outcome"].get("point"),
+                    "bookmaker": q["book"].get("title", q["book"].get("key")),
+                    "bookmaker_key": q["book"].get("key"), "price": q["outcome"]["price"],
+                    "stake_percent": round((1 / d) / implied_sum * 100, 2),
+                } for q, d in zip(side_quotes, decimals)],
+            })
+    opportunities.sort(key=lambda x: x["ev_percent"], reverse=True)
+    arbitrage.sort(key=lambda x: x["arb_percent"], reverse=True)
+    return {"opportunities": opportunities, "arbitrage": arbitrage}
