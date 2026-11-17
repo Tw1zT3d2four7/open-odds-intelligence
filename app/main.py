@@ -70,7 +70,7 @@ def market_board_api(sport: str | None = None):
 @app.get("/api/movement")
 def movement(sport: str | None = None, limit: int = Query(200, ge=1, le=1000)):
     return {"movements": service.movement(sport, limit),
-            "note": "Movement compares the latest two stored snapshots per sportsbook and market side; it is not proof of sharp-money activity."}
+            "note": "Movement reports meaningful changes across consecutive stored snapshots, with opening baselines at the first observed exact line. It is not proof of sharp-money activity."}
 
 
 @app.get("/api/history")
