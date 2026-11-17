@@ -63,3 +63,12 @@ def test_movement_ignores_single_snapshot_quotes(tmp_path):
     db = OddsDatabase(tmp_path / "history.sqlite3")
     db.save_snapshot("basketball_nba", fixture(), "test", "2026-11-17T12:00:00Z")
     assert db.movement() == []
+
+
+def test_alert_fingerprint_is_persistently_deduplicated_and_retryable(tmp_path):
+    db = OddsDatabase(tmp_path / "history.sqlite3")
+    assert db.claim_alert("fingerprint-1", "ev", "test alert")
+    assert not db.claim_alert("fingerprint-1", "ev", "test alert")
+    assert db.alert_status()["sent"] == 1
+    db.release_alert("fingerprint-1")
+    assert db.claim_alert("fingerprint-1", "ev", "test alert")
