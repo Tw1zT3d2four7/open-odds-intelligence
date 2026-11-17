@@ -12,16 +12,23 @@ class TheOddsAPIProvider(OddsProvider):
     name = "the_odds_api"
     base_url = "https://api.the-odds-api.com/v4"
 
-    def __init__(self, api_key: str, regions="us", markets="h2h,spreads,totals", odds_format="american"):
+    def __init__(self, api_key: str, regions="us", markets="h2h,spreads,totals", odds_format="american", bookmakers=""):
         if not api_key:
             raise ProviderError("THE_ODDS_API_KEY is not configured")
         self.api_key = api_key
         self.regions, self.markets, self.odds_format = regions, markets, odds_format
+        self.bookmakers = bookmakers
         self.usage = {}
 
     def fetch_odds(self, sport: str) -> list[dict]:
-        query = urlencode({"apiKey": self.api_key, "regions": self.regions,
-                           "markets": self.markets, "oddsFormat": self.odds_format})
+        params = {"apiKey": self.api_key, "markets": self.markets,
+                  "oddsFormat": self.odds_format}
+        # Explicit bookmaker keys take precedence over regions in The Odds API.
+        if self.bookmakers:
+            params["bookmakers"] = self.bookmakers
+        else:
+            params["regions"] = self.regions
+        query = urlencode(params)
         req = Request(f"{self.base_url}/sports/{sport}/odds/?{query}",
                       headers={"User-Agent": "OpenOddsIntelligence/0.1"})
         try:
