@@ -168,58 +168,57 @@ class OddsDatabase:
                           else abs(price) / (abs(price) + 100))
 
         results = []
-        for snapshots in grouped.values():
-            ranks = sorted(snapshots)
+        chronological = sorted(grouped.items())
+        for key, snapshots in chronological:
+            ranks = sorted(snapshots, reverse=True)  # oldest snapshot rank to newest
             if len(ranks) < 2:
                 continue
-            current_lines = snapshots[ranks[0]]
-            previous_lines = snapshots[ranks[1]]
-            common_points = set(current_lines).intersection(previous_lines)
-            comparisons = [(previous_lines[p], current_lines[p]) for p in common_points]
-            if not comparisons and len(current_lines) == 1 and len(previous_lines) == 1:
-                comparisons = [(next(iter(previous_lines.values())),
-                                next(iter(current_lines.values())))]
+            for older_rank, newer_rank in zip(ranks, ranks[1:]):
+                previous_lines = snapshots[older_rank]
+                current_lines = snapshots[newer_rank]
+                common_points = set(current_lines).intersection(previous_lines)
+                comparisons = [(previous_lines[p], current_lines[p]) for p in common_points]
+                if not comparisons and len(current_lines) == 1 and len(previous_lines) == 1:
+                    comparisons = [(next(iter(previous_lines.values())),
+                                    next(iter(current_lines.values())))]
 
-            for previous, current in comparisons:
-                if previous["point"] == current["point"] and previous["price"] == current["price"]:
-                    continue
+                for previous, current in comparisons:
+                    if previous["point"] == current["point"] and previous["price"] == current["price"]:
+                        continue
 
-                # Opening baseline is the first saved observation at this exact
-                # line. For an unambiguous single-line transition, use the
-                # earliest observation in the quote's line history.
-                line_history = [
-                    snap[current["point"]] for snap in snapshots.values()
-                    if current["point"] in snap
-                ]
-                opening = min(line_history, key=lambda x: x["snapshot_id"]) if line_history else None
-                if opening is None and len(current_lines) == 1 and len(previous_lines) == 1:
-                    all_rows = [row for snap in snapshots.values() for row in snap.values()]
-                    opening = min(all_rows, key=lambda x: x["snapshot_id"])
+                    line_history = [
+                        snap[current["point"]] for snap in snapshots.values()
+                        if current["point"] in snap
+                    ]
+                    opening = min(line_history, key=lambda x: x["snapshot_id"]) if line_history else None
+                    if opening is None and len(current_lines) == 1 and len(previous_lines) == 1:
+                        all_rows = [row for snap in snapshots.values() for row in snap.values()]
+                        opening = min(all_rows, key=lambda x: x["snapshot_id"])
 
-                old_prob, new_prob = implied(previous["price"]), implied(current["price"])
-                opening_prob = implied(opening["price"]) if opening else old_prob
-                probability_delta = round(new_prob - old_prob, 3)
-                open_delta = round(new_prob - opening_prob, 3)
-                results.append({
-                    "event_id": current["event_id"], "sport": current["sport"],
-                    "matchup": f'{current["away_team"]} @ {current["home_team"]}',
-                    "commence_time": current["commence_time"], "market": current["market_key"],
-                    "outcome": current["outcome_name"], "bookmaker": current["bookmaker_title"],
-                    "bookmaker_key": current["bookmaker_key"],
-                    "opening_point": opening["point"] if opening else previous["point"],
-                    "previous_point": previous["point"], "point": current["point"],
-                    "opening_price": opening["price"] if opening else previous["price"],
-                    "previous_price": previous["price"], "price": current["price"],
-                    "price_change": current["price"] - previous["price"],
-                    "price_change_from_open": current["price"] - (opening["price"] if opening else previous["price"]),
-                    "implied_probability_change": probability_delta,
-                    "implied_probability_change_from_open": open_delta,
-                    "previous_at": previous["fetched_at"], "updated_at": current["fetched_at"],
-                    "opening_at": opening["fetched_at"] if opening else previous["fetched_at"],
-                    "observations": len(line_history) if line_history else len(ranks),
-                    "change_type": "line_and_price" if previous["point"] != current["point"] else "price",
-                    "direction": "shortening" if probability_delta > 0 else "drifting" if probability_delta < 0 else "line_only",
-                })
+                    old_prob, new_prob = implied(previous["price"]), implied(current["price"])
+                    opening_prob = implied(opening["price"]) if opening else old_prob
+                    probability_delta = round(new_prob - old_prob, 3)
+                    open_delta = round(new_prob - opening_prob, 3)
+                    results.append({
+                        "event_id": current["event_id"], "sport": current["sport"],
+                        "matchup": f'{current["away_team"]} @ {current["home_team"]}',
+                        "commence_time": current["commence_time"], "market": current["market_key"],
+                        "outcome": current["outcome_name"], "bookmaker": current["bookmaker_title"],
+                        "bookmaker_key": current["bookmaker_key"],
+                        "opening_point": opening["point"] if opening else previous["point"],
+                        "previous_point": previous["point"], "point": current["point"],
+                        "opening_price": opening["price"] if opening else previous["price"],
+                        "previous_price": previous["price"], "price": current["price"],
+                        "price_change": current["price"] - previous["price"],
+                        "price_change_from_open": current["price"] - (opening["price"] if opening else previous["price"]),
+                        "implied_probability_change": probability_delta,
+                        "implied_probability_change_from_open": open_delta,
+                        "previous_at": previous["fetched_at"], "updated_at": current["fetched_at"],
+                        "opening_at": opening["fetched_at"] if opening else previous["fetched_at"],
+                        "observations": len(line_history) if line_history else len(ranks),
+                        "change_type": "line_and_price" if previous["point"] != current["point"] else "price",
+                        "direction": "shortening" if probability_delta > 0 else "drifting" if probability_delta < 0 else "line_only",
+                    })
         results.sort(key=lambda x: (abs(x["implied_probability_change_from_open"]),
                                     x["updated_at"]), reverse=True)
         return results[:max(1, min(int(limit), 1000))]
