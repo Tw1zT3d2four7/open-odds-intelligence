@@ -2,44 +2,75 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Open Odds Intelligence</title>
 <style>
-:root{color-scheme:dark;--bg:#0b1220;--panel:#121d30;--line:#263750;--muted:#91a4bd;--text:#edf4ff;--accent:#57c7a5}
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121d30;--panel2:#16243a;--line:#263750;--muted:#91a4bd;--text:#edf4ff;--accent:#57c7a5;--good:#57c7a5;--warn:#f0bd65;--bad:#ed8585}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}
-header{padding:22px 28px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
-h1{font-size:21px;margin:0;letter-spacing:.04em}small,.muted{color:var(--muted)}main{padding:24px;max-width:1500px;margin:auto}
-.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
-button,select{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:10px 14px;border-radius:7px;cursor:pointer}
-button.primary{background:var(--accent);color:#07140f;border:0;font-weight:700}
-.cards{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:14px;margin-bottom:18px}
-.card,.tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
-.value{font-size:22px;font-weight:700;margin-top:5px}.tablewrap{overflow:auto}
-table{border-collapse:collapse;width:100%;min-width:760px}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line)}
-th{color:var(--muted);font-size:12px;text-transform:uppercase}.badge{color:var(--accent)}
-.notice{padding:12px;border:1px solid var(--line);border-radius:8px;margin-bottom:16px;color:var(--muted)}
-@media(max-width:700px){header{padding:16px;align-items:flex-start;gap:10px;flex-direction:column}main{padding:14px}.cards{grid-template-columns:1fr}}
+header{padding:18px 28px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-size:20px;margin:0;letter-spacing:.04em}h2{font-size:17px;margin:0 0 14px}h3{font-size:15px;margin:0 0 12px}small,.muted{color:var(--muted)}main{padding:22px;max-width:1600px;margin:auto}
+.bar,.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+button,select,input{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:9px 12px;border-radius:7px}
+button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:var(--accent);color:#07140f;border:0;font-weight:700}
+input{width:92px}.notice{padding:11px 13px;border:1px solid var(--line);border-radius:8px;margin-bottom:16px;color:var(--muted);overflow-wrap:anywhere}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:15px;min-width:0}
+.value{font-size:22px;font-weight:700;margin-top:4px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 12px}
+.tab{background:transparent}.tab.active{background:var(--panel2);border-color:var(--accent);color:var(--accent)}
+.panel{margin-bottom:16px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:820px}
+th,td{text-align:left;padding:10px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}tbody tr:hover{background:var(--panel2)}
+.good{color:var(--good)}.warn{color:var(--warn)}.pill{display:inline-block;border:1px solid var(--line);border-radius:20px;padding:2px 8px;font-size:11px;color:var(--muted)}
+.empty{text-align:center;padding:24px;color:var(--muted)}.hidden{display:none!important}.foot{margin:12px 0 24px;color:var(--muted);font-size:12px}
+@media(max-width:850px){main{padding:14px}.cards{grid-template-columns:repeat(2,minmax(130px,1fr))}header{padding:15px 16px}}
+@media(max-width:480px){.cards{grid-template-columns:1fr 1fr}.value{font-size:19px}}
 </style></head><body>
-<header><div><h1>OPEN ODDS INTELLIGENCE</h1><small>SELF-HOSTED SPORTSBOOK MARKET MONITOR</small></div><span class="badge">OPEN SOURCE · V0.1</span></header>
-<main><div class="bar"><select id="sport"><option value="">All configured sports</option></select>
-<button class="primary" onclick="refreshOdds()">Refresh odds</button><button onclick="load()">Reload view</button></div>
+<header><div><h1>OPEN ODDS INTELLIGENCE</h1><small>SELF-HOSTED SPORTSBOOK MARKET MONITOR</small></div><span class="good">OPEN SOURCE · V0.2</span></header>
+<main>
+<div class="bar"><select id="sport"><option value="">All configured sports</option></select><button class="primary" id="refresh">Refresh odds</button><button id="reload">Reload view</button><span class="pill" id="updated">Waiting for data</span></div>
 <div class="notice" id="notice">Checking provider status…</div>
-<section class="cards"><div class="card"><small>LIVE EVENTS</small><div class="value" id="events">—</div></div>
+<section class="cards">
+<div class="card"><small>EVENTS</small><div class="value" id="events">—</div></div>
 <div class="card"><small>SPORTSBOOKS</small><div class="value" id="books">—</div></div>
-<div class="card"><small>POSITIVE EV FLAGS</small><div class="value" id="edges">—</div></div></section>
-<div class="tablewrap"><h3>Best available moneyline opportunities</h3><table><thead><tr><th>Matchup</th><th>Outcome</th><th>Best book</th><th>Odds</th><th>Fair %</th><th>Est. EV</th><th>Start</th></tr></thead>
-<tbody id="rows"><tr><td colspan="7" class="muted">No live odds loaded.</td></tr></tbody></table></div>
-<p class="muted">EV is an estimate, not a guarantee. Verify prices and applicable rules.</p></main>
+<div class="card"><small>POSITIVE EV FLAGS</small><div class="value" id="edges">—</div></div>
+<div class="card"><small>ARBITRAGE FLAGS</small><div class="value" id="arbs">—</div></div>
+</section>
+<div class="filters"><label class="muted" for="minEv">Minimum EV %</label><input id="minEv" type="number" min="-100" max="100" step=".25" value="1"><label class="muted" for="consensus">Other books</label><select id="consensus"><option value="1">1+</option><option value="2" selected>2+</option><option value="3">3+</option><option value="4">4+</option></select><button id="apply">Apply filters</button></div>
+<nav class="tabs" aria-label="Market views">
+<button class="tab active" data-tab="ev">EV opportunities</button><button class="tab" data-tab="arb">Arbitrage</button><button class="tab" data-tab="board">Best-price board</button>
+</nav>
+<section class="panel" id="view-ev"><h2>Estimated positive expected value</h2><div class="tablewrap"><table><thead><tr><th>Sport / matchup</th><th>Market</th><th>Outcome</th><th>Best book</th><th>Odds</th><th>Fair %</th><th>Est. EV</th><th>Consensus</th><th>Start</th></tr></thead><tbody id="evRows"><tr><td class="empty" colspan="9">Loading opportunities…</td></tr></tbody></table></div></section>
+<section class="panel hidden" id="view-arb"><h2>Cross-book arbitrage candidates</h2><div class="tablewrap"><table><thead><tr><th>Matchup</th><th>Market</th><th>Line</th><th>Arb %</th><th>Leg 1</th><th>Odds</th><th>Stake %</th><th>Leg 2</th><th>Odds</th><th>Stake %</th><th>Start</th></tr></thead><tbody id="arbRows"><tr><td class="empty" colspan="11">Loading arbitrage…</td></tr></tbody></table></div></section>
+<section class="panel hidden" id="view-board"><h2>Best available prices by exact market and line</h2><div class="tablewrap"><table><thead><tr><th>Matchup</th><th>Market</th><th>Outcome</th><th>Line</th><th>Best book</th><th>Odds</th><th>Start</th></tr></thead><tbody id="boardRows"><tr><td class="empty" colspan="7">Loading market board…</td></tr></tbody></table></div></section>
+<p class="foot">EV and arbitrage are estimates based on currently available provider quotes, not guarantees. Confirm both prices, limits, market rules and availability before acting. Alternate lines are kept separate.</p>
+</main>
 <script>
-const $=id=>document.getElementById(id), fmt=o=>o>0?'+'+o:String(o);
-async function load(){try{const sport=$('sport').value,qs=sport?'?sport='+encodeURIComponent(sport):'';
-const [h,o,e]=await Promise.all([fetch('/api/health').then(r=>r.json()),fetch('/api/odds'+qs).then(r=>r.json()),fetch('/api/opportunities'+qs).then(r=>r.json())]);
-const events=o.events||[],books=new Set();events.forEach(x=>(x.bookmakers||[]).forEach(b=>books.add(b.key)));
-$('events').textContent=events.length;$('books').textContent=books.size;$('edges').textContent=(e.opportunities||[]).length;
-$('notice').textContent=h.configured?(h.last_error?'Provider error: '+h.last_error:'Provider '+h.provider+' · Last refresh: '+(h.last_updated||'not yet refreshed')):'Live odds provider not configured. Add provider settings in .env. No synthetic odds are displayed.';
-const body=$('rows');body.innerHTML='';(e.opportunities||[]).forEach(x=>{const tr=document.createElement('tr');
-[x.matchup,x.outcome,x.bookmaker,fmt(x.price),(x.fair_probability*100).toFixed(1)+'%',x.ev_percent.toFixed(2)+'%',new Date(x.commence_time).toLocaleString()].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td)});body.appendChild(tr)});
-if(!body.children.length)body.innerHTML='<tr><td colspan="7" class="muted">No qualifying opportunities in currently loaded quotes.</td></tr>';
-const sel=$('sport'),cur=sel.value;sel.innerHTML='<option value="">All configured sports</option>'+(h.sports||[]).map(s=>'<option value="'+s+'">'+s+'</option>').join('');sel.value=cur;
-}catch(err){$('notice').textContent='Dashboard could not load API data: '+err}}
-async function refreshOdds(){const sport=$('sport').value;$('notice').textContent='Refreshing provider…';
-const r=await fetch('/api/refresh'+(sport?'?sport='+encodeURIComponent(sport):''),{method:'POST'}).then(r=>r.json());
-$('notice').textContent=r.ok?'Refresh complete: '+r.events+' events.':'Refresh failed: '+r.error;await load()}load();
+const $=id=>document.getElementById(id), state={sport:"",minEv:1,consensus:2};
+const fmtOdds=n=>Number(n)>0?"+"+n:String(n);
+const date=s=>s?new Date(s).toLocaleString():"—";
+const cell=(tr,value,cls="")=>{const td=document.createElement("td");td.textContent=value??"—";if(cls)td.className=cls;tr.appendChild(td)};
+const row=(body,values)=>{const tr=document.createElement("tr");values.forEach(v=>Array.isArray(v)?cell(tr,v[0],v[1]):cell(tr,v));body.appendChild(tr)};
+const empty=(body,cols,msg)=>body.innerHTML='<tr><td class="empty" colspan="'+cols+'">'+msg+'</td></tr>';
+async function get(path){const r=await fetch(path);if(!r.ok)throw Error("API "+r.status+" for "+path);return r.json()}
+function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
+function setTab(tab){document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
+async function load(){
+ try{
+  const [health,odds,ev,arb,board]=await Promise.all([
+   get("/api/health"),get("/api/odds"+query()),get("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus})),get("/api/arbitrage"+query()),get("/api/market-board"+query())
+  ]);
+  const events=odds.events||[],books=new Set();events.forEach(e=>(e.bookmakers||[]).forEach(b=>books.add(b.key)));
+  $("events").textContent=events.length;$("books").textContent=books.size;$("edges").textContent=(ev.opportunities||[]).length;$("arbs").textContent=(arb.arbitrage||[]).length;
+  const status=health.configured?(health.last_error?"Provider error: "+health.last_error:"Provider "+health.provider+" · Last refresh: "+(health.last_updated||"not yet refreshed")):"Live odds provider not configured. Set ODDS_PROVIDER and THE_ODDS_API_KEY in .env. No synthetic quotes are generated.";
+  $("notice").textContent=status;$("updated").textContent=health.last_updated?"Updated "+date(health.last_updated):"No successful refresh";
+  const sel=$("sport"),current=state.sport;sellist(sel,health.sports||[],current);
+  const evRows=$("evRows");evRows.innerHTML="";(ev.opportunities||[]).forEach(x=>row(evRows,[x.matchup,x.market,x.point===null||x.point===undefined?x.outcome:x.outcome+" ("+x.point+")",x.bookmaker,fmtOdds(x.price),(x.fair_probability*100).toFixed(1)+"%",[Number(x.ev_percent).toFixed(2)+"%","good"],(x.consensus_books||0)+" books",date(x.commence_time)]));if(!evRows.children.length)empty(evRows,9,"No qualifying EV opportunities. More independent books may be required for consensus.");
+  const arbRows=$("arbRows");arbRows.innerHTML="";(arb.arbitrage||[]).forEach(x=>{const a=x.legs||[];row(arbRows,[x.matchup,x.market,x.line??"—",[x.arb_percent.toFixed(3)+"%","good"],a[0]?.outcome||"—",a[0]?fmtOdds(a[0].price):"—",a[0]?a[0].stake_percent+"%":"—",a[1]?.outcome||"—",a[1]?fmtOdds(a[1].price):"—",a[1]?a[1].stake_percent+"%":"—",date(x.commence_time)]);});if(!arbRows.children.length)empty(arbRows,11,"No mathematical two-outcome arbitrage found in current quotes.");
+  const boardRows=$("boardRows");boardRows.innerHTML="";(board.quotes||[]).forEach(x=>row(boardRows,[x.matchup,x.market,x.outcome,x.point??"—",x.bookmaker,fmtOdds(x.price),date(x.commence_time)]));if(!boardRows.children.length)empty(boardRows,7,"No market quotes loaded.");
+ }catch(err){$("notice").textContent="Dashboard could not load API data: "+err.message}
+}
+function sellist(sel,sports,current){sel.innerHTML="";const all=document.createElement("option");all.value="";all.textContent="All configured sports";sel.appendChild(all);sports.forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s;sel.appendChild(o)});sel.value=current}
+async function refresh(){const btn=$("refresh");btn.disabled=true;btn.textContent="Refreshing…";$("notice").textContent="Requesting a provider refresh…";try{const r=await fetch("/api/refresh"+query(),{method:"POST"}).then(x=>x.json());$("notice").textContent=r.ok?"Refresh complete: "+r.events+" events.":"Refresh failed: "+(r.error||"unknown error");}catch(e){$("notice").textContent="Refresh request failed: "+e.message}finally{btn.disabled=false;btn.textContent="Refresh odds";await load()}}
+$("sport").addEventListener("change",e=>{state.sport=e.target.value;load()});
+$("refresh").addEventListener("click",refresh);$("reload").addEventListener("click",load);
+$("apply").addEventListener("click",()=>{state.minEv=Math.max(-100,Math.min(100,Number($("minEv").value)||0));state.consensus=Number($("consensus").value)||2;load()});
+document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
+load();
 </script></body></html>
