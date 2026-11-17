@@ -61,8 +61,13 @@ class OddsService:
             self._updated_at = datetime.now(timezone.utc).isoformat()
             self._last_error = None
             alerts_sent = self._dispatch_alerts()
+            alert_status = self.status()
             return {"ok": True, "events": count, "updated_at": self._updated_at,
-                    "alerts_sent": alerts_sent}
+                    "alerts_sent": alerts_sent,
+                    "alerts_enabled": alert_status["alerts_enabled"],
+                    "alerts_evaluated": alert_status["alerts_evaluated"],
+                    "alerts_qualified": alert_status["alerts_qualified"],
+                    "alert_error": alert_status["alert_error"]}
         except ProviderError as exc:
             self._last_error = str(exc)
             return {"ok": False, "error": self._last_error, "events": count}
