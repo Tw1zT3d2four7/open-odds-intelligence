@@ -14,7 +14,7 @@ ODDS_BOOKMAKERS = os.getenv("ODDS_BOOKMAKERS", "").strip()
 ODDS_MARKETS = os.getenv("ODDS_MARKETS", "h2h,spreads,totals")
 ODDS_FORMAT = os.getenv("ODDS_FORMAT", "american")
 # TheRundown Free is delayed five minutes and capped at 1 request/second.
-RUNDOWN_REFRESH_INTERVAL_SECONDS = max(300, int(os.getenv("RUNDOWN_REFRESH_INTERVAL_SECONDS", "3600")))
+RUNDOWN_REFRESH_INTERVAL_SECONDS = max(300, int(os.getenv("RUNDOWN_REFRESH_INTERVAL_SECONDS", "14400")))
 RUNDOWN_UTC_OFFSET_MINUTES = int(os.getenv("RUNDOWN_UTC_OFFSET_MINUTES", "0"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/odds_history.sqlite3")
 ODDS_SPORTS = [s.strip() for s in os.getenv(
