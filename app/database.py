@@ -188,6 +188,10 @@ class OddsDatabase:
                 (fingerprint, sent_at, alert_type, summary))
             return cur.rowcount == 1
 
+    def release_alert(self, fingerprint):
+        with self.connect() as db:
+            db.execute("DELETE FROM sent_alerts WHERE fingerprint=?", (fingerprint,))
+
     def alert_status(self):
         with self.connect() as db:
             row = db.execute("SELECT COUNT(*) AS sent, MAX(sent_at) AS last_sent FROM sent_alerts").fetchone()
