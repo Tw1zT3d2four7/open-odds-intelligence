@@ -120,7 +120,7 @@ class TheRundownProvider:
             "exclude_canceled": "true",
         })
         payload = self._request(f"{self.base_url}/sports/dates?{params}")
-        now = datetime.now(timezone.utc).timestamp()
+        today = datetime.now(timezone.utc).date()
         candidates = []
         if isinstance(payload, dict):
             for returned_sport, body in payload.items():
@@ -135,7 +135,8 @@ class TheRundownProvider:
                         epoch = float(stamp)
                     except (TypeError, ValueError):
                         continue
-                    if epoch >= now - 3600:
+                    event_date = datetime.fromtimestamp(epoch, timezone.utc).date()
+                    if event_date >= today:
                         candidates.append((epoch, returned_id))
         if not candidates:
             return sport_id, None
