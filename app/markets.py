@@ -55,40 +55,71 @@ def market_board(events):
 def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
     """Calculate leave-one-book-out EV and cross-book two-way arbitrage.
 
-    Fair probabilities are formed only from complete two-or-more-outcome
-    markets at the same line. A quote is not evaluated against its own book.
+    Only complete, matching outcome sets are compared. Soccer h2h is a
+    three-way market (home/draw/away); other supported markets are treated
+    as two-way. When books disagree on the outcome set, only the unique
+    most-common complete set is eligible for comparison.
     """
     opportunities, arbitrage = [], []
     for event in events:
-        # Each book contributes a no-vig probability set for a specific line.
         line_sets = defaultdict(list)
+        candidate_sets = defaultdict(lambda: defaultdict(dict))
+        sport_key = str(event.get("sport_key") or event.get("sport") or "").lower()
+
+        # Build complete no-vig market sets per sportsbook and exact line.
         for book in event.get("bookmakers", []):
+            book_key = book.get("key")
+            if not book_key:
+                continue
             for market in book.get("markets", []):
                 market_key = market.get("key")
                 if not market_key:
                     continue
-                outcomes = market.get("outcomes", [])
-                valid = [o for o in outcomes if o.get("name") and
-                         isinstance(o.get("price"), int) and o.get("price") != 0]
-                if len(valid) < 2:
-                    continue
+                expected_outcomes = (
+                    3 if market_key == "h2h" and sport_key.startswith("soccer_")
+                    else 2
+                )
                 groups = defaultdict(list)
-                for outcome in valid:
-                    groups[_line_group(market_key, outcome.get("point"))].append(outcome)
-                for line, items in groups.items():
-                    if len(items) < 2:
+                for outcome in market.get("outcomes", []):
+                    name, price = outcome.get("name"), outcome.get("price")
+                    if not name or not isinstance(price, int) or price == 0:
                         continue
-                    probs = no_vig_probabilities([o["price"] for o in items])
-                    for outcome, probability in zip(items, probs):
-                        identity = (
-                            outcome["name"],
-                            _line_group(market_key, outcome.get("point")),
-                            outcome.get("description") or outcome.get("participant") or "",
-                        )
-                        line_sets[(market_key, line)].append({
+                    groups[_line_group(market_key, outcome.get("point"))].append(outcome)
+
+                for line, items in groups.items():
+                    if len(items) != expected_outcomes:
+                        continue
+                    identities = [
+                        (outcome["name"], _line_group(market_key, outcome.get("point")),
+                         outcome.get("description") or outcome.get("participant") or "")
+                        for outcome in items
+                    ]
+                    if len(set(identities)) != expected_outcomes:
+                        continue
+                    signature = tuple(sorted(identities))
+                    probabilities = no_vig_probabilities([o["price"] for o in items])
+                    quotes = []
+                    for outcome, identity, probability in zip(items, identities, probabilities):
+                        quotes.append({
                             "book": book, "outcome": outcome,
                             "identity": identity, "probability": probability,
                         })
+                    # One canonical complete set per book / market / line.
+                    candidate_sets[(market_key, line)][signature][book_key] = quotes
+
+        # Exclude incomplete or mismatched sets. A tied modal signature is
+        # ambiguous, so fail closed rather than mixing different market types.
+        for market_line, signatures in candidate_sets.items():
+            counts = [(len(books), signature) for signature, books in signatures.items()]
+            if not counts:
+                continue
+            highest = max(count for count, _ in counts)
+            winners = [signature for count, signature in counts if count == highest]
+            if len(winners) != 1:
+                continue
+            selected = signatures[winners[0]]
+            for book_quotes in selected.values():
+                line_sets[market_line].extend(book_quotes)
 
         # EV: median of other books' no-vig probabilities for the same outcome/line.
         best = {}
@@ -125,11 +156,8 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                     best[identity] = row
         opportunities.extend(best.values())
 
-        # Arbitrage: best price for every side of a true two-outcome line.
-        for (market_key_line, quotes) in line_sets.items():
-            market_key, line = market_key_line
-            # Player props are evaluated per athlete for EV; keep them out of
-            # the two-outcome game-market arbitrage scanner.
+        # Arbitrage: only complete two-outcome markets, with distinct books.
+        for (market_key, line), quotes in line_sets.items():
             if market_key.startswith("player_"):
                 continue
             sides = defaultdict(list)
@@ -138,8 +166,6 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
             if len(sides) != 2:
                 continue
             side_items = list(sides.values())
-            # Require distinct books for the two legs. Selecting the best price
-            # independently can otherwise report a same-book pair as cross-book.
             pairs = []
             for first in side_items[0]:
                 for second in side_items[1]:
@@ -153,7 +179,9 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                     pairs.append((implied, first, second, first_decimal, second_decimal))
             if not pairs:
                 continue
-            implied_sum, first, second, first_decimal, second_decimal = min(pairs, key=lambda p: p[0])
+            implied_sum, first, second, first_decimal, second_decimal = min(
+                pairs, key=lambda pair: pair[0]
+            )
             if implied_sum >= 1:
                 continue
             side_quotes = [first, second]
@@ -167,9 +195,9 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                     "outcome": q["outcome"]["name"], "point": q["outcome"].get("point"),
                     "bookmaker": q["book"].get("title", q["book"].get("key")),
                     "bookmaker_key": q["book"].get("key"), "price": q["outcome"]["price"],
-                    "stake_percent": round((1 / d) / implied_sum * 100, 2),
-                } for q, d in zip(side_quotes, decimals)],
+                    "stake_percent": round((1 / decimal) / implied_sum * 100, 2),
+                } for q, decimal in zip(side_quotes, decimals)],
             })
-    opportunities.sort(key=lambda x: x["ev_percent"], reverse=True)
-    arbitrage.sort(key=lambda x: x["arb_percent"], reverse=True)
+    opportunities.sort(key=lambda row: row["ev_percent"], reverse=True)
+    arbitrage.sort(key=lambda row: row["arb_percent"], reverse=True)
     return {"opportunities": opportunities, "arbitrage": arbitrage}
