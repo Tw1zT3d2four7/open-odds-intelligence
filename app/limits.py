@@ -88,6 +88,19 @@ class MarketLimitsMonitor:
         self.last_changes = []
         self.last_diagnostic = {}
         self._initialize()
+        with self._connect() as db:
+            saved_success = db.execute(
+                "SELECT state_value FROM market_limit_state WHERE state_key='last_success'"
+            ).fetchone()
+            saved_usage = db.execute(
+                "SELECT state_value FROM market_limit_state WHERE state_key='last_usage'"
+            ).fetchone()
+        self.last_updated = saved_success["state_value"] if saved_success else None
+        if saved_usage:
+            try:
+                self.usage = json.loads(saved_usage["state_value"])
+            except (TypeError, ValueError):
+                self.usage = {}
 
     def _connect(self):
         db = sqlite3.connect(self.path)
@@ -264,8 +277,18 @@ class MarketLimitsMonitor:
             db.commit()
         self.usage = dict(client.usage)
         self.last_diagnostic = diagnostic
-        self.last_updated = observed_at if not errors or all_rows else self.last_updated
         self.last_error = "; ".join(errors)[:1000] if errors else None
+        with self._connect() as state_db:
+            state_db.execute(
+                "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_usage',?)",
+                (json.dumps(self.usage),),
+            )
+            if not errors or all_rows:
+                self.last_updated = observed_at
+                state_db.execute(
+                    "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_success',?)",
+                    (observed_at,),
+                )
         self.last_changes = changes
         self._send_alerts(changes)
         return {"ok": not errors, "observations": len(all_rows),
