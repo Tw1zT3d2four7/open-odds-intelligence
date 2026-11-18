@@ -76,3 +76,17 @@ def test_movement_history_endpoint_returns_all_observed_lines(monkeypatch):
         "bookmaker": "book-a", "limit": 500,
     }
     assert [quote["point"] for quote in response.json()["quotes"]] == [-3.5, -4.0]
+
+
+def test_dashboard_renders_synthetic_minus_one_builder_inputs_and_outputs():
+    with TestClient(main.app) as client:
+        response = client.get("/")
+    assert response.status_code == 200
+    html = response.text
+    for element_id in (
+        "calc-synthetic", "synMlTeam", "synMlOpp", "synHcapTeam",
+        "synHcapOpp", "synFairOdds", "synCoverProb", "synPushProb",
+        "synLossProb", "synError",
+    ):
+        assert f'id="{element_id}"' in html
+    assert "const fair=1+loss/cover;" in html
