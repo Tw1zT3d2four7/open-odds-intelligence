@@ -20,7 +20,7 @@ class TheOddsAPIProvider(OddsProvider):
         self.bookmakers = bookmakers
         self.usage = {}
 
-    def fetch_player_props(self, sport: str, events: list[dict], markets: str) -> dict:
+    def fetch_player_props(self, sport: str, events: list[dict], markets: str, max_events=5) -> dict:
         """Fetch optional non-featured player markets one event at a time.
 
         The Odds API requires the event-odds endpoint for player props. This is
@@ -33,7 +33,8 @@ class TheOddsAPIProvider(OddsProvider):
         events_with_props = 0
         errors = []
         requests = 0
-        for event in events:
+        selected_events = events[:max(1, int(max_events))]
+        for event in selected_events:
             event_id = event.get("id")
             if not event_id:
                 continue
@@ -109,7 +110,7 @@ class TheOddsAPIProvider(OddsProvider):
             if added:
                 events_with_props += 1
         return {"enabled": True, "sport": sport, "markets": market_keys,
-                "events_requested": requests, "events_with_props": events_with_props,
+                "events_requested": requests, "events_considered": len(selected_events), "events_with_props": events_with_props,
                 "error": "; ".join(errors)[:1000] if errors else None,
                 "quota": dict(self.usage)}
 
