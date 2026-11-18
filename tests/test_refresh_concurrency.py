@@ -81,3 +81,27 @@ def test_manual_limits_refresh_is_skipped_while_poll_is_in_flight(tmp_path, monk
     worker.join(timeout=2)
     assert not worker.is_alive()
     assert results[0]["ok"] is True
+
+
+def test_provider_quota_headers_remain_visible_after_refresh_error(tmp_path, monkeypatch):
+    from app.providers.the_odds_api import ProviderError
+
+    class FailingProvider:
+        name = "fake"
+        usage = {"requests_remaining": "0", "requests_used": "100"}
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def fetch_odds(self, sport):
+            raise ProviderError("provider quota exhausted")
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", FailingProvider)
+
+    service = OddsService(OddsDatabase(tmp_path / "provider-error.sqlite3"))
+    result = service.refresh()
+    assert result["ok"] is False
+    assert service.status()["provider_usage"]["requests_remaining"] == "0"
