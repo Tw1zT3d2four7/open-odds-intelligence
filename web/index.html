@@ -99,7 +99,7 @@ const empty=(body,cols,msg)=>body.innerHTML='<tr><td class="empty" colspan="'+co
 async function get(path){const r=await fetch(path);if(!r.ok)throw Error("API "+r.status+" for "+path);return r.json()}
 async function getSafe(path,fallback,failures){try{return await get(path)}catch(err){failures.push(err.message);return fallback}}
 function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
-function setTab(tab){document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","movement","limits","clv","props","calculators"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
+function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","movement","limits","clv","props","calculators"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
 async function load(){
  const apiFailures=[];
  try{
@@ -186,7 +186,7 @@ $("refresh").addEventListener("click",refresh);$("reload").addEventListener("cli
 $("limitsDirection").addEventListener("change",load);$("refreshClv").addEventListener("click",load);$("closeLimitHistory").addEventListener("click",()=>$("limitHistoryPanel").classList.add("hidden"));
 $("refreshLimits").addEventListener("click",async()=>{const b=$("refreshLimits");b.disabled=true;b.textContent="Checking…";try{const r=await fetch("/api/limits/refresh",{method:"POST"}).then(x=>x.json());$("limitsStatus").textContent=(r.ok?"Limits refreshed":"Limits refresh failed") +" · "+r.observations+" posted-limit observations · "+(r.diagnostic?.events_returned||0)+" fixtures · "+(r.diagnostic?.posted_limit_outcomes||0)+" posted-limit outcomes"+(r.error?" · "+r.error:"");}catch(e){$("limitsStatus").textContent="Limits refresh failed: "+e.message}finally{b.disabled=false;b.textContent="Refresh limits";await load()}});
 $("apply").addEventListener("click",()=>{state.minEv=Math.max(-100,Math.min(100,Number($("minEv").value)||0));state.consensus=Number($("consensus").value)||2;load()});
-document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
+document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
 
 /* Quota-free betting calculators. All odds are converted to decimal internally. */
 (()=>{
