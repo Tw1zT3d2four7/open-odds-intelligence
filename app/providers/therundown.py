@@ -27,6 +27,7 @@ class TheRundownProvider:
         "mma_mixed_martial_arts": (7, "UFC/MMA"),
         "basketball_wnba": (8, "WNBA"),
         "soccer_mls": (10, "MLS"),
+        "soccer_usa_mls": (10, "MLS"),
         "soccer_epl": (11, "EPL"),
         "americanfootball_ncaaf": (1, "NCAAF"),
     }
