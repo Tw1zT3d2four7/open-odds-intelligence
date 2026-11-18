@@ -378,8 +378,16 @@ class OddsDatabase:
                 key = quote["bookmaker_key"]
                 by_book_line.setdefault(key, []).append(dict(quote))
             valid_books = {}
+            # Main h2h markets are two-way for most supported sports, but
+            # soccer h2h is a three-way result market (home/draw/away).
+            # Requiring the expected cardinality prevents a feed that omits
+            # the draw at every peer book from being mislabeled "complete".
+            expected_outcomes = (
+                3 if entry["market_key"] == "h2h"
+                and str(entry["sport"]).startswith("soccer_") else 2
+            )
             for book, outcomes in by_book_line.items():
-                if book == entry["bookmaker_key"] or len(outcomes) < 2:
+                if book == entry["bookmaker_key"] or len(outcomes) != expected_outcomes:
                     continue
                 # Spread feeds can encode the same side with opposite
                 # point signs. Normalize only the line magnitude for market
