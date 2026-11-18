@@ -295,6 +295,44 @@ class MarketLimitsMonitor:
         with self._connect() as db:
             return [dict(r) for r in db.execute(sql, args).fetchall()]
 
+    def changes(self, sport=None, direction="increased", limit=200):
+        """Return limit changes derived from successive persisted provider snapshots."""
+        sql = """WITH sequenced AS (
+            SELECT q.*,
+                   LAG(limit_amount) OVER (
+                       PARTITION BY event_id,bookmaker_key,market_key,outcome_name,point
+                       ORDER BY id
+                   ) AS previous_limit
+            FROM market_limit_quotes q
+        )
+        SELECT * FROM sequenced
+        WHERE previous_limit IS NOT NULL AND limit_amount != previous_limit"""
+        args = []
+        if sport:
+            sql += " AND sport=?"
+            args.append(sport)
+        sql += " ORDER BY id DESC"
+        with self._connect() as db:
+            rows = [dict(r) for r in db.execute(sql, args).fetchall()]
+        results = []
+        for row in rows:
+            old, new = float(row["previous_limit"]), float(row["limit_amount"])
+            change_direction = "increased" if new > old else "decreased"
+            if direction in ("increased", "decreased") and change_direction != direction:
+                continue
+            row.update({
+                "matchup": f'{row["away_team"]} @ {row["home_team"]}',
+                "previous_limit": old,
+                "change_amount": new - old,
+                "change_percent": round((new - old) / old * 100, 2) if old else None,
+                "direction": change_direction,
+                "currency": row.get("currency") or "bookmaker_currency",
+            })
+            results.append(row)
+            if len(results) >= limit:
+                break
+        return results
+
     def history(self, event_id, bookmaker, market, outcome, point=None, limit=500):
         sql = """SELECT * FROM market_limit_quotes
                  WHERE event_id=? AND bookmaker_key=? AND market_key=? AND outcome_name=?"""
