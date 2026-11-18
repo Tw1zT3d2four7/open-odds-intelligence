@@ -110,3 +110,27 @@ def test_limit_changes_are_reconstructed_from_persisted_snapshots(tmp_path, monk
     assert decreases[0]["previous_limit"] == 50000
     assert decreases[0]["limit_amount"] == 40000
     assert len(monitor.changes(direction="increased", limit=1)) == 1
+
+
+def test_limit_refresh_stops_after_provider_quota_error(tmp_path, monkeypatch):
+    import app.limits as module
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(module.config, "LIMITS_SPORTS", [
+        "americanfootball_nfl", "basketball_nba",
+    ])
+    calls = []
+
+    class QuotaClient:
+        usage = {}
+        def __init__(self, key):
+            assert key == "CaseSensitiveKey"
+        def fetch(self, sport):
+            calls.append(sport)
+            raise module.LimitsError("OUT_OF_USAGE_CREDITS: quota exceeded")
+
+    monkeypatch.setattr(module, "OddsLinkClient", QuotaClient)
+    monitor = MarketLimitsMonitor(tmp_path / "quota-stop.sqlite3")
+    result = monitor.refresh()
+    assert result["ok"] is False
+    assert calls == ["nfl"]
+    assert "OUT_OF_USAGE_CREDITS" in result["error"]
