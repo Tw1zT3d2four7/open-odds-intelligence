@@ -362,19 +362,31 @@ class OddsDatabase:
                     continue
                 key = quote["bookmaker_key"]
                 by_book_line.setdefault(key, []).append(dict(quote))
-            peer_probabilities = []
+            valid_books = {}
             for book, outcomes in by_book_line.items():
                 if book == entry["bookmaker_key"] or len(outcomes) < 2:
                     continue
-                names = [o["outcome_name"] for o in outcomes]
-                if len(set(names)) != len(names) or any(not isinstance(o["price"], int) or o["price"] == 0 for o in outcomes):
+                identities = [(o["outcome_name"], o["point"]) for o in outcomes]
+                if (len(set(identities)) != len(identities) or
+                    any(not isinstance(o["price"], int) or o["price"] == 0 for o in outcomes)):
                     continue
-                probs = no_vig_probabilities([o["price"] for o in outcomes])
-                for outcome, probability in zip(outcomes, probs):
-                    if (outcome["outcome_name"] == entry["outcome_name"] and
-                        outcome["point"] == entry["point"]):
-                        peer_probabilities.append(probability)
-                        break
+                valid_books[book] = (tuple(sorted(identities, key=lambda item: (item[0], str(item[1])))), outcomes)
+            # Only compare complete peer markets with identical outcome/line sets.
+            identity_counts = {}
+            for identities, outcomes in valid_books.values():
+                identity_counts[identities] = identity_counts.get(identities, 0) + 1
+            common = max(identity_counts, key=identity_counts.get) if identity_counts else None
+            peer_probabilities = []
+            if common is not None and identity_counts[common] >= 2:
+                for identities, outcomes in valid_books.values():
+                    if identities != common:
+                        continue
+                    probs = no_vig_probabilities([o["price"] for o in outcomes])
+                    for outcome, probability in zip(outcomes, probs):
+                        if (outcome["outcome_name"] == entry["outcome_name"] and
+                            outcome["point"] == entry["point"]):
+                            peer_probabilities.append(probability)
+                            break
             if len(peer_probabilities) >= 2:
                 fair = float(median(peer_probabilities))
                 if 0 < fair < 1:
