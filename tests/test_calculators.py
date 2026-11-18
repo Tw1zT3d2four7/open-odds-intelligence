@@ -92,6 +92,12 @@ def test_run_line_minus_one_rejects_invalid_stake_or_odds():
         run_line_minus_one(100, 0, 2)
 
 
+def test_run_line_minus_one_rejects_fractional_score_margin():
+    from app.calculators import run_line_minus_one
+    with pytest.raises(ValueError, match="whole number"):
+        run_line_minus_one(100, -110, 1.5)
+
+
 def test_synthetic_minus_one_derives_push_probability_and_fair_price():
     from app.calculators import synthetic_minus_one
     result = synthetic_minus_one(-150, 130, 120, -140)
