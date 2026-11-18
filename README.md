@@ -5,7 +5,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 ## Current working features
 
 - FastAPI backend and responsive dark dashboard.
-- Five-tab, quota-free betting calculators: payout, multi-leg parlay, two-way no-vig, EV / fractional Kelly bankroll sizing, equal-outcome hedging and a -1 run-line / puck-line settlement calculator, with a dashboard-wide American / Decimal odds toggle.
+- Quota-free betting calculators: payout, multi-leg parlay, two-way no-vig, EV / fractional Kelly bankroll sizing, equal-outcome hedging, -1 run-line / puck-line settlement and a synthetic -1 line builder, with a dashboard-wide American / Decimal odds toggle.
 - Pluggable odds-provider interface with The Odds API and TheRundown V2 adapters.
 - Configurable sports, regions and supported market keys.
 - Normalized event, sportsbook, market and outcome quotes.
@@ -38,6 +38,10 @@ No fabricated odds or limits are generated. Live quotes remain unavailable until
 The optional Market Limits view uses the free OddsLink API plan to read explicit sportsbook `size.kind=posted_limit` values. Its documented free allowance is 1,000 price requests per month. With the five default leagues and a four-hour polling interval, the monitor uses approximately 900 requests per 30-day month (five sports × six polls/day × 30 days). Keep the league list and polling interval within your account allowance; the application displays quota headers when the provider returns them. `ODDSLINK_API_KEY` is separate from `ODDS_PROVIDER` and does not replace The Odds API or TheRundown. Configure a free key to enable it. `LIMITS_SPORTS` can restrict the monitored leagues; when blank, it follows `ODDS_SPORTS`. `LIMITS_REFRESH_INTERVAL_SECONDS` has a four-hour minimum to protect the free allowance. On startup the monitor takes one initial snapshot, then polls at that interval. Manual refresh is also available from the Market Limits dashboard tab and consumes one request per monitored league.
 
 Only provider values explicitly typed as `posted_limit` are stored. Exchange resting depth and contract counts are excluded. Circa is the primary documented source for posted limits; Pinnacle is displayed only if the provider returns a posted-limit field for it. Missing limits are not inferred. Values are in each sportsbook's own currency and are public market maximums, not account-specific betting limits. A limit-change alert requires two observed values for the same event, book, market, selection and line. Discord alerts report increases by default; set `LIMITS_ALERT_DECREASES=true` to include decreases. Free-tier access and coverage are subject to OddsLink's current terms and allowance.
+
+## Synthetic -1 line builder
+
+The calculator can estimate a fair -1 run-line / puck-line price when a sportsbook only offers the moneyline and -1.5 / +1.5 handicap. Enter both sides of each two-way market for the same event and selected team. It removes vig from the moneyline and handicap markets separately, estimates the one-run/one-goal push probability as fair moneyline win probability minus fair -1.5 cover probability, and derives the fair -1 odds from the -1.5 cover probability. Inconsistent market inputs are rejected. This is a mathematical estimate, not a live sportsbook quote; use prices from the same book and time, and verify market-period and overtime/shootout settlement rules.
 
 ## Optional player props
 
