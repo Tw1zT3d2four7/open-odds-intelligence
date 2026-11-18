@@ -50,3 +50,5 @@ CLV_MAX_CLOSE_AGE_MINUTES = max(1, int(os.getenv("CLV_MAX_CLOSE_AGE_MINUTES", "1
 PLAYER_PROPS_ENABLED = os.getenv("PLAYER_PROPS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
 PLAYER_PROPS_SPORT = os.getenv("PLAYER_PROPS_SPORT", "basketball_nba").strip()
 PLAYER_PROPS_MARKETS = os.getenv("PLAYER_PROPS_MARKETS", "").strip()
+PLAYER_PROPS_REFRESH_INTERVAL_SECONDS = max(3600, int(os.getenv("PLAYER_PROPS_REFRESH_INTERVAL_SECONDS", "14400")))
+PLAYER_PROPS_MAX_EVENTS = max(1, min(50, int(os.getenv("PLAYER_PROPS_MAX_EVENTS", "5"))))
