@@ -103,12 +103,14 @@ class MarketLimitsMonitor:
                 self.usage = {}
 
     def _connect(self):
-        db = sqlite3.connect(self.path)
+        db = sqlite3.connect(self.path, timeout=30)
         db.row_factory = sqlite3.Row
+        db.execute("PRAGMA busy_timeout=30000")
         return db
 
     def _initialize(self):
         with self._connect() as db:
+            db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS market_limit_quotes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
