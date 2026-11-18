@@ -145,6 +145,7 @@ class OddsService:
                     "alerts_qualified": alert_status["last_alert_qualified"],
                     "alert_error": alert_status["last_alert_error"]}
         except ProviderError as exc:
+            self._provider_usage = dict(getattr(provider, "usage", self._provider_usage))
             self._last_error = str(exc)
             return {"ok": False, "error": self._last_error, "events": count}
 
