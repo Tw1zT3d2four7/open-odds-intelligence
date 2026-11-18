@@ -75,3 +75,31 @@ def test_arbitrage_requires_distinct_sportsbooks():
     }]
     result = analyze_markets(event, min_ev=101)
     assert result["arbitrage"] == []
+
+
+def test_soccer_h2h_requires_complete_three_way_outcome_sets_for_ev():
+    event = [{
+        "id": "soccer-event", "sport_key": "soccer_epl",
+        "sport_title": "Soccer - English Premier League",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 150}, {"name": "Draw", "price": 220},
+                {"name": "Away", "price": 180}]}]},
+            {"key": "b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 140}, {"name": "Draw", "price": 230},
+                {"name": "Away", "price": 190}]}]},
+            {"key": "c", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 155}, {"name": "Draw", "price": 215},
+                {"name": "Away", "price": 175}]}]},
+            # This book omits Draw; its two-way normalization is not a
+            # valid probability estimate for a soccer 1X2 market.
+            {"key": "incomplete", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 150}, {"name": "Away", "price": 180}]}]},
+        ],
+    }]
+    result = analyze_markets(event, min_ev=-100, min_consensus_books=2)
+    assert result["opportunities"]
+    assert {row["bookmaker_key"] for row in result["opportunities"]} == {"a", "b", "c"}
+    assert all(row["consensus_books"] == 2 for row in result["opportunities"])
+    assert result["arbitrage"] == []
