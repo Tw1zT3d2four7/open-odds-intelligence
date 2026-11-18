@@ -323,7 +323,8 @@ class OddsDatabase:
                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
                        entry_fair_probability,entry_ev_percent,entry_at)
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (str(row.get("event_id") or ""), str(row.get("sport") or ""),
+                    (str(row.get("event_id") or ""),
+                     str(row.get("sport_key") or row.get("sport") or ""),
                      str(row.get("matchup") or ""), str(commence), str(row.get("market") or ""),
                      str(row.get("outcome") or ""), point, point_key,
                      str(row.get("bookmaker_key") or ""), str(row.get("bookmaker") or ""),
