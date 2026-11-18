@@ -523,3 +523,88 @@ def test_clv_never_uses_a_snapshot_at_or_before_the_entry_time(tmp_path, monkeyp
     assert report["entries"][0]["close_at"] is None
     assert report["entries"][0]["clv_percent"] is None
 
+
+
+def test_clv_soccer_h2h_requires_three_way_market_including_draw(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app import config
+
+    monkeypatch.setattr(config, "CLV_CLOSE_GRACE_MINUTES", 0)
+    db = OddsDatabase(tmp_path / "clv-soccer-three-way.sqlite3")
+    now = datetime.now(timezone.utc)
+    commence = now - timedelta(minutes=5)
+    candidate = {
+        "event_id": "soccer-three-way", "sport": "soccer_epl",
+        "matchup": "Away @ Home", "commence_time": commence.isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Entry", "bookmaker_key": "entry",
+        "price": 150, "fair_probability": 0.4, "ev_percent": 1.0,
+    }
+    assert db.record_clv_candidates(
+        [candidate], (commence - timedelta(minutes=30)).isoformat()
+    ) == 1
+
+    # Both peer books omit Draw. Matching two-outcome sets are not a
+    # complete soccer 1X2 market and must not produce a close.
+    events = [{
+        "id": "soccer-three-way", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "peer-a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 150}, {"name": "Away", "price": 180}]}]},
+            {"key": "peer-b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 140}, {"name": "Away", "price": 190}]}]},
+        ],
+    }]
+    db.save_snapshot("soccer_epl", events, "test",
+                     (commence - timedelta(minutes=1)).isoformat())
+    report = db.clv_report("soccer_epl")
+    assert report["entries"][0]["status"] == "insufficient_close_data"
+    assert report["entries"][0]["close_fair_probability"] is None
+
+
+def test_clv_soccer_three_way_fair_probability_uses_all_three_outcomes(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-soccer-fair.sqlite3")
+    now = datetime.now(timezone.utc)
+    commence = now - timedelta(minutes=5)
+    candidate = {
+        "event_id": "soccer-fair", "sport": "soccer_epl",
+        "matchup": "Away @ Home", "commence_time": commence.isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Entry", "bookmaker_key": "entry",
+        "price": 150, "fair_probability": 0.4, "ev_percent": 1.0,
+    }
+    assert db.record_clv_candidates(
+        [candidate], (commence - timedelta(minutes=30)).isoformat()
+    ) == 1
+    events = [{
+        "id": "soccer-fair", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "peer-a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 150},
+                {"name": "Draw", "price": 220},
+                {"name": "Away", "price": 180},
+            ]}]},
+            {"key": "peer-b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 140},
+                {"name": "Draw", "price": 230},
+                {"name": "Away", "price": 190},
+            ]}]},
+        ],
+    }]
+    close_at = (commence - timedelta(minutes=1)).isoformat()
+    db.save_snapshot("soccer_epl", events, "test", close_at)
+    report = db.clv_report("soccer_epl")
+    entry = report["entries"][0]
+    assert entry["status"] == "closed"
+    assert entry["closing_books"] == 2
+
+    def no_vig_home(home, draw, away):
+        raw = [100 / (home + 100), 100 / (draw + 100), 100 / (away + 100)]
+        return raw[0] / sum(raw)
+
+    expected_a = no_vig_home(150, 220, 180)
+    expected_b = no_vig_home(140, 230, 190)
+    expected_median = sorted([expected_a, expected_b])[1]
+    assert entry["close_fair_probability"] == pytest.approx(expected_median, abs=1e-6)
