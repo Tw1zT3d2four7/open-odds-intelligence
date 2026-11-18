@@ -119,6 +119,10 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
         # Arbitrage: best price for every side of a true two-outcome line.
         for (market_key_line, quotes) in line_sets.items():
             market_key, line = market_key_line
+            # Player props are evaluated per athlete for EV; keep them out of
+            # the two-outcome game-market arbitrage scanner.
+            if market_key.startswith("player_"):
+                continue
             sides = defaultdict(list)
             for quote in quotes:
                 sides[quote["identity"]].append(quote)
