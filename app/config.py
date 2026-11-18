@@ -45,6 +45,9 @@ CLV_MIN_EV_PERCENT = float(os.getenv("CLV_MIN_EV_PERCENT", "1.0"))
 
 # Ignore pregame snapshots older than this when measuring closing-line value.
 CLV_MAX_CLOSE_AGE_MINUTES = max(1, int(os.getenv("CLV_MAX_CLOSE_AGE_MINUTES", "120")))
+# Retry briefly after kickoff for a delayed final pregame refresh; post-start
+# quotes remain ineligible regardless of this grace period.
+CLV_CLOSE_GRACE_MINUTES = max(0, int(os.getenv("CLV_CLOSE_GRACE_MINUTES", "180")))
 
 # Player props use The Odds API's per-event endpoint and are disabled by default.
 PLAYER_PROPS_ENABLED = os.getenv("PLAYER_PROPS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
