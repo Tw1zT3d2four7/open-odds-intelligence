@@ -121,6 +121,35 @@ def market_board_api(sport: str | None = None):
     return {"quotes": market_board(service.events(sport))}
 
 
+@app.get("/api/player-props")
+def player_props(sport: str | None = None):
+    events = service.events(sport)
+    quotes = []
+    for event in events:
+        for book in event.get("bookmakers", []):
+            for market in book.get("markets", []):
+                if not str(market.get("key", "")).startswith("player_"):
+                    continue
+                for outcome in market.get("outcomes", []):
+                    quotes.append({
+                        "event_id": event.get("id"),
+                        "sport": event.get("sport_title"),
+                        "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
+                        "commence_time": event.get("commence_time"),
+                        "market": market.get("key"),
+                        "player": outcome.get("description") or outcome.get("participant") or "Player not identified",
+                        "side": outcome.get("name"),
+                        "point": outcome.get("point"),
+                        "bookmaker": book.get("title", book.get("key")),
+                        "bookmaker_key": book.get("key"),
+                        "price": outcome.get("price"),
+                    })
+    quotes.sort(key=lambda row: (row["commence_time"] or "", row["matchup"],
+                                 row["player"], row["market"], str(row["point"])))
+    return {"quotes": quotes, "status": service.status()["player_props"],
+            "note": "Player props are fetched only when explicitly enabled and only from supported provider event-odds endpoints. Each event-level request can consume provider quota."}
+
+
 @app.get("/api/clv")
 def closing_line_value(sport: str | None = None,
                        limit: int = Query(500, ge=1, le=2000)):
