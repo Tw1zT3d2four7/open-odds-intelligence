@@ -160,9 +160,11 @@ class OddsService:
             candidates = []
             for row in result["opportunities"]:
                 identity = ["ev", row["event_id"], row["market"], row["outcome"],
-                            row.get("point"), row["bookmaker_key"], row["price"]]
+                            row.get("outcome_description"), row.get("point"),
+                            row["bookmaker_key"], row["price"]]
                 candidates.append(("ev", identity,
                     f'**EV {row["ev_percent"]:.2f}%** · {row["matchup"]} · {row["market"]} '
+                    f'{row.get("outcome_description") + " " if row.get("outcome_description") else ""}'
                     f'{row["outcome"]} {row.get("point") if row.get("point") is not None else ""} '
                     f'@ {row["bookmaker"]} ({row["price"]:+d}) · '
                     f'fair {row["fair_probability"]*100:.1f}% · {row["consensus_books"]} other books'))
