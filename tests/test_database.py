@@ -701,3 +701,23 @@ def test_clv_rejects_tied_conflicting_peer_market_outcome_sets(tmp_path, monkeyp
     report = db.clv_report("basketball_nba")
     assert report["entries"][0]["status"] == "insufficient_close_data"
     assert report["entries"][0]["close_fair_probability"] is None
+
+
+def test_clv_spread_entry_deduplicates_opposite_signed_points(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-spread-entry-sign.sqlite3")
+    now = datetime.now(timezone.utc)
+    candidate = {
+        "event_id": "spread-entry-sign", "sport": "americanfootball_nfl",
+        "matchup": "Away @ Home", "commence_time": (now + timedelta(hours=2)).isoformat(),
+        "market": "spreads", "outcome": "Home", "point": -3.5,
+        "bookmaker": "Book", "bookmaker_key": "book",
+        "price": -110, "fair_probability": 0.5, "ev_percent": 2.0,
+    }
+    assert db.record_clv_candidates([candidate], now.isoformat()) == 1
+    reversed_convention = {**candidate, "point": 3.5, "price": -105}
+    assert db.record_clv_candidates([reversed_convention], (now + timedelta(minutes=1)).isoformat()) == 0
+    report = db.clv_report("americanfootball_nfl")
+    assert report["summary"]["total"] == 1
+    assert report["entries"][0]["point"] == -3.5
