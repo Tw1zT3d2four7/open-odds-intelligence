@@ -345,3 +345,30 @@ def test_clv_rejects_stale_pregame_snapshot_as_closing_price(tmp_path, monkeypat
     report = db.clv_report("basketball_nba")
     assert report["entries"][0]["status"] == "insufficient_close_data"
     assert report["entries"][0]["clv_percent"] is None
+
+
+
+def test_player_prop_descriptions_survive_snapshot_and_history(tmp_path):
+    db = OddsDatabase(tmp_path / "player-props.sqlite3")
+    events = [{
+        "id": "props-event", "sport_title": "Basketball",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [{
+            "key": "book-a", "title": "Book A", "markets": [{
+                "key": "player_points", "outcomes": [
+                    {"name": "Over", "description": "Player One", "point": 24.5, "price": -110},
+                    {"name": "Under", "description": "Player One", "point": 24.5, "price": -110},
+                    {"name": "Over", "description": "Player Two", "point": 19.5, "price": -105},
+                    {"name": "Under", "description": "Player Two", "point": 19.5, "price": -115},
+                ],
+            }],
+        }],
+    }]
+    db.save_snapshot("basketball_nba", events, "test", "2026-11-18T12:00:00Z")
+    stored = db.latest_events("basketball_nba")[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert {item["description"] for item in stored} == {"Player One", "Player Two"}
+    history = db.history("props-event", "player_points", "Over", "book-a", 24.5,
+                         outcome_description="Player One")
+    assert len(history) == 1
+    assert history[0]["outcome_description"] == "Player One"
