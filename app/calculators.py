@@ -134,6 +134,8 @@ def run_line_minus_one(stake: float, odds: float, margin: float,
     margin = float(margin)
     if not math.isfinite(margin):
         raise ValueError("Final score margin must be a finite number")
+    if not margin.is_integer():
+        raise ValueError("Final score margin must be a whole number")
     if margin > 1:
         result = "win"
         profit = stake * (decimal - 1)
