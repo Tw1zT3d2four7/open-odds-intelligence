@@ -41,7 +41,7 @@ Only provider values explicitly typed as `posted_limit` are stored. Exchange res
 
 ## Synthetic -1 line builder
 
-The calculator can estimate a fair -1 run-line / puck-line price when a sportsbook only offers the moneyline and -1.5 / +1.5 handicap. Enter both sides of each two-way market for the same event and selected team. It removes vig from the moneyline and handicap markets separately, estimates the one-run/one-goal push probability as fair moneyline win probability minus fair -1.5 cover probability, and derives the fair -1 odds from the -1.5 cover probability. Inconsistent market inputs are rejected. This is a mathematical estimate, not a live sportsbook quote; use prices from the same book and time, and verify market-period and overtime/shootout settlement rules.
+The calculator can estimate a fair -1 run-line / puck-line price when a sportsbook only offers the moneyline and -1.5 / +1.5 handicap. Enter both sides of each two-way market for the same event and selected team. It removes vig from the moneyline and handicap markets separately, estimates the one-run/one-goal push probability as fair moneyline win probability minus fair -1.5 cover probability, and derives the fair -1 odds from cover-versus-loss probabilities while excluding one-run/one-goal pushes (which return the stake). Inconsistent market inputs are rejected. This is a mathematical estimate, not a live sportsbook quote; use prices from the same book and time, and verify market-period and overtime/shootout settlement rules.
 
 ## Optional player props
 
