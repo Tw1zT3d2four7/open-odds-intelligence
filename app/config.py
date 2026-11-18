@@ -42,3 +42,6 @@ LIMITS_ALERT_DECREASES = os.getenv("LIMITS_ALERT_DECREASES", "false").strip().lo
 
 # Track the first positive-EV quote per exact selection for consensus CLV.
 CLV_MIN_EV_PERCENT = float(os.getenv("CLV_MIN_EV_PERCENT", "1.0"))
+
+# Ignore pregame snapshots older than this when measuring closing-line value.
+CLV_MAX_CLOSE_AGE_MINUTES = max(1, int(os.getenv("CLV_MAX_CLOSE_AGE_MINUTES", "120")))
