@@ -120,6 +120,43 @@ def ev_kelly(odds: float, win_probability: float, bankroll: float,
     }
 
 
+
+def run_line_minus_one(stake: float, odds: float, margin: float,
+                       format: str = "american") -> dict:
+    """Settle a -1 run/puck-line wager using the selected team's final margin.
+
+    A win by 2+ covers, a win by exactly 1 pushes, and a tie/loss loses.
+    The margin must reflect the sportsbook's settlement rules (including or
+    excluding overtime as applicable).
+    """
+    stake = _positive(stake, "Stake")
+    decimal = to_decimal(odds, format)
+    margin = float(margin)
+    if not math.isfinite(margin):
+        raise ValueError("Final score margin must be a finite number")
+    if margin > 1:
+        result = "win"
+        profit = stake * (decimal - 1)
+        total_return = stake * decimal
+    elif margin == 1:
+        result = "push"
+        profit = 0.0
+        total_return = stake
+    else:
+        result = "loss"
+        profit = -stake
+        total_return = 0.0
+    return {
+        "handicap": -1,
+        "result": result,
+        "stake": round(stake, 2),
+        "profit": round(profit, 2),
+        "total_return": round(total_return, 2),
+        "decimal_odds": round(decimal, 6),
+        "american_odds": decimal_to_american(decimal),
+    }
+
+
 def hedge(original_stake: float, original_odds: float, hedge_odds: float,
           format: str = "american") -> dict:
     stake = _positive(original_stake, "Original stake")
