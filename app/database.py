@@ -377,7 +377,16 @@ class OddsDatabase:
             for book, outcomes in by_book_line.items():
                 if book == entry["bookmaker_key"] or len(outcomes) < 2:
                     continue
-                identities = [(o["outcome_name"], o["point"]) for o in outcomes]
+                # Spread feeds can encode the same side with opposite
+                # point signs. Normalize only the line magnitude for market
+                # completeness; keep outcome_name intact so Home and Away
+                # can never be swapped or treated as the same selection.
+                identities = [
+                    (o["outcome_name"],
+                     abs(float(o["point"])) if entry["market_key"] == "spreads" and o["point"] is not None
+                     else o["point"])
+                    for o in outcomes
+                ]
                 if (len(set(identities)) != len(identities) or
                     any(not isinstance(o["price"], int) or o["price"] == 0 for o in outcomes)):
                     continue
