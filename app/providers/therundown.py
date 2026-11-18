@@ -31,6 +31,15 @@ class TheRundownProvider:
         "soccer_epl": (11, "EPL"),
         "americanfootball_ncaaf": (1, "NCAAF"),
     }
+    # Season variants have distinct sport IDs in TheRundown's schedule
+    # namespace. Query them together so postseason and preseason slates do
+    # not disappear when the regular-season calendar is empty.
+    SEASON_VARIANTS = {
+        2: (2, 25, 26),       # NFL regular season, preseason, playoffs
+        3: (3, 31),           # MLB regular season, playoffs
+        4: (4, 23, 24),       # NBA regular season, preseason, playoffs
+        6: (6, 27, 28),       # NHL regular season, preseason, playoffs
+    }
     MARKETS = {1: "h2h", 2: "spreads", 3: "totals"}
 
     def __init__(self, api_key: str, utc_offset_minutes=0):
@@ -125,9 +134,8 @@ class TheRundownProvider:
                 if isinstance(raw, dict)]
 
     def _next_event_slate(self, sport_id):
-        # NFL has separate regular-season, preseason and playoff sport IDs.
-        # These are schedule namespaces, not sportsbook affiliate IDs.
-        date_sports = [2, 25, 26] if sport_id == 2 else [sport_id]
+        # Season variants are schedule sport IDs, not sportsbook affiliate IDs.
+        date_sports = self.SEASON_VARIANTS.get(sport_id, (sport_id,))
         params = urlencode({
             "sport_ids": ",".join(str(value) for value in date_sports),
             "format": "epoch",
