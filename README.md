@@ -15,7 +15,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Two-outcome cross-book arbitrage scanning with suggested equal-payout stake percentages.
 - Persistent SQLite snapshots and quote history.
 - Consolidated opening-to-latest sportsbook price / line movement summaries, with exact alternate-line separation.
-- Optional free-tier posted sportsbook market-limit monitoring via OddsLink, with persistent limit history, increase/decrease detection and Discord increase alerts.
+- Optional free-tier posted sportsbook market-limit monitoring via OddsLink, with persistent limit history, increase/decrease detection, clickable per-selection limit timelines and Discord increase alerts.
 - Clickable movement timelines showing every saved line and price observation for a selection.
 - Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
