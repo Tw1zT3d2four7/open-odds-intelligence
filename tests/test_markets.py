@@ -77,3 +77,42 @@ def test_player_props_are_separated_by_player_description():
     assert {row["outcome_description"] for row in analysis["opportunities"]} == {
         "Player One", "Player Two"
     }
+
+def test_spread_market_identities_match_across_signed_point_conventions():
+    from app.markets import market_board, analyze_markets
+
+    events = [{
+        "id": "spread-signs", "sport_title": "Football",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "point": -3.5, "price": 105},
+                    {"name": "Away", "point": 3.5, "price": -125},
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "point": 3.5, "price": -110},
+                    {"name": "Away", "point": -3.5, "price": 100},
+                ]}]},
+            {"key": "book-c", "title": "Book C", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "point": 3.5, "price": -115},
+                    {"name": "Away", "point": -3.5, "price": 105},
+                ]}]},
+        ],
+    }]
+
+    board = market_board(events)
+    home = [row for row in board if row["outcome"] == "Home"]
+    assert len(home) == 1
+    assert home[0]["bookmaker_key"] == "book-a"
+    assert home[0]["price"] == 105
+
+    analysis = analyze_markets(events, min_ev=-100, min_consensus_books=2)
+    home_a = next(row for row in analysis["opportunities"]
+                  if row["outcome"] == "Home" and row["bookmaker_key"] == "book-a")
+    assert home_a["consensus_books"] == 2
+    assert home_a["ev_percent"] > 0
+
