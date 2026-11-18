@@ -146,3 +146,28 @@ def test_player_props_cooldown_survives_service_restart(tmp_path, monkeypatch):
     props_status = restarted_service.status()["player_props"]
     assert props_status["enabled"] is True
     assert props_status["next_refresh_seconds"] > 0
+
+
+def test_provider_quota_diagnostics_persist_across_service_restart(tmp_path, monkeypatch):
+    class QuotaProvider:
+        name = "fake"
+        usage = {"requests_remaining": "77", "requests_used": "23"}
+        def __init__(self, *args, **kwargs):
+            pass
+        def fetch_odds(self, sport):
+            return []
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", QuotaProvider)
+
+    database_path = tmp_path / "provider-usage.sqlite3"
+    first_service = OddsService(OddsDatabase(database_path))
+    assert first_service.refresh()["ok"] is True
+
+    restarted_service = OddsService(OddsDatabase(database_path))
+    assert restarted_service.status()["provider_usage"] == {
+        "requests_remaining": "77", "requests_used": "23",
+    }
