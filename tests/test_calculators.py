@@ -90,3 +90,22 @@ def test_run_line_minus_one_rejects_invalid_stake_or_odds():
         run_line_minus_one(0, -110, 2)
     with pytest.raises(ValueError):
         run_line_minus_one(100, 0, 2)
+
+
+def test_synthetic_minus_one_derives_push_probability_and_fair_price():
+    from app.calculators import synthetic_minus_one
+    result = synthetic_minus_one(-150, 130, 120, -140)
+    ml = no_vig(-150, 130)["first_fair_probability"]
+    cover = no_vig(120, -140)["first_fair_probability"]
+    assert result["moneyline_fair_probability"] == pytest.approx(ml)
+    assert result["cover_probability"] == pytest.approx(cover)
+    assert result["push_probability"] == pytest.approx(ml - cover)
+    assert result["loss_probability"] == pytest.approx(1 - ml)
+    assert result["fair_decimal"] == pytest.approx((1 - cover) / cover)
+    assert result["fair_american"] == decimal_to_american((1 - cover) / cover)
+
+
+def test_synthetic_minus_one_rejects_inconsistent_market_probabilities():
+    from app.calculators import synthetic_minus_one
+    with pytest.raises(ValueError, match="Inconsistent prices"):
+        synthetic_minus_one(200, -250, -300, 250)
