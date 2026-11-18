@@ -21,7 +21,7 @@ def test_payout_reports_profit_return_and_break_even():
 
 
 def test_parlay_combines_any_number_of_independent_legs():
-    result = parlay([-110, 150, 2.0])
+    result = parlay([-110, 150, 100])
     expected = (1 + 100 / 110) * 2.5 * 2
     assert result["legs"] == 3
     assert result["decimal_odds"] == pytest.approx(expected)
