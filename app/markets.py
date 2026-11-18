@@ -30,7 +30,11 @@ def market_board(events):
                         continue
                     point = outcome.get("point")
                     description = outcome.get("description") or outcome.get("participant") or ""
-                    key = (event.get("id"), market_key, name, point, description)
+                    # A spread side is identified by its outcome and
+                    # handicap magnitude; providers may sign that handicap
+                    # differently while still referring to the same side.
+                    key = (event.get("id"), market_key, name,
+                           _line_group(market_key, point), description)
                     grouped[key].append({
                         "event_id": event.get("id"), "sport": event.get("sport_title"),
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
@@ -76,7 +80,11 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                         continue
                     probs = no_vig_probabilities([o["price"] for o in items])
                     for outcome, probability in zip(items, probs):
-                        identity = (outcome["name"], outcome.get("point"), outcome.get("description") or outcome.get("participant") or "")
+                        identity = (
+                            outcome["name"],
+                            _line_group(market_key, outcome.get("point")),
+                            outcome.get("description") or outcome.get("participant") or "",
+                        )
                         line_sets[(market_key, line)].append({
                             "book": book, "outcome": outcome,
                             "identity": identity, "probability": probability,
