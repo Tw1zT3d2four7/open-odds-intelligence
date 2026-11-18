@@ -66,6 +66,12 @@ class TheOddsAPIProvider(OddsProvider):
                     }.items() if response.headers.get(header) is not None}
                 requests += 1
             except HTTPError as exc:
+                headers = exc.headers or {}
+                self.usage.update({key: headers.get(header) for key, header in {
+                    "requests_remaining": "x-requests-remaining",
+                    "requests_used": "x-requests-used",
+                    "requests_last": "x-requests-last",
+                }.items() if headers.get(header) is not None})
                 detail = exc.read().decode("utf-8", errors="replace")[:400]
                 errors.append(f"{event_id}: HTTP {exc.code}: {detail}")
                 # Stop immediately on quota/auth failures; never hammer a failing key.
