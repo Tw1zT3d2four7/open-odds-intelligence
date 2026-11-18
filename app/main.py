@@ -13,12 +13,15 @@ logger = logging.getLogger(__name__)
 
 async def _limits_refresh_loop():
     while True:
+        delay = config.LIMITS_REFRESH_INTERVAL_SECONDS
         try:
             await asyncio.to_thread(limits_monitor.refresh)
+            status = await asyncio.to_thread(limits_monitor.status)
+            delay = max(1, int(status.get("next_refresh_seconds") or delay))
         except Exception as exc:
             limits_monitor.last_error = f"Unexpected scheduled market-limits refresh failure: {exc}"
             logger.exception("Scheduled market-limits refresh failed")
-        await asyncio.sleep(config.LIMITS_REFRESH_INTERVAL_SECONDS)
+        await asyncio.sleep(delay)
 
 
 async def _automatic_refresh_loop():
