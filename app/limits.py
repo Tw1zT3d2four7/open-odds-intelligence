@@ -6,6 +6,7 @@ contract counts, inferred limits and missing values are deliberately excluded.
 import hashlib
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -74,6 +75,7 @@ class OddsLinkClient:
 class MarketLimitsMonitor:
     def __init__(self, path=None):
         self.path = str(path or config.DATABASE_PATH)
+        self._refresh_lock = threading.Lock()
         self.last_error = None
         self.last_updated = None
         self.usage = {}
@@ -140,6 +142,18 @@ class MarketLimitsMonitor:
         return rows
 
     def refresh(self):
+        # A startup poll and a manual dashboard refresh must not duplicate
+        # provider calls while a previous limits batch is still running.
+        if not self._refresh_lock.acquire(blocking=False):
+            return {"ok": False, "skipped": True,
+                    "error": "A market-limits refresh is already running; this request was skipped to protect provider quota.",
+                    "observations": 0}
+        try:
+            return self._refresh_locked()
+        finally:
+            self._refresh_lock.release()
+
+    def _refresh_locked(self):
         if not config.ODDSLINK_API_KEY:
             self.last_error = "Market limits feed is disabled. Add a free OddsLink API key as ODDSLINK_API_KEY."
             return {"ok": False, "error": self.last_error, "observations": 0}
