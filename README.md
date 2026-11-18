@@ -117,10 +117,10 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 3. ~~Multi-market EV screening using other-book consensus~~
 4. ~~Two-outcome cross-book arbitrage scanning~~
 5. ~~Consolidated line movement and quote timelines~~
-6. Closing-line value tracking and historical backtesting.
-7. Player props where licensed data feeds support correct player / line identity.
-8. Deduplicated Discord/webhook alerts and injury/news integrations where licensed feeds exist.
-9. Additional providers, richer provider diagnostics, robust validation and optional authentication.
+6. ~~Prospective closing-line value tracking~~; implement audited historical strategy backtesting after sufficient quote archives and trustworthy settlement data are available.
+7. Optional player props are implemented for The Odds API; expand provider coverage and add player-specific CLV only after identity and settlement validation.
+8. Harden the core with deeper operational monitoring, retention/backup guidance and additional provider diagnostics.
+9. Add application authentication, subscriber access tiers and recurring billing before any public commercial launch; add further licensed providers and injury/news feeds only where reliable data is available.
 
 ## License
 
