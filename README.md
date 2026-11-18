@@ -91,6 +91,7 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 - `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.
 - `GET /api/movement?sport=...` — consolidated opening-to-latest price and line movement summaries.
 - `GET /api/limits?sport=...` — latest verified posted market limits and feed status.
+- `GET /api/limits/changes?sport=...&direction=increased|decreased|all` — detected changes between successive stored limit snapshots, including old/new values and percentage change.
 - `GET /api/limits/history?event_id=...&bookmaker=...&market=...&outcome=...` — observed limit history.
 - `POST /api/limits/refresh` — manually refresh the optional limits feed.
 - `GET /api/movement/history?event_id=...&market=...&outcome=...&bookmaker=...` — chronological price and line observations for one sportsbook selection.
