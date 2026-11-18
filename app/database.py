@@ -394,8 +394,13 @@ class OddsDatabase:
                         continue
                     probs = no_vig_probabilities([o["price"] for o in outcomes])
                     for outcome, probability in zip(outcomes, probs):
-                        if (outcome["outcome_name"] == entry["outcome_name"] and
-                            outcome["point"] == entry["point"]):
+                        same_point = outcome["point"] == entry["point"]
+                        if entry["market_key"] == "spreads":
+                            same_point = (
+                                outcome["point"] is not None and entry["point"] is not None
+                                and abs(float(outcome["point"])) == abs(float(entry["point"]))
+                            )
+                        if outcome["outcome_name"] == entry["outcome_name"] and same_point:
                             peer_probabilities.append(probability)
                             break
             if len(peer_probabilities) >= 2:
@@ -442,8 +447,16 @@ class OddsDatabase:
                          close["close_fair_american"], close["closing_books"],
                          close["clv_percent"], entry["id"]))
                 else:
-                    db.execute("UPDATE clv_entries SET status='insufficient_close_data' WHERE id=?",
-                               (entry["id"],))
+                    # A refresh can run immediately after kickoff while the
+                    # final pregame snapshot has not yet been collected. Keep
+                    # retrying for a bounded grace period, but never use live
+                    # or post-start quotes as a substitute for a closing line.
+                    grace_minutes = max(0, int(config.CLV_CLOSE_GRACE_MINUTES))
+                    if now >= start + timedelta(minutes=grace_minutes):
+                        db.execute(
+                            "UPDATE clv_entries SET status='insufficient_close_data' WHERE id=?",
+                            (entry["id"],),
+                        )
             sql = "SELECT * FROM clv_entries"
             args = []
             if sport:
