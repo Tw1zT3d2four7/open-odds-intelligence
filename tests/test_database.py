@@ -312,3 +312,36 @@ def test_clv_does_not_record_quotes_after_commence_time(tmp_path):
         "price": -110, "fair_probability": 0.5, "ev_percent": 1.0,
     }
     assert db.record_clv_candidates([candidate], now.isoformat()) == 0
+
+
+
+def test_clv_rejects_stale_pregame_snapshot_as_closing_price(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app import config
+
+    monkeypatch.setattr(config, "CLV_MAX_CLOSE_AGE_MINUTES", 120)
+    db = OddsDatabase(tmp_path / "clv-stale.sqlite3")
+    now = datetime.now(timezone.utc)
+    commence = now - timedelta(hours=1)
+    candidate = {
+        "event_id": "stale-event", "sport": "basketball_nba",
+        "matchup": "Away @ Home", "commence_time": commence.isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Entry", "bookmaker_key": "entry",
+        "price": -110, "fair_probability": 0.5, "ev_percent": 1.0,
+    }
+    db.record_clv_candidates([candidate], (commence - timedelta(hours=1)).isoformat())
+    events = [{
+        "id": "stale-event", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "peer-a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -120}, {"name": "Away", "price": 100}]}]},
+            {"key": "peer-b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -125}, {"name": "Away", "price": 105}]}]},
+        ],
+    }]
+    db.save_snapshot("basketball_nba", events, "test",
+                     (commence - timedelta(hours=3)).isoformat())
+    report = db.clv_report("basketball_nba")
+    assert report["entries"][0]["status"] == "insufficient_close_data"
+    assert report["entries"][0]["clv_percent"] is None
