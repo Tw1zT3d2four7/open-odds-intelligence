@@ -147,3 +147,17 @@ def test_player_props_with_shared_lines_remain_separate_by_player():
     assert len(result["opportunities"]) == 4
     assert all(row["consensus_books"] == 2 for row in result["opportunities"])
     assert result["arbitrage"] == []
+
+
+def test_full_book_ev_mode_preserves_each_qualifying_quote_for_clv():
+    event = event_fixture()
+    best_prices = analyze_markets(event, min_ev=-100, min_consensus_books=2)
+    all_quotes = analyze_markets(
+        event, min_ev=-100, min_consensus_books=2, best_only=False
+    )
+    assert len(best_prices["opportunities"]) == 4
+    assert len(all_quotes["opportunities"]) == 12
+    assert {row["bookmaker_key"] for row in all_quotes["opportunities"]} == {
+        "a", "b", "c"
+    }
+    assert all(row["consensus_books"] == 2 for row in all_quotes["opportunities"])
