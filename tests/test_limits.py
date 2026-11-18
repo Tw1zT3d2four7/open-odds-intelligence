@@ -43,15 +43,15 @@ def test_limit_refresh_persists_observations_and_detects_changes(tmp_path, monke
     monkeypatch.setattr(module.config, "DISCORD_WEBHOOK_URL", "")
     monitor = MarketLimitsMonitor(tmp_path / "limits.sqlite3")
 
+    state = {"calls": 0}
     class FakeClient:
         usage = {"requests_remaining": "999"}
-        calls = 0
         def __init__(self, key):
             assert key == "CaseSensitiveKey"
         def fetch(self, sport):
             assert sport == "nfl"
-            self.calls += 1
-            return fixture(25000 if self.calls == 1 else 50000)
+            state["calls"] += 1
+            return fixture(25000 if state["calls"] == 1 else 50000)
 
     monkeypatch.setattr(module, "OddsLinkClient", FakeClient)
     first = monitor.refresh()
