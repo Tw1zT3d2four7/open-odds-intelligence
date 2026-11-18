@@ -56,3 +56,27 @@ def test_scheduled_refresh_failure_is_exposed_in_service_status(monkeypatch):
         assert called.wait(timeout=1)
         time.sleep(0.02)
         assert "scheduled provider failure" in main.service.status()["last_error"]
+
+
+def test_limits_scheduler_sleeps_only_until_persisted_cooldown_expires(monkeypatch):
+    import asyncio
+    import pytest
+
+    sleeps = []
+    monkeypatch.setattr(main.limits_monitor, "refresh", lambda: {"ok": True})
+    monkeypatch.setattr(main.limits_monitor, "status", lambda: {
+        "next_refresh_seconds": 7,
+    })
+
+    async def fake_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(main.asyncio, "sleep", fake_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main._limits_refresh_loop())
+    assert sleeps == [7]
