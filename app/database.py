@@ -1,6 +1,9 @@
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
+from statistics import median
+
+from .math import american_to_decimal, no_vig_probabilities
 
 from . import config
 
@@ -45,6 +48,23 @@ class OddsDatabase:
                     fingerprint TEXT PRIMARY KEY, sent_at TEXT NOT NULL,
                     alert_type TEXT NOT NULL, summary TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS clv_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id TEXT NOT NULL, sport TEXT NOT NULL DEFAULT '',
+                    matchup TEXT NOT NULL DEFAULT '', commence_time TEXT NOT NULL,
+                    market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                    point REAL, point_key TEXT NOT NULL DEFAULT '',
+                    bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                    entry_price INTEGER NOT NULL, entry_fair_probability REAL NOT NULL,
+                    entry_ev_percent REAL NOT NULL, entry_at TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    close_at TEXT, close_fair_probability REAL,
+                    close_fair_american INTEGER, closing_books INTEGER,
+                    clv_percent REAL,
+                    UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_clv_pending
+                    ON clv_entries(status, commence_time);
             """)
             quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
             if "source_updated_at" not in quote_columns:
@@ -264,6 +284,163 @@ class OddsDatabase:
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
+
+    def record_clv_candidates(self, candidates, observed_at=None):
+        """Persist the first positive-EV observation for each exact selection."""
+        observed_at = observed_at or datetime.now(timezone.utc).isoformat()
+        inserted = 0
+        with self.connect() as db:
+            for row in candidates:
+                commence = row.get("commence_time")
+                if not commence:
+                    continue
+                try:
+                    start = datetime.fromisoformat(str(commence).replace("Z", "+00:00"))
+                    observed = datetime.fromisoformat(str(observed_at).replace("Z", "+00:00"))
+                    if start.tzinfo is None:
+                        start = start.replace(tzinfo=timezone.utc)
+                    if observed.tzinfo is None:
+                        observed = observed.replace(tzinfo=timezone.utc)
+                    if observed >= start:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                point = row.get("point")
+                point_key = "" if point is None else str(float(point))
+                cur = db.execute(
+                    """INSERT OR IGNORE INTO clv_entries(
+                       event_id,sport,matchup,commence_time,market_key,outcome_name,
+                       point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                       entry_fair_probability,entry_ev_percent,entry_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (str(row.get("event_id") or ""), str(row.get("sport") or ""),
+                     str(row.get("matchup") or ""), str(commence), str(row.get("market") or ""),
+                     str(row.get("outcome") or ""), point, point_key,
+                     str(row.get("bookmaker_key") or ""), str(row.get("bookmaker") or ""),
+                     int(row["price"]), float(row["fair_probability"]),
+                     float(row["ev_percent"]), observed_at))
+                inserted += max(0, cur.rowcount)
+        return inserted
+
+    @staticmethod
+    def _as_utc(value):
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            return None
+
+    def _closing_consensus(self, db, entry):
+        start = self._as_utc(entry["commence_time"])
+        if start is None:
+            return None
+        snapshots = db.execute(
+            """SELECT DISTINCT s.id,s.fetched_at FROM snapshots s
+               JOIN quotes q ON q.snapshot_id=s.id
+               WHERE q.event_id=? ORDER BY s.id DESC""",
+            (entry["event_id"],)).fetchall()
+        for snapshot in snapshots:
+            fetched = self._as_utc(snapshot["fetched_at"])
+            if fetched is None or fetched >= start:
+                continue
+            quotes = db.execute(
+                """SELECT bookmaker_key,market_key,outcome_name,point,price
+                   FROM quotes WHERE snapshot_id=? AND event_id=? AND market_key=?""",
+                (snapshot["id"], entry["event_id"], entry["market_key"])).fetchall()
+            by_book_line = {}
+            target_line = None if entry["point"] is None else abs(float(entry["point"])) if entry["market_key"] == "spreads" else float(entry["point"])
+            for quote in quotes:
+                if quote["market_key"] == "h2h":
+                    line = None
+                elif quote["point"] is None:
+                    line = None
+                elif quote["market_key"] == "spreads":
+                    line = abs(float(quote["point"]))
+                else:
+                    line = float(quote["point"])
+                if line != target_line:
+                    continue
+                key = quote["bookmaker_key"]
+                by_book_line.setdefault(key, []).append(dict(quote))
+            peer_probabilities = []
+            for book, outcomes in by_book_line.items():
+                if book == entry["bookmaker_key"] or len(outcomes) < 2:
+                    continue
+                names = [o["outcome_name"] for o in outcomes]
+                if len(set(names)) != len(names) or any(not isinstance(o["price"], int) or o["price"] == 0 for o in outcomes):
+                    continue
+                probs = no_vig_probabilities([o["price"] for o in outcomes])
+                for outcome, probability in zip(outcomes, probs):
+                    if (outcome["outcome_name"] == entry["outcome_name"] and
+                        outcome["point"] == entry["point"]):
+                        peer_probabilities.append(probability)
+                        break
+            if len(peer_probabilities) >= 2:
+                fair = float(median(peer_probabilities))
+                if 0 < fair < 1:
+                    close_decimal = 1 / fair
+                    entry_decimal = american_to_decimal(int(entry["entry_price"]))
+                    clv = (entry_decimal / close_decimal - 1) * 100
+                    close_american = (round((close_decimal - 1) * 100) if close_decimal >= 2
+                                      else round(-100 / (close_decimal - 1)))
+                    return {"close_at": snapshot["fetched_at"],
+                            "close_fair_probability": fair,
+                            "close_fair_american": close_american,
+                            "closing_books": len(peer_probabilities),
+                            "clv_percent": clv}
+        return None
+
+    def clv_report(self, sport=None, limit=500):
+        """Resolve tracked entries against the last pregame no-vig peer consensus.
+
+        Positive CLV means the captured entry price was longer than the fair
+        closing consensus price. Only complete same-line markets from at least
+        two other books are eligible; no post-start quotes are considered.
+        """
+        now = datetime.now(timezone.utc)
+        with self.connect() as db:
+            pending_sql = "SELECT * FROM clv_entries WHERE status='pending'"
+            pending_args = []
+            if sport:
+                pending_sql += " AND sport=?"
+                pending_args.append(sport)
+            pending = db.execute(pending_sql, pending_args).fetchall()
+            for entry in pending:
+                start = self._as_utc(entry["commence_time"])
+                if start is None or now < start:
+                    continue
+                close = self._closing_consensus(db, entry)
+                if close:
+                    db.execute(
+                        """UPDATE clv_entries SET status='closed',close_at=?,
+                           close_fair_probability=?,close_fair_american=?,
+                           closing_books=?,clv_percent=? WHERE id=? AND status='pending'""",
+                        (close["close_at"], close["close_fair_probability"],
+                         close["close_fair_american"], close["closing_books"],
+                         close["clv_percent"], entry["id"]))
+                else:
+                    db.execute("UPDATE clv_entries SET status='insufficient_close_data' WHERE id=?",
+                               (entry["id"],))
+            sql = "SELECT * FROM clv_entries"
+            args = []
+            if sport:
+                sql += " WHERE sport=?"
+                args.append(sport)
+            sql += " ORDER BY entry_at DESC LIMIT ?"
+            args.append(max(1, min(int(limit), 2000)))
+            rows = [dict(row) for row in db.execute(sql, args).fetchall()]
+            summary_sql = """SELECT COUNT(*) total,
+                SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) closed,
+                SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) pending,
+                AVG(CASE WHEN status='closed' THEN clv_percent END) average_clv_percent,
+                SUM(CASE WHEN status='closed' AND clv_percent>0 THEN 1 ELSE 0 END) positive_clv,
+                SUM(CASE WHEN status='closed' AND clv_percent<0 THEN 1 ELSE 0 END) negative_clv
+                FROM clv_entries"""
+            if sport:
+                summary_sql += " WHERE sport=?"
+            summary = db.execute(summary_sql, [sport] if sport else []).fetchone()
+        return {"entries": rows, "summary": dict(summary),
+                "method": "Entry American odds compared with last pregame no-vig consensus price from at least two other complete same-line sportsbooks. Positive means the entry price beat that consensus close; this is not betting profit or a win-rate measure."}
 
     def claim_alert(self, fingerprint, alert_type, summary, sent_at=None):
         """Atomically claim an alert fingerprint; returns False if already sent."""
