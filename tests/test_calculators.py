@@ -43,8 +43,8 @@ def test_ev_and_fractional_kelly_are_bankroll_sized():
 
 
 def test_hedge_equalizes_both_outcomes():
-    result = hedge(100, 200, -150)
-    assert result["hedge_stake"] == pytest.approx(133.33, abs=0.01)
+    result = hedge(100, 150, 200)
+    assert result["hedge_stake"] == pytest.approx(83.33, abs=0.01)
     assert result["profit_if_original_wins"] == pytest.approx(66.67, abs=0.01)
     assert result["profit_if_hedge_wins"] == pytest.approx(66.67, abs=0.01)
 
