@@ -342,7 +342,8 @@ class OddsDatabase:
 
     def _closing_consensus(self, db, entry):
         start = self._as_utc(entry["commence_time"])
-        if start is None:
+        entry_at = self._as_utc(entry["entry_at"])
+        if start is None or entry_at is None:
             return None
         snapshots = db.execute(
             """SELECT DISTINCT s.id,s.fetched_at FROM snapshots s
@@ -351,7 +352,10 @@ class OddsDatabase:
             (entry["event_id"],)).fetchall()
         for snapshot in snapshots:
             fetched = self._as_utc(snapshot["fetched_at"])
-            if (fetched is None or fetched >= start or
+            # A closing observation must be strictly later than the
+            # captured entry snapshot. The refresh that created the entry
+            # cannot also serve as its close.
+            if (fetched is None or fetched <= entry_at or fetched >= start or
                 start - fetched > timedelta(minutes=config.CLV_MAX_CLOSE_AGE_MINUTES)):
                 continue
             quotes = db.execute(
