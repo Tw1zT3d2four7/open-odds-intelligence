@@ -1,6 +1,6 @@
 import sqlite3
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from statistics import median
 
 from .math import american_to_decimal, no_vig_probabilities
@@ -341,7 +341,8 @@ class OddsDatabase:
             (entry["event_id"],)).fetchall()
         for snapshot in snapshots:
             fetched = self._as_utc(snapshot["fetched_at"])
-            if fetched is None or fetched >= start:
+            if (fetched is None or fetched >= start or
+                start - fetched > timedelta(minutes=config.CLV_MAX_CLOSE_AGE_MINUTES)):
                 continue
             quotes = db.execute(
                 """SELECT bookmaker_key,market_key,outcome_name,point,price
