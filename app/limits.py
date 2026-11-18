@@ -185,8 +185,14 @@ class MarketLimitsMonitor:
                 all_rows.extend(self._extract(configured_sport, events, observed_at))
             except LimitsError as exc:
                 errors.append(f"{sport}: {exc}")
-                # A quota/auth error should stop the batch; don't burn more requests.
-                if "HTTP 401" in str(exc) or "HTTP 403" in str(exc) or "HTTP 429" in str(exc):
+                # Stop immediately for quota, authentication or rate-limit
+                # failures, including provider errors returned in HTTP 200 bodies.
+                error_text = str(exc).upper()
+                stop_tokens = (
+                    "HTTP 401", "HTTP 403", "HTTP 429", "OUT_OF_USAGE_CREDITS",
+                    "QUOTA", "RATE LIMIT", "RATE_LIMIT", "UNAUTHORIZED", "FORBIDDEN",
+                )
+                if any(token in error_text for token in stop_tokens):
                     break
         changes = []
         with self._connect() as db:
