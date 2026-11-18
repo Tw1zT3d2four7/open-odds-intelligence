@@ -52,7 +52,7 @@ def market_board(events):
     ))
 
 
-def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
+def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
     """Calculate leave-one-book-out EV and cross-book two-way arbitrage.
 
     Only complete, matching outcome sets are compared. Soccer h2h is a
@@ -156,9 +156,15 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                     "fair_probability": round(fair, 6), "consensus_books": len(peer_books),
                     "ev_percent": round(ev, 2),
                 }
-                if identity not in best or american_to_decimal(price) > american_to_decimal(best[identity]["price"]):
-                    best[identity] = row
-        opportunities.extend(best.values())
+                if best_only:
+                    if identity not in best or american_to_decimal(price) > american_to_decimal(best[identity]["price"]):
+                        best[identity] = row
+                else:
+                    # CLV needs each qualifying sportsbook's first quote,
+                    # not only the best price selected for the public board.
+                    opportunities.append(row)
+        if best_only:
+            opportunities.extend(best.values())
 
         # Arbitrage: only complete two-outcome markets, with distinct books.
         for (market_key, line, _player_scope), quotes in line_sets.items():
