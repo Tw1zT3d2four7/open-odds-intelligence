@@ -17,6 +17,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Consolidated opening-to-latest sportsbook price / line movement summaries, with exact alternate-line separation.
 - Optional free-tier posted sportsbook market-limit monitoring via OddsLink, with persistent limit history, increase/decrease detection, clickable per-selection limit timelines and Discord increase alerts.
 - Clickable movement timelines showing every saved line and price observation for a selection.
+- Automatic first-qualified-quote capture and closing-line value (CLV) reports against the last pregame no-vig consensus from at least two other complete same-line books.
 - Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
 - Opt-in scheduled refresh at a configurable interval (disabled by default).
@@ -27,7 +28,7 @@ The EV calculation uses the median of other sportsbooks' no-vig probabilities fo
 
 ## Not implemented yet
 
-This is an active development build, not a feature-complete OddsLogic replacement. Closing-line value tracking, player props, additional provider integrations, authentication and full historical backtesting remain future work. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
+This is an active development build, not a feature-complete OddsLogic replacement. Player props, additional provider integrations, authentication and full historical strategy backtesting remain future work. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
 
 No fabricated odds or limits are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
@@ -36,6 +37,10 @@ No fabricated odds or limits are generated. Live quotes remain unavailable until
 The optional Market Limits view uses the free OddsLink API plan to read explicit sportsbook `size.kind=posted_limit` values. Its documented free allowance is 1,000 price requests per month. With the five default leagues and a four-hour polling interval, the monitor uses approximately 900 requests per 30-day month (five sports × six polls/day × 30 days). Keep the league list and polling interval within your account allowance; the application displays quota headers when the provider returns them. `ODDSLINK_API_KEY` is separate from `ODDS_PROVIDER` and does not replace The Odds API or TheRundown. Configure a free key to enable it. `LIMITS_SPORTS` can restrict the monitored leagues; when blank, it follows `ODDS_SPORTS`. `LIMITS_REFRESH_INTERVAL_SECONDS` has a four-hour minimum to protect the free allowance. On startup the monitor takes one initial snapshot, then polls at that interval. Manual refresh is also available from the Market Limits dashboard tab and consumes one request per monitored league.
 
 Only provider values explicitly typed as `posted_limit` are stored. Exchange resting depth and contract counts are excluded. Circa is the primary documented source for posted limits; Pinnacle is displayed only if the provider returns a posted-limit field for it. Missing limits are not inferred. Values are in each sportsbook's own currency and are public market maximums, not account-specific betting limits. A limit-change alert requires two observed values for the same event, book, market, selection and line. Discord alerts report increases by default; set `LIMITS_ALERT_DECREASES=true` to include decreases. Free-tier access and coverage are subject to OddsLink's current terms and allowance.
+
+## Closing-line value tracking
+
+The CLV tracker stores the first positive-EV observation for each exact event, market, selection, line and sportsbook during odds refresh. It then waits until the event start time and compares the captured American price with the last pregame no-vig consensus price from at least two other sportsbooks offering the same complete outcome/line set. Positive CLV means the entry price was longer than the fair consensus closing price. `CLV_MIN_EV_PERCENT` controls the minimum EV threshold used to begin tracking (default `1.0`%). The first refresh after installing this version begins the dataset; older snapshots are not retroactively treated as entries. CLV is a measure of price movement relative to the closing consensus—not a win rate, realized profit, or proof of model accuracy. Events with incomplete closing coverage remain unscored.
 
 ## Controlled testing
 
