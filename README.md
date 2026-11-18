@@ -15,6 +15,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Two-outcome cross-book arbitrage scanning with suggested equal-payout stake percentages.
 - Persistent SQLite snapshots and quote history.
 - Consolidated opening-to-latest sportsbook price / line movement summaries, with exact alternate-line separation.
+- Optional free-tier posted sportsbook market-limit monitoring via OddsLink, with persistent limit history, increase/decrease detection and Discord increase alerts.
 - Clickable movement timelines showing every saved line and price observation for a selection.
 - Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
@@ -28,7 +29,13 @@ The EV calculation uses the median of other sportsbooks' no-vig probabilities fo
 
 This is an active development build, not a feature-complete OddsLogic replacement. Closing-line value tracking, player props, additional provider integrations, authentication and full historical backtesting remain future work. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
 
-No fabricated odds are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
+No fabricated odds or limits are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
+
+## Posted market limits (free tier)
+
+The optional Market Limits view uses the free OddsLink API plan to read explicit sportsbook `size.kind=posted_limit` values. Its documented free allowance is 1,000 price requests per month. With the five default leagues and a four-hour polling interval, the monitor uses approximately 900 requests per 30-day month (five sports × six polls/day × 30 days). Keep the league list and polling interval within your account allowance; the application displays quota headers when the provider returns them. `ODDSLINK_API_KEY` is separate from `ODDS_PROVIDER` and does not replace The Odds API or TheRundown. Configure a free key to enable it. `LIMITS_SPORTS` can restrict the monitored leagues; when blank, it follows `ODDS_SPORTS`. `LIMITS_REFRESH_INTERVAL_SECONDS` has a four-hour minimum to protect the free allowance. On startup the monitor takes one initial snapshot, then polls at that interval. Manual refresh is also available from the Market Limits dashboard tab and consumes one request per monitored league.
+
+Only provider values explicitly typed as `posted_limit` are stored. Exchange resting depth and contract counts are excluded. Circa is the primary documented source for posted limits; Pinnacle is displayed only if the provider returns a posted-limit field for it. Missing limits are not inferred. Values are in each sportsbook's own currency and are public market maximums, not account-specific betting limits. A limit-change alert requires two observed values for the same event, book, market, selection and line. Discord alerts report increases by default; set `LIMITS_ALERT_DECREASES=true` to include decreases. Free-tier access and coverage are subject to OddsLink's current terms and allowance.
 
 ## Controlled testing
 
@@ -83,6 +90,9 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 - `GET /api/arbitrage?sport=...` — two-outcome cross-book arbitrage candidates.
 - `GET /api/history?event_id=...&market=...&outcome=...&bookmaker=...&point=...` — stored quote history.
 - `GET /api/movement?sport=...` — consolidated opening-to-latest price and line movement summaries.
+- `GET /api/limits?sport=...` — latest verified posted market limits and feed status.
+- `GET /api/limits/history?event_id=...&bookmaker=...&market=...&outcome=...` — observed limit history.
+- `POST /api/limits/refresh` — manually refresh the optional limits feed.
 - `GET /api/movement/history?event_id=...&market=...&outcome=...&bookmaker=...` — chronological price and line observations for one sportsbook selection.
 
 ## Development roadmap
