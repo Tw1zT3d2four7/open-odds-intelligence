@@ -180,13 +180,18 @@ def synthetic_minus_one(moneyline_team: float, moneyline_opponent: float,
             "cannot exceed its fair moneyline win probability"
         )
     push_probability = max(0.0, push_probability)
-    fair_decimal = (1.0 - cover_probability) / cover_probability
+    # A -1 wager pushes on an exact one-goal/run win. Pushes return the
+    # stake and therefore are excluded from the win/loss break-even equation:
+    # p_cover * (decimal - 1) - p_loss = 0.
+    fair_decimal = 1.0 + loss_probability / cover_probability
+    decisive_probability = cover_probability / (cover_probability + loss_probability)
     return {
         "fair_decimal": round(fair_decimal, 6),
         "fair_american": decimal_to_american(fair_decimal),
         "cover_probability": round(cover_probability, 8),
         "push_probability": round(push_probability, 8),
         "loss_probability": round(loss_probability, 8),
+        "decisive_win_probability": round(decisive_probability, 8),
         "moneyline_fair_probability": round(win_probability, 8),
         "moneyline_overround_percent": ml["overround"],
         "handicap_overround_percent": handicap["overround"],
