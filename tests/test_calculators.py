@@ -60,3 +60,33 @@ def test_hedge_equalizes_both_outcomes():
 def test_invalid_calculator_inputs_are_rejected(call):
     with pytest.raises(ValueError):
         call()
+
+
+def test_run_line_minus_one_wins_when_selected_team_wins_by_two_or_more():
+    from app.calculators import run_line_minus_one
+    result = run_line_minus_one(100, -110, 2)
+    assert result["result"] == "win"
+    assert result["profit"] == pytest.approx(90.91)
+    assert result["total_return"] == pytest.approx(190.91)
+
+
+def test_puck_line_minus_one_pushes_when_selected_team_wins_by_exactly_one():
+    from app.calculators import run_line_minus_one
+    result = run_line_minus_one(100, 150, 1)
+    assert result["result"] == "push"
+    assert result["profit"] == 0
+    assert result["total_return"] == 100
+
+
+def test_run_line_minus_one_loses_on_tie_or_selected_team_loss():
+    from app.calculators import run_line_minus_one
+    assert run_line_minus_one(100, -105, 0)["result"] == "loss"
+    assert run_line_minus_one(100, -105, -3)["total_return"] == 0
+
+
+def test_run_line_minus_one_rejects_invalid_stake_or_odds():
+    from app.calculators import run_line_minus_one
+    with pytest.raises(ValueError):
+        run_line_minus_one(0, -110, 2)
+    with pytest.raises(ValueError):
+        run_line_minus_one(100, 0, 2)
