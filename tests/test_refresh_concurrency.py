@@ -171,3 +171,60 @@ def test_provider_quota_diagnostics_persist_across_service_restart(tmp_path, mon
     assert restarted_service.status()["provider_usage"] == {
         "requests_remaining": "77", "requests_used": "23",
     }
+
+
+def test_service_clv_capture_records_each_book_not_only_best_price(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    commence = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    event = {
+        "id": "clv-all-books", "sport_key": "basketball_nba",
+        "sport_title": "Basketball", "home_team": "Home", "away_team": "Away",
+        "commence_time": commence,
+        "bookmakers": [
+            {"key": "a", "title": "Book A", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 120}, {"name": "Away", "price": -140}]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "point": 44.5, "price": -110},
+                    {"name": "Under", "point": 44.5, "price": -110}]},
+            ]},
+            {"key": "b", "title": "Book B", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 130}, {"name": "Away", "price": -150}]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "point": 44.5, "price": 120},
+                    {"name": "Under", "point": 44.5, "price": -140}]},
+            ]},
+            {"key": "c", "title": "Book C", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 140}, {"name": "Away", "price": -160}]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "point": 44.5, "price": 125},
+                    {"name": "Under", "point": 44.5, "price": -145}]},
+            ]},
+        ],
+    }
+
+    class FakeProvider:
+        name = "fake"
+        usage = {}
+        def __init__(self, *args, **kwargs):
+            pass
+        def fetch_odds(self, sport):
+            return [event]
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(config, "PLAYER_PROPS_ENABLED", False)
+    monkeypatch.setattr(config, "CLV_MIN_EV_PERCENT", -100)
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", FakeProvider)
+
+    database = OddsDatabase(tmp_path / "clv-all-books.sqlite3")
+    service = OddsService(database)
+    assert service.refresh()["ok"] is True
+    report = service.clv_report("basketball_nba")
+    assert report["summary"]["total"] == 12
+    assert {entry["bookmaker_key"] for entry in report["entries"]} == {"a", "b", "c"}
