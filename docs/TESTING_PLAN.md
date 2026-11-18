@@ -84,13 +84,13 @@ The target sportsbook must not be included in its own fair-probability estimate.
 - Install the CLV-enabled version and refresh odds while upcoming events have positive-EV candidates.
 - Confirm the tracker records the first qualifying price once per exact event, market, outcome, line and sportsbook; later refreshes must not overwrite that entry.
 - Confirm events that have not started remain pending and no post-start quotes are considered closing prices.
-- After an event starts, verify the close uses the latest pregame snapshot with at least two other books offering the same complete outcome/line set.
+- After an event starts, verify the close uses the latest pregame snapshot within `CLV_MAX_CLOSE_AGE_MINUTES` (default 120 minutes) with at least two other books offering the same complete outcome/line set.
 - Independently calculate the peer books' no-vig probabilities and median; verify the closing fair probability, fair American price and CLV calculation.
 - Confirm positive CLV means the captured entry price beat the fair closing consensus price. It does not mean the wager won or that the model is profitable.
 - Confirm events without two complete peer books are marked insufficient rather than assigned a fabricated close.
 - Confirm the CLV history survives container restarts and new entries begin only after this version is installed.
 
-**Pass criteria:** immutable entry quotes, strictly pregame closes, exact-line and complete-market matching, reproducible consensus calculations, and clear pending/insufficient states.
+**Pass criteria:** immutable entry quotes, fresh strictly pregame closes, exact-line and complete-market matching, reproducible consensus calculations, and clear pending/insufficient states.
 
 ### 7. Stability and operational checks
 
