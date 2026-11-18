@@ -56,8 +56,9 @@ class TheOddsAPIProvider(OddsProvider):
             for b in raw.get("bookmakers", []):
                 markets = []
                 for m in b.get("markets", []):
-                    outcomes = [{"name": o.get("name", ""), "price": int(o["price"]),
-                                 "point": o.get("point")} for o in m.get("outcomes", [])
+                    outcomes = [{"name": o.get("name", ""), "description": o.get("description") or "",
+                                 "price": int(o["price"]), "point": o.get("point")}
+                                for o in m.get("outcomes", [])
                                 if isinstance(o, dict) and isinstance(o.get("price"), (int, float))]
                     for outcome in outcomes:
                         outcome["updated_at"] = m.get("last_update") or b.get("last_update")
