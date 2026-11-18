@@ -20,7 +20,17 @@ class OddsService:
         self._updated_at = None
         self._provider_usage = {}
         self._player_props_status = {"enabled": False, "reason": "Disabled by default."}
-        self._player_props_last_attempt = None
+        stored_props_attempt = self.db.get_state("player_props_last_attempt")
+        try:
+            self._player_props_last_attempt = (
+                datetime.fromisoformat(stored_props_attempt.replace("Z", "+00:00"))
+                if stored_props_attempt else None
+            )
+            if (self._player_props_last_attempt is not None and
+                self._player_props_last_attempt.tzinfo is None):
+                self._player_props_last_attempt = self._player_props_last_attempt.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            self._player_props_last_attempt = None
         self._alert_error = None
         self._alerts_evaluated = 0
         self._alerts_qualified = 0
@@ -104,6 +114,7 @@ class OddsService:
                                config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS)
                         if due:
                             self._player_props_last_attempt = now
+                            self.db.set_state("player_props_last_attempt", now.isoformat())
                             self._player_props_status = provider.fetch_player_props(
                                 key, events, config.PLAYER_PROPS_MARKETS,
                                 config.PLAYER_PROPS_MAX_EVENTS,
@@ -112,10 +123,17 @@ class OddsService:
                             self._player_props_status["refresh_interval_seconds"] = config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
                             self._provider_usage = dict(provider.usage)
                         else:
-                            self._player_props_status["next_refresh_seconds"] = max(
+                            remaining = max(
                                 0, int(config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS -
                                        (now - self._player_props_last_attempt).total_seconds())
                             )
+                            self._player_props_status = {
+                                "enabled": True, "sport": key, "events_requested": 0,
+                                "events_with_props": 0,
+                                "reason": "Waiting for the quota-safe player-props refresh interval.",
+                                "next_refresh_seconds": remaining,
+                                "refresh_interval_seconds": config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS,
+                            }
                     else:
                         self._player_props_status = {
                             "enabled": True, "sport": key, "events_requested": 0,
