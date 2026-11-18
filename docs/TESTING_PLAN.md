@@ -84,7 +84,7 @@ The target sportsbook must not be included in its own fair-probability estimate.
 - Do not treat a single snapshot as evidence of a limit increase. Allow at least two scheduled snapshots of the same event/book/market/selection/line before expecting a change record.
 - Open a detected change and verify the complete chronological limit history, previous/current amounts, absolute delta and percentage delta.
 - Confirm unchanged snapshots do not create change records or repeated Discord alerts. Verify increases alert once per distinct transition; decreases remain disabled unless explicitly enabled.
-- Record quota before and after a manual refresh. Each monitored sport consumes a provider request; keep the four-hour minimum and do not repeatedly click manual refresh during testing.
+- Record quota before and after a refresh. Each monitored sport consumes a provider request; automatic and manual polls share the persisted four-hour minimum. Restart the container during the cooldown and confirm no additional provider request occurs.
 - Treat all timestamps as application observation times unless the provider explicitly supplies a source timestamp. Values are in the sportsbook's reported currency, not necessarily USD or an account-specific betting limit.
 
 **Pass criteria:** only explicit provider-posted limits are displayed; successive snapshots produce accurate changes; history persists across restarts; unchanged values do not generate false changes; quota use stays within the account allowance.
