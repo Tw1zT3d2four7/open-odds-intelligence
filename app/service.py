@@ -19,6 +19,12 @@ class OddsService:
         self._last_error = None
         self._updated_at = None
         self._provider_usage = {}
+        saved_usage_provider = self.db.get_state("provider_usage_provider")
+        if saved_usage_provider == config.ODDS_PROVIDER:
+            try:
+                self._provider_usage = json.loads(self.db.get_state("provider_usage") or "{}")
+            except (TypeError, ValueError):
+                self._provider_usage = {}
         self._player_props_status = {"enabled": False, "reason": "Disabled by default."}
         stored_props_attempt = self.db.get_state("player_props_last_attempt")
         try:
@@ -39,6 +45,13 @@ class OddsService:
         self._last_alert_qualified = 0
         self._last_alert_sent = 0
         self._last_alert_error = None
+
+    def _remember_provider_usage(self, usage):
+        if not usage:
+            return
+        self._provider_usage = dict(usage)
+        self.db.set_state("provider_usage", json.dumps(self._provider_usage))
+        self.db.set_state("provider_usage_provider", config.ODDS_PROVIDER)
 
     @property
     def configured(self):
@@ -105,7 +118,7 @@ class OddsService:
         try:
             for key in ([sport] if sport else config.ODDS_SPORTS):
                 events = provider.fetch_odds(key)
-                self._provider_usage = dict(provider.usage)
+                self._remember_provider_usage(provider.usage)
                 if config.PLAYER_PROPS_ENABLED and key == config.PLAYER_PROPS_SPORT:
                     if config.ODDS_PROVIDER == "the_odds_api":
                         now = datetime.now(timezone.utc)
@@ -121,7 +134,7 @@ class OddsService:
                             )
                             self._player_props_status["last_updated"] = now.isoformat()
                             self._player_props_status["refresh_interval_seconds"] = config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
-                            self._provider_usage = dict(provider.usage)
+                            self._remember_provider_usage(provider.usage)
                         else:
                             remaining = max(
                                 0, int(config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS -
@@ -163,7 +176,7 @@ class OddsService:
                     "alerts_qualified": alert_status["last_alert_qualified"],
                     "alert_error": alert_status["last_alert_error"]}
         except ProviderError as exc:
-            self._provider_usage = dict(getattr(provider, "usage", self._provider_usage))
+            self._remember_provider_usage(getattr(provider, "usage", {}))
             self._last_error = str(exc)
             return {"ok": False, "error": self._last_error, "events": count}
 
