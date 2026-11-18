@@ -162,7 +162,7 @@ class OddsService:
                 # price whose closing-line value is being measured.
                 clv_candidates = analyze_markets(
                     events, min_ev=config.CLV_MIN_EV_PERCENT,
-                    min_consensus_books=2,
+                    min_consensus_books=2, best_only=False,
                 )["opportunities"]
                 self.db.record_clv_candidates(clv_candidates, fetched_at)
                 count += len(events)
