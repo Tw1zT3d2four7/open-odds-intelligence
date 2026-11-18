@@ -102,6 +102,7 @@ class OddsService:
         if not self.configured:
             self._last_error = "No live odds provider configured. Configure a supported provider and API key."
             return {"ok": False, "error": self._last_error, "events": 0}
+        provider = None
         if config.ODDS_PROVIDER == "therundown":
             provider = TheRundownProvider(
                 config.THERUNDOWN_API_KEY,
