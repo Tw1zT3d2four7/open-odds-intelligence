@@ -90,6 +90,14 @@ def market_limits(sport: str | None = None,
             "note": "Only provider-reported posted market limits are shown. Missing values are not inferred; limits are not account-specific betting caps."}
 
 
+@app.get("/api/limits/changes")
+def market_limits_changes(sport: str | None = None,
+                          direction: str = Query("increased", pattern="^(increased|decreased|all)$"),
+                          limit: int = Query(200, ge=1, le=2000)):
+    return {"changes": limits_monitor.changes(sport, direction, limit),
+            "note": "Changes are calculated from successive stored provider-reported posted-limit snapshots. Observation time is when this application received the snapshot, not a claimed sportsbook publication time."}
+
+
 @app.get("/api/limits/history")
 def market_limits_history(event_id: str, bookmaker: str, market: str,
                           outcome: str, point: float | None = None,
