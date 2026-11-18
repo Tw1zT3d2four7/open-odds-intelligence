@@ -142,6 +142,12 @@ class TheOddsAPIProvider(OddsProvider):
                     "requests_last": "x-requests-last",
                 }.items() if response.headers.get(header) is not None}
         except HTTPError as exc:
+            headers = exc.headers or {}
+            self.usage.update({key: headers.get(header) for key, header in {
+                "requests_remaining": "x-requests-remaining",
+                "requests_used": "x-requests-used",
+                "requests_last": "x-requests-last",
+            }.items() if headers.get(header) is not None})
             detail = exc.read().decode("utf-8", errors="replace")[:500]
             raise ProviderError(f"Odds provider HTTP {exc.code}: {detail}") from exc
         except (URLError, TimeoutError, json.JSONDecodeError) as exc:
