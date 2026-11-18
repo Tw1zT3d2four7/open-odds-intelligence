@@ -117,6 +117,10 @@ class MarketLimitsMonitor:
                 );
                 CREATE INDEX IF NOT EXISTS idx_limit_lookup
                 ON market_limit_quotes(event_id,bookmaker_key,market_key,outcome_name,point,id);
+                CREATE TABLE IF NOT EXISTS market_limit_state (
+                    state_key TEXT PRIMARY KEY,
+                    state_value TEXT NOT NULL
+                );
             """)
 
     @staticmethod
@@ -147,7 +151,7 @@ class MarketLimitsMonitor:
                         ))
         return rows
 
-    def refresh(self):
+    def refresh(self, force=False):
         # A startup poll and a manual dashboard refresh must not duplicate
         # provider calls while a previous limits batch is still running.
         if not self._refresh_lock.acquire(blocking=False):
@@ -155,16 +159,44 @@ class MarketLimitsMonitor:
                     "error": "A market-limits refresh is already running; this request was skipped to protect provider quota.",
                     "observations": 0}
         try:
-            return self._refresh_locked()
+            return self._refresh_locked(force=force)
         finally:
             self._refresh_lock.release()
 
-    def _refresh_locked(self):
+    def _refresh_locked(self, force=False):
         if not config.ODDSLINK_API_KEY:
             self.last_error = "Market limits feed is disabled. Add a free OddsLink API key as ODDSLINK_API_KEY."
             return {"ok": False, "error": self.last_error, "observations": 0}
         client = OddsLinkClient(config.ODDSLINK_API_KEY)
-        observed_at = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        observed_at = now.isoformat()
+        # Persist the last attempt so container restarts cannot reset the
+        # free-tier four-hour polling guard. BEGIN IMMEDIATE also coordinates
+        # multiple application workers sharing the same SQLite database.
+        with self._connect() as state_db:
+            state_db.execute("BEGIN IMMEDIATE")
+            previous = state_db.execute(
+                "SELECT state_value FROM market_limit_state WHERE state_key='last_attempt'"
+            ).fetchone()
+            if previous and not force:
+                try:
+                    last_attempt = datetime.fromisoformat(previous["state_value"].replace("Z", "+00:00"))
+                    remaining = config.LIMITS_REFRESH_INTERVAL_SECONDS - (
+                        now - last_attempt.astimezone(timezone.utc)
+                    ).total_seconds()
+                except (TypeError, ValueError):
+                    remaining = 0
+                if remaining > 0:
+                    return {
+                        "ok": True, "skipped": True, "reason": "refresh_cooldown",
+                        "next_refresh_seconds": int(remaining) + 1,
+                        "updated_at": self.last_updated, "observations": 0,
+                        "message": "Market limits refresh is being held to the configured quota-safe interval.",
+                    }
+            state_db.execute(
+                "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_attempt',?)",
+                (observed_at,),
+            )
         all_rows, errors = [], []
         diagnostic = {"sports_requested": [], "events_returned": 0, "bookmakers_returned": [], "size_kinds_returned": {}, "posted_limit_outcomes": 0}
         sports = config.LIMITS_SPORTS or config.ODDS_SPORTS
@@ -293,10 +325,26 @@ class MarketLimitsMonitor:
             books = [r[0] for r in db.execute(
                 "SELECT DISTINCT bookmaker_key FROM market_limit_quotes ORDER BY 1"
             )]
+            state = db.execute(
+                "SELECT state_value FROM market_limit_state WHERE state_key='last_attempt'"
+            ).fetchone()
+        last_attempt = state["state_value"] if state else None
+        next_refresh_seconds = 0
+        if last_attempt:
+            try:
+                attempted = datetime.fromisoformat(last_attempt.replace("Z", "+00:00"))
+                next_refresh_seconds = max(0, int(
+                    config.LIMITS_REFRESH_INTERVAL_SECONDS -
+                    (datetime.now(timezone.utc) - attempted.astimezone(timezone.utc)).total_seconds()
+                ))
+            except (TypeError, ValueError):
+                next_refresh_seconds = 0
         return {
             "enabled": bool(config.ODDSLINK_API_KEY),
             "provider": "OddsLink Free",
             "last_updated": self.last_updated,
+            "last_attempt": last_attempt,
+            "next_refresh_seconds": next_refresh_seconds,
             "last_error": self.last_error,
             "observations": count,
             "books_with_posted_limits": books,
