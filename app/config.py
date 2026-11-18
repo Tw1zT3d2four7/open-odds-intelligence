@@ -39,3 +39,6 @@ ODDSLINK_API_KEY = os.getenv("ODDSLINK_API_KEY", "")
 LIMITS_REFRESH_INTERVAL_SECONDS = max(14400, int(os.getenv("LIMITS_REFRESH_INTERVAL_SECONDS", "14400")))
 LIMITS_SPORTS = [s.strip() for s in os.getenv("LIMITS_SPORTS", "").split(",") if s.strip()]
 LIMITS_ALERT_DECREASES = os.getenv("LIMITS_ALERT_DECREASES", "false").strip().lower() in ("1", "true", "yes", "on")
+
+# Track the first positive-EV quote per exact selection for consensus CLV.
+CLV_MIN_EV_PERCENT = float(os.getenv("CLV_MIN_EV_PERCENT", "1.0"))
