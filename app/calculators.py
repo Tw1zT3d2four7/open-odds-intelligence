@@ -157,6 +157,42 @@ def run_line_minus_one(stake: float, odds: float, margin: float,
     }
 
 
+def synthetic_minus_one(moneyline_team: float, moneyline_opponent: float,
+                        handicap_team: float, handicap_opponent: float,
+                        format: str = "american") -> dict:
+    """Estimate a fair -1 price from matching two-way moneyline and -1.5 markets.
+
+    Each market is de-vigged independently. The difference between the
+    selected team's fair moneyline win probability and fair -1.5 cover
+    probability estimates the one-run/one-goal push probability.
+    """
+    ml = no_vig(moneyline_team, moneyline_opponent, format)
+    handicap = no_vig(handicap_team, handicap_opponent, format)
+    win_probability = ml["first_fair_probability"]
+    cover_probability = handicap["first_fair_probability"]
+    push_probability = win_probability - cover_probability
+    loss_probability = 1.0 - win_probability
+    if cover_probability <= 0 or cover_probability >= 1:
+        raise ValueError("The -1.5 cover probability must be between 0% and 100%")
+    if push_probability < -1e-9:
+        raise ValueError(
+            "Inconsistent prices: the selected team's fair -1.5 probability "
+            "cannot exceed its fair moneyline win probability"
+        )
+    push_probability = max(0.0, push_probability)
+    fair_decimal = (1.0 - cover_probability) / cover_probability
+    return {
+        "fair_decimal": round(fair_decimal, 6),
+        "fair_american": decimal_to_american(fair_decimal),
+        "cover_probability": round(cover_probability, 8),
+        "push_probability": round(push_probability, 8),
+        "loss_probability": round(loss_probability, 8),
+        "moneyline_fair_probability": round(win_probability, 8),
+        "moneyline_overround_percent": ml["overround"],
+        "handicap_overround_percent": handicap["overround"],
+    }
+
+
 def hedge(original_stake: float, original_odds: float, hedge_odds: float,
           format: str = "american") -> dict:
     stake = _positive(original_stake, "Original stake")
