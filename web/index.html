@@ -207,6 +207,7 @@ document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.ad
  function recalcAll(){payoutCalc();parlayCalc();noVigCalc();evCalc();hedgeCalc();}
  document.querySelectorAll(".calc-tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".calc-tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".calc-panel").forEach(x=>x.classList.toggle("hidden",x.id!=="calc-"+b.dataset.calc));}));
  el("addParlayLeg").addEventListener("click",()=>addLeg());
+ el("evFraction").addEventListener("change",evCalc);
  el("calcOddsFormat").addEventListener("change",e=>{const next=e.target.value;if(next===format)return;document.querySelectorAll("[data-odds]").forEach(input=>{const v=Number(input.value);if(!Number.isFinite(v)||v===0)return;try{const d=decimal(v);input.value=next==="decimal"?d.toFixed(3):american(d);}catch(_){}});format=next;recalcAll();});
  document.querySelectorAll("#view-calculators input").forEach(input=>input.addEventListener("input",recalcAll));
  addLeg(-110);addLeg(100);recalcAll();
