@@ -485,3 +485,41 @@ def test_clv_spread_peer_completeness_normalizes_signed_lines_across_books(tmp_p
     assert entry["close_at"] == close_at
     assert entry["closing_books"] == 2
 
+def test_clv_never_uses_a_snapshot_at_or_before_the_entry_time(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app import config
+
+    monkeypatch.setattr(config, "CLV_CLOSE_GRACE_MINUTES", 0)
+    db = OddsDatabase(tmp_path / "clv-pre-entry-snapshot.sqlite3")
+    now = datetime.now(timezone.utc)
+    commence = now - timedelta(minutes=5)
+    entry_at = commence - timedelta(minutes=10)
+    candidate = {
+        "event_id": "pre-entry-event", "sport": "basketball_nba",
+        "matchup": "Away @ Home", "commence_time": commence.isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Entry", "bookmaker_key": "entry",
+        "price": -110, "fair_probability": 0.5, "ev_percent": 1.0,
+    }
+    assert db.record_clv_candidates([candidate], entry_at.isoformat()) == 1
+
+    events = [{
+        "id": "pre-entry-event", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "peer-a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -125}, {"name": "Away", "price": 105}]}]},
+            {"key": "peer-b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -120}, {"name": "Away", "price": 100}]}]},
+        ],
+    }]
+    # This snapshot is pregame and recent enough, but it predates the entry.
+    db.save_snapshot("basketball_nba", events, "test",
+                     (entry_at - timedelta(minutes=1)).isoformat())
+    # Even the entry refresh itself is not a closing observation.
+    db.save_snapshot("basketball_nba", events, "test", entry_at.isoformat())
+
+    report = db.clv_report("basketball_nba")
+    assert report["entries"][0]["status"] == "insufficient_close_data"
+    assert report["entries"][0]["close_at"] is None
+    assert report["entries"][0]["clv_percent"] is None
+
