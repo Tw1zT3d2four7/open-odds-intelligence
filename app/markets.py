@@ -84,9 +84,13 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                     name, price = outcome.get("name"), outcome.get("price")
                     if not name or not isinstance(price, int) or price == 0:
                         continue
-                    groups[_line_group(market_key, outcome.get("point"))].append(outcome)
+                    player_scope = (
+                        outcome.get("description") or outcome.get("participant") or ""
+                        if market_key.startswith("player_") else None
+                    )
+                    groups[(_line_group(market_key, outcome.get("point")), player_scope)].append(outcome)
 
-                for line, items in groups.items():
+                for (line, player_scope), items in groups.items():
                     if len(items) != expected_outcomes:
                         continue
                     identities = [
@@ -105,7 +109,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                             "identity": identity, "probability": probability,
                         })
                     # One canonical complete set per book / market / line.
-                    candidate_sets[(market_key, line)][signature][book_key] = quotes
+                    candidate_sets[(market_key, line, player_scope)][signature][book_key] = quotes
 
         # Exclude incomplete or mismatched sets. A tied modal signature is
         # ambiguous, so fail closed rather than mixing different market types.
@@ -123,7 +127,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
 
         # EV: median of other books' no-vig probabilities for the same outcome/line.
         best = {}
-        for (market_key, line), quotes in line_sets.items():
+        for (market_key, line, _player_scope), quotes in line_sets.items():
             for quote in quotes:
                 peers = [q["probability"] for q in quotes
                          if q["book"].get("key") != quote["book"].get("key")
@@ -157,7 +161,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
         opportunities.extend(best.values())
 
         # Arbitrage: only complete two-outcome markets, with distinct books.
-        for (market_key, line), quotes in line_sets.items():
+        for (market_key, line, _player_scope), quotes in line_sets.items():
             if market_key.startswith("player_"):
                 continue
             sides = defaultdict(list)
