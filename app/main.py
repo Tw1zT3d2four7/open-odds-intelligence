@@ -10,11 +10,11 @@ from .limits import limits_monitor
 
 async def _limits_refresh_loop():
     while True:
-        await asyncio.sleep(config.LIMITS_REFRESH_INTERVAL_SECONDS)
         try:
             await asyncio.to_thread(limits_monitor.refresh)
         except Exception:
-            continue
+            pass
+        await asyncio.sleep(config.LIMITS_REFRESH_INTERVAL_SECONDS)
 
 
 async def _automatic_refresh_loop():
