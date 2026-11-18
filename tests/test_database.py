@@ -627,3 +627,40 @@ def test_clv_sport_filter_uses_canonical_sport_key(tmp_path):
     assert db.record_clv_candidates([candidate], now.isoformat()) == 1
     assert db.clv_report("soccer_epl")["summary"]["total"] == 1
     assert db.clv_report("Soccer - English Premier League")["summary"]["total"] == 0
+
+
+def test_database_migrates_legacy_clv_display_sport_to_canonical_key(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    path = tmp_path / "clv-sport-migration.sqlite3"
+    db = OddsDatabase(path)
+    now = datetime.now(timezone.utc)
+    commence = now + timedelta(hours=2)
+    commence_text = commence.isoformat()
+    events = [{
+        "id": "legacy-sport-event", "home_team": "Home", "away_team": "Away",
+        "commence_time": commence_text,
+        "bookmakers": [{
+            "key": "book", "title": "Book", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 150}, {"name": "Away", "price": -170},
+                    {"name": "Draw", "price": 220},
+                ],
+            }],
+        }],
+    }]
+    db.save_snapshot("soccer_epl", events, "test", now.isoformat())
+    legacy_candidate = {
+        "event_id": "legacy-sport-event",
+        "sport": "Soccer - English Premier League",
+        "matchup": "Away @ Home", "commence_time": commence_text,
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Book", "bookmaker_key": "book",
+        "price": 150, "fair_probability": 0.4, "ev_percent": 2.0,
+    }
+    assert db.record_clv_candidates([legacy_candidate], now.isoformat()) == 1
+
+    migrated = OddsDatabase(path)
+    report = migrated.clv_report("soccer_epl")
+    assert report["summary"]["total"] == 1
+    assert report["entries"][0]["sport"] == "soccer_epl"
