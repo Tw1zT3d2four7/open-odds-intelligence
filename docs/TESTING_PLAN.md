@@ -17,6 +17,16 @@ This phase validates data quality, market calculations, alert delivery and opera
 
 Full historical strategy backtesting, injury/news context, authentication and multi-provider comparison are not yet part of this test scope. Player props are an optional, provider-quota-sensitive extension.
 
+## Calculator validation
+
+The calculators are local math tools and must not trigger provider requests. Verify the American/Decimal toggle converts every odds input without changing its underlying value. Spot-check payout, parlay, two-way no-vig, EV/Kelly, hedge and -1 settlement results against independent calculations.
+
+For the synthetic -1 builder, use both sides of the selected team's moneyline and -1.5 market from the same event, sportsbook and settlement period. Confirm the de-vigged cover, push and loss probabilities sum to 100%. The fair decimal price must satisfy:
+
+`fair decimal odds = 1 + P(loss) / P(cover)`
+
+The one-run/one-goal push returns the stake and is not counted as a loss. Confirm inconsistent probabilities are rejected. The displayed price is a fair estimate, not a quoted sportsbook price.
+
 ## Test stages
 
 ### 1. Data-feed integrity
