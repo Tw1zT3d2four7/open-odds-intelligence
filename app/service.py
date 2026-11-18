@@ -191,8 +191,10 @@ class OddsService:
             return list(self._cache.get(sport, []))
         return [event for group in self._cache.values() for event in group]
 
-    def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None, limit=100):
-        return self.db.history(event_id, market_key, outcome_name, bookmaker_key, point, limit)
+    def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None,
+                limit=100, outcome_description=None):
+        return self.db.history(event_id, market_key, outcome_name, bookmaker_key, point,
+                               limit, outcome_description)
 
     def clv_report(self, sport=None, limit=500):
         return self.db.clv_report(sport, limit)
@@ -201,9 +203,9 @@ class OddsService:
         return self.db.movement(sport, limit)
 
     def movement_history(self, event_id, market_key, outcome_name,
-                         bookmaker_key, limit=500):
+                         bookmaker_key, limit=500, outcome_description=None):
         return self.db.movement_history(
-            event_id, market_key, outcome_name, bookmaker_key, limit
+            event_id, market_key, outcome_name, bookmaker_key, limit, outcome_description
         )
 
 
