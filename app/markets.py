@@ -110,6 +110,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                 identity = (market_key, line, quote["identity"])
                 row = {
                     "event_id": event.get("id"), "sport": event.get("sport_title"),
+                    "sport_key": event.get("sport_key") or event.get("sport"),
                     "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
                     "commence_time": event.get("commence_time"), "market": market_key,
                     "outcome": quote["outcome"]["name"],
