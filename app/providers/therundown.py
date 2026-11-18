@@ -125,12 +125,10 @@ class TheRundownProvider:
                 if isinstance(raw, dict)]
 
     def _next_event_slate(self, sport_id):
-        # Schedule/date discovery is reference data; choose the next actual slate.
-        date_sports = [sport_id]
-        if sport_id == 2:
-            date_sports = [2, 25, 26]
+        # Query only the requested sport. Other sport IDs can represent
+        # prediction-market sources, not alternate NFL schedules.
         params = urlencode({
-            "sport_ids": ",".join(str(value) for value in date_sports),
+            "sport_ids": str(sport_id),
             "format": "epoch",
             "exclude_canceled": "true",
         })
