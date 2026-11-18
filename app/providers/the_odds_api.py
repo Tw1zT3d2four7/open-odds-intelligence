@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from .base import OddsProvider
+from ..math import decimal_to_american
 
 class ProviderError(RuntimeError):
     pass
@@ -19,6 +20,13 @@ class TheOddsAPIProvider(OddsProvider):
         self.regions, self.markets, self.odds_format = regions, markets, odds_format
         self.bookmakers = bookmakers
         self.usage = {}
+
+    def _normalize_price(self, value):
+        """Store every provider quote as integer American odds."""
+        numeric = float(value)
+        if self.odds_format == "decimal":
+            return decimal_to_american(numeric)
+        return int(numeric)
 
     def fetch_player_props(self, sport: str, events: list[dict], markets: str, max_events=5) -> dict:
         """Fetch optional non-featured player markets one event at a time.
@@ -89,7 +97,7 @@ class TheOddsAPIProvider(OddsProvider):
                     outcomes = []
                     for outcome in raw_market.get("outcomes", []):
                         try:
-                            price = int(outcome["price"])
+                            price = self._normalize_price(outcome["price"])
                         except (KeyError, TypeError, ValueError):
                             continue
                         if not outcome.get("name") or price == 0:
@@ -150,12 +158,23 @@ class TheOddsAPIProvider(OddsProvider):
             for b in raw.get("bookmakers", []):
                 markets = []
                 for m in b.get("markets", []):
-                    outcomes = [{"name": o.get("name", ""), "description": o.get("description") or "",
-                                 "price": int(o["price"]), "point": o.get("point")}
-                                for o in m.get("outcomes", [])
-                                if isinstance(o, dict) and isinstance(o.get("price"), (int, float))]
-                    for outcome in outcomes:
-                        outcome["updated_at"] = m.get("last_update") or b.get("last_update")
+                    outcomes = []
+                    for raw_outcome in m.get("outcomes", []):
+                        if not isinstance(raw_outcome, dict) or not raw_outcome.get("name"):
+                            continue
+                        try:
+                            price = self._normalize_price(raw_outcome["price"])
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                        if price == 0:
+                            continue
+                        outcomes.append({
+                            "name": raw_outcome.get("name", ""),
+                            "description": raw_outcome.get("description") or "",
+                            "price": price,
+                            "point": raw_outcome.get("point"),
+                            "updated_at": m.get("last_update") or b.get("last_update"),
+                        })
                     markets.append({"key": m.get("key", ""), "last_update": m.get("last_update"), "outcomes": outcomes})
                 books.append({"key": b.get("key", ""), "title": b.get("title", b.get("key", "")),
                               "last_update": b.get("last_update"), "markets": markets})
