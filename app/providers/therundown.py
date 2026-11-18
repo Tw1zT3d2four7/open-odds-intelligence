@@ -125,10 +125,11 @@ class TheRundownProvider:
                 if isinstance(raw, dict)]
 
     def _next_event_slate(self, sport_id):
-        # Query only the requested sport. Other sport IDs can represent
-        # prediction-market sources, not alternate NFL schedules.
+        # NFL has separate regular-season, preseason and playoff sport IDs.
+        # These are schedule namespaces, not sportsbook affiliate IDs.
+        date_sports = [2, 25, 26] if sport_id == 2 else [sport_id]
         params = urlencode({
-            "sport_ids": str(sport_id),
+            "sport_ids": ",".join(str(value) for value in date_sports),
             "format": "epoch",
             "exclude_canceled": "true",
         })
