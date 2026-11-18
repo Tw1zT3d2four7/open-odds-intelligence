@@ -10,6 +10,7 @@ This phase validates data quality, market calculations, alert delivery and opera
 - Moneyline, spreads and totals where complete market quotes are supplied.
 - Best available prices, leave-one-book-out no-vig EV estimates and two-outcome cross-book arbitrage calculations.
 - SQLite quote history and basic price/line movement.
+- Optional OddsLink posted-limit snapshots, limit-change history and Discord increase alerts.
 - Discord alerts for qualifying EV and arbitrage candidates.
 - Manual refresh and Discord-enabled scheduled refresh.
 
@@ -64,7 +65,20 @@ The target sportsbook must not be included in its own fair-probability estimate.
 
 **Pass criteria:** historical observations persist across container restarts and the displayed quote history matches the saved feed observations.
 
-### 5. Stability and operational checks
+### 5. Posted market-limit feed
+
+- Confirm the Market Limits status shows the OddsLink connection, remaining request allowance, configured sports and last-check time.
+- Confirm returned rows are explicitly marked by the provider as `posted_limit`; exchange `resting_depth`, missing sizes and inferred values must not appear.
+- Verify the displayed bookmaker, event, market, outcome, line, posted amount and odds against the provider response.
+- Do not treat a single snapshot as evidence of a limit increase. Allow at least two scheduled snapshots of the same event/book/market/selection/line before expecting a change record.
+- Open a detected change and verify the complete chronological limit history, previous/current amounts, absolute delta and percentage delta.
+- Confirm unchanged snapshots do not create change records or repeated Discord alerts. Verify increases alert once per distinct transition; decreases remain disabled unless explicitly enabled.
+- Record quota before and after a manual refresh. Each monitored sport consumes a provider request; keep the four-hour minimum and do not repeatedly click manual refresh during testing.
+- Treat all timestamps as application observation times unless the provider explicitly supplies a source timestamp. Values are in the sportsbook's reported currency, not necessarily USD or an account-specific betting limit.
+
+**Pass criteria:** only explicit provider-posted limits are displayed; successive snapshots produce accurate changes; history persists across restarts; unchanged values do not generate false changes; quota use stays within the account allowance.
+
+### 6. Stability and operational checks
 
 - Leave the service running through multiple scheduled refresh intervals.
 - Confirm the container remains healthy and `GET /api/health` remains responsive.
@@ -99,4 +113,5 @@ The current dashboard and API do not implement user authentication. Keep the tes
 - Arbitrage calculations assume both quoted prices remain available and that the books settle the market consistently. Limits, void rules, account restrictions and price movement can invalidate the theoretical return.
 - Line movement alone does not establish sharp-money activity.
 - CLV and historical profitability are not yet measured. Do not infer either from a positive EV alert.
+- Posted-limit changes show only what the feed reported between observations. They do not establish sharp action, actual available customer limits, or the reason a sportsbook changed its limit.
 - Keep testing observational and paper-only until calculation accuracy, data coverage and a separate performance study are complete.
