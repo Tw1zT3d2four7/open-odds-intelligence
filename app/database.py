@@ -365,6 +365,18 @@ class OddsDatabase:
                     point_key = str(abs(float(point)))
                 else:
                     point_key = str(float(point))
+                if row.get("market") == "spreads" and point is not None:
+                    legacy_or_current = db.execute(
+                        """SELECT 1 FROM clv_entries
+                           WHERE event_id=? AND market_key='spreads'
+                             AND outcome_name=? AND bookmaker_key=?
+                             AND point IS NOT NULL AND ABS(point)=?
+                           LIMIT 1""",
+                        (str(row.get("event_id") or ""), str(row.get("outcome") or ""),
+                         str(row.get("bookmaker_key") or ""), abs(float(point))),
+                    ).fetchone()
+                    if legacy_or_current:
+                        continue
                 cur = db.execute(
                     """INSERT OR IGNORE INTO clv_entries(
                        event_id,sport,matchup,commence_time,market_key,outcome_name,
