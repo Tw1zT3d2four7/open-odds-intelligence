@@ -116,3 +116,34 @@ def test_spread_market_identities_match_across_signed_point_conventions():
     assert home_a["consensus_books"] == 2
     assert home_a["ev_percent"] > 0
 
+
+
+def test_market_analysis_preserves_canonical_sport_key():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "sport-key-event", "sport_key": "soccer_epl",
+        "sport_title": "Soccer - English Premier League",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [
+            {"key": "target", "title": "Target", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 150}, {"name": "Away", "price": -170},
+                    {"name": "Draw", "price": 220},
+                ]}]},
+            {"key": "peer-a", "title": "Peer A", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 140}, {"name": "Away", "price": -160},
+                    {"name": "Draw", "price": 210},
+                ]}]},
+            {"key": "peer-b", "title": "Peer B", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 145}, {"name": "Away", "price": -165},
+                    {"name": "Draw", "price": 215},
+                ]}]},
+        ],
+    }]
+    result = analyze_markets(events, min_ev=-100, min_consensus_books=2)
+    assert result["opportunities"]
+    assert all(row["sport_key"] == "soccer_epl" for row in result["opportunities"])
