@@ -48,6 +48,10 @@ class OddsDatabase:
                     fingerprint TEXT PRIMARY KEY, sent_at TEXT NOT NULL,
                     alert_type TEXT NOT NULL, summary TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS app_state (
+                    state_key TEXT PRIMARY KEY,
+                    state_value TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS clv_entries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     event_id TEXT NOT NULL, sport TEXT NOT NULL DEFAULT '',
@@ -94,6 +98,20 @@ class OddsDatabase:
                       AND q.sport <> ''
                   )
             """)
+
+    def get_state(self, key):
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT state_value FROM app_state WHERE state_key=?", (key,)
+            ).fetchone()
+        return row["state_value"] if row else None
+
+    def set_state(self, key, value):
+        with self.connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO app_state(state_key,state_value) VALUES(?,?)",
+                (key, str(value)),
+            )
 
     def save_snapshot(self, sport, events, provider="unknown", fetched_at=None):
         fetched_at = fetched_at or datetime.now(timezone.utc).isoformat()
