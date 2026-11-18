@@ -52,6 +52,10 @@ class OddsLinkClient:
         try:
             with urlopen(request, timeout=20) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+                if isinstance(payload, dict) and payload.get("error"):
+                    error = payload["error"]
+                    message = error.get("message") or error.get("code") or str(error) if isinstance(error, dict) else str(error)
+                    raise LimitsError(f"OddsLink API error: {message}")
                 for header, key in (
                     ("x-requests-remaining", "requests_remaining"),
                     ("x-requests-used", "requests_used"),
@@ -74,6 +78,7 @@ class MarketLimitsMonitor:
         self.last_updated = None
         self.usage = {}
         self.last_changes = []
+        self.last_diagnostic = {}
         self._initialize()
 
     def _connect(self):
@@ -141,15 +146,29 @@ class MarketLimitsMonitor:
         client = OddsLinkClient(config.ODDSLINK_API_KEY)
         observed_at = datetime.now(timezone.utc).isoformat()
         all_rows, errors = [], []
+        diagnostic = {"sports_requested": [], "events_returned": 0, "bookmakers_returned": [], "size_kinds_returned": {}, "posted_limit_outcomes": 0}
         sports = config.LIMITS_SPORTS or config.ODDS_SPORTS
         for configured_sport in sports:
             sport = SPORT_MAP.get(configured_sport)
             if not sport:
                 continue
+            diagnostic["sports_requested"].append(sport)
             try:
-                all_rows.extend(self._extract(
-                    configured_sport, client.fetch(sport), observed_at
-                ))
+                events = client.fetch(sport)
+                diagnostic["events_returned"] += len(events)
+                for event in events:
+                    for book in event.get("bookmakers", []) or []:
+                        key = str(book.get("key", "unknown"))
+                        if key not in diagnostic["bookmakers_returned"]:
+                            diagnostic["bookmakers_returned"].append(key)
+                        for market in book.get("markets", []) or []:
+                            for outcome in market.get("outcomes", []) or []:
+                                size = outcome.get("size") or {}
+                                kind = str(size.get("kind", "no_size"))
+                                diagnostic["size_kinds_returned"][kind] = diagnostic["size_kinds_returned"].get(kind, 0) + 1
+                                if kind == "posted_limit":
+                                    diagnostic["posted_limit_outcomes"] += 1
+                all_rows.extend(self._extract(configured_sport, events, observed_at))
             except LimitsError as exc:
                 errors.append(f"{sport}: {exc}")
                 # A quota/auth error should stop the batch; don't burn more requests.
@@ -186,13 +205,15 @@ class MarketLimitsMonitor:
                     changes.append(change)
             db.commit()
         self.usage = dict(client.usage)
+        self.last_diagnostic = diagnostic
         self.last_updated = observed_at if not errors or all_rows else self.last_updated
         self.last_error = "; ".join(errors)[:1000] if errors else None
         self.last_changes = changes
         self._send_alerts(changes)
         return {"ok": not errors, "observations": len(all_rows),
                 "changes": changes, "updated_at": self.last_updated,
-                "error": self.last_error, "usage": self.usage}
+                "error": self.last_error, "usage": self.usage,
+                "diagnostic": diagnostic}
 
     def _send_alerts(self, changes):
         if not config.DISCORD_WEBHOOK_URL:
@@ -257,6 +278,7 @@ class MarketLimitsMonitor:
             "requests_used": self.usage.get("requests_used"),
             "refresh_interval_seconds": config.LIMITS_REFRESH_INTERVAL_SECONDS,
             "free_plan_monthly_request_allowance": 1000,
+            "diagnostic": self.last_diagnostic,
         }
 
     def current(self, sport=None, limit=500):
