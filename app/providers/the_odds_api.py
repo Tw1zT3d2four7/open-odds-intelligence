@@ -20,6 +20,99 @@ class TheOddsAPIProvider(OddsProvider):
         self.bookmakers = bookmakers
         self.usage = {}
 
+    def fetch_player_props(self, sport: str, events: list[dict], markets: str) -> dict:
+        """Fetch optional non-featured player markets one event at a time.
+
+        The Odds API requires the event-odds endpoint for player props. This is
+        deliberately opt-in because each returned market consumes quota.
+        """
+        market_keys = [item.strip() for item in markets.split(",") if item.strip()]
+        if not market_keys:
+            return {"enabled": True, "events_requested": 0, "events_with_props": 0,
+                    "markets": [], "error": "No player-prop market keys configured."}
+        events_with_props = 0
+        errors = []
+        requests = 0
+        for event in events:
+            event_id = event.get("id")
+            if not event_id:
+                continue
+            params = {"apiKey": self.api_key, "markets": ",".join(market_keys),
+                      "oddsFormat": self.odds_format}
+            if self.bookmakers:
+                params["bookmakers"] = self.bookmakers
+            else:
+                params["regions"] = self.regions
+            req = Request(
+                f"{self.base_url}/sports/{sport}/events/{event_id}/odds/?{urlencode(params)}",
+                headers={"User-Agent": "OpenOddsIntelligence/0.1"},
+            )
+            try:
+                with urlopen(req, timeout=20) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.usage = {key: response.headers.get(header) for key, header in {
+                        "requests_remaining": "x-requests-remaining",
+                        "requests_used": "x-requests-used",
+                        "requests_last": "x-requests-last",
+                    }.items() if response.headers.get(header) is not None}
+                requests += 1
+            except HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:400]
+                errors.append(f"{event_id}: HTTP {exc.code}: {detail}")
+                # Stop immediately on quota/auth failures; never hammer a failing key.
+                if exc.code in (401, 403, 429) or "OUT_OF_USAGE_CREDITS" in detail:
+                    break
+                continue
+            except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+                errors.append(f"{event_id}: {exc}")
+                continue
+            if not isinstance(payload, dict):
+                errors.append(f"{event_id}: unexpected event-odds response")
+                continue
+            added = 0
+            books = {book.get("key"): book for book in event.get("bookmakers", [])}
+            for raw_book in payload.get("bookmakers", []):
+                book_key = raw_book.get("key")
+                if not book_key:
+                    continue
+                book = books.get(book_key)
+                if book is None:
+                    book = {"key": book_key, "title": raw_book.get("title", book_key), "markets": []}
+                    event.setdefault("bookmakers", []).append(book)
+                    books[book_key] = book
+                existing = {market.get("key") for market in book.get("markets", [])}
+                for raw_market in raw_book.get("markets", []):
+                    market_key = raw_market.get("key")
+                    if market_key not in market_keys or market_key in existing:
+                        continue
+                    outcomes = []
+                    for outcome in raw_market.get("outcomes", []):
+                        try:
+                            price = int(outcome["price"])
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                        if not outcome.get("name") or price == 0:
+                            continue
+                        outcomes.append({
+                            "name": outcome["name"],
+                            "description": outcome.get("description") or "",
+                            "point": outcome.get("point"),
+                            "price": price,
+                            "updated_at": raw_market.get("last_update"),
+                        })
+                    if outcomes:
+                        book["markets"].append({
+                            "key": market_key, "last_update": raw_market.get("last_update"),
+                            "outcomes": outcomes,
+                        })
+                        added += len(outcomes)
+            if added:
+                events_with_props += 1
+        return {"enabled": True, "sport": sport, "markets": market_keys,
+                "events_requested": requests, "events_with_props": events_with_props,
+                "error": "; ".join(errors)[:1000] if errors else None,
+                "quota": dict(self.usage)}
+
     def fetch_odds(self, sport: str) -> list[dict]:
         params = {"apiKey": self.api_key, "markets": self.markets,
                   "oddsFormat": self.odds_format}
