@@ -28,7 +28,7 @@ The EV calculation uses the median of other sportsbooks' no-vig probabilities fo
 
 ## Not implemented yet
 
-This is an active development build, not a feature-complete OddsLogic replacement. Additional provider integrations, authentication and full historical strategy backtesting remain future work. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
+This is an active development build, not a feature-complete OddsLogic replacement. Additional provider integrations, authentication and full historical strategy backtesting remain future work. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. The backtesting implementation plan is documented in [docs/BACKTESTING_DESIGN.md](docs/BACKTESTING_DESIGN.md); it requires prospective quote history and trustworthy settlement data, and will not fabricate missing results. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
 
 No fabricated odds or limits are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
