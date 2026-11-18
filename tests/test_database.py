@@ -607,4 +607,4 @@ def test_clv_soccer_three_way_fair_probability_uses_all_three_outcomes(tmp_path)
     expected_a = no_vig_home(150, 220, 180)
     expected_b = no_vig_home(140, 230, 190)
     expected_median = (expected_a + expected_b) / 2
-    assert entry["close_fair_probability"] == pytest.approx(expected_median, abs=1e-6)
+    assert abs(entry["close_fair_probability"] - expected_median) < 1e-6
