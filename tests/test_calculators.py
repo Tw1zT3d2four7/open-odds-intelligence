@@ -53,7 +53,7 @@ def test_hedge_equalizes_both_outcomes():
     lambda: payout(0, -110),
     lambda: payout(100, 0),
     lambda: parlay([]),
-    lambda: no_vig(-110, 1),
+    lambda: no_vig(-110, 0),
     lambda: ev_kelly(-110, 1.2, 100),
     lambda: hedge(-10, -110, -110),
 ])
