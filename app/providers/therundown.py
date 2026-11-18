@@ -68,8 +68,18 @@ class TheRundownProvider:
                 self.usage.update({k: v for k, v in new_usage.items() if v is not None})
                 return payload
         except HTTPError as exc:
+            headers = exc.headers or {}
+            new_usage = {
+                "datapoints_total": headers.get("X-Datapoints"),
+                "datapoints_used": headers.get("X-Datapoints-Used"),
+                "datapoints_remaining": headers.get("X-Datapoints-Remaining"),
+                "datapoints_limit": headers.get("X-Datapoints-Limit"),
+                "datapoints_period": headers.get("X-Datapoints-Period"),
+                "data_delay_seconds": headers.get("X-Data-Delay-Seconds"),
+            }
+            self.usage.update({key: value for key, value in new_usage.items() if value is not None})
             detail = exc.read().decode("utf-8", errors="replace")[:500]
-            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            retry_after = headers.get("Retry-After")
             suffix = f" (Retry-After: {retry_after}s)" if retry_after else ""
             raise ProviderError(f"TheRundown HTTP {exc.code}{suffix}: {detail}") from exc
         except (URLError, TimeoutError, json.JSONDecodeError) as exc:
