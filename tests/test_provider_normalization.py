@@ -272,3 +272,23 @@ def test_odds_api_decimal_player_props_are_normalized_to_american_odds(monkeypat
 def test_therundown_accepts_canonical_odds_api_mls_sport_key():
     from app.providers.therundown import TheRundownProvider
     assert TheRundownProvider.SPORTS["soccer_usa_mls"] == (10, "MLS")
+
+
+@pytest.mark.parametrize("sport_id,expected", [
+    (2, "2,25,26"), (3, "3,31"), (4, "4,23,24"), (6, "6,27,28"),
+    (1, "1"), (5, "5"), (8, "8"), (10, "10"), (11, "11"),
+])
+def test_therundown_schedule_discovery_includes_supported_season_variants(
+    sport_id, expected
+):
+    from urllib.parse import parse_qs, urlparse
+    from app.providers.therundown import TheRundownProvider
+
+    provider = TheRundownProvider("CaseSensitiveKey")
+    seen = {}
+    def fake_request(url):
+        seen["query"] = parse_qs(urlparse(url).query)
+        return {}
+    provider._request = fake_request
+    provider._next_event_slate(sport_id)
+    assert seen["query"]["sport_ids"] == [expected]
