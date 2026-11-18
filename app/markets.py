@@ -29,12 +29,13 @@ def market_board(events):
                     if not name or not isinstance(price, int) or price == 0:
                         continue
                     point = outcome.get("point")
-                    key = (event.get("id"), market_key, name, point)
+                    description = outcome.get("description") or outcome.get("participant") or ""
+                    key = (event.get("id"), market_key, name, point, description)
                     grouped[key].append({
                         "event_id": event.get("id"), "sport": event.get("sport_title"),
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
                         "commence_time": event.get("commence_time"),
-                        "market": market_key, "outcome": name, "point": point,
+                        "market": market_key, "outcome": name, "outcome_description": description, "point": point,
                         "bookmaker": book.get("title", book.get("key")),
                         "bookmaker_key": book.get("key"), "price": price,
                     })
@@ -75,7 +76,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                         continue
                     probs = no_vig_probabilities([o["price"] for o in items])
                     for outcome, probability in zip(items, probs):
-                        identity = (outcome["name"], outcome.get("point"))
+                        identity = (outcome["name"], outcome.get("point"), outcome.get("description") or outcome.get("participant") or "")
                         line_sets[(market_key, line)].append({
                             "book": book, "outcome": outcome,
                             "identity": identity, "probability": probability,
@@ -103,7 +104,9 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2):
                     "event_id": event.get("id"), "sport": event.get("sport_title"),
                     "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
                     "commence_time": event.get("commence_time"), "market": market_key,
-                    "outcome": quote["outcome"]["name"], "point": quote["outcome"].get("point"),
+                    "outcome": quote["outcome"]["name"],
+                    "outcome_description": quote["outcome"].get("description") or quote["outcome"].get("participant") or "",
+                    "point": quote["outcome"].get("point"),
                     "bookmaker": quote["book"].get("title", quote["book"].get("key")),
                     "bookmaker_key": quote["book"].get("key"), "price": price,
                     "fair_probability": round(fair, 6), "consensus_books": len(peer_books),
