@@ -55,7 +55,7 @@ def test_limit_refresh_persists_observations_and_detects_changes(tmp_path, monke
 
     monkeypatch.setattr(module, "OddsLinkClient", FakeClient)
     first = monitor.refresh()
-    second = monitor.refresh()
+    second = monitor.refresh(force=True)
 
     assert first["ok"] is True
     assert first["observations"] == 2
@@ -95,7 +95,7 @@ def test_limit_changes_are_reconstructed_from_persisted_snapshots(tmp_path, monk
 
     monkeypatch.setattr(module, "OddsLinkClient", FakeClient)
     for _ in range(4):
-        monitor.refresh()
+        monitor.refresh(force=True)
 
     increases = monitor.changes(direction="increased")
     decreases = monitor.changes(direction="decreased")
