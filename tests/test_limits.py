@@ -134,3 +134,34 @@ def test_limit_refresh_stops_after_provider_quota_error(tmp_path, monkeypatch):
     assert result["ok"] is False
     assert calls == ["nfl"]
     assert "OUT_OF_USAGE_CREDITS" in result["error"]
+
+
+def test_market_limits_cooldown_survives_monitor_restart(tmp_path, monkeypatch):
+    import app.limits as module
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(module.config, "LIMITS_SPORTS", ["americanfootball_nfl"])
+    monkeypatch.setattr(module.config, "LIMITS_REFRESH_INTERVAL_SECONDS", 14400)
+    calls = []
+
+    class FakeClient:
+        usage = {"requests_remaining": "999"}
+        def __init__(self, key):
+            assert key == "CaseSensitiveKey"
+        def fetch(self, sport):
+            calls.append(sport)
+            return fixture()
+
+    monkeypatch.setattr(module, "OddsLinkClient", FakeClient)
+    database = tmp_path / "persistent-cooldown.sqlite3"
+    first_monitor = MarketLimitsMonitor(database)
+    first = first_monitor.refresh()
+    assert first["ok"] is True
+    assert len(calls) == 1
+
+    restarted_monitor = MarketLimitsMonitor(database)
+    second = restarted_monitor.refresh()
+    assert second["skipped"] is True
+    assert second["reason"] == "refresh_cooldown"
+    assert second["next_refresh_seconds"] > 0
+    assert len(calls) == 1
+    assert restarted_monitor.status()["next_refresh_seconds"] > 0
