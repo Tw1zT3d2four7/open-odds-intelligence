@@ -608,3 +608,22 @@ def test_clv_soccer_three_way_fair_probability_uses_all_three_outcomes(tmp_path)
     expected_b = no_vig_home(140, 230, 190)
     expected_median = (expected_a + expected_b) / 2
     assert abs(entry["close_fair_probability"] - expected_median) < 1e-6
+
+
+def test_clv_sport_filter_uses_canonical_sport_key(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-sport-filter.sqlite3")
+    now = datetime.now(timezone.utc)
+    commence = now + timedelta(hours=2)
+    candidate = {
+        "event_id": "sport-filter-event", "sport": "Soccer - English Premier League",
+        "sport_key": "soccer_epl",
+        "matchup": "Away @ Home", "commence_time": commence.isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Book", "bookmaker_key": "book",
+        "price": 150, "fair_probability": 0.4, "ev_percent": 2.0,
+    }
+    assert db.record_clv_candidates([candidate], now.isoformat()) == 1
+    assert db.clv_report("soccer_epl")["summary"]["total"] == 1
+    assert db.clv_report("Soccer - English Premier League")["summary"]["total"] == 0
