@@ -6,7 +6,7 @@ This phase validates data quality, market calculations, alert delivery and opera
 
 ## Current test scope
 
-- Live odds from the configured The Odds API account, limited to the sports, regions and markets enabled in `.env`.
+- Live odds from the one active provider selected in `.env` (The Odds API or TheRundown), limited to the configured sports, regions and supported markets.
 - Moneyline, spreads and totals where complete market quotes are supplied.
 - Best available prices, leave-one-book-out no-vig EV estimates and two-outcome cross-book arbitrage calculations.
 - SQLite quote history and basic price/line movement.
@@ -15,7 +15,7 @@ This phase validates data quality, market calculations, alert delivery and opera
 - Discord alerts for qualifying EV and arbitrage candidates.
 - Manual refresh and Discord-enabled scheduled refresh.
 
-Full historical strategy backtesting, injury/news context, authentication and multi-provider comparison are not yet part of this test scope. Player props are an optional, provider-quota-sensitive extension.
+Full historical strategy backtesting, injury/news context, authentication, subscriber billing and simultaneous multi-provider comparison are not yet part of this test scope. Only one odds provider is active at a time. Player props are an optional, provider-quota-sensitive extension.
 
 ## Calculator validation
 
