@@ -164,4 +164,7 @@ def test_market_limits_cooldown_survives_monitor_restart(tmp_path, monkeypatch):
     assert second["reason"] == "refresh_cooldown"
     assert second["next_refresh_seconds"] > 0
     assert len(calls) == 1
-    assert restarted_monitor.status()["next_refresh_seconds"] > 0
+    restarted_status = restarted_monitor.status()
+    assert restarted_status["next_refresh_seconds"] > 0
+    assert restarted_status["last_updated"] == first["updated_at"]
+    assert restarted_status["requests_remaining"] == "999"
