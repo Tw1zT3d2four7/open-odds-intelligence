@@ -154,6 +154,8 @@ def test_therundown_normalizes_v2_events(monkeypatch):
     assert provider.usage["data_delay_seconds"] == "300"
     assert seen["headers"]["X-therundown-key"] == "CaseSensitiveRundownKey"
     assert "affiliate_ids=19%2C22%2C23" in seen["url"]
+    assert "sport_ids=2" in calls[0]
+    assert "sport_ids=2%2C25%2C26" not in calls[0]
     assert len(calls) == 2
 
 
