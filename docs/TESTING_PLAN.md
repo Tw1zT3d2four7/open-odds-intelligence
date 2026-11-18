@@ -11,10 +11,11 @@ This phase validates data quality, market calculations, alert delivery and opera
 - Best available prices, leave-one-book-out no-vig EV estimates and two-outcome cross-book arbitrage calculations.
 - SQLite quote history and basic price/line movement.
 - Optional OddsLink posted-limit snapshots, limit-change history and Discord increase alerts.
+- First-qualified-quote CLV tracking against a pregame consensus close.
 - Discord alerts for qualifying EV and arbitrage candidates.
 - Manual refresh and Discord-enabled scheduled refresh.
 
-Player props, closing-line value (CLV), historical strategy backtesting, injury/news context, authentication and multi-provider comparison are not yet part of this test scope.
+Player props, full historical strategy backtesting, injury/news context, authentication and multi-provider comparison are not yet part of this test scope.
 
 ## Test stages
 
@@ -78,7 +79,20 @@ The target sportsbook must not be included in its own fair-probability estimate.
 
 **Pass criteria:** only explicit provider-posted limits are displayed; successive snapshots produce accurate changes; history persists across restarts; unchanged values do not generate false changes; quota use stays within the account allowance.
 
-### 6. Stability and operational checks
+### 6. Closing-line value (CLV)
+
+- Install the CLV-enabled version and refresh odds while upcoming events have positive-EV candidates.
+- Confirm the tracker records the first qualifying price once per exact event, market, outcome, line and sportsbook; later refreshes must not overwrite that entry.
+- Confirm events that have not started remain pending and no post-start quotes are considered closing prices.
+- After an event starts, verify the close uses the latest pregame snapshot with at least two other books offering the same complete outcome/line set.
+- Independently calculate the peer books' no-vig probabilities and median; verify the closing fair probability, fair American price and CLV calculation.
+- Confirm positive CLV means the captured entry price beat the fair closing consensus price. It does not mean the wager won or that the model is profitable.
+- Confirm events without two complete peer books are marked insufficient rather than assigned a fabricated close.
+- Confirm the CLV history survives container restarts and new entries begin only after this version is installed.
+
+**Pass criteria:** immutable entry quotes, strictly pregame closes, exact-line and complete-market matching, reproducible consensus calculations, and clear pending/insufficient states.
+
+### 7. Stability and operational checks
 
 - Leave the service running through multiple scheduled refresh intervals.
 - Confirm the container remains healthy and `GET /api/health` remains responsive.
@@ -112,6 +126,6 @@ The current dashboard and API do not implement user authentication. Keep the tes
 - A consensus of two other books is a minimum data threshold, not a guarantee of market quality.
 - Arbitrage calculations assume both quoted prices remain available and that the books settle the market consistently. Limits, void rules, account restrictions and price movement can invalidate the theoretical return.
 - Line movement alone does not establish sharp-money activity.
-- CLV and historical profitability are not yet measured. Do not infer either from a positive EV alert.
+- CLV is now measured prospectively when sufficient pregame snapshots exist; historical profitability and settlement results are not yet measured. Do not infer either from a positive EV alert.
 - Posted-limit changes show only what the feed reported between observations. They do not establish sharp action, actual available customer limits, or the reason a sportsbook changed its limit.
 - Keep testing observational and paper-only until calculation accuracy, data coverage and a separate performance study are complete.
