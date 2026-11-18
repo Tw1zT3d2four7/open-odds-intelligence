@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
@@ -8,12 +9,15 @@ from .service import service
 from .markets import market_board, analyze_markets
 from .limits import limits_monitor
 
+logger = logging.getLogger(__name__)
+
 async def _limits_refresh_loop():
     while True:
         try:
             await asyncio.to_thread(limits_monitor.refresh)
-        except Exception:
-            pass
+        except Exception as exc:
+            limits_monitor.last_error = f"Unexpected scheduled market-limits refresh failure: {exc}"
+            logger.exception("Scheduled market-limits refresh failed")
         await asyncio.sleep(config.LIMITS_REFRESH_INTERVAL_SECONDS)
 
 
@@ -28,9 +32,10 @@ async def _automatic_refresh_loop():
         # Keep provider I/O and SQLite work off the ASGI event loop.
         try:
             await asyncio.to_thread(service.refresh)
-        except Exception:
-            # A transient storage/runtime failure must not silently kill the scheduler.
-            # The next interval retries; manual refresh remains available.
+        except Exception as exc:
+            # Keep the scheduler alive, but expose failures in /api/health.
+            service._last_error = f"Unexpected scheduled odds refresh failure: {exc}"
+            logger.exception("Scheduled odds refresh failed")
             continue
 
 
