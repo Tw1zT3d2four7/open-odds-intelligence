@@ -24,4 +24,9 @@ jobs:
           Path("/tmp/open-odds-dashboard.js").write_text("\n".join(scripts), encoding="utf-8")
           PY
           node --check /tmp/open-odds-dashboard.js
+      - name: Validate Docker Compose configuration
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          rm .env
       - run: python -m pytest -q
