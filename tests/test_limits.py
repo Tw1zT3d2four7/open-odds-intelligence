@@ -75,3 +75,38 @@ def test_sport_mapping_covers_default_configured_leagues():
     assert SPORT_MAP["basketball_nba"] == "nba"
     assert SPORT_MAP["icehockey_nhl"] == "nhl"
     assert SPORT_MAP["baseball_mlb"] == "mlb"
+
+
+def test_limit_changes_are_reconstructed_from_persisted_snapshots(tmp_path, monkeypatch):
+    import app.limits as module
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(module.config, "LIMITS_SPORTS", ["americanfootball_nfl"])
+    monkeypatch.setattr(module.config, "DISCORD_WEBHOOK_URL", "")
+    monitor = MarketLimitsMonitor(tmp_path / "limit-changes.sqlite3")
+
+    state = {"calls": 0}
+    class FakeClient:
+        usage = {}
+        def __init__(self, key):
+            assert key == "CaseSensitiveKey"
+        def fetch(self, sport):
+            state["calls"] += 1
+            return fixture([25000, 50000, 40000, 40000][state["calls"] - 1])
+
+    monkeypatch.setattr(module, "OddsLinkClient", FakeClient)
+    for _ in range(4):
+        monitor.refresh()
+
+    increases = monitor.changes(direction="increased")
+    decreases = monitor.changes(direction="decreased")
+    all_changes = monitor.changes(direction="all")
+    assert len(increases) == 2
+    assert len(decreases) == 2
+    assert len(all_changes) == 4
+    assert increases[0]["previous_limit"] == 25000
+    assert increases[0]["limit_amount"] == 50000
+    assert increases[0]["change_amount"] == 25000
+    assert increases[0]["change_percent"] == 100.0
+    assert decreases[0]["previous_limit"] == 50000
+    assert decreases[0]["limit_amount"] == 40000
+    assert len(monitor.changes(direction="increased", limit=1)) == 1
