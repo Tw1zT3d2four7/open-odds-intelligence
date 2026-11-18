@@ -100,9 +100,15 @@ def test_synthetic_minus_one_derives_push_probability_and_fair_price():
     assert result["moneyline_fair_probability"] == pytest.approx(ml)
     assert result["cover_probability"] == pytest.approx(cover)
     assert result["push_probability"] == pytest.approx(ml - cover)
-    assert result["loss_probability"] == pytest.approx(1 - ml)
-    assert result["fair_decimal"] == pytest.approx((1 - cover) / cover)
-    assert result["fair_american"] == decimal_to_american((1 - cover) / cover)
+    loss = 1 - ml
+    expected_decimal = 1 + loss / cover
+    assert result["loss_probability"] == pytest.approx(loss)
+    assert result["decisive_win_probability"] == pytest.approx(cover / (cover + loss))
+    assert result["cover_probability"] + result["push_probability"] + result["loss_probability"] == pytest.approx(1)
+    assert result["fair_decimal"] == pytest.approx(expected_decimal)
+    assert result["fair_american"] == decimal_to_american(expected_decimal)
+    # A fair -1 wager has zero expected profit when the one-run/goal push
+    # returns the stake and only cover/loss outcomes are settled.
 
 
 def test_synthetic_minus_one_rejects_inconsistent_market_probabilities():
