@@ -119,8 +119,8 @@ def test_therundown_normalizes_v2_events(monkeypatch):
                 "event_id": "evt-1", "sport_id": 2,
                 "event_date": "2026-11-20T18:00:00Z",
                 "teams": [
-                    {"name": "Away Team", "is_home": False},
-                    {"name": "Home Team", "is_home": True},
+                    {"name": "Away Team", "is_away": True},
+                    {"name": "Home Team", "is_away": False},
                 ],
                 "markets": [{
                     "market_id": 1, "period_id": 0, "name": "moneyline",
