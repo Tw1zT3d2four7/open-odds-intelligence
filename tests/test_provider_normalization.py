@@ -264,3 +264,8 @@ def test_odds_api_decimal_player_props_are_normalized_to_american_odds(monkeypat
     status = provider.fetch_player_props("basketball_nba", events, "player_points")
     assert status["events_with_props"] == 1
     assert events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] == -110
+
+
+def test_therundown_accepts_canonical_odds_api_mls_sport_key():
+    from app.providers.therundown import TheRundownProvider
+    assert TheRundownProvider.SPORTS["soccer_usa_mls"] == (10, "MLS")
