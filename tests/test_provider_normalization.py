@@ -202,3 +202,65 @@ def test_the_odds_api_fetches_player_props_per_event_and_preserves_player_name(m
     assert "CaseSensitiveKey" in seen["url"]
     assert events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["description"] == "Player One"
     assert provider.usage["requests_remaining"] == "88"
+
+
+def test_odds_api_decimal_format_is_normalized_to_american_odds(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps([{
+                "id": "decimal-event", "sport_key": "basketball_nba",
+                "home_team": "Home", "away_team": "Away",
+                "commence_time": "2026-11-20T00:00:00Z",
+                "bookmakers": [{
+                    "key": "book-a", "title": "Book A", "markets": [{
+                        "key": "h2h", "last_update": "2026-11-18T12:00:00Z",
+                        "outcomes": [
+                            {"name": "Home", "price": 1.91},
+                            {"name": "Away", "price": 1.91},
+                        ],
+                    }],
+                }],
+            }]).encode()
+
+    seen = {}
+    def fake_urlopen(request, timeout):
+        seen["query"] = parse_qs(urlparse(request.full_url).query)
+        return FakeResponse()
+
+    monkeypatch.setattr(the_odds_api, "urlopen", fake_urlopen)
+    provider = TheOddsAPIProvider("CaseSensitiveKey", odds_format="decimal")
+    events = provider.fetch_odds("basketball_nba")
+    outcomes = events[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert seen["query"]["oddsFormat"] == ["decimal"]
+    assert [item["price"] for item in outcomes] == [-110, -110]
+
+
+def test_odds_api_decimal_player_props_are_normalized_to_american_odds(monkeypatch):
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps({
+                "id": "decimal-props",
+                "bookmakers": [{
+                    "key": "book-a", "title": "Book A",
+                    "markets": [{
+                        "key": "player_points", "outcomes": [
+                            {"name": "Over", "description": "Player One", "point": 20.5, "price": 1.91},
+                        ],
+                    }],
+                }],
+            }).encode()
+
+    monkeypatch.setattr(the_odds_api, "urlopen", lambda request, timeout: FakeResponse())
+    provider = TheOddsAPIProvider("CaseSensitiveKey", odds_format="decimal")
+    events = [{"id": "decimal-props", "bookmakers": []}]
+    status = provider.fetch_player_props("basketball_nba", events, "player_points")
+    assert status["events_with_props"] == 1
+    assert events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] == -110
