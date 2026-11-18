@@ -15,7 +15,7 @@ This phase validates data quality, market calculations, alert delivery and opera
 - Discord alerts for qualifying EV and arbitrage candidates.
 - Manual refresh and Discord-enabled scheduled refresh.
 
-Player props, full historical strategy backtesting, injury/news context, authentication and multi-provider comparison are not yet part of this test scope.
+Full historical strategy backtesting, injury/news context, authentication and multi-provider comparison are not yet part of this test scope. Player props are an optional, provider-quota-sensitive extension.
 
 ## Test stages
 
@@ -92,7 +92,19 @@ The target sportsbook must not be included in its own fair-probability estimate.
 
 **Pass criteria:** immutable entry quotes, fresh strictly pregame closes, exact-line and complete-market matching, reproducible consensus calculations, and clear pending/insufficient states.
 
-### 7. Stability and operational checks
+### 7. Optional player props
+
+- Keep PLAYER_PROPS_ENABLED=false unless The Odds API is the active provider and the account has enough quota for per-event requests.
+- For a controlled test, select one supported sport and a small list of market keys; leave the five-event cap and four-hour minimum in place.
+- Verify the feed uses the event-odds endpoint, preserves player descriptions, and never merges two players with the same Over/Under side and line.
+- Compare each player, market, side, exact line, sportsbook and price against the provider response.
+- Confirm the player-props refresh interval is independent of the main odds/Discord refresh and no requests occur while disabled.
+- Confirm quota headers are updated after prop calls and the monitor stops further requests on authorization/quota errors.
+- Do not expect player props from the TheRundown Free adapter, which is scoped to main markets.
+
+**Pass criteria:** opt-in only, event-specific market identity preserved, request count capped, polling throttled, provider quota visible and no fabricated props.
+
+### 8. Stability and operational checks
 
 - Leave the service running through multiple scheduled refresh intervals.
 - Confirm the container remains healthy and `GET /api/health` remains responsive.
