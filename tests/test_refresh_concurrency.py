@@ -105,3 +105,44 @@ def test_provider_quota_headers_remain_visible_after_refresh_error(tmp_path, mon
     result = service.refresh()
     assert result["ok"] is False
     assert service.status()["provider_usage"]["requests_remaining"] == "0"
+
+
+def test_player_props_cooldown_survives_service_restart(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeProvider:
+        name = "fake"
+        usage = {}
+        def __init__(self, *args, **kwargs):
+            pass
+        def fetch_odds(self, sport):
+            return []
+        def fetch_player_props(self, sport, events, markets, max_events):
+            calls.append(sport)
+            return {
+                "enabled": True, "sport": sport, "events_requested": 0,
+                "events_with_props": 0, "markets": markets.split(","),
+            }
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(config, "PLAYER_PROPS_ENABLED", True)
+    monkeypatch.setattr(config, "PLAYER_PROPS_SPORT", "basketball_nba")
+    monkeypatch.setattr(config, "PLAYER_PROPS_MARKETS", "player_points")
+    monkeypatch.setattr(config, "PLAYER_PROPS_MAX_EVENTS", 5)
+    monkeypatch.setattr(config, "PLAYER_PROPS_REFRESH_INTERVAL_SECONDS", 14400)
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", FakeProvider)
+
+    database_path = tmp_path / "player-props-cooldown.sqlite3"
+    first_service = OddsService(OddsDatabase(database_path))
+    assert first_service.refresh()["ok"] is True
+    assert calls == ["basketball_nba"]
+
+    restarted_service = OddsService(OddsDatabase(database_path))
+    assert restarted_service.refresh()["ok"] is True
+    assert calls == ["basketball_nba"]
+    props_status = restarted_service.status()["player_props"]
+    assert props_status["enabled"] is True
+    assert props_status["next_refresh_seconds"] > 0
