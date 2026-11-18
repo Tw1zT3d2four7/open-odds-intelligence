@@ -66,6 +66,12 @@ class OddsLinkClient:
                         self.usage[key] = response.headers[header]
                 return payload if isinstance(payload, list) else payload.get("events", [])
         except HTTPError as exc:
+            headers = exc.headers or {}
+            self.usage.update({key: headers.get(header) for key, header in {
+                "requests_remaining": "x-requests-remaining",
+                "requests_used": "x-requests-used",
+                "requests_last": "x-requests-last",
+            }.items() if headers.get(header) is not None})
             detail = exc.read().decode("utf-8", "replace")[:500]
             raise LimitsError(f"OddsLink HTTP {exc.code}: {detail}") from exc
         except (URLError, TimeoutError, ValueError) as exc:
