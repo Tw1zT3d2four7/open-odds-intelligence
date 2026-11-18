@@ -166,9 +166,10 @@ def movement(sport: str | None = None, limit: int = Query(200, ge=1, le=1000)):
 def movement_history(event_id: str, market: str, outcome: str, bookmaker: str,
                      limit: int = Query(500, ge=1, le=1000),
                      description: str | None = None):
-    return {"quotes": service.movement_history(
-        event_id, market, outcome, bookmaker, limit, description
-    )}
+    quotes = (service.movement_history(event_id, market, outcome, bookmaker, limit, description)
+              if description is not None else
+              service.movement_history(event_id, market, outcome, bookmaker, limit))
+    return {"quotes": quotes}
 
 
 @app.get("/api/history")
@@ -176,7 +177,10 @@ def history(event_id: str, market: str, outcome: str,
             bookmaker: str | None = None, point: float | None = None,
             limit: int = Query(100, ge=1, le=500),
             description: str | None = None):
-    return {"quotes": service.history(event_id, market, outcome, bookmaker, point, limit, description)}
+    quotes = (service.history(event_id, market, outcome, bookmaker, point, limit, description)
+              if description is not None else
+              service.history(event_id, market, outcome, bookmaker, point, limit))
+    return {"quotes": quotes}
 
 
 @app.get("/api/opportunities")
