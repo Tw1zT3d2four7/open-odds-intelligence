@@ -37,6 +37,32 @@ class OddsService:
                 self._player_props_last_attempt = self._player_props_last_attempt.replace(tzinfo=timezone.utc)
         except (TypeError, ValueError):
             self._player_props_last_attempt = None
+        if config.PLAYER_PROPS_ENABLED:
+            if config.ODDS_PROVIDER != "the_odds_api":
+                self._player_props_status = {
+                    "enabled": True, "sport": config.PLAYER_PROPS_SPORT,
+                    "error": "Player props currently require The Odds API event-odds endpoint; TheRundown supplies main markets only.",
+                }
+            elif config.PLAYER_PROPS_SPORT not in config.ODDS_SPORTS:
+                self._player_props_status = {
+                    "enabled": True, "sport": config.PLAYER_PROPS_SPORT,
+                    "error": "PLAYER_PROPS_SPORT must also be included in ODDS_SPORTS.",
+                }
+            else:
+                remaining = 0
+                if self._player_props_last_attempt is not None:
+                    remaining = max(0, int(
+                        config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS -
+                        (datetime.now(timezone.utc) - self._player_props_last_attempt).total_seconds()
+                    ))
+                self._player_props_status = {
+                    "enabled": True, "sport": config.PLAYER_PROPS_SPORT,
+                    "markets": [m.strip() for m in config.PLAYER_PROPS_MARKETS.split(",") if m.strip()],
+                    "events_requested": 0, "events_with_props": 0,
+                    "reason": "Waiting for the next quota-safe player-props refresh.",
+                    "next_refresh_seconds": remaining,
+                    "refresh_interval_seconds": config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS,
+                }
         self._alert_error = None
         self._alerts_evaluated = 0
         self._alerts_qualified = 0
