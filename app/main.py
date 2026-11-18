@@ -121,6 +121,12 @@ def market_board_api(sport: str | None = None):
     return {"quotes": market_board(service.events(sport))}
 
 
+@app.get("/api/clv")
+def closing_line_value(sport: str | None = None,
+                       limit: int = Query(500, ge=1, le=2000)):
+    return service.clv_report(sport, limit)
+
+
 @app.get("/api/movement")
 def movement(sport: str | None = None, limit: int = Query(200, ge=1, le=1000)):
     return {"movements": service.movement(sport, limit),
