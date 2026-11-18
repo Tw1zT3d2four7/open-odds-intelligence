@@ -357,7 +357,14 @@ class OddsDatabase:
                 except (TypeError, ValueError):
                     continue
                 point = row.get("point")
-                point_key = "" if point is None else str(float(point))
+                if point is None:
+                    point_key = ""
+                elif row.get("market") == "spreads":
+                    # Providers may reverse the sign convention for the
+                    # same team's handicap; keep one CLV entry per magnitude.
+                    point_key = str(abs(float(point)))
+                else:
+                    point_key = str(float(point))
                 cur = db.execute(
                     """INSERT OR IGNORE INTO clv_entries(
                        event_id,sport,matchup,commence_time,market_key,outcome_name,
