@@ -445,3 +445,43 @@ def test_clv_spread_selection_matches_same_side_across_signed_line_conventions(t
     report = db.clv_report("americanfootball_nfl")
     assert report["entries"][0]["status"] == "closed"
     assert report["entries"][0]["closing_books"] == 2
+
+def test_clv_spread_peer_completeness_normalizes_signed_lines_across_books(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-spread-normalized-peers.sqlite3")
+    now = datetime.now(timezone.utc)
+    commence = now - timedelta(minutes=5)
+    candidate = {
+        "event_id": "spread-normalized-event", "sport": "americanfootball_nfl",
+        "matchup": "Away @ Home", "commence_time": commence.isoformat(),
+        "market": "spreads", "outcome": "Home", "point": -3.5,
+        "bookmaker": "Entry", "bookmaker_key": "entry",
+        "price": -110, "fair_probability": 0.5, "ev_percent": 1.0,
+    }
+    assert db.record_clv_candidates(
+        [candidate], (commence - timedelta(minutes=30)).isoformat()
+    ) == 1
+
+    events = [{
+        "id": "spread-normalized-event", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "peer-a", "markets": [{"key": "spreads", "outcomes": [
+                {"name": "Home", "point": 3.5, "price": -120},
+                {"name": "Away", "point": -3.5, "price": 100},
+            ]}]},
+            {"key": "peer-b", "markets": [{"key": "spreads", "outcomes": [
+                {"name": "Home", "point": -3.5, "price": -125},
+                {"name": "Away", "point": 3.5, "price": 105},
+            ]}]},
+        ],
+    }]
+    close_at = (commence - timedelta(minutes=1)).isoformat()
+    db.save_snapshot("americanfootball_nfl", events, "test", close_at)
+
+    report = db.clv_report("americanfootball_nfl")
+    entry = report["entries"][0]
+    assert entry["status"] == "closed"
+    assert entry["close_at"] == close_at
+    assert entry["closing_books"] == 2
+
