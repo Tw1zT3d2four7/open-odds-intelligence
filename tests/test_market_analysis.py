@@ -100,6 +100,8 @@ def test_soccer_h2h_requires_complete_three_way_outcome_sets_for_ev():
     }]
     result = analyze_markets(event, min_ev=-100, min_consensus_books=2)
     assert result["opportunities"]
-    assert {row["bookmaker_key"] for row in result["opportunities"]} == {"a", "b", "c"}
+    assert "incomplete" not in {row["bookmaker_key"] for row in result["opportunities"]}
+    # The board returns the best price per outcome, not every book's quote.
+    assert {row["bookmaker_key"] for row in result["opportunities"]} <= {"a", "b", "c"}
     assert all(row["consensus_books"] == 2 for row in result["opportunities"])
     assert result["arbitrage"] == []
