@@ -71,6 +71,29 @@ class OddsDatabase:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_updated_at TEXT")
             if "outcome_description" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN outcome_description TEXT NOT NULL DEFAULT ''")
+            # Older CLV rows stored the provider's display title instead of
+            # the canonical sport key, which made sport-filtered reports miss them.
+            # Recover the key from the immutable quote archive where possible.
+            db.execute("""
+                UPDATE clv_entries
+                SET sport = (
+                    SELECT q.sport
+                    FROM quotes q
+                    JOIN snapshots s ON s.id=q.snapshot_id
+                    WHERE q.event_id=clv_entries.event_id
+                      AND q.commence_time=clv_entries.commence_time
+                      AND q.sport <> ''
+                    ORDER BY s.id DESC
+                    LIMIT 1
+                )
+                WHERE sport NOT IN (SELECT DISTINCT sport FROM snapshots)
+                  AND EXISTS (
+                    SELECT 1 FROM quotes q
+                    WHERE q.event_id=clv_entries.event_id
+                      AND q.commence_time=clv_entries.commence_time
+                      AND q.sport <> ''
+                  )
+            """)
 
     def save_snapshot(self, sport, events, provider="unknown", fetched_at=None):
         fetched_at = fetched_at or datetime.now(timezone.utc).isoformat()
