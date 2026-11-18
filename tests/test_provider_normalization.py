@@ -161,3 +161,44 @@ def test_therundown_rejects_unknown_sports():
     from app.providers.therundown import TheRundownProvider, ProviderError
     with pytest.raises(ProviderError):
         TheRundownProvider("key").fetch_odds("unknown_league")
+
+
+
+def test_the_odds_api_fetches_player_props_per_event_and_preserves_player_name(monkeypatch):
+    from urllib.parse import urlparse, parse_qs
+
+    class FakeResponse:
+        headers = {"x-requests-remaining": "88", "x-requests-used": "12", "x-requests-last": "2"}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps({
+                "id": "event-1",
+                "bookmakers": [{
+                    "key": "draftkings", "title": "DraftKings",
+                    "markets": [{
+                        "key": "player_points", "last_update": "2026-11-18T12:00:00Z",
+                        "outcomes": [
+                            {"name": "Over", "description": "Player One", "point": 24.5, "price": -110},
+                            {"name": "Under", "description": "Player One", "point": 24.5, "price": -110},
+                        ],
+                    }],
+                }],
+            }).encode()
+
+    seen = {}
+    def fake_urlopen(request, timeout):
+        seen["url"] = request.full_url
+        seen["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(the_odds_api, "urlopen", fake_urlopen)
+    provider = TheOddsAPIProvider("CaseSensitiveKey")
+    events = [{"id": "event-1", "bookmakers": []}]
+    status = provider.fetch_player_props("basketball_nba", events, "player_points")
+    assert status["events_requested"] == 1
+    assert status["events_with_props"] == 1
+    assert parse_qs(urlparse(seen["url"]).query)["markets"] == ["player_points"]
+    assert "CaseSensitiveKey" in seen["url"]
+    assert events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["description"] == "Player One"
+    assert provider.usage["requests_remaining"] == "88"
