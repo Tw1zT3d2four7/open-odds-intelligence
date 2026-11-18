@@ -167,10 +167,11 @@ class TheRundownProvider:
                     continue
                 name = team.get("name") or team.get("team_name") or ""
                 home_flag = team.get("is_home")
+                away_flag = team.get("is_away")
                 side = str(team.get("home_away") or team.get("side") or "").lower()
-                if home_flag is True or side in ("home", "h"):
+                if home_flag is True or away_flag is False or side in ("home", "h"):
                     home = name
-                elif home_flag is False or side in ("away", "a"):
+                elif home_flag is False or away_flag is True or side in ("away", "a"):
                     away = name
         books = {}
         for market in raw.get("markets") or []:
