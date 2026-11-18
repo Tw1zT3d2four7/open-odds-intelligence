@@ -228,3 +228,87 @@ def test_legacy_quote_table_gets_timestamp_column_migration(tmp_path):
     with migrated.connect() as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(quotes)")}
     assert "source_updated_at" in columns
+
+
+
+def test_clv_tracks_first_entry_and_resolves_against_last_pregame_peer_consensus(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv.sqlite3")
+    now = datetime.now(timezone.utc)
+    entry_at = (now - timedelta(minutes=40)).isoformat()
+    close_at = (now - timedelta(minutes=10)).isoformat()
+    commence = (now - timedelta(minutes=5)).isoformat()
+
+    candidate = {
+        "event_id": "clv-event", "sport": "basketball_nba",
+        "matchup": "Away @ Home", "commence_time": commence,
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Entry Book", "bookmaker_key": "entry",
+        "price": -105, "fair_probability": 0.50, "ev_percent": 2.38,
+    }
+    assert db.record_clv_candidates([candidate], entry_at) == 1
+    # A later refresh must not overwrite the original entry quote.
+    later = dict(candidate, price=-120, fair_probability=0.52, ev_percent=3.0)
+    assert db.record_clv_candidates([later], entry_at) == 0
+
+    closing_events = [{
+        "id": "clv-event", "sport_title": "Basketball",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": commence,
+        "bookmakers": [
+            {"key": "entry", "title": "Entry Book", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -120}, {"name": "Away", "price": 100}]}]},
+            {"key": "peer-b", "title": "Peer B", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -130}, {"name": "Away", "price": 110}]}]},
+            {"key": "peer-c", "title": "Peer C", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -125}, {"name": "Away", "price": 105}]}]},
+        ],
+    }]
+    db.save_snapshot("basketball_nba", closing_events, "test", close_at)
+
+    # A post-start quote must never be treated as the closing market.
+    post_start = [{
+        "id": "clv-event", "sport_title": "Basketball",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": commence,
+        "bookmakers": [
+            {"key": "peer-b", "title": "Peer B", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -300}, {"name": "Away", "price": 250}]}]},
+            {"key": "peer-c", "title": "Peer C", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -310}, {"name": "Away", "price": 260}]}]},
+        ],
+    }]
+    db.save_snapshot("basketball_nba", post_start, "test",
+                     (now + timedelta(minutes=1)).isoformat())
+
+    report = db.clv_report("basketball_nba")
+    assert report["summary"]["total"] == 1
+    assert report["summary"]["closed"] == 1
+    entry = report["entries"][0]
+    assert entry["status"] == "closed"
+    assert entry["entry_price"] == -105
+    assert entry["close_at"] == close_at
+    assert entry["closing_books"] == 2
+    assert entry["close_fair_probability"] > 0.5
+    assert entry["clv_percent"] > 0
+
+
+def test_clv_does_not_record_quotes_after_commence_time(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-after-start.sqlite3")
+    now = datetime.now(timezone.utc)
+    candidate = {
+        "event_id": "live-event", "sport": "basketball_nba",
+        "matchup": "Away @ Home", "commence_time": (now - timedelta(minutes=1)).isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Book", "bookmaker_key": "book",
+        "price": -110, "fair_probability": 0.5, "ev_percent": 1.0,
+    }
+    assert db.record_clv_candidates([candidate], now.isoformat()) == 0
