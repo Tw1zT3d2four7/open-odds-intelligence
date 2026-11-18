@@ -82,6 +82,14 @@ class OddsService:
                 fetched_at = datetime.now(timezone.utc).isoformat()
                 self.db.save_snapshot(key, events, provider.name, fetched_at)
                 self._cache[key] = events
+                # Capture the first positive-EV quote for each exact selection.
+                # The entry is immutable so later refreshes cannot rewrite the
+                # price whose closing-line value is being measured.
+                clv_candidates = analyze_markets(
+                    events, min_ev=config.CLV_MIN_EV_PERCENT,
+                    min_consensus_books=2,
+                )["opportunities"]
+                self.db.record_clv_candidates(clv_candidates, fetched_at)
                 count += len(events)
             self._updated_at = datetime.now(timezone.utc).isoformat()
             self._last_error = None
@@ -185,6 +193,9 @@ class OddsService:
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None, limit=100):
         return self.db.history(event_id, market_key, outcome_name, bookmaker_key, point, limit)
+
+    def clv_report(self, sport=None, limit=500):
+        return self.db.clv_report(sport, limit)
 
     def movement(self, sport=None, limit=200):
         return self.db.movement(sport, limit)
