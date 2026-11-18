@@ -18,7 +18,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Optional free-tier posted sportsbook market-limit monitoring via OddsLink, with persistent limit history, increase/decrease detection, clickable per-selection limit timelines and Discord increase alerts.
 - Clickable movement timelines showing every saved line and price observation for a selection.
 - Automatic first-qualified-quote capture and closing-line value (CLV) reports against the last pregame no-vig consensus from at least two other complete same-line books.
-- Dashboard views for EV opportunities, arbitrage candidates and the best-price board.
+- Dashboard views for EV opportunities, arbitrage candidates, the best-price board and an optional player-props comparison board.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
 - Opt-in scheduled refresh at a configurable interval (disabled by default).
 - Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.
@@ -28,7 +28,7 @@ The EV calculation uses the median of other sportsbooks' no-vig probabilities fo
 
 ## Not implemented yet
 
-This is an active development build, not a feature-complete OddsLogic replacement. Player props, additional provider integrations, authentication and full historical strategy backtesting remain future work. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
+This is an active development build, not a feature-complete OddsLogic replacement. Additional provider integrations, authentication and full historical strategy backtesting remain future work. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
 
 No fabricated odds or limits are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
@@ -37,6 +37,10 @@ No fabricated odds or limits are generated. Live quotes remain unavailable until
 The optional Market Limits view uses the free OddsLink API plan to read explicit sportsbook `size.kind=posted_limit` values. Its documented free allowance is 1,000 price requests per month. With the five default leagues and a four-hour polling interval, the monitor uses approximately 900 requests per 30-day month (five sports × six polls/day × 30 days). Keep the league list and polling interval within your account allowance; the application displays quota headers when the provider returns them. `ODDSLINK_API_KEY` is separate from `ODDS_PROVIDER` and does not replace The Odds API or TheRundown. Configure a free key to enable it. `LIMITS_SPORTS` can restrict the monitored leagues; when blank, it follows `ODDS_SPORTS`. `LIMITS_REFRESH_INTERVAL_SECONDS` has a four-hour minimum to protect the free allowance. On startup the monitor takes one initial snapshot, then polls at that interval. Manual refresh is also available from the Market Limits dashboard tab and consumes one request per monitored league.
 
 Only provider values explicitly typed as `posted_limit` are stored. Exchange resting depth and contract counts are excluded. Circa is the primary documented source for posted limits; Pinnacle is displayed only if the provider returns a posted-limit field for it. Missing limits are not inferred. Values are in each sportsbook's own currency and are public market maximums, not account-specific betting limits. A limit-change alert requires two observed values for the same event, book, market, selection and line. Discord alerts report increases by default; set `LIMITS_ALERT_DECREASES=true` to include decreases. Free-tier access and coverage are subject to OddsLink's current terms and allowance.
+
+## Optional player props
+
+Player props are disabled by default. The Odds API requires its event-odds endpoint for non-featured markets, which means a separate request for each selected event; quota cost depends on the unique markets returned and requested bookmaker regions. The current implementation caps each poll at five events and enforces a four-hour minimum interval. Set PLAYER_PROPS_ENABLED=true, choose one PLAYER_PROPS_SPORT and specify supported comma-separated PLAYER_PROPS_MARKETS only after checking your provider plan and remaining credits. Example NBA markets are player_points,player_rebounds,player_assists; NFL examples include player_pass_yds,player_rush_yds,player_reception_yds. Market availability varies by sport, bookmaker and event. Player names are retained separately from Over/Under outcomes to prevent cross-player comparisons. TheRundown adapter currently provides main markets only; player props are not requested when TheRundown is the active provider. The CLV tracker intentionally excludes player props until player-specific CLV storage and close validation are added.
 
 ## Closing-line value tracking
 
