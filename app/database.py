@@ -431,9 +431,18 @@ class OddsDatabase:
             identity_counts = {}
             for identities, outcomes in valid_books.values():
                 identity_counts[identities] = identity_counts.get(identities, 0) + 1
-            common = max(identity_counts, key=identity_counts.get) if identity_counts else None
             peer_probabilities = []
-            if common is not None and identity_counts[common] >= 2:
+            if identity_counts:
+                highest_count = max(identity_counts.values())
+                common_sets = [
+                    identities for identities, count in identity_counts.items()
+                    if count == highest_count
+                ]
+                # If equally common books disagree about the outcome set,
+                # do not choose an arbitrary market definition for CLV.
+                if highest_count < 2 or len(common_sets) != 1:
+                    continue
+                common = common_sets[0]
                 for identities, outcomes in valid_books.values():
                     if identities != common:
                         continue
