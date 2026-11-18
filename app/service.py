@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import hashlib
+import threading
 import json
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
@@ -13,6 +14,7 @@ from .markets import analyze_markets
 class OddsService:
     def __init__(self, database=None):
         self.db = database or OddsDatabase()
+        self._refresh_lock = threading.Lock()
         self._cache = {}
         self._last_error = None
         self._updated_at = None
@@ -62,6 +64,18 @@ class OddsService:
                 "alert_error": self._alert_error}
 
     def refresh(self, sport=None):
+        # Prevent manual clicks and the background scheduler from overlapping
+        # provider requests and consuming duplicate quota.
+        if not self._refresh_lock.acquire(blocking=False):
+            return {"ok": False, "skipped": True,
+                    "error": "A refresh is already running; this request was skipped to protect provider quota.",
+                    "events": 0}
+        try:
+            return self._refresh_locked(sport)
+        finally:
+            self._refresh_lock.release()
+
+    def _refresh_locked(self, sport=None):
         if not self.configured:
             self._last_error = "No live odds provider configured. Configure a supported provider and API key."
             return {"ok": False, "error": self._last_error, "events": 0}
