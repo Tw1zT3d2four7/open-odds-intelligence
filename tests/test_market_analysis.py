@@ -105,3 +105,35 @@ def test_soccer_h2h_requires_complete_three_way_outcome_sets_for_ev():
     assert {row["bookmaker_key"] for row in result["opportunities"]} <= {"a", "b", "c"}
     assert all(row["consensus_books"] == 2 for row in result["opportunities"])
     assert result["arbitrage"] == []
+
+
+def test_player_props_with_shared_lines_remain_separate_by_player():
+    books = []
+    for key, p1_over, p1_under, p2_over, p2_under in (
+        ("a", -110, -110, -105, -115),
+        ("b", -115, -105, -110, -110),
+        ("c", -105, -115, -115, -105),
+    ):
+        books.append({
+            "key": key,
+            "markets": [{
+                "key": "player_points",
+                "outcomes": [
+                    {"name": "Over", "description": "Player One", "point": 20.5, "price": p1_over},
+                    {"name": "Under", "description": "Player One", "point": 20.5, "price": p1_under},
+                    {"name": "Over", "description": "Player Two", "point": 20.5, "price": p2_over},
+                    {"name": "Under", "description": "Player Two", "point": 20.5, "price": p2_under},
+                ],
+            }],
+        })
+    event = [{
+        "id": "player-prop-event", "sport_key": "basketball_nba",
+        "home_team": "Home", "away_team": "Away", "bookmakers": books,
+    }]
+    result = analyze_markets(event, min_ev=-100, min_consensus_books=2)
+    assert {row["outcome_description"] for row in result["opportunities"]} == {
+        "Player One", "Player Two"
+    }
+    assert len(result["opportunities"]) == 4
+    assert all(row["consensus_books"] == 2 for row in result["opportunities"])
+    assert result["arbitrage"] == []
