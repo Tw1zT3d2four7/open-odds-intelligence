@@ -108,7 +108,7 @@ The target sportsbook must not be included in its own fair-probability estimate.
 - For a controlled test, select one supported sport and a small list of market keys; leave the five-event cap and four-hour minimum in place.
 - Verify the feed uses the event-odds endpoint, preserves player descriptions, and never merges two players with the same Over/Under side and line.
 - Compare each player, market, side, exact line, sportsbook and price against the provider response.
-- Confirm the player-props refresh interval is independent of the main odds/Discord refresh and no requests occur while disabled.
+- Confirm the player-props refresh interval is independent of the main odds/Discord refresh, its last-attempt timestamp survives container restarts, and no requests occur while disabled.
 - Confirm quota headers are updated after prop calls and the monitor stops further requests on authorization/quota errors.
 - Do not expect player props from the TheRundown Free adapter, which is scoped to main markets.
 
