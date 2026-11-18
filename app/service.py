@@ -17,6 +17,7 @@ class OddsService:
         self._last_error = None
         self._updated_at = None
         self._provider_usage = {}
+        self._player_props_status = {"enabled": False, "reason": "Disabled by default."}
         self._alert_error = None
         self._alerts_evaluated = 0
         self._alerts_qualified = 0
@@ -44,6 +45,7 @@ class OddsService:
                 "live_data_available": bool(stored.get("events")) or bool(self._cache),
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
+                "player_props": self._player_props_status,
                 "refresh_interval_seconds": config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown" else (config.ODDS_REFRESH_INTERVAL_SECONDS or (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0)),
                 "alert_refresh_interval_seconds": config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0,
                 "alerts_evaluated": self._alerts_evaluated,
@@ -79,6 +81,18 @@ class OddsService:
             for key in ([sport] if sport else config.ODDS_SPORTS):
                 events = provider.fetch_odds(key)
                 self._provider_usage = dict(provider.usage)
+                if config.PLAYER_PROPS_ENABLED and key == config.PLAYER_PROPS_SPORT:
+                    if config.ODDS_PROVIDER == "the_odds_api":
+                        self._player_props_status = provider.fetch_player_props(
+                            key, events, config.PLAYER_PROPS_MARKETS
+                        )
+                        self._provider_usage = dict(provider.usage)
+                    else:
+                        self._player_props_status = {
+                            "enabled": True, "sport": key, "events_requested": 0,
+                            "events_with_props": 0,
+                            "error": "Player props currently require The Odds API event-odds endpoint; TheRundown adapter supplies main markets only.",
+                        }
                 fetched_at = datetime.now(timezone.utc).isoformat()
                 self.db.save_snapshot(key, events, provider.name, fetched_at)
                 self._cache[key] = events
