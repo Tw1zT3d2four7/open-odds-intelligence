@@ -1,3 +1,6 @@
+from statistics import median
+
+from app.math import no_vig_probabilities
 from app.markets import analyze_markets
 
 
@@ -104,6 +107,13 @@ def test_soccer_h2h_requires_complete_three_way_outcome_sets_for_ev():
     # The board returns the best price per outcome, not every book's quote.
     assert {row["bookmaker_key"] for row in result["opportunities"]} <= {"a", "b", "c"}
     assert all(row["consensus_books"] == 2 for row in result["opportunities"])
+    home = next(row for row in result["opportunities"] if row["outcome"] == "Home")
+    assert home["bookmaker_key"] == "c"
+    expected_fair = median([
+        no_vig_probabilities([150, 220, 180])[0],
+        no_vig_probabilities([140, 230, 190])[0],
+    ])
+    assert home["fair_probability"] == round(expected_fair, 6)
     assert result["arbitrage"] == []
 
 
