@@ -5,7 +5,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 ## Current working features
 
 - FastAPI backend and responsive dark dashboard.
-- Five-tab, quota-free betting calculators: payout, multi-leg parlay, two-way no-vig, EV / fractional Kelly bankroll sizing and equal-outcome hedging, with a dashboard-wide American / Decimal odds toggle.
+- Five-tab, quota-free betting calculators: payout, multi-leg parlay, two-way no-vig, EV / fractional Kelly bankroll sizing, equal-outcome hedging and a -1 run-line / puck-line settlement calculator, with a dashboard-wide American / Decimal odds toggle.
 - Pluggable odds-provider interface with The Odds API and TheRundown V2 adapters.
 - Configurable sports, regions and supported market keys.
 - Normalized event, sportsbook, market and outcome quotes.
