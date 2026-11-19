@@ -593,4 +593,13 @@ class OddsDatabase:
         with self.connect() as db:
             row = db.execute("""SELECT COUNT(*) snapshots,COALESCE(SUM(event_count),0) events,
                                 MAX(fetched_at) last_updated FROM snapshots""").fetchone()
-            return dict(row)
+            latest = db.execute(
+                """SELECT s.sport,s.fetched_at,s.event_count
+                   FROM snapshots s
+                   JOIN (SELECT sport,MAX(id) AS id FROM snapshots GROUP BY sport) x
+                     ON x.id=s.id
+                   ORDER BY s.sport"""
+            ).fetchall()
+            result = dict(row)
+            result["sports"] = [dict(item) for item in latest]
+            return result
