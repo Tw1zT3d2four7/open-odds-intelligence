@@ -259,9 +259,14 @@ class TheRundownProvider:
                 raise ProviderError(f"Invalid score lookup date: {event_date!r}") from None
             for sport_id in sport_ids:
                 params = urlencode({"affiliate_ids": "0", "offset": str(self.utc_offset_minutes)})
-                payload = self._request(
-                    f"{self.base_url}/sports/{sport_id}/events/{event_date}?{params}"
-                )
+                try:
+                    payload = self._request(
+                        f"{self.base_url}/sports/{sport_id}/events/{event_date}?{params}"
+                    )
+                except ProviderError as exc:
+                    if "HTTP 404" in str(exc):
+                        continue
+                    raise
                 raw_events = payload.get("events", []) if isinstance(payload, dict) else payload
                 if not isinstance(raw_events, list):
                     raise ProviderError("TheRundown returned an unexpected scores response")
