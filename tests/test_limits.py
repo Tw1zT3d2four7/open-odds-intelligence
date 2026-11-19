@@ -180,4 +180,4 @@ def test_market_limits_cooldown_survives_monitor_restart(tmp_path, monkeypatch):
     rotated_result = rotated_monitor.refresh()
     assert rotated_result["ok"] is True
     assert calls == ["nfl", "nfl"]
-    assert keys == ["CaseSensitiveKey", "RotatedCaseSensitiveKey"]
+    assert keys == ["CaseSensitiveKey", "CaseSensitiveKey", "RotatedCaseSensitiveKey"]
