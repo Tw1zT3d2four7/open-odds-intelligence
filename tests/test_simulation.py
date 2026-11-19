@@ -378,3 +378,26 @@ def test_nfl_regular_season_overtime_can_remain_tied():
             return [0]
     home, away, overtime = _resolve_tie(NoScoreOvertime(), "americanfootball_nfl", 20, 20)
     assert (home, away, overtime) == (20, 20, True)
+
+def test_simulator_rejects_fractional_and_non_finite_american_prices():
+    import pytest
+    from app.simulation import _valid_price
+
+    for price in (100.5, -110.25, float("nan"), float("inf"), True, False, 0, "bad"):
+        assert _valid_price(price) is False
+    for price in (100, -100, 105, -110, "125"):
+        assert _valid_price(price) is True
+
+
+def test_simulation_market_readiness_ignores_fractional_price_quotes():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    for book in event["bookmakers"]:
+        for market in book["markets"]:
+            for outcome in market["outcomes"]:
+                outcome["price"] = 110.5
+    result = market_readiness(event)
+    assert result["can_simulate"] is False
+    assert result["spread_books"] == 0
+    assert result["total_books"] == 0
