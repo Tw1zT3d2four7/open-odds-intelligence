@@ -177,6 +177,7 @@ def test_market_limits_cooldown_survives_monitor_restart(tmp_path, monkeypatch):
     monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "RotatedCaseSensitiveKey")
     rotated_monitor = MarketLimitsMonitor(database)
     assert rotated_monitor.status()["requests_remaining"] is None
+    assert rotated_monitor.status()["next_refresh_seconds"] == 0
     rotated_result = rotated_monitor.refresh()
     assert rotated_result["ok"] is True
     assert calls == ["nfl", "nfl"]
