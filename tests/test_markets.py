@@ -147,3 +147,79 @@ def test_market_analysis_preserves_canonical_sport_key():
     result = analyze_markets(events, min_ev=-100, min_consensus_books=2)
     assert result["opportunities"]
     assert all(row["sport_key"] == "soccer_epl" for row in result["opportunities"])
+
+
+def test_two_way_arbitrage_uses_distinct_books_and_balanced_stakes():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "arb-two-way", "sport_key": "americanfootball_nfl",
+        "sport_title": "NFL", "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [
+            {"key": "home-book", "title": "Home Book", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 120},
+                    {"name": "Away", "price": -140},
+                ]}]},
+            {"key": "away-book", "title": "Away Book", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -140},
+                    {"name": "Away", "price": 120},
+                ]}]},
+        ],
+    }]
+    result = analyze_markets(events)
+    assert len(result["arbitrage"]) == 1
+    arb = result["arbitrage"][0]
+    assert {leg["bookmaker_key"] for leg in arb["legs"]} == {"home-book", "away-book"}
+    assert sum(leg["stake_percent"] for leg in arb["legs"]) == 100
+    assert arb["arb_percent"] > 0
+
+
+def test_three_way_soccer_market_never_emits_two_way_arbitrage():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "soccer-three-way", "sport_key": "soccer_epl",
+        "sport_title": "EPL", "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 250}, {"name": "Draw", "price": 220},
+                    {"name": "Away", "price": 250},
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 240}, {"name": "Draw", "price": 230},
+                    {"name": "Away", "price": 260},
+                ]}]},
+        ],
+    }]
+    result = analyze_markets(events, min_ev=-100, min_consensus_books=1)
+    assert result["opportunities"]
+    assert result["arbitrage"] == []
+
+
+def test_incomplete_two_way_market_is_excluded_from_ev_and_arbitrage():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "incomplete-two-way", "sport_key": "basketball_nba",
+        "sport_title": "NBA", "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "h2h", "outcomes": [{"name": "Home", "price": 150}]
+            }]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "h2h", "outcomes": [{"name": "Away", "price": 150}]
+            }]},
+            {"key": "book-c", "title": "Book C", "markets": [{
+                "key": "h2h", "outcomes": [{"name": "Home", "price": 150}]
+            }]},
+        ],
+    }]
+    result = analyze_markets(events, min_ev=-100, min_consensus_books=1)
+    assert result == {"opportunities": [], "arbitrage": []}
