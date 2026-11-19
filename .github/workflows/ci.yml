@@ -11,7 +11,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      - run: python -m compileall -q app tests
+      - run: python -m compileall -q app tests scripts
       - name: Check dashboard JavaScript syntax
         run: |
           python - <<'PY'
@@ -34,4 +34,6 @@ jobs:
           grep -Fxq 'data/' .dockerignore
           grep -Fxq '*.sqlite3' .dockerignore
           rm .env
+      - name: Validate simulator backtest CLI
+        run: python -m scripts.backtest_simulator --help
       - run: python -m pytest -q
