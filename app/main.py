@@ -139,10 +139,7 @@ def simulation_leagues():
     ]}
 
 
-@app.get("/api/simulation/games")
-def simulation_games(sport: str):
-    if sport not in config.ODDS_SPORTS:
-        raise HTTPException(status_code=400, detail="Select a configured league.")
+def _simulation_games_for_sport(sport: str):
     games = []
     for event in service.events(sport):
         if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
@@ -155,7 +152,31 @@ def simulation_games(sport: str):
             "has_total": any(m.get("key") == "totals" for b in event.get("bookmakers", []) for m in b.get("markets", [])),
         })
     games.sort(key=lambda item: item.get("commence_time") or "")
-    return {"games": games, "note": "Games come from the latest locally stored odds snapshot; opening this list makes no provider request."}
+    return games
+
+
+@app.get("/api/simulation/games")
+def simulation_games(sport: str):
+    if sport not in config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="Select a configured league.")
+    games = _simulation_games_for_sport(sport)
+    return {"games": games, "note": "Games come from the latest locally stored odds snapshot; this read-only request makes no provider call."}
+
+
+@app.post("/api/simulation/games/refresh")
+def refresh_simulation_games(sport: str):
+    if sport not in config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="Select a configured league.")
+    result = service.refresh(sport)
+    if not result.get("ok"):
+        detail = result.get("error") or "The selected league could not be refreshed."
+        raise HTTPException(status_code=502, detail=detail)
+    games = _simulation_games_for_sport(sport)
+    return {
+        "games": games,
+        "refresh": result,
+        "note": "Only the selected league was refreshed. No other league was requested.",
+    }
 
 
 @app.post("/api/simulation/run")
