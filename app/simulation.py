@@ -456,6 +456,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         "total_market": {
             "consensus_line": round(expected_total, 2),
             "over": over_probability, "under": under_probability, "push": total_push_probability,
+            "probability_temperature": total_temperature,
         },
         "margin_market": {
             "consensus_home_margin": round(expected_margin, 2),
@@ -466,7 +467,6 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "fitted_total_bias": fitted.get("total_bias") if empirical_fit else None,
             "fitted_margin_total_correlation": fitted.get("margin_total_corr") if empirical_fit else None,
             "probability_temperature": temperature,
-            "total_probability_temperature": total_temperature,
         },
         "data_quality": {
             "spread_books": spread_books,
