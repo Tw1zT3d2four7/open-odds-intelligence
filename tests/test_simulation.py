@@ -1,3 +1,5 @@
+import pytest
+
 from app.simulation import run_game_simulation
 
 
