@@ -176,3 +176,10 @@ def test_market_analysis_ignores_boolean_american_prices():
         leg["price"] is not True
         for row in result["arbitrage"] for leg in row["legs"]
     )
+
+def test_market_analysis_ignores_events_without_stable_identity():
+    anonymous = event_fixture()[0]
+    anonymous.pop("id")
+    result = analyze_markets([anonymous, None, "malformed"], min_ev=-100, min_consensus_books=1)
+    assert result == {"opportunities": [], "arbitrage": []}
+
