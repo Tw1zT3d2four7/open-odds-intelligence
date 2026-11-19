@@ -19,7 +19,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Optional free-tier posted sportsbook market-limit monitoring via OddsLink, with persistent limit history, increase/decrease detection, clickable per-selection limit timelines and Discord increase alerts.
 - Clickable movement timelines showing every saved line and price observation for a selection.
 - Automatic first-qualified-quote capture and closing-line value (CLV) reports against the last pregame no-vig consensus from at least two other complete same-line books.
-- Dashboard views for EV opportunities, arbitrage candidates, the best-price board and an optional player-props comparison board.
+- Dashboard views for EV opportunities, arbitrage candidates, the best-price board, an optional player-props comparison board and a selected-game 10,000-trial Monte Carlo simulator.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
 - Opt-in scheduled refresh at a configurable interval (disabled by default).
 - Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.
@@ -42,6 +42,14 @@ Only provider values explicitly typed as `posted_limit` are stored. Exchange res
 ## Synthetic -1 line builder
 
 The calculator can estimate a fair -1 run-line / puck-line price when a sportsbook only offers the moneyline and -1.5 / +1.5 handicap. Enter both sides of each two-way market for the same event and selected team. It removes vig from the moneyline and handicap markets separately, estimates the one-run/one-goal push probability as fair moneyline win probability minus fair -1.5 cover probability, and derives the fair -1 odds from cover-versus-loss probabilities while excluding one-run/one-goal pushes (which return the stake). Inconsistent market inputs are rejected. This is a mathematical estimate, not a live sportsbook quote; use prices from the same book and time, and verify market-period and overtime/shootout settlement rules.
+
+## Selected-game Monte Carlo simulator
+
+The simulator is an on-demand, single-game tool. Select a configured league, choose one game from the latest locally stored odds snapshot, then click Run Simulation. The backend executes exactly 10,000 trials for that event; it does not loop over the league or request fresh provider data. A game is selectable only when current spread and total markets are available.
+
+The first version is deliberately market-informed: the median available sportsbook spread establishes the expected scoring margin, the median total establishes the expected scoring level, and broad league-level variance priors generate trial outcomes. Basketball and football use normal score/margin distributions; baseball, hockey and soccer use Poisson scoring distributions. The result reports simulated win/draw probabilities, average projected score and over/under probabilities against the consensus total. The simulator uses only the chosen event.
+
+This is not a reproduction of any sportsbook's proprietary model. Sportsbooks may incorporate proprietary team/player ratings, play-by-play efficiency, pace, injuries, starting lineups, weather, rest/travel, matchup adjustments, correlated scoring models, market-making and risk/liability signals. Those feeds and validated league-specific models are not currently present in this application. The current simulation therefore must be described as a market-calibrated estimate, not a professional-book replica or proven predictive edge. The game list and simulation use saved odds only and consume no additional provider quota.
 
 ## Optional player props
 
@@ -98,6 +106,9 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 
 - `GET /api/health` — provider configuration and stored-data status.
 - `GET /api/odds?sport=...` — latest stored event quotes.
+- `GET /api/simulation/leagues` — configured leagues available to the game simulator.
+- `GET /api/simulation/games?sport=...` — games in one league's latest stored snapshot.
+- `POST /api/simulation/run?sport=...&event_id=...` — run exactly 10,000 trials for the selected game only.
 - `POST /api/refresh?sport=...` — request a provider refresh.
 - `GET /api/market-board?sport=...` — best price for each exact market / outcome / line.
 - `GET /api/opportunities?sport=...&min_ev=1.0&min_consensus_books=2` — estimated EV opportunities.
