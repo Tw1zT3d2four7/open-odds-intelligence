@@ -1,5 +1,7 @@
+import json
 import math
 import random
+from pathlib import Path
 from statistics import median
 
 TRIALS = 10_000
@@ -272,6 +274,26 @@ def _validated_model_parameters(parameters, family, sport_key):
             raise ValueError(f"Invalid fitted model parameter: {key}.")
         result[key] = value
     return result
+
+
+
+def load_fitted_models(path):
+    """Load operator-generated per-league model JSON; absent file means priors."""
+    if not path or not Path(path).is_file():
+        return {}
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Could not read fitted simulation models: {exc}") from None
+    models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(models, dict):
+        raise ValueError("Fitted simulation model file must contain a models object.")
+    for sport_key, parameters in models.items():
+        family = _family(sport_key)
+        if family is None:
+            raise ValueError(f"Unsupported league in fitted model file: {sport_key}")
+        _validated_model_parameters(parameters, family, sport_key)
+    return models
 
 def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     if trials != TRIALS:
