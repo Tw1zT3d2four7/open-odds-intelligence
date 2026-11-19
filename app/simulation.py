@@ -30,8 +30,8 @@ def _family(sport_key):
 
 def _decimal(price):
     price = float(price)
-    if not math.isfinite(price) or price == 0:
-        raise ValueError("Invalid zero or non-finite odds")
+    if not math.isfinite(price) or -100 < price < 100:
+        raise ValueError("Invalid American odds; expected +100 or greater, or -100 or lower")
     return 1 + (price / 100 if price > 0 else 100 / abs(price))
 
 
