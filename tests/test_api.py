@@ -209,3 +209,49 @@ def test_player_props_endpoint_preserves_player_identity(monkeypatch):
     quotes = response.json()["quotes"]
     assert len(quotes) == 2
     assert {row["player"] for row in quotes} == {"Player A", "Player B"}
+
+
+def test_simulation_game_list_is_scoped_to_selected_configured_league(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    event = {
+        "id": "nba-game", "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [{"markets": [{"key": "spreads"}, {"key": "totals"}]}],
+    }
+    received = {}
+    def fake_events(sport=None):
+        received["sport"] = sport
+        return [event]
+    monkeypatch.setattr(main.service, "events", fake_events)
+    with TestClient(main.app) as client:
+        response = client.get("/api/simulation/games?sport=basketball_nba")
+        invalid = client.get("/api/simulation/games?sport=americanfootball_nfl")
+    assert response.status_code == 200
+    assert received["sport"] == "basketball_nba"
+    assert response.json()["games"][0]["event_id"] == "nba-game"
+    assert invalid.status_code == 400
+
+
+def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    selected = {
+        "id": "chosen-game", "sport_key": "basketball_nba",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"markets": [
+                {"key": "spreads", "outcomes": [
+                    {"name": "Home", "point": -3.5}, {"name": "Away", "point": 3.5}]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "point": 220.5}, {"name": "Under", "point": 220.5}]},
+            ]}
+        ],
+    }
+    other = dict(selected, id="not-selected")
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [selected, other])
+    with TestClient(main.app) as client:
+        response = client.post("/api/simulation/run?sport=basketball_nba&event_id=chosen-game")
+        missing = client.post("/api/simulation/run?sport=basketball_nba&event_id=missing")
+    assert response.status_code == 200
+    assert response.json()["event_id"] == "chosen-game"
+    assert response.json()["trials"] == 10_000
+    assert missing.status_code == 404
