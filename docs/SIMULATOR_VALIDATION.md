@@ -36,23 +36,27 @@ Rules:
 - Only `status=final` is accepted. Postponed, cancelled, abandoned, live or ambiguous events are not scored.
 - `source` is mandatory provenance. Only import results from an authorized, trustworthy source. Do not invent results or infer a final score from odds.
 
-## Train and test chronologically
+## Train, calibrate and test chronologically
 
-With the application virtual environment active and its normal .env/database path configured, keep training results earlier than test results:
+For a proper three-stage evaluation, keep all three datasets separate and ordered within each league:
 
-```bash
-python -m scripts.backtest_simulator --training-settlements /path/to/earlier-training-results.csv --settlements /path/to/later-holdout-results.csv --output simulator-backtest.json
-```
+1. Training results fit the league-specific scoring residual parameters.
+2. A later calibration set fits a single multiclass probability temperature per league.
+3. A still later holdout set evaluates the fitted model and calibration.
 
-The default minimum is 50 matched training events per league. A league below that threshold is not assigned fitted parameters and continues to use its broad prior. The training stage estimates per-league market residual bias, margin/total volatility and their correlation for basketball/football; low-scoring leagues additionally estimate home/away overdispersion for the Gamma-Poisson count model.
-
-To export fitted parameters for the live single-game simulator:
+Example:
 
 ```bash
-python -m scripts.backtest_simulator --training-settlements /path/to/earlier-training-results.csv --settlements /path/to/later-holdout-results.csv --model-output ./data/simulation_models.json --output simulator-backtest.json
+python -m scripts.backtest_simulator --training-settlements training.csv --calibration-settlements calibration.csv --settlements holdout.csv --model-output ./data/simulation_models.json --output simulator-backtest.json
 ```
 
-Set SIMULATION_MODEL_PATH=./data/simulation_models.json in .env (this is the default). The live simulator loads a league's fitted model only when a valid model file exists; otherwise it reports that it is using the broad league prior. The model file belongs in the persistent data/ volume and is not baked into the container image.
+The CLI rejects overlapping event IDs and any per-league time split where training is not strictly earlier than calibration or calibration is not strictly earlier than holdout. Default minimums are 50 matched training events and 100 calibration events per league. Leagues below either minimum do not receive the corresponding fitted parameters.
+
+The training stage estimates per-league market residual bias, margin/total volatility and their correlation for basketball/football; low-scoring leagues additionally estimate home/away overdispersion for the Gamma-Poisson count model. The calibration stage fits multiclass temperature scaling against later calibration results. The holdout report compares calibrated/fitted predictions against the same-event unfitted broad-prior baseline.
+
+To train scoring parameters without a separate probability calibration set, omit --calibration-settlements; probabilities then remain uncalibrated.
+
+Set SIMULATION_MODEL_PATH=./data/simulation_models.json in .env (this is the default). The live simulator loads a league's fitted scoring model and/or probability temperature only when a valid model file exists; otherwise it reports broad-prior behavior. The model file belongs in the persistent data/ volume and is not baked into the container image.
 
 The command reads the existing DATABASE_PATH SQLite archive. It does not modify the database or call an odds provider.
 
