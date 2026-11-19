@@ -334,7 +334,8 @@ async function runSelectedSimulation(){
   $("simModelSource").textContent=empiricallyFitted?"EMPIRICAL LEAGUE FIT":"BROAD LEAGUE PRIOR";
   const trainingCount=Number(data.data_quality.training_sample_size||0);
   const temperature=data.margin_market.probability_temperature;
-  $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+(temperature!==null&&temperature!==undefined?" · probability calibrated":"");
+  const totalTemperature=data.total_market.probability_temperature;
+  $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+((temperature!==null&&temperature!==undefined)||(totalTemperature!==null&&totalTemperature!==undefined)?" · probabilities calibrated":"");
   $("simDistributionDetail").textContent=empiricallyFitted?"Fitted scoring residual distribution":"Broad family-level scoring assumptions";
   $("simResolution").textContent=Number(data.game_resolution.games_with_overtime_or_extra_innings||0).toLocaleString()+" games with OT / extras";
   $("simRegulationTies").textContent=Number(data.game_resolution.regulation_ties||0).toLocaleString()+" regulation ties";
