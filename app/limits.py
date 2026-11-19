@@ -95,12 +95,19 @@ class MarketLimitsMonitor:
             saved_usage = db.execute(
                 "SELECT state_value FROM market_limit_state WHERE state_key='last_usage'"
             ).fetchone()
+            saved_usage_key = db.execute(
+                "SELECT state_value FROM market_limit_state WHERE state_key='last_usage_key_fingerprint'"
+            ).fetchone()
             saved_error = db.execute(
                 "SELECT state_value FROM market_limit_state WHERE state_key='last_error'"
             ).fetchone()
         self.last_updated = saved_success["state_value"] if saved_success else None
         self.last_error = saved_error["state_value"] if saved_error else None
-        if saved_usage:
+        current_key_fingerprint = (
+            hashlib.sha256(config.ODDSLINK_API_KEY.encode("utf-8")).hexdigest()
+            if config.ODDSLINK_API_KEY else ""
+        )
+        if saved_usage and saved_usage_key and saved_usage_key["state_value"] == current_key_fingerprint:
             try:
                 self.usage = json.loads(saved_usage["state_value"])
             except (TypeError, ValueError):
@@ -197,7 +204,16 @@ class MarketLimitsMonitor:
             previous = state_db.execute(
                 "SELECT state_value FROM market_limit_state WHERE state_key='last_attempt'"
             ).fetchone()
-            if previous and not force:
+            previous_key = state_db.execute(
+                "SELECT state_value FROM market_limit_state WHERE state_key='last_key_fingerprint'"
+            ).fetchone()
+            current_key_fingerprint = hashlib.sha256(
+                config.ODDSLINK_API_KEY.encode("utf-8")
+            ).hexdigest()
+            key_changed = bool(
+                previous_key and previous_key["state_value"] != current_key_fingerprint
+            )
+            if previous and not force and not key_changed:
                 try:
                     last_attempt = datetime.fromisoformat(previous["state_value"].replace("Z", "+00:00"))
                     remaining = config.LIMITS_REFRESH_INTERVAL_SECONDS - (
@@ -215,6 +231,10 @@ class MarketLimitsMonitor:
             state_db.execute(
                 "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_attempt',?)",
                 (observed_at,),
+            )
+            state_db.execute(
+                "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_key_fingerprint',?)",
+                (current_key_fingerprint,),
             )
         all_rows, errors = [], []
         diagnostic = {"sports_requested": [], "events_returned": 0, "bookmakers_returned": [], "size_kinds_returned": {}, "posted_limit_outcomes": 0}
@@ -295,6 +315,10 @@ class MarketLimitsMonitor:
             state_db.execute(
                 "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_usage',?)",
                 (json.dumps(self.usage),),
+            )
+            state_db.execute(
+                "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_usage_key_fingerprint',?)",
+                (hashlib.sha256(config.ODDSLINK_API_KEY.encode("utf-8")).hexdigest(),),
             )
             if not errors or all_rows:
                 self.last_updated = observed_at
