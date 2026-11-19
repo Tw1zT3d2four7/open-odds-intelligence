@@ -261,7 +261,8 @@ def _validated_model_parameters(parameters, family, sport_key):
         raise ValueError("Fitted model parameters do not match the selected league.")
     result = dict(parameters)
     bounds = {"margin_sd": (0.1, 50.0), "total_sd": (0.1, 60.0),
-              "margin_total_corr": (-0.95, 0.95), "home_alpha": (0.0, 2.0),
+              "margin_total_corr": (-0.95, 0.95), "margin_bias": (-50.0, 50.0),
+              "total_bias": (-100.0, 100.0), "home_alpha": (0.0, 2.0),
               "away_alpha": (0.0, 2.0)}
     for key, (low, high) in bounds.items():
         if key not in result:
