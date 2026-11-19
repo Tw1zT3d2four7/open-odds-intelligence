@@ -20,7 +20,9 @@ class OddsService:
         self._updated_at = None
         self._provider_usage = {}
         saved_usage_provider = self.db.get_state("provider_usage_provider")
-        if saved_usage_provider == config.ODDS_PROVIDER:
+        saved_usage_fingerprint = self.db.get_state("provider_usage_key_fingerprint")
+        if (saved_usage_provider == config.ODDS_PROVIDER and
+            saved_usage_fingerprint == self._current_provider_key_fingerprint()):
             try:
                 self._provider_usage = json.loads(self.db.get_state("provider_usage") or "{}")
             except (TypeError, ValueError):
@@ -72,12 +74,22 @@ class OddsService:
         self._last_alert_sent = 0
         self._last_alert_error = None
 
+    def _current_provider_key_fingerprint(self):
+        if config.ODDS_PROVIDER == "therundown":
+            key = config.THERUNDOWN_API_KEY
+        elif config.ODDS_PROVIDER == "the_odds_api":
+            key = config.THE_ODDS_API_KEY
+        else:
+            key = ""
+        return hashlib.sha256(key.encode("utf-8")).hexdigest() if key else ""
+
     def _remember_provider_usage(self, usage):
         if not usage:
             return
         self._provider_usage = dict(usage)
         self.db.set_state("provider_usage", json.dumps(self._provider_usage))
         self.db.set_state("provider_usage_provider", config.ODDS_PROVIDER)
+        self.db.set_state("provider_usage_key_fingerprint", self._current_provider_key_fingerprint())
 
     @property
     def configured(self):
