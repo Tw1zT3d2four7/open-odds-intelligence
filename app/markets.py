@@ -1,18 +1,28 @@
 from collections import defaultdict
+from math import isfinite
 from statistics import median
 
 from .math import american_to_decimal, no_vig_probabilities
 
 
 def _line_group(market_key, point):
+    """Return a finite canonical line, or None when a required line is absent.
+
+    H2H markets have no point. Every other market must carry a usable line;
+    grouping missing/NaN lines together can create false consensus or arb.
+    """
     if market_key == "h2h":
         return None
     if point is None:
         return None
+    try:
+        value = float(point)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not isfinite(value):
+        return None
     # Spread sides carry opposite signed points; compare the same handicap.
-    if market_key == "spreads":
-        return abs(float(point))
-    return float(point)
+    return abs(value) if market_key == "spreads" else value
 
 
 def market_board(events):
@@ -29,12 +39,14 @@ def market_board(events):
                     if not name or not isinstance(price, int) or price == 0:
                         continue
                     point = outcome.get("point")
+                    line = _line_group(market_key, point)
+                    if market_key != "h2h" and line is None:
+                        continue
                     description = outcome.get("description") or outcome.get("participant") or ""
                     # A spread side is identified by its outcome and
                     # handicap magnitude; providers may sign that handicap
                     # differently while still referring to the same side.
-                    key = (event.get("id"), market_key, name,
-                           _line_group(market_key, point), description)
+                    key = (event.get("id"), market_key, name, line, description)
                     grouped[key].append({
                         "event_id": event.get("id"), "sport": event.get("sport_title"),
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
@@ -88,7 +100,10 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                         outcome.get("description") or outcome.get("participant") or ""
                         if market_key.startswith("player_") else None
                     )
-                    groups[(_line_group(market_key, outcome.get("point")), player_scope)].append(outcome)
+                    line = _line_group(market_key, outcome.get("point"))
+                    if market_key != "h2h" and line is None:
+                        continue
+                    groups[(line, player_scope)].append(outcome)
 
                 for (line, player_scope), items in groups.items():
                     if len(items) != expected_outcomes:
