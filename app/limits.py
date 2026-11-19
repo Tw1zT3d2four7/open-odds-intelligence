@@ -95,7 +95,11 @@ class MarketLimitsMonitor:
             saved_usage = db.execute(
                 "SELECT state_value FROM market_limit_state WHERE state_key='last_usage'"
             ).fetchone()
+            saved_error = db.execute(
+                "SELECT state_value FROM market_limit_state WHERE state_key='last_error'"
+            ).fetchone()
         self.last_updated = saved_success["state_value"] if saved_success else None
+        self.last_error = saved_error["state_value"] if saved_error else None
         if saved_usage:
             try:
                 self.usage = json.loads(saved_usage["state_value"])
@@ -281,6 +285,13 @@ class MarketLimitsMonitor:
         self.last_diagnostic = diagnostic
         self.last_error = "; ".join(errors)[:1000] if errors else None
         with self._connect() as state_db:
+            if self.last_error:
+                state_db.execute(
+                    "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_error',?)",
+                    (self.last_error,),
+                )
+            else:
+                state_db.execute("DELETE FROM market_limit_state WHERE state_key='last_error'")
             state_db.execute(
                 "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_usage',?)",
                 (json.dumps(self.usage),),
