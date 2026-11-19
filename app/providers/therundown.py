@@ -113,6 +113,25 @@ class TheRundownProvider:
             return None
 
     @staticmethod
+    def _american_price(value):
+        """Return a valid integer American price or reject the provider quote."""
+        import math
+
+        if isinstance(value, bool):
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not math.isfinite(numeric) or numeric == 0 or not numeric.is_integer():
+            return None
+        price = int(numeric)
+        # TheRundown uses 0.0001 as a placeholder for an unavailable price.
+        if price == 0 or numeric == 0.0001:
+            return None
+        return price
+
+    @staticmethod
     def _event_time(event):
         value = event.get("event_date") or event.get("start_date") or event.get("commence_time")
         if isinstance(value, (int, float)):
@@ -224,10 +243,9 @@ class TheRundownProvider:
                     for book_id, quote in (line.get("prices") or {}).items():
                         if not isinstance(quote, dict) or quote.get("closed_at"):
                             continue
-                        price_value = self._as_float(quote.get("price"))
-                        if price_value is None or price_value == 0 or price_value == 0.0001:
+                        price = self._american_price(quote.get("price"))
+                        if price is None:
                             continue
-                        price = int(price_value)
                         key, title = self.BOOKS.get(str(book_id), (f"affiliate_{book_id}", f"Affiliate {book_id}"))
                         book = books.setdefault(key, {"key": key, "title": title, "markets": {}})
                         market_obj = book["markets"].setdefault(market_key, {"key": market_key, "outcomes": []})

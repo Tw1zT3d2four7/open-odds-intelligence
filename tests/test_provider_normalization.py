@@ -361,3 +361,83 @@ def test_therundown_tennis_normalizes_players_from_moneyline_participants():
     assert event["sport_key"] == "tennis_atp"
     assert len(event["bookmakers"]) == 1
     assert event["bookmakers"][0]["markets"][0]["key"] == "h2h"
+
+
+@pytest.mark.parametrize("value", [True, False, 0, "0", 100.5, -110.25, float("nan"), float("inf"), None, "not-a-price"])
+def test_odds_api_rejects_invalid_american_prices(value):
+    provider = TheOddsAPIProvider("CaseSensitiveKey")
+    with pytest.raises(ValueError):
+        provider._normalize_price(value)
+
+
+@pytest.mark.parametrize("value", [True, False, 0, "0", 1, 1.0, float("nan"), float("inf"), None, "not-a-price"])
+def test_odds_api_rejects_invalid_decimal_prices(value):
+    provider = TheOddsAPIProvider("CaseSensitiveKey", odds_format="decimal")
+    with pytest.raises(ValueError):
+        provider._normalize_price(value)
+
+
+def test_odds_api_does_not_truncate_fractional_american_prices(monkeypatch):
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps([{
+                "id": "fractional-price-event", "sport_key": "basketball_nba",
+                "home_team": "Home", "away_team": "Away",
+                "bookmakers": [{"key": "book-a", "markets": [{
+                    "key": "h2h", "outcomes": [
+                        {"name": "Home", "price": -110.5},
+                        {"name": "Away", "price": 105},
+                    ],
+                }]}],
+            }]).encode()
+
+    monkeypatch.setattr(the_odds_api, "urlopen", lambda request, timeout: FakeResponse())
+    events = TheOddsAPIProvider("CaseSensitiveKey").fetch_odds("basketball_nba")
+    outcomes = events[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert [item["price"] for item in outcomes] == [105]
+
+
+@pytest.mark.parametrize("value,expected", [
+    (-110, -110), ("105", 105), ("-110.0", -110),
+    (True, None), (False, None), (0, None), ("0", None),
+    (110.5, None), (-110.25, None), (float("nan"), None),
+    (float("inf"), None), (None, None), ("bad", None), (0.0001, None),
+])
+def test_therundown_american_price_validation(value, expected):
+    from app.providers.therundown import TheRundownProvider
+
+    assert TheRundownProvider._american_price(value) == expected
+
+
+def test_therundown_drops_invalid_prices_without_aborting_event_normalization():
+    from app.providers.therundown import TheRundownProvider
+
+    provider = TheRundownProvider("CaseSensitiveKey")
+    event = provider._normalize_event({
+        "event_id": "price-integrity-event",
+        "teams": [
+            {"name": "Away", "is_away": True},
+            {"name": "Home", "is_home": True},
+        ],
+        "markets": [{
+            "market_id": 1,
+            "participants": [
+                {"name": "Home", "lines": [{"prices": {
+                    "19": {"price": True}, "22": {"price": 110.5},
+                    "23": {"price": -110},
+                }}]},
+                {"name": "Away", "lines": [{"prices": {
+                    "19": {"price": float("inf")}, "22": {"price": 105},
+                    "23": {"price": 0},
+                }}]},
+            ],
+        }],
+    }, "americanfootball_nfl", "NFL")
+
+    books = {book["key"]: book for book in event["bookmakers"]}
+    assert set(books) == {"fanduel", "betmgm"}
+    assert books["fanduel"]["markets"][0]["outcomes"][0]["price"] == -110
+    assert books["betmgm"]["markets"][0]["outcomes"][0]["price"] == 105
