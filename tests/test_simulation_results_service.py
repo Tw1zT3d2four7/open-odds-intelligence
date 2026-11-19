@@ -38,6 +38,7 @@ def test_service_syncs_score_only_results_and_stores_final_settlement(tmp_path, 
 
     class FakeProvider:
         name = "therundown"
+        SPORTS = {"soccer_epl": (11, "EPL")}
         usage = {"datapoints": 2}
         def __init__(self, *args, **kwargs):
             pass
