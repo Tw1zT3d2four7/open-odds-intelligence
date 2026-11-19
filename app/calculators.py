@@ -8,11 +8,21 @@ from __future__ import annotations
 import math
 
 
-def _positive(value: float, name: str) -> float:
+def _finite_number(value: float, name: str) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"{name} must be a finite number greater than zero")
-    value = float(value)
-    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a finite number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be a finite number") from None
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be a finite number")
+    return number
+
+
+def _positive(value: float, name: str) -> float:
+    value = _finite_number(value, name)
+    if value <= 0:
         raise ValueError(f"{name} must be a finite number greater than zero")
     return value
 
@@ -109,11 +119,9 @@ def ev_kelly(odds: float, win_probability: float, bankroll: float,
              kelly_fraction: float = 0.25, format: str = "american") -> dict:
     decimal = to_decimal(odds, format)
     bankroll = _positive(bankroll, "Bankroll")
-    if isinstance(win_probability, bool) or isinstance(kelly_fraction, bool):
-        raise ValueError("Win probability and Kelly fraction must be numeric values")
-    probability = float(win_probability)
-    fraction = float(kelly_fraction)
-    if not math.isfinite(probability) or not 0 <= probability <= 1:
+    probability = _finite_number(win_probability, "Win probability")
+    fraction = _finite_number(kelly_fraction, "Kelly fraction")
+    if not 0 <= probability <= 1:
         raise ValueError("Win probability must be between 0 and 1")
     if not math.isfinite(fraction) or not 0 <= fraction <= 1:
         raise ValueError("Kelly fraction must be between 0 and 1")
@@ -142,11 +150,7 @@ def run_line_minus_one(stake: float, odds: float, margin: float,
     """
     stake = _positive(stake, "Stake")
     decimal = to_decimal(odds, format)
-    if isinstance(margin, bool):
-        raise ValueError("Final score margin must be a finite number")
-    margin = float(margin)
-    if not math.isfinite(margin):
-        raise ValueError("Final score margin must be a finite number")
+    margin = _finite_number(margin, "Final score margin")
     if not margin.is_integer():
         raise ValueError("Final score margin must be a whole number")
     if margin > 1:

@@ -2,7 +2,7 @@ import pytest
 
 from app.calculators import (
     american_to_decimal, convert_odds, decimal_to_american, ev_kelly,
-    hedge, no_vig, parlay, payout,
+    hedge, no_vig, parlay, payout, run_line_minus_one,
 )
 
 
@@ -158,3 +158,19 @@ def test_american_odds_reject_values_between_minus_and_plus_100(odds):
 ])
 def test_american_odds_accept_standard_boundary_values(odds, expected):
     assert american_to_decimal(odds) == expected
+
+
+@pytest.mark.parametrize("call", [
+    lambda: payout(10 ** 10000, -110),
+    lambda: payout([], -110),
+    lambda: ev_kelly(-110, 10 ** 10000, 100),
+    lambda: ev_kelly(-110, 0.55, 100, 10 ** 10000),
+    lambda: ev_kelly(-110, [], 100),
+    lambda: ev_kelly(-110, 0.55, 100, []),
+    lambda: run_line_minus_one(100, -110, 10 ** 10000),
+    lambda: run_line_minus_one(100, -110, []),
+])
+def test_calculator_numeric_overflow_and_malformed_values_raise_value_error(call):
+    with pytest.raises(ValueError):
+        call()
+
