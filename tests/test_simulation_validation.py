@@ -27,10 +27,10 @@ def test_settlement_csv_rejects_non_final(status):
 
 def test_settlement_csv_rejects_duplicate_event_ids_and_invalid_scores():
     header = "event_id,sport_key,commence_time,home_team,away_team,home_score,away_score,status,source\n"
-    duplicate = header + "g1,nba,t,A,B,1,0,final,feed\n" + "g1,nba,t,A,B,2,0,final,feed\n"
+    duplicate = header + "g1,nba,2026-01-01T00:00:00Z,A,B,1,0,final,feed\n" + "g1,nba,2026-01-01T00:00:00Z,A,B,2,0,final,feed\n"
     with pytest.raises(ValueError, match="duplicate event_id"):
         parse_settlements_csv(duplicate)
-    invalid = header + "g2,nba,t,A,B,-1,0,final,feed\n"
+    invalid = header + "g2,nba,2026-01-01T00:00:00Z,A,B,-1,0,final,feed\n"
     with pytest.raises(ValueError, match="non-negative"):
         parse_settlements_csv(invalid)
 
