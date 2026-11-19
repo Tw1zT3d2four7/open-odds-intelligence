@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--settlements", required=True, help="CSV of verified final scores")
     parser.add_argument("--training-settlements", help="Earlier-period verified results used only to fit league distributions")
     parser.add_argument("--min-training-sample", type=int, default=50, help="Minimum training events required per league (default: 50)")
+    parser.add_argument("--model-output", help="Optional path to save fitted models JSON for live simulation")
     parser.add_argument("--output", help="Optional JSON report path; defaults to stdout")
     args = parser.parse_args()
 
@@ -35,6 +36,18 @@ def main():
     report = run_historical_backtest(database, settlements, model_parameters=models)
     if training_report is not None:
         report["training"] = training_report
+    if args.model_output:
+        if training_report is None:
+            parser.error("--model-output requires --training-settlements")
+        model_payload = {
+            "models": models,
+            "training_events_used": training_report["training_events_used"],
+            "minimum_sample_size": training_report["minimum_sample_size"],
+            "warning": training_report["warning"],
+        }
+        Path(args.model_output).write_text(
+            json.dumps(model_payload, indent=2, sort_keys=True) + "\\n", encoding="utf-8"
+        )
     rendered = json.dumps(report, indent=2, sort_keys=True)
     if args.output:
         Path(args.output).write_text(rendered + "\n", encoding="utf-8")
