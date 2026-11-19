@@ -122,3 +122,10 @@ def test_settlement_csv_rejects_invalid_start_timestamp():
     )
     with pytest.raises(ValueError, match="commence_time must be ISO-8601"):
         parse_settlements_csv(csv)
+
+def test_settlement_csv_requires_explicit_timezone_and_rows():
+    header = "event_id,sport_key,commence_time,home_team,away_team,home_score,away_score,status,source\n"
+    with pytest.raises(ValueError, match="explicit timezone"):
+        parse_settlements_csv(header + "g1,nba,2026-01-01T00:00:00,A,B,1,0,final,feed\n")
+    with pytest.raises(ValueError, match="no result rows"):
+        parse_settlements_csv(header)
