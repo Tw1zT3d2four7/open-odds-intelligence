@@ -290,7 +290,6 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
     This is a training-only operation. The caller must evaluate the returned
     parameters on a later, untouched chronological test set.
     """
-    from statistics import pstdev
     from .simulation import LEAGUE_PRIORS, _collect_market_inputs, _family
 
     if not isinstance(min_sample_size, int) or isinstance(min_sample_size, bool) or min_sample_size < 2:
@@ -334,21 +333,30 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
         total_residuals = bucket["total_residuals"]
         margin_bias = sum(margin_residuals) / n
         total_bias = sum(total_residuals) / n
-        margin_sd = max(0.1, pstdev(margin_residuals))
-        total_sd = max(0.1, pstdev(total_residuals))
+        prior = LEAGUE_PRIORS[family]
+        shrinkage_events = 100
+        margin_variance = (sum((value - margin_bias) ** 2 for value in margin_residuals)
+                           + prior["margin_sd"] ** 2 * shrinkage_events) / (n + shrinkage_events)
+        total_variance = (sum((value - total_bias) ** 2 for value in total_residuals)
+                          + prior["total_sd"] ** 2 * shrinkage_events) / (n + shrinkage_events)
+        margin_sd = max(0.1, math.sqrt(margin_variance))
+        total_sd = max(0.1, math.sqrt(total_variance))
+        raw_margin_sd = math.sqrt(sum((value - margin_bias) ** 2 for value in margin_residuals) / n)
+        raw_total_sd = math.sqrt(sum((value - total_bias) ** 2 for value in total_residuals) / n)
         covariance = sum((m - margin_bias) * (t - total_bias)
                          for m, t in zip(margin_residuals, total_residuals)) / n
-        correlation = max(-0.95, min(0.95, covariance / (margin_sd * total_sd)))
+        correlation = max(-0.95, min(0.95, covariance / max(1e-9, raw_margin_sd * raw_total_sd)))
         model = {"sport_key": sport_key, "family": family, "sample_size": n,
                  "margin_bias": margin_bias, "total_bias": total_bias,
                  "margin_sd": margin_sd, "total_sd": total_sd,
-                 "margin_total_corr": correlation}
+                 "margin_total_corr": correlation, "shrinkage_prior_events": shrinkage_events}
         if LEAGUE_PRIORS[family]["distribution"] == "poisson":
             for side in ("home", "away"):
                 observations = bucket[side + "_dispersion"]
                 numerator = sum(residual ** 2 - mean for residual, mean in observations)
                 denominator = sum(mean ** 2 for _, mean in observations)
-                model[side + "_alpha"] = max(0.0, min(2.0, numerator / denominator if denominator else 0.0))
+                raw_alpha = numerator / denominator if denominator else 0.0
+                model[side + "_alpha"] = max(0.0, min(2.0, raw_alpha * n / (n + shrinkage_events)))
         models[sport_key] = model
     return {"models": models, "insufficient": insufficient,
             "training_events_used": sum(len(x["margin_residuals"]) for x in buckets.values()),
