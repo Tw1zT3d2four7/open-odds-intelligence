@@ -211,6 +211,16 @@ def simulation_leagues():
     ]}
 
 
+def _simulation_snapshot_freshness(sport: str):
+    """Return the selected league's stored-snapshot freshness record, if any."""
+    status = service.status()
+    records = status.get("sport_freshness", []) if isinstance(status, dict) else []
+    if not isinstance(records, list):
+        return None
+    return next((item for item in records
+                 if isinstance(item, dict) and item.get("sport") == sport), None)
+
+
 def _simulation_games_for_sport(sport: str):
     games = []
     for event in service.events(sport):
@@ -259,6 +269,16 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
     event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
+    freshness = _simulation_snapshot_freshness(sport)
+    if not isinstance(freshness, dict) or freshness.get("freshness") != "current":
+        state = freshness.get("freshness", "unknown") if isinstance(freshness, dict) else "unavailable"
+        age = freshness.get("age_seconds") if isinstance(freshness, dict) else None
+        detail = (
+            f"Simulation blocked: {sport} odds snapshot is {state}"
+            + (f" ({age} seconds old)" if isinstance(age, int) else "")
+            + ". Refresh this league and rerun using a current stored sportsbook spread and total."
+        )
+        raise HTTPException(status_code=409, detail=detail)
     try:
         models = load_fitted_models(config.SIMULATION_MODEL_PATH)
         result = run_game_simulation(event, SIMULATION_TRIALS, seed=seed,
