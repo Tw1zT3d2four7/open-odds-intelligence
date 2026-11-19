@@ -1,6 +1,9 @@
 from pathlib import Path
+import base64
+import binascii
 import logging
 import asyncio
+import secrets
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
@@ -9,7 +12,8 @@ from .service import service
 from .markets import market_board, analyze_markets
 from .limits import limits_monitor
 from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +99,48 @@ app = FastAPI(title=config.APP_NAME, version="0.4.0",
               description="Self-hosted open-source odds comparison and market intelligence.",
               lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
+
+
+@app.middleware("http")
+async def optional_basic_auth(request: Request, call_next):
+    """Protect the dashboard and API when an operator configures credentials.
+
+    /api/health remains public for Docker health checks and orchestrators.
+    Credentials are compared in constant time and are never logged.
+    """
+    username = config.AUTH_USERNAME
+    password = config.AUTH_PASSWORD
+    if bool(username) != bool(password):
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Authentication is misconfigured; set both AUTH_USERNAME and AUTH_PASSWORD."},
+        )
+    if not username:
+        return await call_next(request)
+    if request.url.path == "/api/health":
+        return await call_next(request)
+
+    header = request.headers.get("authorization", "")
+    supplied_user = supplied_password = ""
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() == "basic" and token:
+        try:
+            decoded = base64.b64decode(token, validate=True).decode("utf-8")
+            supplied_user, separator, supplied_password = decoded.partition(":")
+            if not separator:
+                supplied_user = supplied_password = ""
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            supplied_user = supplied_password = ""
+
+    valid_user = secrets.compare_digest(supplied_user.encode(), username.encode())
+    valid_password = secrets.compare_digest(supplied_password.encode(), password.encode())
+    if not (valid_user and valid_password):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authentication required."},
+            headers={"WWW-Authenticate": 'Basic realm="Open Odds Intelligence", charset="UTF-8"'},
+        )
+    return await call_next(request)
 
 
 @app.get("/", response_class=HTMLResponse)
