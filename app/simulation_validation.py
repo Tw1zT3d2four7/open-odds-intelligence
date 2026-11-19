@@ -85,6 +85,18 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     eps = 1e-12
     actual_index = actual.index(1.0)
     log_loss = -math.log(max(eps, values[actual_index]))
+    total_market = prediction.get("total_market") or {}
+    total_line = float(total_market.get("consensus_line", float("nan")))
+    total_probs = tuple(float(total_market.get(key, -1)) / 100 for key in ("over", "under", "push"))
+    if not math.isfinite(total_line) or any(not math.isfinite(x) or x < 0 or x > 1 for x in total_probs):
+        raise ValueError("Prediction contains invalid total probabilities or line.")
+    if abs(sum(total_probs) - 1) > 0.005:
+        raise ValueError("Total probabilities must sum to 100%.")
+    actual_total = hs + aws
+    actual_total_result = "over" if actual_total > total_line + 1e-9 else "under" if actual_total < total_line - 1e-9 else "push"
+    total_actual = tuple(1.0 if actual_total_result == label else 0.0 for label in ("over", "under", "push"))
+    total_brier = sum((p - y) ** 2 for p, y in zip(total_probs, total_actual))
+    total_log_loss = -math.log(max(eps, total_probs[total_actual.index(1.0)]))
     projected = prediction.get("projected_score") or {}
     projected_home = float(projected.get("home", float("nan")))
     projected_away = float(projected.get("away", float("nan")))
@@ -97,6 +109,12 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
         "predicted_home_probability": home,
         "predicted_away_probability": away,
         "predicted_tie_probability": tie,
+        "predicted_over_probability": total_probs[0],
+        "predicted_under_probability": total_probs[1],
+        "predicted_total_push_probability": total_probs[2],
+        "actual_total_result": actual_total_result,
+        "total_brier_score": total_brier,
+        "total_log_loss": total_log_loss,
         "brier_score": brier,
         "log_loss": log_loss,
         "home_score_error": abs(projected_home - hs),
