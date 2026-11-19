@@ -275,3 +275,28 @@ def test_valid_numeric_string_lines_are_canonicalized_for_analysis():
     assert len(result["opportunities"]) == 2
     assert {row["outcome"] for row in result["opportunities"]} == {"Home", "Away"}
     assert all(row["consensus_books"] == 1 for row in result["opportunities"])
+
+
+
+def test_boolean_prices_are_rejected_as_malformed_quotes():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "boolean-prices", "sport_key": "americanfootball_nfl",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": True}, {"name": "Away", "price": -110}
+            ]}]},
+            {"key": "b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 110}, {"name": "Away", "price": False}
+            ]}]},
+        ],
+    }]
+    assert market_board(events) == [
+        # Only valid integer odds survive; the market is incomplete and
+        # therefore must not be eligible for EV or arbitrage analysis.
+    ]
+    assert analyze_markets(events, min_ev=-100, min_consensus_books=1) == {
+        "opportunities": [], "arbitrage": []
+    }
