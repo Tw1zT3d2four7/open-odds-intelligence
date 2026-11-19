@@ -84,3 +84,24 @@ A valid backtest requires overlap between the local odds archive and imported se
 The simulator now resolves regulation ties for NBA/WNBA/NCAAB with repeated overtime scoring periods, NHL with overtime-goal/shootout resolution, MLB with repeated extra innings, and NCAAF with repeated overtime possessions. EPL soccer draws remain valid. NFL regular-season ties can remain tied after a simplified overtime period. These are transparent approximations, not official league rulebooks or period-by-period team models; NFL postseason rules and competition-specific tournament formats are not inferred from the event feed. The output exposes regulation tie and overtime/extra-inning counts. These assumptions still require calibration against verified historical results.
 
 The holdout report also scores the same events with the unfitted broad-prior market-anchored simulator and reports paired metric deltas. This is a baseline comparison, not a sportsbook closing-line or independently generated market-probability benchmark; interpret it accordingly.
+
+
+## Automatic TheRundown score collection
+
+When TheRundown is the active odds provider and THERUNDOWN_API_KEY is configured, score-only collection is enabled by default. It queries only sport/date combinations already present in the local odds archive and containing games that started within the configured lookback window.
+
+- Requests use affiliate_ids=0, so sportsbook price rows are not requested.
+- The adapter accepts only explicit STATUS_FINAL records with numeric final scores.
+- Before storage, the database verifies that the event ID, scheduled start time, and home/away team identities match the archived odds event.
+- Results are stored once in the simulation_settlements SQLite table; duplicate finals are ignored.
+- The collector shares the odds-refresh lock to respect TheRundown's one-request-per-second limit.
+- Defaults: four-hour synchronization cadence, four-hour retry interval, seven-day lookback, and at most ten sport/date groups per run.
+- The health endpoint and dashboard notice show whether collection is enabled, how many results are stored, and the latest inserted count/errors.
+
+To use automatically stored results, choose exclusive date cutoffs. Games before the training cutoff fit scoring parameters; games between cutoffs fit probability temperatures; later games are the untouched holdout:
+
+```bash
+python -m scripts.backtest_simulator --use-stored-results --training-cutoff 2026-09-01 --calibration-cutoff 2026-10-01 --model-output ./data/simulation_models.json --output simulator-backtest.json
+```
+
+The automatic collector runs only with TheRundown as the active odds provider. Other providers continue to use the verified CSV import workflow. The collector does not backfill events absent from the local odds archive.
