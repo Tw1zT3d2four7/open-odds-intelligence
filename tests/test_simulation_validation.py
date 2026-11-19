@@ -154,3 +154,54 @@ def test_stored_settlements_split_rejects_bad_cutoff_order():
     from app.simulation_validation import split_stored_settlements
     with pytest.raises(ValueError, match="earlier than"):
         split_stored_settlements([], "2026-10-01", "2026-09-01")
+
+@pytest.mark.parametrize("home_score,away_score", [
+    (True, 0), (100.5, 99), (-1, 0), ("100", 99), (None, 99),
+])
+def test_prediction_scoring_rejects_invalid_settlement_score_types(home_score, away_score):
+    prediction = {
+        "event_id": "g1", "sport": "basketball_nba",
+        "win_probabilities": {"home": 60, "away": 35, "tie": 5},
+        "projected_score": {"home": 102, "away": 99},
+        "total_market": {"consensus_line": 200, "over": 45, "under": 45, "push": 10},
+    }
+    settlement = {
+        "event_id": "g1", "sport_key": "basketball_nba",
+        "home_score": home_score, "away_score": away_score,
+    }
+    with pytest.raises(ValueError, match="non-negative whole-number integer"):
+        score_prediction(prediction, settlement)
+
+
+def test_prediction_scoring_rejects_cross_league_settlement():
+    prediction = {
+        "event_id": "g1", "sport": "basketball_nba",
+        "win_probabilities": {"home": 60, "away": 35, "tie": 5},
+        "projected_score": {"home": 102, "away": 99},
+        "total_market": {"consensus_line": 200, "over": 45, "under": 45, "push": 10},
+    }
+    settlement = {
+        "event_id": "g1", "sport_key": "icehockey_nhl",
+        "home_score": 3, "away_score": 2,
+    }
+    with pytest.raises(ValueError, match="leagues do not match"):
+        score_prediction(prediction, settlement)
+
+
+def test_prediction_scoring_rejects_boolean_probabilities_and_projected_scores():
+    base = {
+        "event_id": "g1", "sport": "basketball_nba",
+        "win_probabilities": {"home": 60, "away": 35, "tie": 5},
+        "projected_score": {"home": 102, "away": 99},
+        "total_market": {"consensus_line": 200, "over": 45, "under": 45, "push": 10},
+    }
+    settlement = {
+        "event_id": "g1", "sport_key": "basketball_nba",
+        "home_score": 100, "away_score": 99,
+    }
+    invalid_probability = {**base, "win_probabilities": {**base["win_probabilities"], "home": True}}
+    with pytest.raises(ValueError, match="not boolean"):
+        score_prediction(invalid_probability, settlement)
+    invalid_score = {**base, "projected_score": {**base["projected_score"], "home": True}}
+    with pytest.raises(ValueError, match="not boolean"):
+        score_prediction(invalid_score, settlement)
