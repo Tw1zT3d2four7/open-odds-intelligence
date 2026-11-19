@@ -260,7 +260,7 @@ class TheRundownProvider:
             except ValueError:
                 raise ProviderError(f"Invalid score lookup date: {event_date!r}") from None
             for sport_id in sport_ids:
-                params = urlencode({"affiliate_ids": "0"})
+                params = urlencode({"affiliate_ids": "0", "offset": str(self.utc_offset_minutes)})
                 payload = self._request(
                     f"{self.base_url}/sports/{sport_id}/events/{event_date}?{params}"
                 )
