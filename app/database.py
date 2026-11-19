@@ -236,16 +236,40 @@ class OddsDatabase:
 
     def save_snapshot(self, sport, events, provider="unknown", fetched_at=None):
         fetched_at = fetched_at or datetime.now(timezone.utc).isoformat()
+        if not isinstance(events, list):
+            events = []
+        # Event IDs are the primary identity used by every downstream quote,
+        # movement, CLV, and simulator lookup. Never persist anonymous events:
+        # they would all collapse into one empty-ID matchup in latest_events().
+        valid_events = [
+            event for event in events
+            if isinstance(event, dict) and str(event.get("id") or "").strip()
+        ]
         with self.connect() as db:
             cur = db.execute(
                 "INSERT INTO snapshots(sport,provider,fetched_at,event_count) VALUES(?,?,?,?)",
-                (sport, provider, fetched_at, len(events)))
+                (sport, provider, fetched_at, len(valid_events)))
             snapshot_id = cur.lastrowid
             rows = []
-            for event in events:
-                for book in event.get("bookmakers", []):
-                    for market in book.get("markets", []):
-                        for outcome in market.get("outcomes", []):
+            for event in valid_events:
+                books = event.get("bookmakers")
+                if not isinstance(books, list):
+                    continue
+                for book in books:
+                    if not isinstance(book, dict):
+                        continue
+                    markets = book.get("markets")
+                    if not isinstance(markets, list):
+                        continue
+                    for market in markets:
+                        if not isinstance(market, dict):
+                            continue
+                        outcomes = market.get("outcomes")
+                        if not isinstance(outcomes, list):
+                            continue
+                        for outcome in outcomes:
+                            if not isinstance(outcome, dict):
+                                continue
                             # Provider odds are canonical integer American prices.
                             # Do not coerce booleans, fractional values, or numeric strings:
                             # coercion can silently turn malformed feed data into real quotes.
