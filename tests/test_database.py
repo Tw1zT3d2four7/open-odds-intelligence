@@ -95,8 +95,7 @@ def test_snapshot_skips_unbindable_optional_quote_metadata(tmp_path):
 
     stored = db.latest_events("basketball_nba")
     assert len(stored) == 1
-    h2h = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "h2h")
-    assert h2h["outcomes"] == []
+    assert all(m["key"] != "h2h" for m in stored[0]["bookmakers"][0]["markets"])
 
 
 def test_history_keeps_each_refresh_and_filters_line(tmp_path):
