@@ -299,3 +299,13 @@ def test_boolean_prices_are_rejected_as_malformed_quotes():
     assert analyze_markets(events, min_ev=-100, min_consensus_books=1) == {
         "opportunities": [], "arbitrage": []
     }
+
+def test_market_board_ignores_events_without_stable_identity():
+    anonymous = {
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [{"key": "book", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": -110}, {"name": "Away", "price": -110},
+        ]}]}],
+    }
+    assert market_board([anonymous, None, "malformed"]) == []
+
