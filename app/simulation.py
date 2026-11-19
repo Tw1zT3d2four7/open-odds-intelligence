@@ -296,6 +296,50 @@ def load_fitted_models(path):
         _validated_model_parameters(parameters, family, sport_key)
     return models
 
+
+
+def _resolve_tie(rng, sport_key, home_score, away_score):
+    """Apply simplified league-specific overtime/extra-inning resolution."""
+    if home_score != away_score:
+        return home_score, away_score, False
+    key = str(sport_key or "").lower()
+    if "soccer" in key:
+        return home_score, away_score, False
+    if "icehockey_nhl" in key:
+        for _ in range(20):
+            home_ot, away_ot = _poisson(rng, 0.22), _poisson(rng, 0.22)
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 1, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 1, True)
+    if key.startswith("basketball_"):
+        period_mean = 10.5 if key == "basketball_nba" else 7.0 if key == "basketball_ncaab" else 8.0
+        while True:
+            home_ot, away_ot = _poisson(rng, period_mean), _poisson(rng, period_mean)
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+    if "baseball_mlb" in key:
+        while True:
+            home_ot, away_ot = _poisson(rng, 0.65), _poisson(rng, 0.65)
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+    if "americanfootball_ncaaf" in key:
+        outcomes = ((0, 0.12), (3, 0.18), (6, 0.08), (7, 0.52), (8, 0.10))
+        values = [item[0] for item in outcomes]
+        weights = [item[1] for item in outcomes]
+        while True:
+            home_ot = rng.choices(values, weights=weights, k=1)[0]
+            away_ot = rng.choices(values, weights=weights, k=1)[0]
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+    if "americanfootball_nfl" in key:
+        outcomes = ((0, 0.55), (3, 0.25), (7, 0.20))
+        values = [item[0] for item in outcomes]
+        weights = [item[1] for item in outcomes]
+        home_ot = rng.choices(values, weights=weights, k=1)[0]
+        away_ot = rng.choices(values, weights=weights, k=1)[0]
+        return home_score + home_ot, away_score + away_ot, True
+    return home_score, away_score, False
+
 def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
@@ -313,6 +357,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
     rng = random.Random(seed)
     home_wins = away_wins = ties = over = under = pushes = 0
+    regulation_ties = overtime_games = 0
     home_scores, away_scores = [], []
     for _ in range(TRIALS):
         if prior["distribution"] == "poisson":
@@ -333,6 +378,12 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             total = max(0.0, total)
             home_score = max(0, round((total + margin) / 2))
             away_score = max(0, round((total - margin) / 2))
+        if home_score == away_score:
+            regulation_ties += 1
+            home_score, away_score, went_overtime = _resolve_tie(
+                rng, event.get("sport_key") or event.get("sport"), home_score, away_score
+            )
+            overtime_games += int(went_overtime)
         margin = home_score - away_score
         total = home_score + away_score
         home_scores.append(home_score)
@@ -366,6 +417,10 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         },
         "win_probabilities": {
             "home": pct(home_wins), "away": pct(away_wins), "tie": pct(ties),
+        },
+        "game_resolution": {
+            "regulation_ties": regulation_ties, "overtime_or_extra_innings": overtime_games,
+            "rule": "league_specific_approximation",
         },
         "total_market": {
             "consensus_line": round(expected_total, 2),
