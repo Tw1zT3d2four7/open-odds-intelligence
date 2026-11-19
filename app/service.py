@@ -101,12 +101,49 @@ class OddsService:
 
     def status(self):
         stored = self.db.snapshot_status()
+        now = datetime.now(timezone.utc)
+        latest_by_sport = {item["sport"]: item for item in stored.get("sports", [])}
+        sport_freshness = []
+        for sport in config.ODDS_SPORTS:
+            snapshot = latest_by_sport.get(sport)
+            if snapshot is None:
+                sport_freshness.append({
+                    "sport": sport, "last_updated": None, "age_seconds": None,
+                    "event_count": 0, "freshness": "unavailable",
+                })
+                continue
+            try:
+                fetched = datetime.fromisoformat(str(snapshot["fetched_at"]).replace("Z", "+00:00"))
+                if fetched.tzinfo is None:
+                    fetched = fetched.replace(tzinfo=timezone.utc)
+                age = max(0, int((now - fetched.astimezone(timezone.utc)).total_seconds()))
+                freshness = "stale" if age > config.ODDS_DATA_STALE_AFTER_SECONDS else "current"
+            except (TypeError, ValueError):
+                age, freshness = None, "unknown"
+            sport_freshness.append({
+                "sport": sport, "last_updated": snapshot["fetched_at"],
+                "age_seconds": age, "event_count": snapshot["event_count"],
+                "freshness": freshness,
+            })
+        states = {item["freshness"] for item in sport_freshness}
+        if not states:
+            data_freshness = "unavailable"
+        elif "stale" in states:
+            data_freshness = "stale"
+        elif "unavailable" in states or "unknown" in states:
+            data_freshness = "partial"
+        else:
+            data_freshness = "current"
+        alert_status = self.db.alert_status()
         return {"provider": config.ODDS_PROVIDER, "configured": self.configured,
                 "last_updated": self._updated_at or stored.get("last_updated"),
                 "last_error": self._last_error, "sports": config.ODDS_SPORTS,
                 "odds_regions": config.ODDS_REGIONS,
                 "odds_bookmakers": config.ODDS_BOOKMAKERS,
                 "live_data_available": bool(stored.get("events")) or bool(self._cache),
+                "data_freshness": data_freshness,
+                "data_stale_after_seconds": config.ODDS_DATA_STALE_AFTER_SECONDS,
+                "sport_freshness": sport_freshness,
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
                 "player_props": self._player_props_status,
@@ -120,8 +157,8 @@ class OddsService:
                 "last_alert_sent": self._last_alert_sent,
                 "last_alert_error": self._last_alert_error,
                 "alerts_enabled": bool(config.DISCORD_WEBHOOK_URL),
-                "alerts_sent": self.db.alert_status()["sent"],
-                "last_alert_at": self.db.alert_status()["last_sent"],
+                "alerts_sent": alert_status["sent"],
+                "last_alert_at": alert_status["last_sent"],
                 "alert_error": self._alert_error}
 
     def refresh(self, sport=None):
