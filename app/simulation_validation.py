@@ -142,6 +142,7 @@ def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
     def summarize(items):
         return {
             "sample_size": len(items),
+            "status": "DESCRIPTIVE_ONLY" if len(items) < 200 else "EVALUATION_AVAILABLE",
             "brier_score": _mean([x["brier_score"] for x in items]),
             "log_loss": _mean([x["log_loss"] for x in items]),
             "total_brier_score": _mean([x["total_brier_score"] for x in items]),
@@ -204,7 +205,11 @@ def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
         total_calibration_by_class[label] = class_bins
     return {
         "sample_size": len(rows),
-        "status": "DESCRIPTIVE_ONLY" if len(rows) < 200 else "EVALUATION_AVAILABLE",
+        "status": (
+            "EVALUATION_AVAILABLE"
+            if by_sport and all(len(items) >= 200 for items in by_sport.values())
+            else "DESCRIPTIVE_ONLY"
+        ),
         "overall": summarize(rows),
         "by_sport": {sport: summarize(items) for sport, items in sorted(by_sport.items())},
         "calibration": calibration,
@@ -357,8 +362,22 @@ def paired_bootstrap_comparison(model_rows: list[dict], baseline_rows: list[dict
                 "UNCERTAINTY_INTERVAL_INCLUDES_ZERO"
             ),
         }
+    grouped_model = defaultdict(list)
+    grouped_baseline = defaultdict(list)
+    for row in model_rows:
+        grouped_model[row.get("sport") or "unknown"].append(row)
+    for row in baseline_rows:
+        grouped_baseline[row.get("sport") or "unknown"].append(row)
+    per_sport = {
+        sport: paired_bootstrap_comparison(
+            grouped_model[sport], grouped_baseline[sport], iterations=iterations,
+            seed=seed + index + 1,
+        )
+        for index, sport in enumerate(sorted(grouped_model))
+    } if len(grouped_model) > 1 else {}
     return {
         "sample_size": sample_size,
+        "per_sport": per_sport,
         "method": "paired_event_bootstrap",
         "iterations": iterations,
         "confidence_level": 0.95,
