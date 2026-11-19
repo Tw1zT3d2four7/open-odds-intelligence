@@ -421,6 +421,54 @@ def test_therundown_tennis_normalizes_players_from_moneyline_participants():
     assert event["bookmakers"][0]["markets"][0]["key"] == "h2h"
 
 
+
+def test_therundown_skips_malformed_nested_market_line_and_price_records():
+    from app.providers.therundown import TheRundownProvider
+
+    provider = TheRundownProvider("CaseSensitiveKey")
+    event = provider._normalize_event({
+        "event_id": "malformed-nested-tennis",
+        "markets": [
+            None,
+            {"market_id": 1, "participants": None},
+            {"market_id": 1, "participants": [
+                None,
+                {"name": "Player A", "lines": [
+                    None,
+                    {"prices": ["not", "a", "mapping"]},
+                    {"value": None, "prices": {"19": {"price": -110}}},
+                ]},
+                {"name": "Player B", "lines": [
+                    {"value": None, "prices": {"19": {"price": 105}}},
+                ]},
+            ]},
+            {"market_id": 2, "participants": "malformed"},
+        ],
+    }, "tennis_atp", "ATP Tennis")
+
+    assert event["home_team"] == "Player A"
+    assert event["away_team"] == "Player B"
+    assert len(event["bookmakers"]) == 2
+    by_book = {book["key"]: book for book in event["bookmakers"]}
+    assert by_book["draftkings"]["markets"][0]["outcomes"] == [
+        {"name": "Player A", "price": -110, "point": None, "updated_at": None}
+    ]
+    assert by_book["draftkings"]["markets"][0]["key"] == "h2h"
+    assert by_book["draftkings"]["markets"][0]["outcomes"][0]["price"] == -110
+    assert by_book["draftkings"]["markets"][0]["outcomes"] != []
+
+
+@pytest.mark.parametrize("markets", [None, {}, "malformed"])
+def test_therundown_treats_non_list_market_collection_as_empty(markets):
+    from app.providers.therundown import TheRundownProvider
+
+    event = TheRundownProvider("CaseSensitiveKey")._normalize_event(
+        {"event_id": "event-empty-markets", "markets": markets},
+        "tennis_atp", "ATP Tennis",
+    )
+    assert event["bookmakers"] == []
+
+
 @pytest.mark.parametrize("value", [True, False, 0, "0", 100.5, -110.25, float("nan"), float("inf"), None, "not-a-price"])
 def test_odds_api_rejects_invalid_american_prices(value):
     provider = TheOddsAPIProvider("CaseSensitiveKey")
