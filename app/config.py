@@ -21,7 +21,7 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/odds_history.sqlite3")
 ODDS_DATA_STALE_AFTER_SECONDS = max(300, int(os.getenv("ODDS_DATA_STALE_AFTER_SECONDS", "21600")))
 ODDS_SPORTS = [s.strip() for s in os.getenv(
     "ODDS_SPORTS",
-    "americanfootball_nfl,basketball_nba,icehockey_nhl,baseball_mlb,soccer_epl"
+    "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_epl"
 ).split(",") if s.strip()]
 
 # Automatic refresh is opt-in; 0 keeps refreshes manual.
