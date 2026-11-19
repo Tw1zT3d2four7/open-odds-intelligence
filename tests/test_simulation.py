@@ -63,3 +63,32 @@ def test_simulation_supports_soccer_poisson_scoring():
     result = run_game_simulation(event)
     assert result["data_quality"]["distribution"] == "poisson"
     assert result["trials"] == 10_000
+
+
+def test_market_readiness_rejects_market_names_without_usable_lines():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"][0]["markets"] = [
+        {"key": "spreads", "outcomes": [{"name": "Home", "price": -110}]},
+        {"key": "totals", "outcomes": [{"name": "Over", "price": -110}]},
+    ]
+    event["bookmakers"][1]["markets"] = []
+    result = market_readiness(event)
+    assert result["can_simulate"] is False
+    assert result["has_spread"] is False
+    assert result["has_total"] is False
+    assert "spread line" in result["reason"]
+    assert "total line" in result["reason"]
+
+
+def test_market_readiness_accepts_usable_spread_and_total_lines():
+    from app.simulation import market_readiness
+
+    result = market_readiness(sample_event())
+    assert result == {
+        "can_simulate": True,
+        "has_spread": True,
+        "has_total": True,
+        "reason": None,
+    }
