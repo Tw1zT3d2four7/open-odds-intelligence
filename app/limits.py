@@ -193,7 +193,6 @@ class MarketLimitsMonitor:
         if not config.ODDSLINK_API_KEY:
             self.last_error = "Market limits feed is disabled. Add a free OddsLink API key as ODDSLINK_API_KEY."
             return {"ok": False, "error": self.last_error, "observations": 0}
-        client = OddsLinkClient(config.ODDSLINK_API_KEY)
         now = datetime.now(timezone.utc)
         observed_at = now.isoformat()
         # Persist the last attempt so container restarts cannot reset the
@@ -236,6 +235,7 @@ class MarketLimitsMonitor:
                 "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_key_fingerprint',?)",
                 (current_key_fingerprint,),
             )
+        client = OddsLinkClient(config.ODDSLINK_API_KEY)
         all_rows, errors = [], []
         diagnostic = {"sports_requested": [], "events_returned": 0, "bookmakers_returned": [], "size_kinds_returned": {}, "posted_limit_outcomes": 0}
         sports = config.LIMITS_SPORTS or config.ODDS_SPORTS
