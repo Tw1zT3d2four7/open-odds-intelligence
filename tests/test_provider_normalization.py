@@ -567,3 +567,41 @@ def test_providers_accept_valid_american_price_boundaries(value):
     from app.providers.therundown import TheRundownProvider
     assert TheOddsAPIProvider("CaseSensitiveKey")._normalize_price(value) == value
     assert TheRundownProvider._american_price(value) == value
+
+
+def test_odds_api_wraps_invalid_utf8_response_as_retryable_provider_error(monkeypatch):
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return b"\xff\xfe"
+
+    monkeypatch.setattr(the_odds_api, "urlopen", lambda request, timeout: FakeResponse())
+    provider = TheOddsAPIProvider("CaseSensitiveKey")
+    with pytest.raises(ProviderError, match="request failed") as caught:
+        provider.fetch_odds("americanfootball_nfl")
+    assert caught.value.retryable is True
+
+
+def test_therundown_wraps_invalid_utf8_response_as_retryable_provider_error(monkeypatch):
+    from app.providers import therundown
+    from app.providers.therundown import TheRundownProvider
+
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return b"\xff\xfe"
+
+    monkeypatch.setattr(therundown, "urlopen", lambda request, timeout: FakeResponse())
+    provider = TheRundownProvider("CaseSensitiveKey")
+    with pytest.raises(ProviderError, match="request failed") as caught:
+        provider._request("https://example.invalid/test")
+    assert caught.value.retryable is True
+
+
+def test_therundown_float_normalizer_rejects_integer_overflow():
+    from app.providers.therundown import TheRundownProvider
+
+    assert TheRundownProvider._as_float(10 ** 10000) is None
+
