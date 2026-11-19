@@ -321,3 +321,37 @@ def test_load_fitted_models_rejects_wrong_league_identity(tmp_path):
         assert "selected league" in str(exc)
     else:
         raise AssertionError("Expected league mismatch to be rejected")
+
+def test_league_specific_tie_resolution_rules_are_applied():
+    import random
+    from app.simulation import _resolve_tie
+    for sport in ("basketball_nba", "basketball_ncaab", "icehockey_nhl",
+                  "baseball_mlb", "americanfootball_ncaaf"):
+        home, away, overtime = _resolve_tie(random.Random(1234), sport, 2, 2)
+        assert home != away
+        assert overtime is True
+    home, away, overtime = _resolve_tie(random.Random(1234), "soccer_epl", 1, 1)
+    assert (home, away, overtime) == (1, 1, False)
+
+
+def test_nba_simulation_reports_final_winner_after_overtime():
+    event = sample_event()
+    result = run_game_simulation(event, seed=12345)
+    assert result["win_probabilities"]["tie"] == 0
+    assert result["game_resolution"]["regulation_ties"] >= result["game_resolution"]["overtime_or_extra_innings"]
+
+
+def test_nhl_simulation_has_no_final_ties_after_overtime_or_shootout():
+    event = sample_event()
+    event["sport_key"] = "icehockey_nhl"
+    event["bookmakers"][0]["markets"][1]["outcomes"] = [
+        {"name": "Over", "point": 6.5, "price": -110},
+        {"name": "Under", "point": 6.5, "price": -110},
+    ]
+    event["bookmakers"][1]["markets"][1]["outcomes"] = [
+        {"name": "Over", "point": 6.5, "price": -110},
+        {"name": "Under", "point": 6.5, "price": -110},
+    ]
+    result = run_game_simulation(event, seed=12345)
+    assert result["win_probabilities"]["tie"] == 0
+    assert result["game_resolution"]["rule"] == "league_specific_approximation"
