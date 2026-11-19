@@ -314,24 +314,27 @@ def _resolve_tie(rng, sport_key, home_score, away_score):
         return (home_score + 1, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 1, True)
     if key.startswith("basketball_"):
         period_mean = 10.5 if key == "basketball_nba" else 7.0 if key == "basketball_ncaab" else 8.0
-        while True:
+        for _ in range(100):
             home_ot, away_ot = _poisson(rng, period_mean), _poisson(rng, period_mean)
             if home_ot != away_ot:
                 return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 2, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 2, True)
     if "baseball_mlb" in key:
-        while True:
+        for _ in range(100):
             home_ot, away_ot = _poisson(rng, 0.65), _poisson(rng, 0.65)
             if home_ot != away_ot:
                 return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 1, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 1, True)
     if "americanfootball_ncaaf" in key:
         outcomes = ((0, 0.12), (3, 0.18), (6, 0.08), (7, 0.52), (8, 0.10))
         values = [item[0] for item in outcomes]
         weights = [item[1] for item in outcomes]
-        while True:
+        for _ in range(100):
             home_ot = rng.choices(values, weights=weights, k=1)[0]
             away_ot = rng.choices(values, weights=weights, k=1)[0]
             if home_ot != away_ot:
                 return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 3, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 3, True)
     if "americanfootball_nfl" in key:
         outcomes = ((0, 0.55), (3, 0.25), (7, 0.20))
         values = [item[0] for item in outcomes]
