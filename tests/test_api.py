@@ -256,3 +256,28 @@ def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
     assert response.json()["trials"] == 10_000
     assert missing.status_code == 404
 
+
+
+def test_optional_basic_auth_protects_dashboard_and_api_but_allows_health(monkeypatch):
+    import base64
+
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "CaseSensitive-Secret")
+    with TestClient(main.app) as client:
+        assert client.get("/").status_code == 401
+        assert client.get("/api/odds").status_code == 401
+        assert client.get("/api/health").status_code == 200
+        token = base64.b64encode(b"operator:CaseSensitive-Secret").decode()
+        headers = {"Authorization": f"Basic {token}"}
+        assert client.get("/", headers=headers).status_code == 200
+        assert client.get("/api/odds", headers=headers).status_code == 200
+        wrong = base64.b64encode(b"operator:casesensitive-secret").decode()
+        assert client.get("/", headers={"Authorization": f"Basic {wrong}"}).status_code == 401
+
+
+def test_authentication_fails_closed_when_only_one_credential_is_set(monkeypatch):
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
+    with TestClient(main.app) as client:
+        assert client.get("/").status_code == 503
+        assert client.get("/api/health").status_code == 503
