@@ -1,3 +1,5 @@
+import pytest
+
 from app.database import OddsDatabase
 from app.simulation_validation import parse_settlements_csv, run_historical_backtest
 
@@ -53,6 +55,8 @@ def test_historical_backtest_uses_latest_pregame_snapshot_and_is_reproducible(tm
     assert first["market_prior_baseline"]["sample_size"] == 1
     assert first["model_minus_baseline"]["brier_score"] == 0
     assert first["status"] == "DESCRIPTIVE_ONLY"
+    assert first["paired_uncertainty"]["sample_size"] == 1
+    assert first["paired_uncertainty"]["metrics"]["brier_score"]["ci_95"] is None
 
 
 def test_historical_backtest_skips_events_without_pregame_quotes(tmp_path):
@@ -138,3 +142,38 @@ def test_pregame_replay_selects_latest_snapshot_id_when_timestamps_match(tmp_pat
     event, reason = _load_latest_pregame_event(database, _settlement())
     assert reason is None
     assert _collect_market_inputs(event)["spread_margins"] == [6.5]
+
+
+def test_paired_bootstrap_is_deterministic_and_preserves_event_pairing():
+    from app.simulation_validation import paired_bootstrap_comparison
+
+    model = []
+    baseline = []
+    for event_id, improvement in (("g1", -0.10), ("g2", -0.05), ("g3", 0.02), ("g4", -0.08)):
+        model.append({
+            "event_id": event_id, "brier_score": 0.2 + improvement,
+            "log_loss": 0.5 + improvement, "total_brier_score": 0.3 + improvement,
+            "total_log_loss": 0.6 + improvement, "home_score_error": 4 + improvement,
+            "away_score_error": 5 + improvement, "total_score_error": 6 + improvement,
+            "margin_error": 3 + improvement,
+        })
+        baseline.append({
+            "event_id": event_id, "brier_score": 0.2,
+            "log_loss": 0.5, "total_brier_score": 0.3,
+            "total_log_loss": 0.6, "home_score_error": 4,
+            "away_score_error": 5, "total_score_error": 6, "margin_error": 3,
+        })
+    first = paired_bootstrap_comparison(model, baseline, iterations=500, seed=7)
+    second = paired_bootstrap_comparison(model, baseline, iterations=500, seed=7)
+    assert first == second
+    assert first["sample_size"] == 4
+    assert first["metrics"]["brier_score"]["mean_delta"] < 0
+    assert first["metrics"]["brier_score"]["ci_95"][0] <= first["metrics"]["brier_score"]["ci_95"][1]
+    assert first["negative_delta_is_better"] is True
+
+
+def test_paired_bootstrap_rejects_unpaired_event_sets():
+    from app.simulation_validation import paired_bootstrap_comparison
+
+    with pytest.raises(ValueError, match="identical event IDs"):
+        paired_bootstrap_comparison([{"event_id": "a"}], [{"event_id": "b"}])
