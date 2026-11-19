@@ -78,3 +78,36 @@ def test_backtest_cli_csv_input_contract():
         "g1,basketball_nba,2026-01-01T00:00:00Z,A,B,100,99,final,verified-feed\n"
     )
     assert parse_settlements_csv(csv)[0]["event_id"] == "g1"
+
+
+def test_fit_league_models_uses_training_only_and_reports_sample_size(tmp_path):
+    from app.simulation_validation import fit_league_models
+
+    database = OddsDatabase(tmp_path / "training.sqlite3")
+    settlements = []
+    for index, (home_score, away_score) in enumerate(((112, 105), (98, 101), (120, 109))):
+        event = _archived_event()
+        event["id"] = f"nba-train-{index}"
+        event["commence_time"] = f"2026-01-0{index + 2}T00:00:00Z"
+        database.save_snapshot("basketball_nba", [event], provider="fixture",
+                               fetched_at=f"2026-01-0{index + 1}T12:00:00+00:00")
+        settlements.append({
+            "event_id": event["id"], "sport_key": "basketball_nba",
+            "commence_time": event["commence_time"], "home_team": "Home Club",
+            "away_team": "Away Club", "home_score": home_score,
+            "away_score": away_score, "status": "final", "source": "fixture",
+        })
+    fit = fit_league_models(database, settlements, min_sample_size=3)
+    model = fit["models"]["basketball_nba"]
+    assert model["sample_size"] == 3
+    assert model["family"] == "basketball"
+    assert 0.1 <= model["margin_sd"] <= 50
+    assert -0.95 <= model["margin_total_corr"] <= 0.95
+
+
+def test_fit_league_models_does_not_emit_under_sampled_parameters(tmp_path):
+    from app.simulation_validation import fit_league_models
+    database = OddsDatabase(tmp_path / "training.sqlite3")
+    fit = fit_league_models(database, [], min_sample_size=50)
+    assert fit["models"] == {}
+    assert fit["training_events_used"] == 0
