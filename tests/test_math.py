@@ -57,4 +57,4 @@ def test_market_consensus_skips_books_with_boolean_prices():
     ]}
     consensus = market_consensus([event])["boolean-price"]
     assert set(consensus) == {"Home", "Away"}
-    assert consensus["Home"] == pytest.approx(120 / 220)
+    assert consensus["Home"] == pytest.approx((120 / 220) / ((120 / 220) + 0.5))
