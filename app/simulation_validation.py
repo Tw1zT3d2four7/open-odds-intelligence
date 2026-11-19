@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import math
+import random
 from collections import defaultdict
 from statistics import median
 
@@ -297,6 +298,72 @@ def _load_latest_pregame_event(database, settlement):
     return event, None
 
 
+def paired_bootstrap_comparison(model_rows: list[dict], baseline_rows: list[dict], iterations: int = 2000, seed: int = 20261119) -> dict:
+    """Estimate uncertainty in paired model-minus-baseline metric differences.
+
+    Resampling is by event, preserving the pairing between each fitted forecast
+    and its broad-prior forecast. Negative deltas favor the fitted model.
+    """
+    if not isinstance(iterations, int) or isinstance(iterations, bool) or iterations < 100:
+        raise ValueError("Bootstrap iterations must be an integer of at least 100.")
+    model_by_id = {str(row["event_id"]): row for row in model_rows}
+    baseline_by_id = {str(row["event_id"]): row for row in baseline_rows}
+    if len(model_by_id) != len(model_rows) or len(baseline_by_id) != len(baseline_rows):
+        raise ValueError("Paired bootstrap rows must have unique event IDs.")
+    if model_by_id.keys() != baseline_by_id.keys():
+        raise ValueError("Model and baseline rows must contain identical event IDs.")
+    metrics = ("brier_score", "log_loss", "total_brier_score", "total_log_loss",
+               "home_score_error", "away_score_error", "total_score_error", "margin_error")
+    event_deltas = {
+        metric: [float(model_by_id[event_id][metric]) - float(baseline_by_id[event_id][metric])
+                 for event_id in sorted(model_by_id)]
+        for metric in metrics
+    }
+    sample_size = len(model_rows)
+    if not sample_size:
+        return {"sample_size": 0, "method": "paired_event_bootstrap",
+                "iterations": iterations, "metrics": {}}
+    rng = random.Random(seed)
+    output = {}
+    for metric, deltas in event_deltas.items():
+        observed = sum(deltas) / sample_size
+        if sample_size < 2:
+            output[metric] = {
+                "mean_delta": observed, "ci_95": None,
+                "bootstrap_probability_delta_below_zero": None,
+                "interpretation": "INCONCLUSIVE_SINGLE_EVENT",
+            }
+            continue
+        estimates = []
+        favorable = 0
+        for _ in range(iterations):
+            estimate = sum(deltas[rng.randrange(sample_size)] for _ in range(sample_size)) / sample_size
+            estimates.append(estimate)
+            favorable += estimate < 0
+        estimates.sort()
+        low = estimates[int(0.025 * (iterations - 1))]
+        high = estimates[int(0.975 * (iterations - 1))]
+        output[metric] = {
+            "mean_delta": observed,
+            "ci_95": [low, high],
+            "bootstrap_probability_delta_below_zero": favorable / iterations,
+            "interpretation": (
+                "DIRECTIONALLY_FAVORABLE_ON_THIS_SAMPLE" if high < 0 else
+                "DIRECTIONALLY_UNFAVORABLE_ON_THIS_SAMPLE" if low > 0 else
+                "UNCERTAINTY_INTERVAL_INCLUDES_ZERO"
+            ),
+        }
+    return {
+        "sample_size": sample_size,
+        "method": "paired_event_bootstrap",
+        "iterations": iterations,
+        "confidence_level": 0.95,
+        "negative_delta_is_better": True,
+        "metrics": output,
+        "caution": "Intervals quantify sampling uncertainty on this archived sample; they do not correct selection bias, archive coverage gaps, model misspecification, or prove future performance.",
+    }
+
+
 def run_historical_backtest(database, settlements: list[dict], seed_salt: str = "ooi-sim-v1", model_parameters: dict | None = None, include_prediction_rows: bool = False) -> dict:
     """Replay the latest real pregame snapshot per settled event; never fetch odds."""
     import hashlib
@@ -329,6 +396,7 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
             key: (report["overall"][key] - baseline_report["overall"][key])
             for key in ("brier_score", "log_loss", "total_brier_score", "total_log_loss", "home_score_mae", "away_score_mae", "total_score_mae", "margin_mae")
         }
+        report["paired_uncertainty"] = paired_bootstrap_comparison(scored, baseline_scored)
     report["settlements_submitted"] = len(settlements)
     report["events_scored"] = len(scored)
     report["events_skipped"] = len(skipped)
