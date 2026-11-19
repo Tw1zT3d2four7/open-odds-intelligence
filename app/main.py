@@ -26,6 +26,19 @@ async def _limits_refresh_loop():
         await asyncio.sleep(delay)
 
 
+
+
+async def _simulation_results_loop():
+    while True:
+        try:
+            await asyncio.to_thread(service.sync_simulation_results)
+        except Exception as exc:
+            service._simulation_results_status.update({
+                "last_error": "Unexpected score synchronization failure: " + str(exc),
+            })
+            logger.exception("Simulator final-score synchronization failed")
+        await asyncio.sleep(config.SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS)
+
 async def _automatic_refresh_loop():
     interval = (
         config.RUNDOWN_REFRESH_INTERVAL_SECONDS
@@ -48,10 +61,13 @@ async def _automatic_refresh_loop():
 async def lifespan(app: FastAPI):
     task = None
     limits_task = None
+    results_task = None
     if config.ODDSLINK_API_KEY:
         limits_task = asyncio.create_task(_limits_refresh_loop())
     if (config.ODDS_PROVIDER == "therundown" or config.ODDS_REFRESH_INTERVAL_SECONDS > 0 or config.DISCORD_WEBHOOK_URL) and service.configured:
         task = asyncio.create_task(_automatic_refresh_loop())
+    if config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY:
+        results_task = asyncio.create_task(_simulation_results_loop())
     try:
         yield
     finally:
@@ -65,6 +81,12 @@ async def lifespan(app: FastAPI):
             task.cancel()
             try:
                 await task
+            except asyncio.CancelledError:
+                pass
+        if results_task is not None:
+            results_task.cancel()
+            try:
+                await results_task
             except asyncio.CancelledError:
                 pass
 
