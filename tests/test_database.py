@@ -728,3 +728,26 @@ def test_odds_database_uses_wal_for_concurrent_refresh_work(tmp_path):
     with db.connect() as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
         assert connection.execute("PRAGMA busy_timeout").fetchone()[0] == 30000
+
+
+def test_snapshot_rejects_boolean_fractional_and_string_prices(tmp_path):
+    db = OddsDatabase(tmp_path / "strict-prices.sqlite3")
+    events = [{
+        "id": "strict-price-event", "sport_title": "Basketball",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [{
+            "key": "book", "title": "Book", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": True},
+                    {"name": "Away", "price": 100.5},
+                    {"name": "Draw", "price": "220"},
+                    {"name": "Valid", "price": -110},
+                ],
+            }],
+        }],
+    }]
+    db.save_snapshot("basketball_nba", events, "test", "2026-11-19T12:00:00Z")
+    saved = db.latest_events("basketball_nba")
+    outcomes = saved[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert [(item["name"], item["price"]) for item in outcomes] == [("Valid", -110)]
