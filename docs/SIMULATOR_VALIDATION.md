@@ -41,7 +41,7 @@ Rules:
 For a proper three-stage evaluation, keep all three datasets separate and ordered within each league:
 
 1. Training results fit the league-specific scoring residual parameters.
-2. A later calibration set fits a single multiclass probability temperature per league.
+2. A later calibration set fits separate multiclass temperatures per league for game outcomes (home/away/tie) and totals (over/under/push).
 3. A still later holdout set evaluates the fitted model and calibration.
 
 Example:
@@ -52,7 +52,7 @@ python -m scripts.backtest_simulator --training-settlements training.csv --calib
 
 The CLI rejects overlapping event IDs and any per-league time split where training is not strictly earlier than calibration or calibration is not strictly earlier than holdout. Default minimums are 50 matched training events and 100 calibration events per league. Leagues below either minimum do not receive the corresponding fitted parameters.
 
-The training stage estimates per-league market residual bias, margin/total volatility and their correlation for basketball/football; low-scoring leagues additionally estimate home/away overdispersion for the Gamma-Poisson count model. The calibration stage fits multiclass temperature scaling against later calibration results. The holdout report compares calibrated/fitted predictions against the same-event unfitted broad-prior baseline.
+The training stage estimates per-league market residual bias, margin/total volatility and their correlation for basketball/football; low-scoring leagues additionally estimate home/away overdispersion for the Gamma-Poisson count model. The calibration stage fits separate multiclass temperature scaling for win/tie probabilities and over/under/push probabilities against later calibration results. The holdout report compares calibrated/fitted predictions against the same-event unfitted broad-prior baseline.
 
 To train scoring parameters without a separate probability calibration set, omit --calibration-settlements; probabilities then remain uncalibrated.
 
@@ -63,7 +63,7 @@ The command reads the existing DATABASE_PATH SQLite archive. It does not modify 
 ## Interpreting results
 
 - Brier score and log loss are proper scoring rules for the simulated win/tie probabilities. Lower is better.
-- Calibration buckets compare average predicted home-win probability with the observed home-win frequency. Always inspect bucket sample sizes.
+- Calibration buckets compare predicted and observed rates separately for home/away/tie and over/under/push. Always inspect bucket sample sizes.
 - Score, total and margin MAE measure forecast error in points/goals/runs.
 - Reports are broken out by league and include the number of events scored and skipped.
 - Fewer than 200 scored events are labelled `DESCRIPTIVE_ONLY`; even larger samples are not proof of profitability or future performance.
