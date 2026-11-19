@@ -721,3 +721,10 @@ def test_clv_spread_entry_deduplicates_opposite_signed_points(tmp_path):
     report = db.clv_report("americanfootball_nfl")
     assert report["summary"]["total"] == 1
     assert report["entries"][0]["point"] == -3.5
+
+
+def test_odds_database_uses_wal_for_concurrent_refresh_work(tmp_path):
+    db = OddsDatabase(tmp_path / "wal.sqlite3")
+    with db.connect() as connection:
+        assert connection.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        assert connection.execute("PRAGMA busy_timeout").fetchone()[0] == 30000
