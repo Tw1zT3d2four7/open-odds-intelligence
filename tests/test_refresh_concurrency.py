@@ -339,3 +339,33 @@ def test_provider_refresh_never_retries_quota_rate_limit(tmp_path, monkeypatch):
     assert result["ok"] is False
     assert calls == ["basketball_nba"]
     assert service.status()["provider_usage"]["requests_remaining"] == "0"
+
+
+
+def test_retry_after_longer_than_budget_defers_retry(tmp_path, monkeypatch):
+    from app.providers.the_odds_api import ProviderError
+
+    calls = []
+    class SlowDownProvider:
+        name = "fake"
+        usage = {}
+        def __init__(self, *args, **kwargs):
+            pass
+        def fetch_odds(self, sport):
+            calls.append(sport)
+            raise ProviderError(
+                "temporary upstream slowdown", status_code=503,
+                retry_after="30", retryable=True,
+            )
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr(config, "PROVIDER_RETRY_ATTEMPTS", 3)
+    monkeypatch.setattr(config, "PROVIDER_RETRY_MAX_DELAY_SECONDS", 5.0)
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", SlowDownProvider)
+
+    service = OddsService(OddsDatabase(tmp_path / "retry-after.sqlite3"))
+    result = service.refresh()
+    assert result["ok"] is False
+    assert calls == ["basketball_nba"]
