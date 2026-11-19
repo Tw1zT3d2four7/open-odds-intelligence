@@ -129,11 +129,14 @@ def test_limit_refresh_stops_after_provider_quota_error(tmp_path, monkeypatch):
             raise module.LimitsError("OUT_OF_USAGE_CREDITS: quota exceeded")
 
     monkeypatch.setattr(module, "OddsLinkClient", QuotaClient)
-    monitor = MarketLimitsMonitor(tmp_path / "quota-stop.sqlite3")
+    database = tmp_path / "quota-stop.sqlite3"
+    monitor = MarketLimitsMonitor(database)
     result = monitor.refresh()
     assert result["ok"] is False
     assert calls == ["nfl"]
     assert "OUT_OF_USAGE_CREDITS" in result["error"]
+    restarted = MarketLimitsMonitor(database)
+    assert "OUT_OF_USAGE_CREDITS" in restarted.status()["last_error"]
 
 
 def test_market_limits_cooldown_survives_monitor_restart(tmp_path, monkeypatch):
