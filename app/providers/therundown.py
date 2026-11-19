@@ -275,17 +275,21 @@ class TheRundownProvider:
                         continue
                     event_id = str(raw.get("event_id") or raw.get("id") or "")
                     score = raw.get("score") or {}
+                    if not isinstance(score, dict):
+                        continue
                     if not event_id or event_id in seen or score.get("event_status") != "STATUS_FINAL":
                         continue
                     home_score, away_score = score.get("score_home"), score.get("score_away")
                     if home_score is None or away_score is None:
                         continue
                     try:
-                        home_score, away_score = int(home_score), int(away_score)
+                        home_number, away_number = float(home_score), float(away_score)
                     except (TypeError, ValueError):
                         continue
-                    if home_score < 0 or away_score < 0:
+                    if (not home_number.is_integer() or not away_number.is_integer()
+                            or home_number < 0 or away_number < 0):
                         continue
+                    home_score, away_score = int(home_number), int(away_number)
                     teams = raw.get("teams") or []
                     teams_by_id = {str(team.get("team_id")): team for team in teams
                                    if isinstance(team, dict) and team.get("team_id") is not None}
