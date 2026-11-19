@@ -17,6 +17,7 @@ ODDS_FORMAT = os.getenv("ODDS_FORMAT", "american")
 RUNDOWN_REFRESH_INTERVAL_SECONDS = max(300, int(os.getenv("RUNDOWN_REFRESH_INTERVAL_SECONDS", "14400")))
 RUNDOWN_UTC_OFFSET_MINUTES = int(os.getenv("RUNDOWN_UTC_OFFSET_MINUTES", "0"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/odds_history.sqlite3")
+SIMULATION_MODEL_PATH = os.getenv("SIMULATION_MODEL_PATH", "./data/simulation_models.json")
 # Flag stale odds snapshots without implying a manual-refresh feed is continuously live.
 ODDS_DATA_STALE_AFTER_SECONDS = max(300, int(os.getenv("ODDS_DATA_STALE_AFTER_SECONDS", "21600")))
 ODDS_SPORTS = [s.strip() for s in os.getenv(
