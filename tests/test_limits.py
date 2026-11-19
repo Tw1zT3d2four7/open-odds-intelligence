@@ -182,3 +182,64 @@ def test_market_limits_cooldown_survives_monitor_restart(tmp_path, monkeypatch):
     assert rotated_result["ok"] is True
     assert calls == ["nfl", "nfl"]
     assert keys == ["CaseSensitiveKey", "RotatedCaseSensitiveKey"]
+
+
+def test_extract_skips_malformed_limit_records_and_preserves_valid_neighbors():
+    events = [
+        None,
+        {"id": "missing-books", "bookmakers": None},
+        {"id": "nfl:good", "commence_time": "2026-12-01T18:00:00Z",
+         "home_team": "Home", "away_team": "Away",
+         "bookmakers": [
+             None,
+             {"key": "bad-book", "markets": "not-a-list"},
+             {"key": "circa", "title": "Circa", "markets": [
+                 None,
+                 {"key": "spreads", "outcomes": [
+                     None,
+                     {"name": "Home", "point": -3.5, "price": -110,
+                      "size": {"kind": "posted_limit", "amount": 25000}},
+                     {"name": "Bad Point", "point": [], "price": -110,
+                      "size": {"kind": "posted_limit", "amount": 25000}},
+                     {"name": "Bad Amount", "point": 3.5, "price": -110,
+                      "size": {"kind": "posted_limit", "amount": True}},
+                     {"name": "Bad Price", "point": 3.5, "price": [],
+                      "size": {"kind": "posted_limit", "amount": 25000}},
+                 ]},
+             ]},
+         ]},
+    ]
+
+    rows = MarketLimitsMonitor._extract(
+        "americanfootball_nfl", events, "2026-11-19T12:00:00Z"
+    )
+
+    assert len(rows) == 1
+    assert rows[0][2] == "nfl:good"
+    assert rows[0][9] == "Home"
+    assert rows[0][10] == -3.5
+    assert rows[0][11] == -110
+    assert rows[0][12] == 25000
+
+
+def test_extract_rejects_non_list_event_collection():
+    assert MarketLimitsMonitor._extract(
+        "americanfootball_nfl", {"not": "a list"}, "2026-11-19T12:00:00Z"
+    ) == []
+
+
+def test_oddslink_client_rejects_unexpected_response_shapes(monkeypatch):
+    import pytest
+    import app.limits as module
+    from app.limits import LimitsError
+
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return json.dumps({"events": "not-a-list"}).encode()
+
+    monkeypatch.setattr(module, "urlopen", lambda request, timeout: FakeResponse())
+    with pytest.raises(LimitsError, match="unexpected events response"):
+        OddsLinkClient("CaseSensitiveKey").fetch("nfl")
+
