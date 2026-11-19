@@ -224,7 +224,7 @@ class TheRundownProvider:
                 ]
                 if len(participants) >= 2:
                     home, away = participants[0], participants[1]
-                break
+                    break
         books = {}
         raw_markets = raw.get("markets")
         if not isinstance(raw_markets, list):
