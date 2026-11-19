@@ -441,3 +441,23 @@ def test_therundown_drops_invalid_prices_without_aborting_event_normalization():
     assert set(books) == {"fanduel", "betmgm"}
     assert books["fanduel"]["markets"][0]["outcomes"][0]["price"] == -110
     assert books["betmgm"]["markets"][0]["outcomes"][0]["price"] == 105
+
+
+@pytest.mark.parametrize("value", [-99, -50, -1, 1, 50, 99])
+def test_odds_api_rejects_american_prices_inside_invalid_range(value):
+    provider = TheOddsAPIProvider("CaseSensitiveKey")
+    with pytest.raises(ValueError, match="\+100 or greater"):
+        provider._normalize_price(value)
+
+
+@pytest.mark.parametrize("value", [-99, -50, -1, 1, 50, 99])
+def test_therundown_skips_american_prices_inside_invalid_range(value):
+    from app.providers.therundown import TheRundownProvider
+    assert TheRundownProvider._american_price(value) is None
+
+
+@pytest.mark.parametrize("value", [-100, 100, -101, 101])
+def test_providers_accept_valid_american_price_boundaries(value):
+    from app.providers.therundown import TheRundownProvider
+    assert TheOddsAPIProvider("CaseSensitiveKey")._normalize_price(value) == value
+    assert TheRundownProvider._american_price(value) == value

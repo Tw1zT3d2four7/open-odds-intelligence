@@ -44,6 +44,8 @@ class TheOddsAPIProvider(OddsProvider):
             return decimal_to_american(numeric)
         if numeric == 0 or not numeric.is_integer():
             raise ValueError("American odds must be a non-zero integer")
+        if -100 < numeric < 100:
+            raise ValueError("American odds must be +100 or greater, or -100 or lower")
         return int(numeric)
 
     def fetch_player_props(self, sport: str, events: list[dict], markets: str, max_events=5) -> dict:
