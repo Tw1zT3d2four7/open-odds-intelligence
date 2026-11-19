@@ -113,3 +113,13 @@ def test_fit_league_models_does_not_emit_under_sampled_parameters(tmp_path):
     fit = fit_league_models(database, [], min_sample_size=50)
     assert fit["models"] == {}
     assert fit["training_events_used"] == 0
+
+def test_historical_backtest_skips_rescheduled_event_timestamp_mismatch(tmp_path):
+    database = OddsDatabase(tmp_path / "history.sqlite3")
+    database.save_snapshot("basketball_nba", [_archived_event()], provider="fixture",
+                           fetched_at="2026-01-01T12:00:00+00:00")
+    settlement = _settlement()
+    settlement["commence_time"] = "2026-01-03T00:00:00Z"
+    report = run_historical_backtest(database, [settlement])
+    assert report["events_scored"] == 0
+    assert "start time does not match" in report["skipped"][0]["reason"]
