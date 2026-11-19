@@ -136,3 +136,21 @@ def test_settlement_csv_requires_explicit_timezone_and_rows():
         parse_settlements_csv(header + "g1,nba,2026-01-01T00:00:00,A,B,1,0,final,feed\n")
     with pytest.raises(ValueError, match="no result rows"):
         parse_settlements_csv(header)
+
+def test_stored_settlements_split_into_chronological_train_calibration_holdout():
+    from app.simulation_validation import split_stored_settlements
+    rows = [
+        {"event_id": "a", "commence_time": "2026-08-31T23:00:00Z"},
+        {"event_id": "b", "commence_time": "2026-09-15T23:00:00Z"},
+        {"event_id": "c", "commence_time": "2026-10-01T00:00:00Z"},
+    ]
+    split = split_stored_settlements(rows, "2026-09-01", "2026-10-01")
+    assert [row["event_id"] for row in split["training"]] == ["a"]
+    assert [row["event_id"] for row in split["calibration"]] == ["b"]
+    assert [row["event_id"] for row in split["holdout"]] == ["c"]
+
+
+def test_stored_settlements_split_rejects_bad_cutoff_order():
+    from app.simulation_validation import split_stored_settlements
+    with pytest.raises(ValueError, match="earlier than"):
+        split_stored_settlements([], "2026-10-01", "2026-09-01")
