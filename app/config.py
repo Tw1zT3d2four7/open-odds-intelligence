@@ -23,8 +23,8 @@ ODDS_DATA_STALE_AFTER_SECONDS = max(300, int(os.getenv("ODDS_DATA_STALE_AFTER_SE
 # TheRundown score-only sync is separate from odds polling and uses affiliate_ids=0.
 # Enable by default only when TheRundown is the active odds provider; can be disabled explicitly.
 SIMULATION_RESULTS_SYNC_ENABLED = os.getenv("SIMULATION_RESULTS_SYNC_ENABLED", "true" if ODDS_PROVIDER == "therundown" else "false").strip().lower() in ("1", "true", "yes", "on")
-SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS = max(3600, int(os.getenv("SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS", "3600")))
-SIMULATION_RESULTS_RETRY_SECONDS = max(1800, int(os.getenv("SIMULATION_RESULTS_RETRY_SECONDS", "3600")))
+SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS = max(3600, int(os.getenv("SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS", "14400")))
+SIMULATION_RESULTS_RETRY_SECONDS = max(3600, int(os.getenv("SIMULATION_RESULTS_RETRY_SECONDS", "14400")))
 SIMULATION_RESULTS_LOOKBACK_DAYS = max(1, min(30, int(os.getenv("SIMULATION_RESULTS_LOOKBACK_DAYS", "7"))))
 SIMULATION_RESULTS_MAX_GROUPS_PER_RUN = max(1, min(50, int(os.getenv("SIMULATION_RESULTS_MAX_GROUPS_PER_RUN", "10"))))
 ODDS_SPORTS = [s.strip() for s in os.getenv(
