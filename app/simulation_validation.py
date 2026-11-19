@@ -85,6 +85,8 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
         "sport": str(settlement.get("sport_key") or prediction.get("sport") or ""),
         "actual_result": "home" if hs > aws else "away" if hs < aws else "tie",
         "predicted_home_probability": home,
+        "predicted_away_probability": away,
+        "predicted_tie_probability": tie,
         "brier_score": brier,
         "log_loss": log_loss,
         "home_score_error": abs(projected_home - hs),
@@ -222,7 +224,7 @@ def _load_latest_pregame_event(database, settlement):
     return event, None
 
 
-def run_historical_backtest(database, settlements: list[dict], seed_salt: str = "ooi-sim-v1", model_parameters: dict | None = None) -> dict:
+def run_historical_backtest(database, settlements: list[dict], seed_salt: str = "ooi-sim-v1", model_parameters: dict | None = None, include_prediction_rows: bool = False) -> dict:
     """Replay the latest real pregame snapshot per settled event; never fetch odds."""
     import hashlib
     from .simulation import run_game_simulation
@@ -258,6 +260,8 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     report["events_scored"] = len(scored)
     report["events_skipped"] = len(skipped)
     report["skipped"] = skipped
+    if include_prediction_rows:
+        report["scored_predictions"] = scored
     report["data_policy"] = (
         "Uses only the latest archived sportsbook snapshot strictly before each event's "
         "commence_time. No provider requests, current odds, post-start quotes, or synthetic "
@@ -357,3 +361,37 @@ def validate_chronological_split(training_settlements: list[dict], test_settleme
                       if str(row.get("sport_key") or "") == sport]
         if training_times and test_times and max(training_times) >= min(test_times):
             raise ValueError(f"Training games for {sport} must all precede its holdout games.")
+
+
+def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size: int = 100) -> dict:
+    """Fit per-league multiclass temperature scaling on a separate calibration set."""
+    if not isinstance(min_sample_size, int) or isinstance(min_sample_size, bool) or min_sample_size < 2:
+        raise ValueError("min_sample_size must be an integer of at least 2.")
+    grouped = {}
+    for row in scored_predictions:
+        grouped.setdefault(row.get("sport") or "unknown", []).append(row)
+    temperatures, insufficient = {}, {}
+    for sport, rows in sorted(grouped.items()):
+        if len(rows) < min_sample_size:
+            insufficient[sport] = {"sample_size": len(rows), "required": min_sample_size}
+            continue
+        best_temperature, best_loss = 1.0, float("inf")
+        for step in range(50, 301, 2):
+            temperature = step / 100.0
+            losses = []
+            for row in rows:
+                probs = [float(row["predicted_home_probability"]),
+                         float(row["predicted_away_probability"]),
+                         float(row["predicted_tie_probability"])]
+                weights = [max(1e-12, p) ** (1.0 / temperature) for p in probs]
+                denominator = sum(weights)
+                index = {"home": 0, "away": 1, "tie": 2}[row["actual_result"]]
+                losses.append(-math.log(max(1e-12, weights[index] / denominator)))
+            loss = sum(losses) / len(losses)
+            if loss < best_loss:
+                best_loss, best_temperature = loss, temperature
+        temperatures[sport] = {"temperature": best_temperature, "sample_size": len(rows),
+                               "calibration_log_loss": best_loss}
+    return {"temperatures": temperatures, "insufficient": insufficient,
+            "minimum_sample_size": min_sample_size,
+            "warning": "Fit only on a separate chronological calibration set, after model fitting and before the final holdout."}
