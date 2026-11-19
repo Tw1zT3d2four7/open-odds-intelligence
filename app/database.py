@@ -251,7 +251,8 @@ class OddsDatabase:
                 "INSERT INTO snapshots(sport,provider,fetched_at,event_count) VALUES(?,?,?,?)",
                 (sport, provider, fetched_at, len(valid_events)))
             snapshot_id = cur.lastrowid
-            rows = []
+            rows_by_identity = {}
+            conflicted_quotes = set()
             for event in valid_events:
                 books = event.get("bookmakers")
                 if not isinstance(books, list):
@@ -312,9 +313,23 @@ class OddsDatabase:
                             book_title = book.get("title")
                             if not isinstance(book_title, str) or not book_title.strip():
                                 book_title = book_key
-                            rows.append((snapshot_id, str(event.get("id", "")), sport,
-                                *event_metadata, book_key, book_title, market_key,
-                                outcome_name, description, point, price, updated_at))
+                            row = (snapshot_id, str(event.get("id", "")).strip(), sport,
+                                   *event_metadata, book_key, book_title, market_key,
+                                   outcome_name, description, point, price, updated_at)
+                            identity = (row[1], book_key, market_key, outcome_name, description, point)
+                            if identity in conflicted_quotes:
+                                continue
+                            previous = rows_by_identity.get(identity)
+                            if previous is None:
+                                rows_by_identity[identity] = row
+                            elif previous[13] != price or previous[3:7] != row[3:7]:
+                                # Two different values for the same exact selection in
+                                # one provider snapshot are ambiguous. Drop the selection
+                                # rather than allowing duplicate outcomes to corrupt
+                                # consensus, arbitrage, or simulator readiness.
+                                rows_by_identity.pop(identity, None)
+                                conflicted_quotes.add(identity)
+            rows = list(rows_by_identity.values())
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
                 home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,point,price,
                 source_updated_at)
