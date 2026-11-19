@@ -237,11 +237,9 @@ class TheRundownProvider:
     def _score_team_name(team):
         if not isinstance(team, dict):
             return ""
-        name = str(team.get("name") or team.get("team_name") or "").strip()
-        mascot = str(team.get("mascot") or "").strip()
-        if mascot and mascot.casefold() not in name.casefold():
-            name = (name + " " + mascot).strip()
-        return name
+        # Match the exact team-name field used by the odds normalizer; do not
+        # append a mascot that the archived odds event may not include.
+        return str(team.get("name") or team.get("team_name") or "").strip()
 
     def fetch_scores(self, sport: str, event_dates: list[str]) -> list[dict]:
         """Fetch final scores only for dates already present in the local odds archive.
