@@ -123,3 +123,18 @@ def test_historical_backtest_skips_rescheduled_event_timestamp_mismatch(tmp_path
     report = run_historical_backtest(database, [settlement])
     assert report["events_scored"] == 0
     assert "start time does not match" in report["skipped"][0]["reason"]
+
+def test_pregame_replay_selects_latest_snapshot_id_when_timestamps_match(tmp_path):
+    from app.simulation import _collect_market_inputs
+    from app.simulation_validation import _load_latest_pregame_event
+    database = OddsDatabase(tmp_path / "history.sqlite3")
+    first = _archived_event()
+    second = _archived_event()
+    second["bookmakers"][0]["markets"][0]["outcomes"][0]["point"] = -6.5
+    second["bookmakers"][0]["markets"][0]["outcomes"][1]["point"] = 6.5
+    timestamp = "2026-01-01T12:00:00+00:00"
+    database.save_snapshot("basketball_nba", [first], provider="fixture", fetched_at=timestamp)
+    database.save_snapshot("basketball_nba", [second], provider="fixture", fetched_at=timestamp)
+    event, reason = _load_latest_pregame_event(database, _settlement())
+    assert reason is None
+    assert _collect_market_inputs(event)["spread_margins"] == [6.5]
