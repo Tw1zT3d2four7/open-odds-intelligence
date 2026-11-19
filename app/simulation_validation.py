@@ -196,11 +196,10 @@ def _load_latest_pregame_event(database, settlement):
             eligible.append((observed, row))
     if not eligible:
         return None, "no archived quote snapshot strictly before game start"
-    latest_time = max(item[0] for item in eligible)
-    latest_rows = [row for observed, row in eligible if observed == latest_time]
-    snapshot_ids = {row["snapshot_id"] for row in latest_rows}
-    if len(snapshot_ids) != 1:
-        return None, "ambiguous pregame snapshot identity"
+    latest_time, latest_row = max(eligible, key=lambda item: (item[0], item[1]["snapshot_id"]))
+    latest_snapshot_id = latest_row["snapshot_id"]
+    latest_rows = [row for observed, row in eligible
+                   if observed == latest_time and row["snapshot_id"] == latest_snapshot_id]
     first = latest_rows[0]
     try:
         archived_start = _parse_timestamp(first["commence_time"])
