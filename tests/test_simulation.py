@@ -368,3 +368,12 @@ def test_simulation_applies_fitted_multiclass_temperature():
     assert abs(probs["home"] + probs["away"] + probs["tie"] - 100) < 0.001
     assert result["data_quality"]["model_source"] == "empirical_training_fit"
     assert result["margin_market"]["probability_temperature"] == 1.5
+
+def test_nfl_regular_season_overtime_can_remain_tied():
+    from app.simulation import _resolve_tie
+    class NoScoreOvertime:
+        @staticmethod
+        def choices(values, weights, k):
+            return [0]
+    home, away, overtime = _resolve_tie(NoScoreOvertime(), "americanfootball_nfl", 20, 20)
+    assert (home, away, overtime) == (20, 20, True)
