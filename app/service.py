@@ -19,6 +19,14 @@ class OddsService:
         self._last_error = None
         self._updated_at = None
         self._provider_usage = {}
+        self._simulation_results_status = {
+            "enabled": bool(config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY),
+            "provider": "therundown",
+            "last_sync": self.db.get_state("simulation_results_last_sync"),
+            "last_error": self.db.get_state("simulation_results_last_error"),
+            "settlements_stored": len(self.db.simulation_settlements()),
+            "inserted_last_run": 0, "rejected_last_run": 0,
+        }
         saved_usage_provider = self.db.get_state("provider_usage_provider")
         saved_usage_fingerprint = self.db.get_state("provider_usage_key_fingerprint")
         if (saved_usage_provider == config.ODDS_PROVIDER and
@@ -146,6 +154,7 @@ class OddsService:
                 "sport_freshness": sport_freshness,
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
+                "simulation_results": self._simulation_results_status,
                 "player_props": self._player_props_status,
                 "refresh_interval_seconds": config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown" else (config.ODDS_REFRESH_INTERVAL_SECONDS or (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0)),
                 "alert_refresh_interval_seconds": config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0,
