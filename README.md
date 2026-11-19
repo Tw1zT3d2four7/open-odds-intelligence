@@ -140,3 +140,6 @@ Before enabling public subscriber access, confirm that the selected odds provide
 ## License
 
 MIT. Third-party odds data remains subject to each provider's terms and licenses.
+
+
+Historical simulator evaluation is available as a paper-only local replay. It uses verified final-score CSV imports and only archived pregame quote snapshots; it performs no provider requests. See [Simulator historical validation](docs/SIMULATOR_VALIDATION.md) for the required CSV format, command and interpretation limits. This does not yet make the simulator a validated independent predictive model.
