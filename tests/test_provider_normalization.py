@@ -292,3 +292,49 @@ def test_therundown_schedule_discovery_includes_supported_season_variants(
     provider._request = fake_request
     provider._next_event_slate(sport_id)
     assert seen["query"]["sport_ids"] == [expected]
+
+
+
+@pytest.mark.parametrize("status_code,retryable", [
+    (401, False), (403, False), (429, True), (503, True),
+])
+def test_odds_api_http_errors_expose_safe_retry_classification(
+    monkeypatch, status_code, retryable
+):
+    from urllib.error import HTTPError
+    from email.message import Message
+
+    headers = Message()
+    headers["Retry-After"] = "30"
+    headers["x-requests-remaining"] = "0"
+
+    def fail_request(request, timeout):
+        raise HTTPError(request.full_url, status_code, "provider error", headers,
+                        __import__("io").BytesIO(b'{"message":"quota or access failure"}'))
+
+    monkeypatch.setattr(the_odds_api, "urlopen", fail_request)
+    provider = TheOddsAPIProvider("CaseSensitiveKey")
+    with pytest.raises(ProviderError) as caught:
+        provider.fetch_odds("americanfootball_nfl")
+
+    error = caught.value
+    assert error.status_code == status_code
+    assert error.retryable is retryable
+    assert error.retry_after == "30"
+    assert provider.usage["requests_remaining"] == "0"
+
+
+def test_odds_api_transport_errors_are_classified_as_retryable(monkeypatch):
+    from urllib.error import URLError
+
+    monkeypatch.setattr(
+        the_odds_api, "urlopen",
+        lambda request, timeout: (_ for _ in ()).throw(URLError("temporary DNS failure")),
+    )
+    provider = TheOddsAPIProvider("CaseSensitiveKey")
+    with pytest.raises(ProviderError) as caught:
+        provider.fetch_odds("americanfootball_nfl")
+
+    assert caught.value.status_code is None
+    assert caught.value.retry_after is None
+    assert caught.value.retryable is True
