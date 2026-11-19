@@ -51,6 +51,11 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config --quiet
+      - name: Validate Docker build context exclusions
+        run: |
+          grep -Fxq '.env' .dockerignore
+          grep -Fxq 'data/' .dockerignore
+          grep -Fxq '*.sqlite3' .dockerignore
           rm .env
       - name: Run test suite
         run: python -m pytest -q
