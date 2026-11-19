@@ -350,11 +350,15 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         "margin_market": {
             "consensus_home_margin": round(expected_margin, 2),
             "home_margin_sd": prior["margin_sd"],
+            "model_source": "empirical_training_fit" if fitted else "broad_league_prior",
+            "training_sample_size": fitted.get("sample_size") if fitted else 0,
         },
         "data_quality": {
             "spread_books": spread_books,
             "total_books": total_books,
             "distribution": prior["distribution"],
+            "model_source": "empirical_training_fit" if fitted else "broad_league_prior",
+            "training_sample_size": fitted.get("sample_size") if fitted else 0,
             "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
         "methodology": (
