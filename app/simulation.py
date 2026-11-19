@@ -260,6 +260,9 @@ def _validated_model_parameters(parameters, family, sport_key):
             or parameters.get("sport_key") != sport_key):
         raise ValueError("Fitted model parameters do not match the selected league.")
     result = dict(parameters)
+    sample_size = result.get("sample_size", 0)
+    if isinstance(sample_size, bool) or not isinstance(sample_size, int) or sample_size < 0:
+        raise ValueError("Invalid fitted model parameter: sample_size.")
     bounds = {"margin_sd": (0.1, 50.0), "total_sd": (0.1, 60.0),
               "margin_total_corr": (-0.95, 0.95), "margin_bias": (-50.0, 50.0),
               "total_bias": (-100.0, 100.0), "temperature": (0.5, 3.0),
