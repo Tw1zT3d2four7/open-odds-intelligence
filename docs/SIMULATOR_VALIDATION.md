@@ -36,21 +36,25 @@ Rules:
 - Only `status=final` is accepted. Postponed, cancelled, abandoned, live or ambiguous events are not scored.
 - `source` is mandatory provenance. Only import results from an authorized, trustworthy source. Do not invent results or infer a final score from odds.
 
-## Run locally
+## Train and test chronologically
 
-With the application virtual environment active and its normal `.env`/database path configured:
-
-```bash
-python -m scripts.backtest_simulator --settlements /path/to/verified-results.csv
-```
-
-Write a JSON report:
+With the application virtual environment active and its normal .env/database path configured, keep training results earlier than test results:
 
 ```bash
-python -m scripts.backtest_simulator --settlements /path/to/verified-results.csv --output simulator-backtest.json
+python -m scripts.backtest_simulator --training-settlements /path/to/earlier-training-results.csv --settlements /path/to/later-holdout-results.csv --output simulator-backtest.json
 ```
 
-The command reads the existing `DATABASE_PATH` SQLite archive. It does not modify the database or call an odds provider.
+The default minimum is 50 matched training events per league. A league below that threshold is not assigned fitted parameters and continues to use its broad prior. The training stage estimates per-league market residual bias, margin/total volatility and their correlation for basketball/football; low-scoring leagues additionally estimate home/away overdispersion for the Gamma-Poisson count model.
+
+To export fitted parameters for the live single-game simulator:
+
+```bash
+python -m scripts.backtest_simulator --training-settlements /path/to/earlier-training-results.csv --settlements /path/to/later-holdout-results.csv --model-output ./data/simulation_models.json --output simulator-backtest.json
+```
+
+Set SIMULATION_MODEL_PATH=./data/simulation_models.json in .env (this is the default). The live simulator loads a league's fitted model only when a valid model file exists; otherwise it reports that it is using the broad league prior. The model file belongs in the persistent data/ volume and is not baked into the container image.
+
+The command reads the existing DATABASE_PATH SQLite archive. It does not modify the database or call an odds provider.
 
 ## Interpreting results
 
