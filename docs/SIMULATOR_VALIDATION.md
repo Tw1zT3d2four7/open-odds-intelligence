@@ -75,3 +75,5 @@ A valid backtest also requires overlap between the local odds archive and import
 ## Sport-specific resolution currently implemented
 
 The simulator now resolves regulation ties for NBA/WNBA/NCAAB with repeated overtime scoring periods, NHL with overtime-goal/shootout resolution, MLB with repeated extra innings, and NCAAF with repeated overtime possessions. EPL soccer draws remain valid. NFL regular-season ties can remain tied after a simplified overtime period. These are transparent approximations, not official league rulebooks or period-by-period team models; NFL postseason rules and competition-specific tournament formats are not inferred from the event feed. The output exposes regulation tie and overtime/extra-inning counts. These assumptions still require calibration against verified historical results.
+
+The holdout report also scores the same events with the unfitted broad-prior market-anchored simulator and reports paired metric deltas. This is a baseline comparison, not a sportsbook closing-line or independently generated market-probability benchmark; interpret it accordingly.
