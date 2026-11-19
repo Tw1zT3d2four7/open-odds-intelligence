@@ -76,7 +76,11 @@ class OddsLinkClient:
                 ):
                     if response.headers.get(header) is not None:
                         self.usage[key] = response.headers[header]
-                return payload if isinstance(payload, list) else payload.get("events", [])
+                if isinstance(payload, list):
+                    return payload
+                if isinstance(payload, dict) and isinstance(payload.get("events"), list):
+                    return payload["events"]
+                raise LimitsError("OddsLink returned an unexpected events response format")
         except HTTPError as exc:
             headers = exc.headers or {}
             self.usage.update({key: headers.get(header) for key, header in {
@@ -163,29 +167,86 @@ class MarketLimitsMonitor:
 
     @staticmethod
     def _extract(sport, events, observed_at):
+        import math
+
         rows = []
+        if not isinstance(events, list):
+            return rows
         for event in events:
-            for book in event.get("bookmakers", []) or []:
-                for market in book.get("markets", []) or []:
-                    for outcome in market.get("outcomes", []) or []:
-                        size = outcome.get("size") or {}
-                        if size.get("kind") != "posted_limit":
+            if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+                continue
+            books = event.get("bookmakers")
+            if not isinstance(books, list):
+                continue
+            for book in books:
+                if not isinstance(book, dict):
+                    continue
+                markets = book.get("markets")
+                if not isinstance(markets, list):
+                    continue
+                for market in markets:
+                    if not isinstance(market, dict):
+                        continue
+                    outcomes = market.get("outcomes")
+                    if not isinstance(outcomes, list):
+                        continue
+                    for outcome in outcomes:
+                        if not isinstance(outcome, dict):
+                            continue
+                        size = outcome.get("size")
+                        if not isinstance(size, dict) or size.get("kind") != "posted_limit":
+                            continue
+                        raw_amount = size.get("amount")
+                        if isinstance(raw_amount, bool):
                             continue
                         try:
-                            amount = float(size["amount"])
-                            price = float(outcome["price"]) if outcome.get("price") is not None else None
-                        except (KeyError, TypeError, ValueError):
+                            amount = float(raw_amount)
+                        except (TypeError, ValueError, OverflowError):
                             continue
-                        if amount <= 0:
+                        if not math.isfinite(amount) or amount <= 0:
                             continue
+                        raw_price = outcome.get("price")
+                        if raw_price is None:
+                            price = None
+                        else:
+                            if isinstance(raw_price, bool):
+                                continue
+                            try:
+                                price = float(raw_price)
+                            except (TypeError, ValueError, OverflowError):
+                                continue
+                            if not math.isfinite(price) or price == 0:
+                                continue
+                        point = outcome.get("point")
+                        if point is not None:
+                            if isinstance(point, bool) or not isinstance(point, (int, float)):
+                                continue
+                            try:
+                                point = float(point)
+                            except (TypeError, ValueError, OverflowError):
+                                continue
+                            if not math.isfinite(point):
+                                continue
+                        book_key, market_key, outcome_name = (
+                            book.get("key"), market.get("key"), outcome.get("name")
+                        )
+                        if not all(isinstance(value, str) and value.strip()
+                                   for value in (book_key, market_key, outcome_name)):
+                            continue
+                        metadata = (
+                            event.get("commence_time", ""),
+                            event.get("home_team", ""),
+                            event.get("away_team", ""),
+                        )
+                        if not all(isinstance(value, str) for value in metadata):
+                            continue
+                        title = book.get("title")
+                        if not isinstance(title, str) or not title.strip():
+                            title = book_key
                         rows.append((
-                            observed_at, sport, str(event.get("id", "")),
-                            str(event.get("commence_time", "")),
-                            str(event.get("home_team", "")),
-                            str(event.get("away_team", "")),
-                            str(book.get("key", "")), str(book.get("title", book.get("key", ""))),
-                            str(market.get("key", "")), str(outcome.get("name", "")),
-                            outcome.get("point"), price, amount,
+                            observed_at, sport, str(event.get("id")).strip(),
+                            *metadata, book_key, title, market_key, outcome_name,
+                            point, price, amount,
                         ))
         return rows
 
@@ -260,14 +321,31 @@ class MarketLimitsMonitor:
                 events = client.fetch(sport)
                 diagnostic["events_returned"] += len(events)
                 for event in events:
-                    for book in event.get("bookmakers", []) or []:
+                    if not isinstance(event, dict):
+                        continue
+                    books = event.get("bookmakers")
+                    if not isinstance(books, list):
+                        continue
+                    for book in books:
+                        if not isinstance(book, dict):
+                            continue
                         key = str(book.get("key", "unknown"))
                         if key not in diagnostic["bookmakers_returned"]:
                             diagnostic["bookmakers_returned"].append(key)
-                        for market in book.get("markets", []) or []:
-                            for outcome in market.get("outcomes", []) or []:
-                                size = outcome.get("size") or {}
-                                kind = str(size.get("kind", "no_size"))
+                        markets = book.get("markets")
+                        if not isinstance(markets, list):
+                            continue
+                        for market in markets:
+                            if not isinstance(market, dict):
+                                continue
+                            outcomes = market.get("outcomes")
+                            if not isinstance(outcomes, list):
+                                continue
+                            for outcome in outcomes:
+                                if not isinstance(outcome, dict):
+                                    continue
+                                size = outcome.get("size")
+                                kind = str(size.get("kind", "no_size")) if isinstance(size, dict) else "no_size"
                                 diagnostic["size_kinds_returned"][kind] = diagnostic["size_kinds_returned"].get(kind, 0) + 1
                                 if kind == "posted_limit":
                                     diagnostic["posted_limit_outcomes"] += 1
