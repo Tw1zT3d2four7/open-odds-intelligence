@@ -12,6 +12,8 @@ def _valid_american_price(price):
         raise ValueError("American odds must be a finite non-zero number") from None
     if not math.isfinite(value) or value == 0:
         raise ValueError("American odds must be a finite non-zero number")
+    if -100 < value < 100:
+        raise ValueError("American odds must be +100 or greater, or -100 or lower")
     return value
 
 
