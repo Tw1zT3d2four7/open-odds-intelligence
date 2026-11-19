@@ -237,11 +237,13 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
         seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:4], "big")
         try:
             baseline_prediction = run_game_simulation(event, seed=seed)
-            baseline_scored.append(score_prediction(baseline_prediction, settlement))
+            baseline_row = score_prediction(baseline_prediction, settlement)
             prediction = run_game_simulation(
                 event, seed=seed, model_parameters=(model_parameters or {}).get(event["sport_key"])
             )
-            scored.append(score_prediction(prediction, settlement))
+            model_row = score_prediction(prediction, settlement)
+            baseline_scored.append(baseline_row)
+            scored.append(model_row)
         except (ValueError, TypeError, KeyError) as exc:
             skipped.append({"event_id": settlement.get("event_id"), "reason": str(exc)})
     report = evaluate_predictions(scored)
