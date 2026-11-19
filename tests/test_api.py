@@ -285,3 +285,23 @@ def test_authentication_fails_closed_when_only_one_credential_is_set(monkeypatch
         # Health must remain available so Docker does not restart-loop on a
         # recoverable application configuration error.
         assert client.get("/api/health").status_code == 200
+
+
+def test_manual_refresh_rejects_unconfigured_sport_without_provider_call(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    called = []
+    monkeypatch.setattr(main.service, "refresh", lambda sport=None: called.append(sport))
+    with TestClient(main.app) as client:
+        response = client.post("/api/refresh?sport=americanfootball_nfl")
+    assert response.status_code == 400
+    assert "configured league" in response.json()["detail"]
+    assert called == []
+
+
+def test_manual_refresh_without_sport_still_refreshes_all_configured_leagues(monkeypatch):
+    called = []
+    monkeypatch.setattr(main.service, "refresh", lambda sport=None: called.append(sport) or {"ok": True})
+    with TestClient(main.app) as client:
+        response = client.post("/api/refresh")
+    assert response.status_code == 200
+    assert called == [None]
