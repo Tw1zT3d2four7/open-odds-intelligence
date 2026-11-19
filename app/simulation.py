@@ -251,11 +251,12 @@ def _negative_binomial(rng, mean, alpha):
     return _poisson(rng, latent_mean)
 
 
-def _validated_model_parameters(parameters, family):
+def _validated_model_parameters(parameters, family, sport_key):
     if parameters is None:
         return None
-    if not isinstance(parameters, dict) or parameters.get("family") != family:
-        raise ValueError("Fitted model parameters do not match the selected sport family.")
+    if (not isinstance(parameters, dict) or parameters.get("family") != family
+            or parameters.get("sport_key") != sport_key):
+        raise ValueError("Fitted model parameters do not match the selected league.")
     result = dict(parameters)
     bounds = {"margin_sd": (0.1, 50.0), "total_sd": (0.1, 60.0),
               "margin_total_corr": (-0.95, 0.95), "home_alpha": (0.0, 2.0),
@@ -284,7 +285,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
         raise ValueError("Simulation seed must be an integer or None.")
     prior = LEAGUE_PRIORS[family]
-    fitted = _validated_model_parameters(model_parameters, family)
+    fitted = _validated_model_parameters(model_parameters, family, str(event.get('sport_key') or event.get('sport') or ''))
     if fitted:
         prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
     rng = random.Random(seed)
@@ -302,8 +303,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             z_margin = rng.gauss(0.0, 1.0)
             z_independent = rng.gauss(0.0, 1.0)
             correlation = fitted.get("margin_total_corr", 0.0) if fitted else 0.0
-            margin = expected_margin + z_margin * prior["margin_sd"]
-            total = expected_total + prior["total_sd"] * (
+            margin = expected_margin + (fitted.get("margin_bias", 0.0) if fitted else 0.0) + z_margin * prior["margin_sd"]
+            total = expected_total + (fitted.get("total_bias", 0.0) if fitted else 0.0) + prior["total_sd"] * (
                 correlation * z_margin + math.sqrt(1.0 - correlation ** 2) * z_independent
             )
             total = max(0.0, total)
