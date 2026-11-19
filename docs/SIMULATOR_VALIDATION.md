@@ -62,7 +62,7 @@ The command reads the existing DATABASE_PATH SQLite archive. It does not modify 
 
 ## Interpreting results
 
-- Brier score and log loss are proper scoring rules for the simulated win/tie probabilities. Lower is better.
+- Brier score and log loss are proper scoring rules for simulated home/away/tie outcomes and over/under/push totals. Lower is better.
 - Calibration buckets compare predicted and observed rates separately for home/away/tie and over/under/push. Always inspect bucket sample sizes.
 - Score, total and margin MAE measure forecast error in points/goals/runs.
 - Reports are broken out by league and include the number of events scored and skipped.
@@ -73,9 +73,9 @@ The command reads the existing DATABASE_PATH SQLite archive. It does not modify 
 
 ## Current limitations
 
-This is the first replay/evaluation foundation, not the final sport-aware model. It does not yet fit empirical sport-specific score distributions, model overtime/extra innings explicitly, or compare against independently constructed market probability baselines. The current simulator still uses broad league-family volatility priors. Do not describe it as calibrated or validated until those components and adequately sized out-of-sample tests pass.
+This is a model-development and evaluation foundation, not proof of a validated predictive model. League-specific fitted scoring parameters and separate outcome/total probability temperatures are supported, but they only exist for leagues with sufficient supplied training and calibration rows. The live simulator falls back to broad priors for leagues without eligible fitted parameters. Sport-specific overtime and extra-inning handling is approximate and does not yet model every period, possession, lineup or competition-specific rule.
 
-A valid backtest also requires overlap between the local odds archive and imported settlement IDs. The application does not currently contain a bundled, licensed historical results dataset; a CSV must be supplied by the operator. An empty or thin local archive will correctly produce skipped events or an inconclusive report.
+A valid backtest requires overlap between the local odds archive and imported settlement IDs. The application does not contain a bundled, licensed historical results dataset; the operator must supply verified results and retain enough archived pregame quotes. Empty or thin archives correctly produce skipped events or inconclusive reports. Passing automated tests does not establish predictive accuracy. Do not describe a league as calibrated or validated until its untouched holdout has adequate sample size, acceptable calibration and forecast errors, and performance that is robust across multiple chronological windows.
 
 ## Sport-specific resolution currently implemented
 
