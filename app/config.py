@@ -65,3 +65,13 @@ PLAYER_PROPS_SPORT = os.getenv("PLAYER_PROPS_SPORT", "basketball_nba").strip()
 PLAYER_PROPS_MARKETS = os.getenv("PLAYER_PROPS_MARKETS", "").strip()
 PLAYER_PROPS_REFRESH_INTERVAL_SECONDS = max(3600, int(os.getenv("PLAYER_PROPS_REFRESH_INTERVAL_SECONDS", "14400")))
 PLAYER_PROPS_MAX_EVENTS = max(1, min(50, int(os.getenv("PLAYER_PROPS_MAX_EVENTS", "5"))))
+
+# Optional HTTP Basic authentication for the dashboard and all API routes except health.
+# Set BOTH values to enable; leave BOTH blank to preserve private-LAN development behavior.
+AUTH_USERNAME = os.getenv("AUTH_USERNAME", "")
+AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")
+
+# Bounded retries apply only to transient non-quota provider failures.
+PROVIDER_RETRY_ATTEMPTS = max(0, min(3, int(os.getenv("PROVIDER_RETRY_ATTEMPTS", "2"))))
+PROVIDER_RETRY_BASE_DELAY_SECONDS = max(0.1, min(5.0, float(os.getenv("PROVIDER_RETRY_BASE_DELAY_SECONDS", "0.5"))))
+PROVIDER_RETRY_MAX_DELAY_SECONDS = max(PROVIDER_RETRY_BASE_DELAY_SECONDS, min(30.0, float(os.getenv("PROVIDER_RETRY_MAX_DELAY_SECONDS", "5"))))

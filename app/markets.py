@@ -36,7 +36,7 @@ def market_board(events):
                     continue
                 for outcome in market.get("outcomes", []):
                     name, price = outcome.get("name"), outcome.get("price")
-                    if not name or not isinstance(price, int) or price == 0:
+                    if not name or isinstance(price, bool) or not isinstance(price, int) or price == 0:
                         continue
                     point = outcome.get("point")
                     line = _line_group(market_key, point)

@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 import hashlib
 import threading
 import json
+import time
+from email.utils import parsedate_to_datetime
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from . import config
@@ -183,6 +185,50 @@ class OddsService:
         finally:
             self._refresh_lock.release()
 
+    @staticmethod
+    def _retry_delay(error, attempt):
+        """Return a bounded delay, honoring Retry-After without trusting unbounded input."""
+        base = min(
+            config.PROVIDER_RETRY_BASE_DELAY_SECONDS * (2 ** attempt),
+            config.PROVIDER_RETRY_MAX_DELAY_SECONDS,
+        )
+        raw = getattr(error, "retry_after", None)
+        if raw:
+            try:
+                requested = float(raw)
+            except (TypeError, ValueError):
+                try:
+                    retry_at = parsedate_to_datetime(str(raw))
+                    if retry_at.tzinfo is None:
+                        retry_at = retry_at.replace(tzinfo=timezone.utc)
+                    requested = max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+                except (TypeError, ValueError, OverflowError):
+                    requested = base
+            # Never retry earlier than the provider requested. If its delay
+            # exceeds our bounded in-refresh wait budget, defer to a later
+            # operator/scheduler refresh instead of violating Retry-After.
+            if requested > config.PROVIDER_RETRY_MAX_DELAY_SECONDS:
+                return None
+            return max(0.0, requested)
+        return base
+
+    def _fetch_odds_with_retry(self, provider, sport):
+        """Retry only transient failures; never repeat quota or credential failures."""
+        attempts = config.PROVIDER_RETRY_ATTEMPTS
+        for attempt in range(attempts + 1):
+            try:
+                return provider.fetch_odds(sport)
+            except ProviderError as exc:
+                # A 429 means the provider has explicitly denied quota/rate
+                # capacity. Do not issue another request during this refresh.
+                if (attempt >= attempts or not getattr(exc, "retryable", False)
+                        or getattr(exc, "status_code", None) == 429):
+                    raise
+                delay = self._retry_delay(exc, attempt)
+                if delay is None:
+                    raise
+                time.sleep(delay)
+
     def _refresh_locked(self, sport=None):
         if not self.configured:
             self._last_error = "No live odds provider configured. Configure a supported provider and API key."
@@ -203,7 +249,7 @@ class OddsService:
         count = 0
         try:
             for key in ([sport] if sport else config.ODDS_SPORTS):
-                events = provider.fetch_odds(key)
+                events = self._fetch_odds_with_retry(provider, key)
                 self._remember_provider_usage(provider.usage)
                 if config.PLAYER_PROPS_ENABLED and key == config.PLAYER_PROPS_SPORT:
                     if config.ODDS_PROVIDER == "the_odds_api":

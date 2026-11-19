@@ -7,7 +7,13 @@ from .base import OddsProvider
 from ..math import decimal_to_american
 
 class ProviderError(RuntimeError):
-    pass
+    """Provider failure with machine-readable retry and quota diagnostics."""
+
+    def __init__(self, message: str, *, status_code=None, retry_after=None, retryable=False):
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = retry_after
+        self.retryable = bool(retryable)
 
 class TheOddsAPIProvider(OddsProvider):
     name = "the_odds_api"
@@ -155,9 +161,16 @@ class TheOddsAPIProvider(OddsProvider):
                 "requests_last": "x-requests-last",
             }.items() if headers.get(header) is not None})
             detail = exc.read().decode("utf-8", errors="replace")[:500]
-            raise ProviderError(f"Odds provider HTTP {exc.code}: {detail}") from exc
+            raise ProviderError(
+                f"Odds provider HTTP {exc.code}: {detail}",
+                status_code=exc.code,
+                retry_after=(exc.headers or {}).get("Retry-After"),
+                retryable=exc.code in (408, 425, 429, 500, 502, 503, 504),
+            ) from exc
         except (URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise ProviderError(f"Odds provider request failed: {exc}") from exc
+            raise ProviderError(
+                f"Odds provider request failed: {exc}", retryable=True
+            ) from exc
         if not isinstance(payload, list):
             raise ProviderError("Odds provider returned an unexpected response format")
 
