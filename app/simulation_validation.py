@@ -195,6 +195,12 @@ def _load_latest_pregame_event(database, settlement):
     if len(snapshot_ids) != 1:
         return None, "ambiguous pregame snapshot identity"
     first = latest_rows[0]
+    try:
+        archived_start = _parse_timestamp(first["commence_time"])
+    except ValueError:
+        return None, "archived event start timestamp is invalid"
+    if abs((archived_start - commence).total_seconds()) > 300:
+        return None, "settlement start time does not match archived event"
     if (_normalized_team(first["home_team"]) != _normalized_team(settlement["home_team"])
             or _normalized_team(first["away_team"]) != _normalized_team(settlement["away_team"])):
         return None, "settlement home/away teams do not match archived event"
