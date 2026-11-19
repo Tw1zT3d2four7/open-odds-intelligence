@@ -121,3 +121,24 @@ def test_synthetic_minus_one_rejects_inconsistent_market_probabilities():
     from app.calculators import synthetic_minus_one
     with pytest.raises(ValueError, match="Inconsistent prices"):
         synthetic_minus_one(200, -250, -300, 250)
+
+
+
+@pytest.mark.parametrize("call", [
+    lambda: payout(True, -110),
+    lambda: payout(100, True),
+    lambda: parlay([True]),
+    lambda: no_vig(True, -110),
+    lambda: ev_kelly(-110, True, 100),
+    lambda: ev_kelly(-110, 0.55, 100, True),
+    lambda: hedge(100, -110, True),
+])
+def test_boolean_numeric_inputs_are_rejected(call):
+    with pytest.raises(ValueError):
+        call()
+
+
+def test_run_line_minus_one_rejects_boolean_margin():
+    from app.calculators import run_line_minus_one
+    with pytest.raises(ValueError, match="score margin"):
+        run_line_minus_one(100, -110, True)

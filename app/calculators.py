@@ -9,6 +9,8 @@ import math
 
 
 def _positive(value: float, name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a finite number greater than zero")
     value = float(value)
     if not math.isfinite(value) or value <= 0:
         raise ValueError(f"{name} must be a finite number greater than zero")
@@ -16,6 +18,8 @@ def _positive(value: float, name: str) -> float:
 
 
 def american_to_decimal(odds: float) -> float:
+    if isinstance(odds, bool):
+        raise ValueError("American odds must be a finite non-zero number")
     odds = float(odds)
     if not math.isfinite(odds) or odds == 0:
         raise ValueError("American odds must be a finite non-zero number")
@@ -100,6 +104,8 @@ def ev_kelly(odds: float, win_probability: float, bankroll: float,
              kelly_fraction: float = 0.25, format: str = "american") -> dict:
     decimal = to_decimal(odds, format)
     bankroll = _positive(bankroll, "Bankroll")
+    if isinstance(win_probability, bool) or isinstance(kelly_fraction, bool):
+        raise ValueError("Win probability and Kelly fraction must be numeric values")
     probability = float(win_probability)
     fraction = float(kelly_fraction)
     if not math.isfinite(probability) or not 0 <= probability <= 1:
@@ -131,6 +137,8 @@ def run_line_minus_one(stake: float, odds: float, margin: float,
     """
     stake = _positive(stake, "Stake")
     decimal = to_decimal(odds, format)
+    if isinstance(margin, bool):
+        raise ValueError("Final score margin must be a finite number")
     margin = float(margin)
     if not math.isfinite(margin):
         raise ValueError("Final score margin must be a finite number")
