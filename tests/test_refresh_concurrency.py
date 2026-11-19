@@ -172,6 +172,11 @@ def test_provider_quota_diagnostics_persist_across_service_restart(tmp_path, mon
         "requests_remaining": "77", "requests_used": "23",
     }
 
+    # A rotated key must not inherit the previous account's quota counters.
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "DifferentCaseSensitiveKey")
+    rotated_key_service = OddsService(OddsDatabase(database_path))
+    assert rotated_key_service.status()["provider_usage"] == {}
+
 
 def test_service_clv_capture_records_each_book_not_only_best_price(tmp_path, monkeypatch):
     from datetime import datetime, timedelta, timezone
