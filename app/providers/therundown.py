@@ -226,21 +226,33 @@ class TheRundownProvider:
                     home, away = participants[0], participants[1]
                 break
         books = {}
-        for market in raw.get("markets") or []:
+        raw_markets = raw.get("markets")
+        if not isinstance(raw_markets, list):
+            raw_markets = []
+        for market in raw_markets:
             if not isinstance(market, dict):
                 continue
             market_key = self.MARKETS.get(market.get("market_id"))
             if not market_key:
                 continue
-            for participant in market.get("participants") or []:
+            participants = market.get("participants")
+            if not isinstance(participants, list):
+                continue
+            for participant in participants:
                 if not isinstance(participant, dict):
                     continue
                 outcome_name = participant.get("name") or ""
-                for line in participant.get("lines") or []:
+                lines = participant.get("lines")
+                if not isinstance(lines, list):
+                    continue
+                for line in lines:
                     if not isinstance(line, dict):
                         continue
                     point = self._as_float(line.get("value"))
-                    for book_id, quote in (line.get("prices") or {}).items():
+                    prices = line.get("prices")
+                    if not isinstance(prices, dict):
+                        continue
+                    for book_id, quote in prices.items():
                         if not isinstance(quote, dict) or quote.get("closed_at"):
                             continue
                         price = self._american_price(quote.get("price"))
