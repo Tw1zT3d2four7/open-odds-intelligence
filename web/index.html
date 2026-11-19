@@ -281,11 +281,12 @@ async function loadSimulationGames(refreshSelected=false){
    ?await (async()=>{const response=await fetch("/api/simulation/games/refresh?sport="+encodeURIComponent(sport),{method:"POST"});const payload=await response.json();if(!response.ok)throw Error(payload.detail||"Selected league refresh failed");return payload})()
    :await get(url);
   game.innerHTML='<option value="">Select a game</option>';
-  (data.games||[]).forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.textContent=g.matchup+" · "+date(g.commence_time)+(g.has_spread&&g.has_total?"":" · incomplete markets");if(!g.has_spread||!g.has_total)o.disabled=true;game.appendChild(o)});
+  (data.games||[]).forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.textContent=g.matchup+" · "+date(g.commence_time)+(g.can_simulate?"":" · missing usable spread/total");if(!g.can_simulate)o.disabled=true;game.appendChild(o)});
   game.disabled=false;
   const count=(data.games||[]).length;
+  const ready=(data.games||[]).filter(g=>g.can_simulate).length;
   $("simStatus").textContent=count
-   ?count+" games found for "+sport.replaceAll("_"," ").toUpperCase()+". Games without both spread and total are disabled."
+   ?count+" games found for "+sport.replaceAll("_"," ").toUpperCase()+"; "+ready+" have usable spread and total lines. Incomplete games are disabled."
    :"No games are currently stored for "+sport.replaceAll("_"," ").toUpperCase()+". Use Load / Refresh This League to request this league only.";
  }catch(e){game.innerHTML='<option value="">Could not load games</option>';$("simStatus").textContent=e.message}
  finally{loadButton.disabled=false}
