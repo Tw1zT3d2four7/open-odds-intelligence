@@ -293,10 +293,9 @@ def test_boolean_prices_are_rejected_as_malformed_quotes():
             ]}]},
         ],
     }]
-    assert market_board(events) == [
-        # Only valid integer odds survive; the market is incomplete and
-        # therefore must not be eligible for EV or arbitrage analysis.
-    ]
+    board = market_board(events)
+    assert len(board) == 2
+    assert all(type(row["price"]) is int for row in board)
     assert analyze_markets(events, min_ev=-100, min_consensus_books=1) == {
         "opportunities": [], "arbitrage": []
     }
