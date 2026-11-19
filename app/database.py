@@ -286,7 +286,7 @@ class OddsDatabase:
                                 continue
                             point = outcome.get("point")
                             if point is not None:
-                                if isinstance(point, bool):
+                                if isinstance(point, bool) or not isinstance(point, (int, float)):
                                     continue
                                 try:
                                     point = float(point)
@@ -303,10 +303,17 @@ class OddsDatabase:
                             )
                             if updated_at is not None and not isinstance(updated_at, str):
                                 continue
-                            rows.append((snapshot_id, str(event.get("id", "")), sport,
+                            event_metadata = (
                                 event.get("sport_title", ""), event.get("commence_time", ""),
                                 event.get("home_team", ""), event.get("away_team", ""),
-                                book_key, book.get("title", book_key), market_key,
+                            )
+                            if not all(isinstance(value, str) for value in event_metadata):
+                                continue
+                            book_title = book.get("title")
+                            if not isinstance(book_title, str) or not book_title.strip():
+                                book_title = book_key
+                            rows.append((snapshot_id, str(event.get("id", "")), sport,
+                                *event_metadata, book_key, book_title, market_key,
                                 outcome_name, description, point, price, updated_at))
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
                 home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,point,price,
