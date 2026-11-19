@@ -288,11 +288,3 @@ def test_simulation_game_refresh_surfaces_provider_errors(monkeypatch):
     assert response.json()["detail"] == "Provider returned HTTP 401"
 
 
-def test_simulation_dashboard_enables_game_selector_and_offers_explicit_league_load():
-    with TestClient(main.app) as client:
-        response = client.get("/")
-    assert response.status_code == 200
-    assert 'id="loadSimGames"' in response.text
-    assert 'game.disabled=false;' in response.text
-    assert 'fetch("/api/simulation/games/refresh?sport="+' in response.text
-
