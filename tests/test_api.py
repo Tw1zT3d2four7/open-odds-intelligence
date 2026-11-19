@@ -255,3 +255,44 @@ def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
     assert response.json()["event_id"] == "chosen-game"
     assert response.json()["trials"] == 10_000
     assert missing.status_code == 404
+
+def test_simulation_game_refresh_requests_only_the_selected_league(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", [
+        "americanfootball_nfl", "americanfootball_ncaaf"
+    ])
+    received = []
+    event = {
+        "id": "ncaaf-game", "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [{"markets": [{"key": "spreads"}, {"key": "totals"}]}],
+    }
+    monkeypatch.setattr(main.service, "refresh", lambda sport=None: (
+        received.append(sport) or {"ok": True, "events": 1}
+    ))
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event] if sport == "americanfootball_ncaaf" else [])
+    with TestClient(main.app) as client:
+        response = client.post("/api/simulation/games/refresh?sport=americanfootball_ncaaf")
+    assert response.status_code == 200
+    assert received == ["americanfootball_ncaaf"]
+    assert response.json()["games"][0]["event_id"] == "ncaaf-game"
+
+
+def test_simulation_game_refresh_surfaces_provider_errors(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_ncaab"])
+    monkeypatch.setattr(main.service, "refresh", lambda sport=None: {
+        "ok": False, "error": "Provider returned HTTP 401"
+    })
+    with TestClient(main.app) as client:
+        response = client.post("/api/simulation/games/refresh?sport=basketball_ncaab")
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Provider returned HTTP 401"
+
+
+def test_simulation_dashboard_enables_game_selector_and_offers_explicit_league_load():
+    with TestClient(main.app) as client:
+        response = client.get("/")
+    assert response.status_code == 200
+    assert 'id="loadSimGames"' in response.text
+    assert 'game.disabled=false;' in response.text
+    assert '"/api/simulation/games/refresh?sport="' in response.text
+
