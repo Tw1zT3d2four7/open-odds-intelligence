@@ -71,24 +71,47 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     """Score one simulated forecast against one independently imported result."""
     if str(prediction.get("event_id")) != str(settlement.get("event_id")):
         raise ValueError("Prediction and settlement event IDs do not match.")
+    prediction_sport = str(prediction.get("sport") or "")
+    settlement_sport = str(settlement.get("sport_key") or "")
+    if prediction_sport and settlement_sport and prediction_sport != settlement_sport:
+        raise ValueError("Prediction and settlement leagues do not match.")
+
+    def finite_number(value, label):
+        if isinstance(value, bool):
+            raise ValueError(f"{label} must be numeric, not boolean.")
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{label} must be numeric.") from None
+        if not math.isfinite(number):
+            raise ValueError(f"{label} must be finite.")
+        return number
+
+    def final_score(value, label):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{label} must be a non-negative whole-number integer.")
+        return value
+
+    hs = final_score(settlement.get("home_score"), "Home score")
+    aws = final_score(settlement.get("away_score"), "Away score")
     probs = prediction.get("win_probabilities") or {}
-    home = float(probs.get("home", -1)) / 100
-    away = float(probs.get("away", -1)) / 100
-    tie = float(probs.get("tie", -1)) / 100
+    home = finite_number(probs.get("home", -1), "Home win probability") / 100
+    away = finite_number(probs.get("away", -1), "Away win probability") / 100
+    tie = finite_number(probs.get("tie", -1), "Tie probability") / 100
     values = (home, away, tie)
     if any(not math.isfinite(x) or x < 0 or x > 1 for x in values):
         raise ValueError("Prediction contains invalid win probabilities.")
     if abs(sum(values) - 1) > 0.005:
         raise ValueError("Win probabilities must sum to 100%.")
-    hs, aws = int(settlement["home_score"]), int(settlement["away_score"])
     actual = (1.0, 0.0, 0.0) if hs > aws else (0.0, 1.0, 0.0) if hs < aws else (0.0, 0.0, 1.0)
     brier = sum((p - y) ** 2 for p, y in zip(values, actual))
     eps = 1e-12
     actual_index = actual.index(1.0)
     log_loss = -math.log(max(eps, values[actual_index]))
     total_market = prediction.get("total_market") or {}
-    total_line = float(total_market.get("consensus_line", float("nan")))
-    total_probs = tuple(float(total_market.get(key, -1)) / 100 for key in ("over", "under", "push"))
+    total_line = finite_number(total_market.get("consensus_line", float("nan")), "Consensus total")
+    total_probs = tuple(finite_number(total_market.get(key, -1), f"{key.title()} probability") / 100
+                        for key in ("over", "under", "push"))
     if not math.isfinite(total_line) or any(not math.isfinite(x) or x < 0 or x > 1 for x in total_probs):
         raise ValueError("Prediction contains invalid total probabilities or line.")
     if abs(sum(total_probs) - 1) > 0.005:
@@ -99,8 +122,8 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     total_brier = sum((p - y) ** 2 for p, y in zip(total_probs, total_actual))
     total_log_loss = -math.log(max(eps, total_probs[total_actual.index(1.0)]))
     projected = prediction.get("projected_score") or {}
-    projected_home = float(projected.get("home", float("nan")))
-    projected_away = float(projected.get("away", float("nan")))
+    projected_home = finite_number(projected.get("home", float("nan")), "Projected home score")
+    projected_away = finite_number(projected.get("away", float("nan")), "Projected away score")
     if not math.isfinite(projected_home) or not math.isfinite(projected_away):
         raise ValueError("Prediction contains invalid projected scores.")
     return {
