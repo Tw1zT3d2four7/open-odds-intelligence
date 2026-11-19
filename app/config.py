@@ -65,3 +65,8 @@ PLAYER_PROPS_SPORT = os.getenv("PLAYER_PROPS_SPORT", "basketball_nba").strip()
 PLAYER_PROPS_MARKETS = os.getenv("PLAYER_PROPS_MARKETS", "").strip()
 PLAYER_PROPS_REFRESH_INTERVAL_SECONDS = max(3600, int(os.getenv("PLAYER_PROPS_REFRESH_INTERVAL_SECONDS", "14400")))
 PLAYER_PROPS_MAX_EVENTS = max(1, min(50, int(os.getenv("PLAYER_PROPS_MAX_EVENTS", "5"))))
+
+# Optional HTTP Basic authentication for the dashboard and all API routes except health.
+# Set BOTH values to enable; leave BOTH blank to preserve private-LAN development behavior.
+AUTH_USERNAME = os.getenv("AUTH_USERNAME", "")
+AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")
