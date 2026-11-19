@@ -75,7 +75,7 @@ class OddsDatabase:
                     event_id TEXT PRIMARY KEY, sport_key TEXT NOT NULL,
                     commence_time TEXT NOT NULL, home_team TEXT NOT NULL, away_team TEXT NOT NULL,
                     home_score INTEGER NOT NULL, away_score INTEGER NOT NULL,
-                    status TEXT NOT NULL CHECK(status = "final"), source TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status = 'final'), source TEXT NOT NULL,
                     source_record_id TEXT NOT NULL, source_updated_at TEXT, imported_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_simulation_settlements_sport_time
@@ -141,7 +141,9 @@ class OddsDatabase:
                 continue
             with self.connect() as db:
                 archived = db.execute(
-                    "SELECT DISTINCT commence_time,home_team,away_team FROM quotes WHERE event_id=? AND sport=? LIMIT 2",
+                    "SELECT q.commence_time,q.home_team,q.away_team FROM quotes q "
+                    "JOIN snapshots s ON s.id=q.snapshot_id WHERE q.event_id=? AND q.sport=? "
+                    "ORDER BY s.id DESC LIMIT 1",
                     (event_id, sport),
                 ).fetchall()
                 if not archived:
@@ -187,7 +189,7 @@ class OddsDatabase:
         with self.connect() as db:
             return [dict(row) for row in db.execute(sql, args).fetchall()]
 
-    def pending_simulation_result_dates(self, sports, lookback_days=7, now=None):
+    def pending_simulation_result_dates(self, sports, lookback_days=7, now=None, offset_minutes=0):
         """Return sport/date batches containing archived events without final results."""
         if not sports:
             return []
@@ -212,7 +214,8 @@ class OddsDatabase:
                     continue
             except (TypeError, ValueError):
                 continue
-            key = (row["sport"], commence.astimezone(timezone.utc).date().isoformat())
+            event_date = (commence.astimezone(timezone.utc) + timedelta(minutes=int(offset_minutes))).date().isoformat()
+            key = (row["sport"], event_date)
             grouped.setdefault(key, set()).add(row["event_id"])
         return [{"sport": sport, "event_date": event_date, "pending_events": len(event_ids)}
                 for (sport, event_date), event_ids in sorted(grouped.items(), key=lambda item: (item[0][1], item[0][0]))]
