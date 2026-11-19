@@ -361,13 +361,14 @@ def test_simulation_applies_fitted_multiclass_temperature():
     params = {
         "sport_key": "basketball_nba", "family": "basketball", "sample_size": 250,
         "margin_sd": 10.0, "total_sd": 15.0, "margin_total_corr": 0.2,
-        "temperature": 1.5,
+        "temperature": 1.5, "total_temperature": 1.7,
     }
     result = run_game_simulation(event, seed=22, model_parameters=params)
     probs = result["win_probabilities"]
     assert abs(probs["home"] + probs["away"] + probs["tie"] - 100) < 0.001
     assert result["data_quality"]["model_source"] == "empirical_training_fit"
     assert result["margin_market"]["probability_temperature"] == 1.5
+    assert result["total_market"]["probability_temperature"] == 1.7
 
 def test_nfl_regular_season_overtime_can_remain_tied():
     from app.simulation import _resolve_tie
