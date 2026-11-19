@@ -90,9 +90,16 @@ class TheRundownProvider:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
             retry_after = headers.get("Retry-After")
             suffix = f" (Retry-After: {retry_after}s)" if retry_after else ""
-            raise ProviderError(f"TheRundown HTTP {exc.code}{suffix}: {detail}") from exc
+            raise ProviderError(
+                f"TheRundown HTTP {exc.code}{suffix}: {detail}",
+                status_code=exc.code,
+                retry_after=retry_after,
+                retryable=exc.code in (408, 425, 429, 500, 502, 503, 504),
+            ) from exc
         except (URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise ProviderError(f"TheRundown request failed: {exc}") from exc
+            raise ProviderError(
+                f"TheRundown request failed: {exc}", retryable=True
+            ) from exc
 
     @staticmethod
     def _as_float(value):
