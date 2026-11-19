@@ -127,7 +127,7 @@ class TheRundownProvider:
             return None
         price = int(numeric)
         # TheRundown uses 0.0001 as a placeholder for an unavailable price.
-        if price == 0 or numeric == 0.0001:
+        if price == 0 or numeric == 0.0001 or -100 < price < 100:
             return None
         return price
 
