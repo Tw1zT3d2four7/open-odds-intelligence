@@ -145,11 +145,12 @@ def test_market_limits_cooldown_survives_monitor_restart(tmp_path, monkeypatch):
     monkeypatch.setattr(module.config, "LIMITS_SPORTS", ["americanfootball_nfl"])
     monkeypatch.setattr(module.config, "LIMITS_REFRESH_INTERVAL_SECONDS", 14400)
     calls = []
+    keys = []
 
     class FakeClient:
         usage = {"requests_remaining": "999"}
         def __init__(self, key):
-            assert key == "CaseSensitiveKey"
+            keys.append(key)
         def fetch(self, sport):
             calls.append(sport)
             return fixture()
@@ -171,3 +172,12 @@ def test_market_limits_cooldown_survives_monitor_restart(tmp_path, monkeypatch):
     assert restarted_status["next_refresh_seconds"] > 0
     assert restarted_status["last_updated"] == first["updated_at"]
     assert restarted_status["requests_remaining"] == "999"
+
+    # A new account key gets a fresh quota counter and may poll immediately.
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "RotatedCaseSensitiveKey")
+    rotated_monitor = MarketLimitsMonitor(database)
+    assert rotated_monitor.status()["requests_remaining"] is None
+    rotated_result = rotated_monitor.refresh()
+    assert rotated_result["ok"] is True
+    assert calls == ["nfl", "nfl"]
+    assert keys == ["CaseSensitiveKey", "RotatedCaseSensitiveKey"]
