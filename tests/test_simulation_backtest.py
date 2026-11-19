@@ -177,3 +177,29 @@ def test_paired_bootstrap_rejects_unpaired_event_sets():
 
     with pytest.raises(ValueError, match="identical event IDs"):
         paired_bootstrap_comparison([{"event_id": "a"}], [{"event_id": "b"}])
+
+
+
+def test_paired_bootstrap_reports_separate_league_intervals():
+    from app.simulation_validation import paired_bootstrap_comparison
+
+    model = []
+    baseline = []
+    for sport, event_id, delta in (
+        ("basketball_nba", "nba-1", -0.1),
+        ("basketball_nba", "nba-2", -0.2),
+        ("icehockey_nhl", "nhl-1", 0.1),
+        ("icehockey_nhl", "nhl-2", 0.2),
+    ):
+        row = {"event_id": event_id, "sport": sport}
+        base = {"event_id": event_id, "sport": sport}
+        for key in ("brier_score", "log_loss", "total_brier_score", "total_log_loss",
+                    "home_score_error", "away_score_error", "total_score_error", "margin_error"):
+            row[key] = 1.0 + delta
+            base[key] = 1.0
+        model.append(row)
+        baseline.append(base)
+    result = paired_bootstrap_comparison(model, baseline, iterations=200, seed=9)
+    assert set(result["per_sport"]) == {"basketball_nba", "icehockey_nhl"}
+    assert result["per_sport"]["basketball_nba"]["sample_size"] == 2
+    assert result["per_sport"]["icehockey_nhl"]["sample_size"] == 2
