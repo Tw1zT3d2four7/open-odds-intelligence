@@ -94,7 +94,10 @@ def test_dashboard_renders_synthetic_minus_one_builder_inputs_and_outputs():
 
 def test_market_board_endpoint_applies_sport_filter(monkeypatch):
     received = {}
-    monkeypatch.setattr(main.service, "events", lambda sport=None: received.setdefault("sport", sport) or [])
+    def fake_events(sport=None):
+        received["sport"] = sport
+        return []
+    monkeypatch.setattr(main.service, "events", fake_events)
     with TestClient(main.app) as client:
         response = client.get("/api/market-board?sport=icehockey_nhl")
     assert response.status_code == 200
