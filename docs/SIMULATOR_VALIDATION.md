@@ -65,7 +65,8 @@ The command reads the existing DATABASE_PATH SQLite archive. It does not modify 
 - Brier score and log loss are proper scoring rules for simulated home/away/tie outcomes and over/under/push totals. Lower is better.
 - Calibration buckets compare predicted and observed rates separately for home/away/tie and over/under/push. Always inspect bucket sample sizes.
 - Score, total and margin MAE measure forecast error in points/goals/runs.
-- Reports are broken out by league and include the number of events scored and skipped.
+- Reports are broken out by league and include the number of events scored and skipped. Each league receives its own sample-size readiness status; the combined report remains descriptive unless every included league reaches the 200-game threshold.
+- Paired bootstrap intervals are reported overall and separately by league when multiple leagues are present. This prevents a large league's sample from masking a thin league's uncertainty.
 - Fewer than 200 scored events are labelled `DESCRIPTIVE_ONLY`; even larger samples are not proof of profitability or future performance.
 - Use chronological development and untouched holdout periods. Do not tune volatility or distributions on the same games used for final evaluation.
 - The report's model-minus-baseline deltas are fitted-model metric minus unfitted-prior metric; negative values are better for Brier, log loss and MAE.
