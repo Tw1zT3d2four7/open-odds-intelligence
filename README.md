@@ -110,6 +110,10 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 - `POST /api/limits/refresh` — manually refresh the optional limits feed.
 - `GET /api/movement/history?event_id=...&market=...&outcome=...&bookmaker=...` — chronological price and line observations for one sportsbook selection.
 
+## Commercial licensing gate
+
+Before enabling public subscriber access, confirm that the selected odds provider contract explicitly permits customer-facing commercial display and the intended redistribution. A paid plan is not automatically a display license. TheRundown's current plan guidance lists Starter for internal/personal use and Pro or above for customer-facing display.
+
 ## Development roadmap
 
 1. ~~Persistent SQLite quote and event storage~~
