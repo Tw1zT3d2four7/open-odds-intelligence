@@ -144,3 +144,110 @@ def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
             "future profitability. Use chronological holdouts; do not tune on the reported test set."
         ),
     }
+
+
+def _parse_timestamp(value):
+    from datetime import datetime, timezone
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid ISO-8601 timestamp: {value!r}") from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _normalized_team(value):
+    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
+
+
+def _load_latest_pregame_event(database, settlement):
+    """Rebuild one event from its latest archived snapshot strictly before start."""
+    commence = _parse_timestamp(settlement["commence_time"])
+    with database.connect() as db:
+        rows = db.execute(
+            """SELECT s.id AS snapshot_id, s.fetched_at,
+                      q.event_id, q.sport, q.sport_title, q.commence_time,
+                      q.home_team, q.away_team, q.bookmaker_key,
+                      q.bookmaker_title, q.market_key, q.outcome_name,
+                      q.outcome_description, q.point, q.price
+               FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
+               WHERE q.event_id=? AND q.sport=?
+               ORDER BY s.fetched_at ASC, s.id ASC, q.bookmaker_key""",
+            (str(settlement["event_id"]), str(settlement["sport_key"])),
+        ).fetchall()
+    eligible = []
+    for row in rows:
+        try:
+            observed = _parse_timestamp(row["fetched_at"])
+        except ValueError:
+            continue
+        if observed < commence:
+            eligible.append((observed, row))
+    if not eligible:
+        return None, "no archived quote snapshot strictly before game start"
+    latest_time = max(item[0] for item in eligible)
+    latest_rows = [row for observed, row in eligible if observed == latest_time]
+    snapshot_ids = {row["snapshot_id"] for row in latest_rows}
+    if len(snapshot_ids) != 1:
+        return None, "ambiguous pregame snapshot identity"
+    first = latest_rows[0]
+    if (_normalized_team(first["home_team"]) != _normalized_team(settlement["home_team"])
+            or _normalized_team(first["away_team"]) != _normalized_team(settlement["away_team"])):
+        return None, "settlement home/away teams do not match archived event"
+    event = {
+        "id": str(settlement["event_id"]), "sport_key": str(settlement["sport_key"]),
+        "sport_title": first["sport_title"], "commence_time": first["commence_time"],
+        "home_team": first["home_team"], "away_team": first["away_team"],
+        "bookmakers": [],
+    }
+    books = {}
+    for row in latest_rows:
+        book = books.get(row["bookmaker_key"])
+        if book is None:
+            book = {"key": row["bookmaker_key"], "title": row["bookmaker_title"], "markets": []}
+            books[row["bookmaker_key"]] = book
+            event["bookmakers"].append(book)
+        markets = {market["key"]: market for market in book["markets"]}
+        market = markets.get(row["market_key"])
+        if market is None:
+            market = {"key": row["market_key"], "outcomes": []}
+            book["markets"].append(market)
+        outcome = {"name": row["outcome_name"], "price": row["price"]}
+        if row["point"] is not None:
+            outcome["point"] = row["point"]
+        if row["outcome_description"]:
+            outcome["description"] = row["outcome_description"]
+        market["outcomes"].append(outcome)
+    return event, None
+
+
+def run_historical_backtest(database, settlements: list[dict], seed_salt: str = "ooi-sim-v1") -> dict:
+    """Replay the latest real pregame snapshot per settled event; never fetch odds."""
+    import hashlib
+    from .simulation import run_game_simulation
+
+    scored, skipped = [], []
+    for settlement in settlements:
+        event, reason = _load_latest_pregame_event(database, settlement)
+        if reason:
+            skipped.append({"event_id": settlement.get("event_id"), "reason": reason})
+            continue
+        seed_material = f"{seed_salt}:{settlement['event_id']}".encode("utf-8")
+        seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:4], "big")
+        try:
+            prediction = run_game_simulation(event, seed=seed)
+            scored.append(score_prediction(prediction, settlement))
+        except (ValueError, TypeError, KeyError) as exc:
+            skipped.append({"event_id": settlement.get("event_id"), "reason": str(exc)})
+    report = evaluate_predictions(scored)
+    report["settlements_submitted"] = len(settlements)
+    report["events_scored"] = len(scored)
+    report["events_skipped"] = len(skipped)
+    report["skipped"] = skipped
+    report["data_policy"] = (
+        "Uses only the latest archived sportsbook snapshot strictly before each event's "
+        "commence_time. No provider requests, current odds, post-start quotes, or synthetic "
+        "historical prices are used. Events without a valid archived spread and total are skipped."
+    )
+    return report
