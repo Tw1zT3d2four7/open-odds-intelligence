@@ -262,7 +262,8 @@ def _validated_model_parameters(parameters, family, sport_key):
     result = dict(parameters)
     bounds = {"margin_sd": (0.1, 50.0), "total_sd": (0.1, 60.0),
               "margin_total_corr": (-0.95, 0.95), "margin_bias": (-50.0, 50.0),
-              "total_bias": (-100.0, 100.0), "home_alpha": (0.0, 2.0),
+              "total_bias": (-100.0, 100.0), "temperature": (0.5, 3.0),
+              "home_alpha": (0.0, 2.0),
               "away_alpha": (0.0, 2.0)}
     for key, (low, high) in bounds.items():
         if key not in result:
@@ -403,6 +404,16 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         else:
             pushes += 1
 
+    raw_probabilities = [home_wins / TRIALS, away_wins / TRIALS, ties / TRIALS]
+    temperature = fitted.get("temperature") if fitted else None
+    if temperature is not None:
+        weights = [max(1e-12, probability) ** (1.0 / temperature)
+                   for probability in raw_probabilities]
+        weight_total = sum(weights)
+        raw_probabilities = [weight / weight_total for weight in weights]
+    home_probability = round(raw_probabilities[0] * 100, 2)
+    away_probability = round(raw_probabilities[1] * 100, 2)
+    tie_probability = round(100.0 - home_probability - away_probability, 2)
     pct = lambda n: round(n / TRIALS * 100, 2)
     return {
         "trials": TRIALS,
@@ -418,7 +429,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "away": round(sum(away_scores) / TRIALS, 2),
         },
         "win_probabilities": {
-            "home": pct(home_wins), "away": pct(away_wins), "tie": pct(ties),
+            "home": home_probability, "away": away_probability, "tie": tie_probability,
         },
         "game_resolution": {
             "regulation_ties": regulation_ties, "overtime_or_extra_innings": overtime_games,
@@ -436,6 +447,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "fitted_margin_bias": fitted.get("margin_bias", 0.0) if fitted else None,
             "fitted_total_bias": fitted.get("total_bias", 0.0) if fitted else None,
             "fitted_margin_total_correlation": fitted.get("margin_total_corr", 0.0) if fitted else None,
+            "probability_temperature": temperature,
         },
         "data_quality": {
             "spread_books": spread_books,
