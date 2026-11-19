@@ -262,3 +262,35 @@ def test_simulation_rejects_non_integer_seed():
         assert "seed must be an integer" in str(exc)
     else:
         raise AssertionError("Expected invalid simulation seed to be rejected")
+
+
+def test_simulation_accepts_only_matching_empirical_league_parameters():
+    event = sample_event()
+    params = {
+        "sport_key": "basketball_nba", "family": "basketball", "sample_size": 250,
+        "margin_sd": 10.0, "total_sd": 15.0, "margin_total_corr": 0.35,
+        "margin_bias": 0.5, "total_bias": -1.0,
+    }
+    result = run_game_simulation(event, seed=7, model_parameters=params)
+    assert result["data_quality"]["model_source"] == "empirical_training_fit"
+    assert result["data_quality"]["training_sample_size"] == 250
+    assert result["margin_market"]["home_margin_sd"] == 10.0
+    params["sport_key"] = "basketball_ncaab"
+    try:
+        run_game_simulation(event, seed=7, model_parameters=params)
+    except ValueError as exc:
+        assert "selected league" in str(exc)
+    else:
+        raise AssertionError("Expected fitted model for another league to be rejected")
+
+
+def test_simulation_rejects_invalid_empirical_parameters():
+    event = sample_event()
+    params = {"sport_key": "basketball_nba", "family": "basketball",
+              "margin_sd": 0.0, "total_sd": 15.0}
+    try:
+        run_game_simulation(event, model_parameters=params)
+    except ValueError as exc:
+        assert "margin_sd" in str(exc)
+    else:
+        raise AssertionError("Expected invalid fitted variance to be rejected")
