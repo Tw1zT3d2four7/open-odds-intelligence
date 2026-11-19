@@ -246,14 +246,27 @@ class OddsDatabase:
             event for event in events
             if isinstance(event, dict) and str(event.get("id") or "").strip()
         ]
+        unique_event_ids = {str(event.get("id") or "").strip() for event in valid_events}
         with self.connect() as db:
             cur = db.execute(
                 "INSERT INTO snapshots(sport,provider,fetched_at,event_count) VALUES(?,?,?,?)",
-                (sport, provider, fetched_at, len(valid_events)))
+                (sport, provider, fetched_at, len(unique_event_ids)))
             snapshot_id = cur.lastrowid
             rows_by_identity = {}
             conflicted_quotes = set()
+            event_metadata_by_id = {}
+            conflicted_events = set()
             for event in valid_events:
+                event_id = str(event.get("id") or "").strip()
+                metadata = (
+                    event.get("sport_title", ""), event.get("commence_time", ""),
+                    event.get("home_team", ""), event.get("away_team", ""),
+                )
+                previous_metadata = event_metadata_by_id.get(event_id)
+                if previous_metadata is not None and previous_metadata != metadata:
+                    conflicted_events.add(event_id)
+                else:
+                    event_metadata_by_id[event_id] = metadata
                 books = event.get("bookmakers")
                 if not isinstance(books, list):
                     continue
@@ -329,7 +342,10 @@ class OddsDatabase:
                                 # consensus, arbitrage, or simulator readiness.
                                 rows_by_identity.pop(identity, None)
                                 conflicted_quotes.add(identity)
-            rows = list(rows_by_identity.values())
+            rows = [
+                row for row in rows_by_identity.values()
+                if row[1] not in conflicted_events
+            ]
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
                 home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,point,price,
                 source_updated_at)
