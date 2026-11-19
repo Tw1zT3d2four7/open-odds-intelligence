@@ -242,6 +242,36 @@ def _poisson(rng, mean):
     return count - 1
 
 
+def _negative_binomial(rng, mean, alpha):
+    """Gamma-Poisson mixture; alpha=0 reduces exactly to Poisson."""
+    if alpha <= 1e-12:
+        return _poisson(rng, mean)
+    shape = 1.0 / alpha
+    latent_mean = rng.gammavariate(shape, mean / shape)
+    return _poisson(rng, latent_mean)
+
+
+def _validated_model_parameters(parameters, family):
+    if parameters is None:
+        return None
+    if not isinstance(parameters, dict) or parameters.get("family") != family:
+        raise ValueError("Fitted model parameters do not match the selected sport family.")
+    result = dict(parameters)
+    bounds = {"margin_sd": (0.1, 50.0), "total_sd": (0.1, 60.0),
+              "margin_total_corr": (-0.95, 0.95), "home_alpha": (0.0, 2.0),
+              "away_alpha": (0.0, 2.0)}
+    for key, (low, high) in bounds.items():
+        if key not in result:
+            continue
+        try:
+            value = float(result[key])
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid fitted model parameter: {key}.") from None
+        if not math.isfinite(value) or not low <= value <= high:
+            raise ValueError(f"Invalid fitted model parameter: {key}.")
+        result[key] = value
+    return result
+
 def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
@@ -264,11 +294,19 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         if prior["distribution"] == "poisson":
             home_mean = max(0.05, (expected_total + expected_margin) / 2)
             away_mean = max(0.05, (expected_total - expected_margin) / 2)
-            home_score = _poisson(rng, home_mean)
-            away_score = _poisson(rng, away_mean)
+            home_alpha = fitted.get("home_alpha", 0.0) if fitted else 0.0
+            away_alpha = fitted.get("away_alpha", 0.0) if fitted else 0.0
+            home_score = _negative_binomial(rng, home_mean, home_alpha)
+            away_score = _negative_binomial(rng, away_mean, away_alpha)
         else:
-            margin = rng.gauss(expected_margin, prior["margin_sd"])
-            total = max(0.0, rng.gauss(expected_total, prior["total_sd"]))
+            z_margin = rng.gauss(0.0, 1.0)
+            z_independent = rng.gauss(0.0, 1.0)
+            correlation = fitted.get("margin_total_corr", 0.0) if fitted else 0.0
+            margin = expected_margin + z_margin * prior["margin_sd"]
+            total = expected_total + prior["total_sd"] * (
+                correlation * z_margin + math.sqrt(1.0 - correlation ** 2) * z_independent
+            )
+            total = max(0.0, total)
             home_score = max(0, round((total + margin) / 2))
             away_score = max(0, round((total - margin) / 2))
         margin = home_score - away_score
