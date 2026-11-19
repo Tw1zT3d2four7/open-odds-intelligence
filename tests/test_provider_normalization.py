@@ -52,6 +52,64 @@ def test_provider_preserves_key_and_captures_quota_headers(monkeypatch):
     }
 
 
+
+
+def test_odds_api_skips_malformed_nested_bookmaker_market_and_outcome_records(monkeypatch):
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps([{
+                "id": "event-malformed-nested",
+                "sport_key": "americanfootball_nfl",
+                "home_team": "Home",
+                "away_team": "Away",
+                "bookmakers": [
+                    None,
+                    {"key": "bad-markets", "markets": None},
+                    {"key": "good-book", "title": "Good Book", "markets": [
+                        None,
+                        {"key": "bad-outcomes", "outcomes": None},
+                        {"key": "h2h", "outcomes": [
+                            None,
+                            "not-an-outcome",
+                            {"name": "Home", "price": -110},
+                            {"name": "Invalid", "price": True},
+                        ]},
+                    ]},
+                ],
+            }]).encode()
+
+    monkeypatch.setattr(the_odds_api, "urlopen", lambda request, timeout: FakeResponse())
+    events = TheOddsAPIProvider("CaseSensitiveKey").fetch_odds("americanfootball_nfl")
+
+    assert len(events) == 1
+    assert events[0]["id"] == "event-malformed-nested"
+    assert len(events[0]["bookmakers"]) == 1
+    assert events[0]["bookmakers"][0]["key"] == "good-book"
+    assert len(events[0]["bookmakers"][0]["markets"]) == 1
+    assert events[0]["bookmakers"][0]["markets"][0]["key"] == "h2h"
+    assert events[0]["bookmakers"][0]["markets"][0]["outcomes"] == [
+        {"name": "Home", "description": "", "price": -110,
+         "point": None, "updated_at": None}
+    ]
+
+
+@pytest.mark.parametrize("bookmakers", [None, {}, "malformed"])
+def test_odds_api_treats_non_list_bookmaker_collection_as_empty(monkeypatch, bookmakers):
+    class FakeResponse:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps([{"id": "event-empty-books", "bookmakers": bookmakers}]).encode()
+
+    monkeypatch.setattr(the_odds_api, "urlopen", lambda request, timeout: FakeResponse())
+    events = TheOddsAPIProvider("CaseSensitiveKey").fetch_odds("americanfootball_nfl")
+    assert len(events) == 1
+    assert events[0]["bookmakers"] == []
+
 def test_provider_uses_explicit_bookmakers_instead_of_regions(monkeypatch):
     from urllib.parse import parse_qs, urlparse
 

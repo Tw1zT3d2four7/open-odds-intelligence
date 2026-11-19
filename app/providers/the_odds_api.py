@@ -194,18 +194,29 @@ class TheOddsAPIProvider(OddsProvider):
             if not isinstance(raw, dict):
                 continue
             books = []
-            for b in raw.get("bookmakers", []):
+            raw_books = raw.get("bookmakers")
+            if not isinstance(raw_books, list):
+                raw_books = []
+            for b in raw_books:
+                if not isinstance(b, dict):
+                    continue
+                raw_markets = b.get("markets")
+                if not isinstance(raw_markets, list):
+                    continue
                 markets = []
-                for m in b.get("markets", []):
+                for m in raw_markets:
+                    if not isinstance(m, dict):
+                        continue
+                    raw_outcomes = m.get("outcomes")
+                    if not isinstance(raw_outcomes, list):
+                        continue
                     outcomes = []
-                    for raw_outcome in m.get("outcomes", []):
+                    for raw_outcome in raw_outcomes:
                         if not isinstance(raw_outcome, dict) or not raw_outcome.get("name"):
                             continue
                         try:
                             price = self._normalize_price(raw_outcome["price"])
-                        except (KeyError, TypeError, ValueError):
-                            continue
-                        if price == 0:
+                        except (KeyError, TypeError, ValueError, OverflowError):
                             continue
                         outcomes.append({
                             "name": raw_outcome.get("name", ""),
