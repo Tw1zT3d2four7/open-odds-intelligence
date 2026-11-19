@@ -27,6 +27,10 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 
 The EV calculation uses the median of other sportsbooks' no-vig probabilities for the same event, market, outcome and line. The default requires at least two other books (three books total). Results are estimates, not guarantees. Arbitrage candidates are mathematical price discrepancies only; verify both prices, limits, settlement rules and availability before acting.
 
+## Access control and deployment security
+
+The dashboard and API support optional HTTP Basic authentication. Set both `AUTH_USERNAME` and `AUTH_PASSWORD` in the private server-side `.env` file to protect the dashboard and all API routes. Leave both blank only for a trusted private development network. If exactly one is configured, protected requests fail closed with HTTP 503 rather than silently running without authentication. The `/api/health` endpoint remains unauthenticated for Docker health checks and should not be exposed publicly without a reverse proxy/network policy. Basic authentication must be used over HTTPS when traffic crosses an untrusted network; place the application behind a TLS-terminating reverse proxy before enabling remote access. Do not put credentials in the repository, screenshots, issue reports, or chat.
+
 ## Not implemented yet
 
 This is an active development build, not a feature-complete OddsLogic replacement. Additional provider integrations, authentication and full historical strategy backtesting remain future work. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. The backtesting implementation plan is documented in [docs/BACKTESTING_DESIGN.md](docs/BACKTESTING_DESIGN.md); it requires prospective quote history and trustworthy settlement data, and will not fabricate missing results. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
