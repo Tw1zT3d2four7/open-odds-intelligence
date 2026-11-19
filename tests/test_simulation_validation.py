@@ -68,10 +68,10 @@ def test_prediction_scoring_rejects_probability_sum_and_event_mismatch():
 
 def test_evaluation_reports_sample_sizes_metrics_and_calibration():
     rows = [
-        {"sport": "nba", "actual_result": "home", "predicted_home_probability": .8,
+        {"sport": "nba", "actual_result": "home", "predicted_home_probability": .8, "predicted_away_probability": .15, "predicted_tie_probability": .05,
          "brier_score": .08, "log_loss": .223, "home_score_error": 2,
          "away_score_error": 1, "total_score_error": 3, "margin_error": 1},
-        {"sport": "nba", "actual_result": "away", "predicted_home_probability": .2,
+        {"sport": "nba", "actual_result": "away", "predicted_home_probability": .2, "predicted_away_probability": .75, "predicted_tie_probability": .05,
          "brier_score": .08, "log_loss": .223, "home_score_error": 1,
          "away_score_error": 2, "total_score_error": 3, "margin_error": 1},
     ]
