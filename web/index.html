@@ -100,7 +100,11 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
    <div class="card"><small>OVER PROBABILITY</small><div class="value" id="simOver">—</div><small id="simTotalLine"></small></div>
    <div class="card"><small>UNDER PROBABILITY</small><div class="value" id="simUnder">—</div><small id="simTotalPush">Push —</small></div>
    <div class="card"><small>MARKET-IMPLIED HOME MARGIN</small><div class="value" id="simMargin">—</div></div>
-   <div class="card"><small>SIMULATION METHOD</small><div class="value" id="simDistribution">—</div><small>Market-informed scoring distribution</small></div>
+   <div class="card"><small>SIMULATION METHOD</small><div class="value" id="simDistribution">—</div><small id="simDistributionDetail">Market-informed scoring distribution</small></div>
+  </div>
+  <div class="cards">
+   <div class="card"><small>SCORING MODEL</small><div class="value" id="simModelSource">—</div><small id="simModelTraining">—</small></div>
+   <div class="card"><small>GAME RESOLUTION</small><div class="value" id="simResolution">—</div><small id="simRegulationTies">—</small></div>
   </div>
   <p class="muted" id="simMethodology"></p>
  </div>
@@ -326,6 +330,14 @@ async function runSelectedSimulation(){
   $("simTotalLine").textContent="Consensus total "+data.total_market.consensus_line;$("simTotalPush").textContent="Push "+data.total_market.push.toFixed(2)+"%";
   $("simMargin").textContent=(data.margin_market.consensus_home_margin>0?"+":"")+data.margin_market.consensus_home_margin.toFixed(1);
   $("simDistribution").textContent=data.data_quality.distribution.toUpperCase();
+  const empiricallyFitted=data.data_quality.model_source==="empirical_training_fit";
+  $("simModelSource").textContent=empiricallyFitted?"EMPIRICAL LEAGUE FIT":"BROAD LEAGUE PRIOR";
+  const trainingCount=Number(data.data_quality.training_sample_size||0);
+  const temperature=data.margin_market.probability_temperature;
+  $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+(temperature!==null&&temperature!==undefined?" · probability calibrated":"");
+  $("simDistributionDetail").textContent=empiricallyFitted?"Fitted scoring residual distribution":"Broad family-level scoring assumptions";
+  $("simResolution").textContent=Number(data.game_resolution.overtime_or_extra_innings||0).toLocaleString()+" OT / extras";
+  $("simRegulationTies").textContent=Number(data.game_resolution.regulation_ties||0).toLocaleString()+" regulation ties";
   $("simMethodology").textContent=data.methodology;$("simResults").classList.remove("hidden");
   $("simStatus").textContent="Completed exactly 10,000 trials for "+data.matchup+".";
  }catch(e){$("simStatus").textContent="Simulation unavailable: "+e.message;$("simResults").classList.add("hidden")}
