@@ -48,10 +48,12 @@ def test_prediction_scoring_handles_home_away_and_tie():
     assert result["actual_result"] == "home"
     assert result["brier_score"] == pytest.approx((.6-1)**2 + .35**2 + .05**2)
     assert result["total_score_error"] == 2
+    assert result["actual_total_result"] == "under"
     tie = score_prediction(prediction, {
         "event_id": "g1", "sport_key": "basketball_nba", "home_score": 100, "away_score": 100,
     })
     assert tie["actual_result"] == "tie"
+    assert tie["actual_total_result"] == "push"
 
 
 def test_prediction_scoring_rejects_probability_sum_and_event_mismatch():
