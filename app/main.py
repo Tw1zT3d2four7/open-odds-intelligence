@@ -144,12 +144,13 @@ def _simulation_games_for_sport(sport: str):
     for event in service.events(sport):
         if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
             continue
+        from .simulation import market_readiness
+        readiness = market_readiness(event)
         games.append({
             "event_id": event["id"],
             "matchup": f'{event["away_team"]} @ {event["home_team"]}',
             "commence_time": event.get("commence_time"),
-            "has_spread": any(m.get("key") == "spreads" for b in event.get("bookmakers", []) for m in b.get("markets", [])),
-            "has_total": any(m.get("key") == "totals" for b in event.get("bookmakers", []) for m in b.get("markets", [])),
+            **readiness,
         })
     games.sort(key=lambda item: item.get("commence_time") or "")
     return games
