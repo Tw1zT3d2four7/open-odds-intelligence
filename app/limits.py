@@ -321,14 +321,31 @@ class MarketLimitsMonitor:
                 events = client.fetch(sport)
                 diagnostic["events_returned"] += len(events)
                 for event in events:
-                    for book in event.get("bookmakers", []) or []:
+                    if not isinstance(event, dict):
+                        continue
+                    books = event.get("bookmakers")
+                    if not isinstance(books, list):
+                        continue
+                    for book in books:
+                        if not isinstance(book, dict):
+                            continue
                         key = str(book.get("key", "unknown"))
                         if key not in diagnostic["bookmakers_returned"]:
                             diagnostic["bookmakers_returned"].append(key)
-                        for market in book.get("markets", []) or []:
-                            for outcome in market.get("outcomes", []) or []:
-                                size = outcome.get("size") or {}
-                                kind = str(size.get("kind", "no_size"))
+                        markets = book.get("markets")
+                        if not isinstance(markets, list):
+                            continue
+                        for market in markets:
+                            if not isinstance(market, dict):
+                                continue
+                            outcomes = market.get("outcomes")
+                            if not isinstance(outcomes, list):
+                                continue
+                            for outcome in outcomes:
+                                if not isinstance(outcome, dict):
+                                    continue
+                                size = outcome.get("size")
+                                kind = str(size.get("kind", "no_size")) if isinstance(size, dict) else "no_size"
                                 diagnostic["size_kinds_returned"][kind] = diagnostic["size_kinds_returned"].get(kind, 0) + 1
                                 if kind == "posted_limit":
                                     diagnostic["posted_limit_outcomes"] += 1
