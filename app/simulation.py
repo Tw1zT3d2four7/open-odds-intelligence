@@ -111,7 +111,8 @@ def _spread_quote(event, book):
                 continue
             side = _team_side(outcome.get("name"), home, away)
             point = _finite_point(outcome.get("point"))
-            if side and point is not None and _valid_price(outcome.get("price")):
+            price = outcome.get("price")
+            if side and point is not None and (price is None or _valid_price(price)):
                 sides[side].append(point)
         if len(sides["home"]) != 1 or len(sides["away"]) != 1:
             continue
@@ -136,7 +137,8 @@ def _total_quote(book):
                 continue
             side = str(outcome.get("name") or "").strip().lower()
             point = _finite_point(outcome.get("point"))
-            if side in sides and point is not None and point > 0 and _valid_price(outcome.get("price")):
+            price = outcome.get("price")
+            if side in sides and point is not None and point > 0 and (price is None or _valid_price(price)):
                 sides[side].append(point)
         if len(sides["over"]) != 1 or len(sides["under"]) != 1:
             continue
