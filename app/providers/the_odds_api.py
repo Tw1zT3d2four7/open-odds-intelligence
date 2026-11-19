@@ -181,7 +181,7 @@ class TheOddsAPIProvider(OddsProvider):
                 retry_after=(exc.headers or {}).get("Retry-After"),
                 retryable=exc.code in (408, 425, 429, 500, 502, 503, 504),
             ) from exc
-        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except (URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ProviderError(
                 f"Odds provider request failed: {exc}", retryable=True
             ) from exc
