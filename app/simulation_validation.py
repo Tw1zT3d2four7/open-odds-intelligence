@@ -222,7 +222,7 @@ def _load_latest_pregame_event(database, settlement):
     return event, None
 
 
-def run_historical_backtest(database, settlements: list[dict], seed_salt: str = "ooi-sim-v1") -> dict:
+def run_historical_backtest(database, settlements: list[dict], seed_salt: str = "ooi-sim-v1", model_parameters: dict | None = None) -> dict:
     """Replay the latest real pregame snapshot per settled event; never fetch odds."""
     import hashlib
     from .simulation import run_game_simulation
@@ -236,7 +236,7 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
         seed_material = f"{seed_salt}:{settlement['event_id']}".encode("utf-8")
         seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:4], "big")
         try:
-            prediction = run_game_simulation(event, seed=seed)
+            prediction = run_game_simulation(event, seed=seed, model_parameters=(model_parameters or {}).get(event["sport_key"]))
             scored.append(score_prediction(prediction, settlement))
         except (ValueError, TypeError, KeyError) as exc:
             skipped.append({"event_id": settlement.get("event_id"), "reason": str(exc)})
