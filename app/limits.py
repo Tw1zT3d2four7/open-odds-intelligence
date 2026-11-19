@@ -238,7 +238,15 @@ class MarketLimitsMonitor:
         client = OddsLinkClient(config.ODDSLINK_API_KEY)
         all_rows, errors = [], []
         diagnostic = {"sports_requested": [], "events_returned": 0, "bookmakers_returned": [], "size_kinds_returned": {}, "posted_limit_outcomes": 0}
-        sports = config.LIMITS_SPORTS or config.ODDS_SPORTS
+        # Preserve the five-league free-tier default: expanding odds coverage
+        # must not silently push the 1,000-request OddsLink plan over quota.
+        default_limit_sports = (
+            "americanfootball_nfl", "basketball_nba", "icehockey_nhl",
+            "baseball_mlb", "soccer_epl",
+        )
+        sports = config.LIMITS_SPORTS or [
+            sport for sport in default_limit_sports if sport in config.ODDS_SPORTS
+        ]
         for configured_sport in sports:
             sport = SPORT_MAP.get(configured_sport)
             if not sport:
