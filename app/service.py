@@ -204,7 +204,12 @@ class OddsService:
                     requested = max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
                 except (TypeError, ValueError, OverflowError):
                     requested = base
-            return min(max(0.0, requested), config.PROVIDER_RETRY_MAX_DELAY_SECONDS)
+            # Never retry earlier than the provider requested. If its delay
+            # exceeds our bounded in-refresh wait budget, defer to a later
+            # operator/scheduler refresh instead of violating Retry-After.
+            if requested > config.PROVIDER_RETRY_MAX_DELAY_SECONDS:
+                return None
+            return max(0.0, requested)
         return base
 
     def _fetch_odds_with_retry(self, provider, sport):
@@ -219,7 +224,10 @@ class OddsService:
                 if (attempt >= attempts or not getattr(exc, "retryable", False)
                         or getattr(exc, "status_code", None) == 429):
                     raise
-                time.sleep(self._retry_delay(exc, attempt))
+                delay = self._retry_delay(exc, attempt)
+                if delay is None:
+                    raise
+                time.sleep(delay)
 
     def _refresh_locked(self, sport=None):
         if not self.configured:
