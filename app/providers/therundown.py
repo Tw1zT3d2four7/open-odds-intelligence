@@ -30,6 +30,8 @@ class TheRundownProvider:
         "soccer_usa_mls": (10, "MLS"),
         "soccer_epl": (11, "EPL"),
         "americanfootball_ncaaf": (1, "NCAAF"),
+        "tennis_atp": (38, "ATP Tennis"),
+        "tennis_wta": (39, "WTA Tennis"),
     }
     # Season variants have distinct sport IDs in TheRundown's schedule
     # namespace. Query them together so postseason and preseason slates do
@@ -189,6 +191,21 @@ class TheRundownProvider:
                     home = name
                 elif home_flag is False or away_flag is True or side in ("away", "a"):
                     away = name
+        # Tennis events may expose competitors only as moneyline participants,
+        # not as home/away teams. Preserve the provider's participant order as
+        # a stable neutral A/B matchup identity for the shared event schema.
+        if sport in ("tennis_atp", "tennis_wta") and (not home or not away):
+            for raw_market in raw.get("markets") or []:
+                if not isinstance(raw_market, dict) or raw_market.get("market_id") != 1:
+                    continue
+                participants = [
+                    item.get("name", "").strip()
+                    for item in raw_market.get("participants") or []
+                    if isinstance(item, dict) and item.get("name")
+                ]
+                if len(participants) >= 2:
+                    home, away = participants[0], participants[1]
+                break
         books = {}
         for market in raw.get("markets") or []:
             if not isinstance(market, dict):
