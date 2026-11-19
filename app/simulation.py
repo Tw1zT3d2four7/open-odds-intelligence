@@ -3,6 +3,7 @@ import random
 from statistics import median
 
 TRIALS = 10_000
+POINT_TOLERANCE = 0.01
 
 # Score and margin volatility are broad league-level priors. The current
 # sportsbook consensus supplies the game-specific expected margin and total.
@@ -29,8 +30,8 @@ def _family(sport_key):
 
 def _decimal(price):
     price = float(price)
-    if price == 0:
-        raise ValueError("Invalid zero odds")
+    if not math.isfinite(price) or -100 < price < 100:
+        raise ValueError("Invalid American odds; expected +100 or greater, or -100 or lower")
     return 1 + (price / 100 if price > 0 else 100 / abs(price))
 
 
@@ -59,84 +60,176 @@ def _team_side(value, home, away):
     return matches[0] if len(matches) == 1 else None
 
 
-def _market_inputs(event):
-    home, away = _team_identity(event.get("home_team")), _team_identity(event.get("away_team"))
+def _finite_point(value):
+    try:
+        point = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return point if math.isfinite(point) else None
+
+
+def _valid_price(value):
+    try:
+        _decimal(value)
+        return True
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _book_key(book, index):
+    if not isinstance(book, dict):
+        return f"invalid-book-{index}"
+    return str(book.get("key") or book.get("title") or f"book-{index}").strip().lower()
+
+
+def _market_candidates(book, market_key):
+    markets = book.get("markets", []) if isinstance(book, dict) else []
+    if not isinstance(markets, list):
+        return []
+    return [
+        market for market in markets
+        if isinstance(market, dict)
+        and str(market.get("key") or "").strip().lower() == market_key
+    ]
+
+
+def _spread_quote(event, book):
+    home = _team_identity(event.get("home_team"))
+    away = _team_identity(event.get("away_team"))
+    if not home or not away or home == away:
+        return None, "event home/away team identity is missing or ambiguous"
+    candidates = _market_candidates(book, "spreads")
+    if not candidates:
+        return None, "spread market is missing"
+    for market in candidates:
+        outcomes = market.get("outcomes", [])
+        if not isinstance(outcomes, list):
+            continue
+        sides = {"home": [], "away": []}
+        for outcome in outcomes:
+            if not isinstance(outcome, dict):
+                continue
+            side = _team_side(outcome.get("name"), home, away)
+            point = _finite_point(outcome.get("point"))
+            price = outcome.get("price")
+            if side and point is not None and (price is None or _valid_price(price)):
+                sides[side].append(point)
+        if len(sides["home"]) != 1 or len(sides["away"]) != 1:
+            continue
+        home_point, away_point = sides["home"][0], sides["away"][0]
+        if abs(home_point + away_point) > POINT_TOLERANCE:
+            continue
+        return -home_point, None
+    return None, "spread must contain one complete, valid, complementary home and away quote"
+
+
+def _total_quote(book):
+    candidates = _market_candidates(book, "totals")
+    if not candidates:
+        return None, "total market is missing"
+    for market in candidates:
+        outcomes = market.get("outcomes", [])
+        if not isinstance(outcomes, list):
+            continue
+        sides = {"over": [], "under": []}
+        for outcome in outcomes:
+            if not isinstance(outcome, dict):
+                continue
+            side = str(outcome.get("name") or "").strip().lower()
+            point = _finite_point(outcome.get("point"))
+            price = outcome.get("price")
+            if side in sides and point is not None and point > 0 and (price is None or _valid_price(price)):
+                sides[side].append(point)
+        if len(sides["over"]) != 1 or len(sides["under"]) != 1:
+            continue
+        over_point, under_point = sides["over"][0], sides["under"][0]
+        if abs(over_point - under_point) > POINT_TOLERANCE:
+            continue
+        return median((over_point, under_point)), None
+    return None, "total must contain one valid, matching Over and Under quote"
+
+
+def _collect_market_inputs(event):
     spread_margins, totals = [], []
-    for book in event.get("bookmakers", []):
-        markets = {str(m.get("key") or "").strip().lower(): m for m in book.get("markets", [])}
-        spread = markets.get("spreads")
-        if spread:
-            for outcome in spread.get("outcomes", []):
-                side = _team_side(outcome.get("name"), home, away)
-                point = outcome.get("point")
-                if point is None or side is None:
-                    continue
-                try:
-                    value = float(point)
-                except (TypeError, ValueError, OverflowError):
-                    continue
-                if side == "home":
-                    spread_margins.append(-value)
-                    break
-                if side == "away":
-                    spread_margins.append(value)
-                    break
-        total = markets.get("totals")
-        if total:
-            points = []
-            for outcome in total.get("outcomes", []):
-                side = str(outcome.get("name") or "").strip().lower()
-                if outcome.get("point") is None or side not in ("over", "under"):
-                    continue
-                try:
-                    points.append(float(outcome["point"]))
-                except (TypeError, ValueError, OverflowError):
-                    continue
-            if points:
-                totals.append(median(points))
+    spread_books, total_books = [], []
+    diagnostics = []
+    bookmakers = event.get("bookmakers", [])
+    if not isinstance(bookmakers, list):
+        bookmakers = []
+
+    seen_books = set()
+    for index, book in enumerate(bookmakers):
+        if not isinstance(book, dict):
+            diagnostics.append({"bookmaker": f"invalid-book-{index}", "spread": "invalid bookmaker record", "total": "invalid bookmaker record"})
+            continue
+        identity = _book_key(book, index)
+        if identity in seen_books:
+            diagnostics.append({"bookmaker": identity, "spread": "duplicate bookmaker ignored", "total": "duplicate bookmaker ignored"})
+            continue
+        seen_books.add(identity)
+
+        spread, spread_error = _spread_quote(event, book)
+        total, total_error = _total_quote(book)
+        if spread_error is None:
+            spread_margins.append(spread)
+            spread_books.append(identity)
+        if total_error is None:
+            totals.append(total)
+            total_books.append(identity)
+        if spread_error or total_error:
+            diagnostics.append({
+                "bookmaker": identity,
+                "spread": spread_error,
+                "total": total_error,
+            })
+
+    return {
+        "spread_margins": spread_margins,
+        "totals": totals,
+        "spread_books": spread_books,
+        "total_books": total_books,
+        "diagnostics": diagnostics,
+    }
+
+
+def _market_inputs(event):
+    inputs = _collect_market_inputs(event)
+    spread_margins = inputs["spread_margins"]
+    totals = inputs["totals"]
     missing = []
     if not spread_margins:
-        missing.append("a spread line matching the event's home/away teams")
+        missing.append("a complete, valid spread with matching home and away outcomes")
     if not totals:
-        missing.append("a usable over/under total line")
+        missing.append("a complete, valid total with matching Over and Under outcomes")
     if missing:
-        raise ValueError("The simulator requires usable spread and total lines. The stored odds " +
-                         "could not provide " + " and ".join(missing) +
-                         ". Check provider outcome/team-name mapping.")
+        raise ValueError(
+            "The simulator requires usable spread and total lines. The stored odds "
+            "could not provide " + " and ".join(missing) +
+            ". Check the market diagnostics and provider outcome/team-name mapping."
+        )
     return median(spread_margins), median(totals), len(spread_margins), len(totals)
 
 
 def market_readiness(event):
-    """Report whether stored quotes contain usable spread and total lines."""
-    home = _team_identity(event.get("home_team"))
-    away = _team_identity(event.get("away_team"))
-    has_spread = False
-    has_total = False
-    for book in event.get("bookmakers", []):
-        for market in book.get("markets", []):
-            key = str(market.get("key") or "").strip().lower()
-            outcomes = market.get("outcomes", [])
-            if key == "spreads" and any(
-                _team_side(outcome.get("name"), home, away) is not None
-                and outcome.get("point") is not None for outcome in outcomes
-            ):
-                has_spread = True
-            elif key == "totals" and any(
-                str(outcome.get("name") or "").strip().lower() in ("over", "under")
-                and outcome.get("point") is not None for outcome in outcomes
-            ):
-                has_total = True
+    """Report whether stored quotes contain complete, internally consistent markets."""
+    inputs = _collect_market_inputs(event)
+    has_spread = bool(inputs["spread_margins"])
+    has_total = bool(inputs["totals"])
     missing = []
     if not has_spread:
-        missing.append("a spread line matching the event's home/away teams")
+        missing.append("a complete, valid spread with matching home and away outcomes")
     if not has_total:
-        missing.append("a usable over/under total line")
+        missing.append("a complete, valid total with matching Over and Under outcomes")
     return {
         "can_simulate": has_spread and has_total,
         "has_spread": has_spread,
         "has_total": has_total,
+        "spread_books": len(inputs["spread_books"]),
+        "total_books": len(inputs["total_books"]),
         "reason": None if not missing else "Missing " + " and ".join(missing) + ".",
+        "market_diagnostics": inputs["diagnostics"],
     }
+
 
 def _poisson(rng, mean):
     if mean <= 0:
@@ -152,6 +245,8 @@ def _poisson(rng, mean):
 def run_game_simulation(event, trials=TRIALS):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
+    if not isinstance(event, dict):
+        raise ValueError("A valid stored game event is required.")
     family = _family(event.get("sport_key") or event.get("sport"))
     if family is None:
         raise ValueError("This league is not yet supported by the game simulator.")
@@ -159,7 +254,7 @@ def run_game_simulation(event, trials=TRIALS):
     prior = LEAGUE_PRIORS[family]
     rng = random.Random()
     home_wins = away_wins = ties = over = under = pushes = 0
-    home_scores, away_scores, margins, totals = [], [], [], []
+    home_scores, away_scores = [], []
     for _ in range(TRIALS):
         if prior["distribution"] == "poisson":
             home_mean = max(0.05, (expected_total + expected_margin) / 2)
@@ -175,8 +270,6 @@ def run_game_simulation(event, trials=TRIALS):
         total = home_score + away_score
         home_scores.append(home_score)
         away_scores.append(away_score)
-        margins.append(margin)
-        totals.append(total)
         if margin > 0:
             home_wins += 1
         elif margin < 0:
@@ -218,12 +311,15 @@ def run_game_simulation(event, trials=TRIALS):
             "spread_books": spread_books,
             "total_books": total_books,
             "distribution": prior["distribution"],
+            "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
         "methodology": (
-            "Market-informed simulation: median current sportsbook spread and total "
-            "set this game's expected margin and scoring level; league-level scoring "
-            "volatility priors generate the 10,000 outcomes. This is not a copy of "
-            "any sportsbook's proprietary model and does not currently ingest team "
-            "efficiency, injuries, lineups, weather or player-level projections."
+            "Market-informed simulation: median complete, internally consistent "
+            "sportsbook spread pairs and Over/Under total pairs set this game's "
+            "expected margin and scoring level; league-level scoring volatility "
+            "priors generate the 10,000 outcomes. This is not a copy of any "
+            "sportsbook's proprietary model and does not currently ingest team "
+            "efficiency, injuries, lineups, weather or player-level projections. "
+            "The result is a market-based scenario model, not a validated forecast."
         ),
     }
