@@ -388,9 +388,19 @@ class MarketLimitsMonitor:
             state = db.execute(
                 "SELECT state_value FROM market_limit_state WHERE state_key='last_attempt'"
             ).fetchone()
+            last_key_state = db.execute(
+                "SELECT state_value FROM market_limit_state WHERE state_key='last_key_fingerprint'"
+            ).fetchone()
         last_attempt = state["state_value"] if state else None
+        current_key_fingerprint = (
+            hashlib.sha256(config.ODDSLINK_API_KEY.encode("utf-8")).hexdigest()
+            if config.ODDSLINK_API_KEY else ""
+        )
+        key_changed = bool(
+            last_key_state and last_key_state["state_value"] != current_key_fingerprint
+        )
         next_refresh_seconds = 0
-        if last_attempt:
+        if last_attempt and not key_changed:
             try:
                 attempted = datetime.fromisoformat(last_attempt.replace("Z", "+00:00"))
                 next_refresh_seconds = max(0, int(
