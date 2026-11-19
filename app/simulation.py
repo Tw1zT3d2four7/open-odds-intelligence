@@ -120,7 +120,7 @@ def _spread_quote(event, book):
         if abs(home_point + away_point) > POINT_TOLERANCE:
             continue
         return -home_point, None
-    return None, "spread must contain one valid, complementary home and away quote"
+    return None, "spread must contain one complete, valid, complementary home and away quote"
 
 
 def _total_quote(book):
