@@ -36,3 +36,11 @@ def test_consensus_can_exclude_book_and_uses_median():
     without_a = market_consensus([event], exclude_bookmaker_key="book-a")["game-1"]
     assert all_books["Home"] != pytest.approx(without_a["Home"])
     assert without_a["Home"] > 0.5
+
+
+@pytest.mark.parametrize("price", [True, False, 0, float("inf"), float("-inf"), float("nan"), None, ""])
+def test_american_odds_helpers_reject_boolean_and_non_finite_prices(price):
+    with pytest.raises(ValueError):
+        american_to_decimal(price)
+    with pytest.raises(ValueError):
+        american_implied_probability(price)
