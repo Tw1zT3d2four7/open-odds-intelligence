@@ -181,14 +181,14 @@ def refresh_simulation_games(sport: str):
 
 
 @app.post("/api/simulation/run")
-def simulate_game(sport: str, event_id: str):
+def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
     event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
     try:
-        result = run_game_simulation(event, SIMULATION_TRIALS)
+        result = run_game_simulation(event, SIMULATION_TRIALS, seed=seed)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return result
