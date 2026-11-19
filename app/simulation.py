@@ -60,6 +60,39 @@ def _market_inputs(event):
     return median(spread_margins), median(totals), len(spread_margins), len(totals)
 
 
+
+def market_readiness(event):
+    """Report whether stored quotes contain usable spread and total lines."""
+    home, away = event.get("home_team", ""), event.get("away_team", "")
+    has_spread = False
+    has_total = False
+    for book in event.get("bookmakers", []):
+        for market in book.get("markets", []):
+            key = market.get("key")
+            outcomes = market.get("outcomes", [])
+            if key == "spreads" and any(
+                outcome.get("name") in (home, away) and outcome.get("point") is not None
+                for outcome in outcomes
+            ):
+                has_spread = True
+            elif key == "totals" and any(
+                outcome.get("name", "").lower() in ("over", "under")
+                and outcome.get("point") is not None
+                for outcome in outcomes
+            ):
+                has_total = True
+    missing = []
+    if not has_spread:
+        missing.append("a usable sportsbook spread line")
+    if not has_total:
+        missing.append("a usable sportsbook total line")
+    return {
+        "can_simulate": has_spread and has_total,
+        "has_spread": has_spread,
+        "has_total": has_total,
+        "reason": None if not missing else "Missing " + " and ".join(missing) + ".",
+    }
+
 def _poisson(rng, mean):
     if mean <= 0:
         return 0
