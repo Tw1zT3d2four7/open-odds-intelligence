@@ -78,20 +78,20 @@ def test_market_readiness_rejects_market_names_without_usable_lines():
     assert result["can_simulate"] is False
     assert result["has_spread"] is False
     assert result["has_total"] is False
-    assert "spread line" in result["reason"]
-    assert "total line" in result["reason"]
+    assert "spread" in result["reason"]
+    assert "total" in result["reason"]
 
 
 def test_market_readiness_accepts_usable_spread_and_total_lines():
     from app.simulation import market_readiness
 
     result = market_readiness(sample_event())
-    assert result == {
-        "can_simulate": True,
-        "has_spread": True,
-        "has_total": True,
-        "reason": None,
-    }
+    assert result["can_simulate"] is True
+    assert result["has_spread"] is True
+    assert result["has_total"] is True
+    assert result["spread_books"] == 2
+    assert result["total_books"] == 2
+    assert result["reason"] is None
 
 
 def test_simulation_matches_provider_team_labels_case_and_whitespace_insensitively():
@@ -115,7 +115,7 @@ def test_simulation_reports_spread_team_mapping_separately_from_total():
     try:
         run_game_simulation(event)
     except ValueError as exc:
-        assert "spread line matching" in str(exc)
+        assert "spread" in str(exc)
     else:
         raise AssertionError("Expected unknown spread team labels to be rejected")
 
@@ -157,3 +157,90 @@ def test_simulation_matches_full_ncaab_school_names_to_event_names():
 def test_team_prefix_matching_rejects_ambiguous_shared_abbreviations():
     from app.simulation import _team_side
     assert _team_side("LA", "Los Angeles Clippers", "Los Angeles Lakers") is None
+
+
+def test_spread_requires_both_teams_and_complementary_points():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"][0]["markets"][0]["outcomes"].pop()
+    event["bookmakers"][1]["markets"][0]["outcomes"][1]["point"] = 3.0
+    result = market_readiness(event)
+    assert result["spread_books"] == 0
+    assert result["has_spread"] is False
+
+
+def test_total_requires_matching_over_and_under_points():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"][0]["markets"][1]["outcomes"][1]["point"] = 220.5
+    event["bookmakers"][1]["markets"][1]["outcomes"].pop()
+    result = market_readiness(event)
+    assert result["total_books"] == 0
+    assert result["has_total"] is False
+
+
+def test_non_finite_market_points_are_rejected():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"][0]["markets"][0]["outcomes"][0]["point"] = float("nan")
+    event["bookmakers"][1]["markets"][1]["outcomes"][0]["point"] = float("inf")
+    result = market_readiness(event)
+    assert result["spread_books"] == 1
+    assert result["total_books"] == 1
+
+
+def test_invalid_prices_are_not_used_as_market_inputs():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    for book in event["bookmakers"]:
+        for market in book["markets"]:
+            for outcome in market["outcomes"]:
+                outcome["price"] = 0
+    result = market_readiness(event)
+    assert result["can_simulate"] is False
+
+
+def test_duplicate_bookmaker_records_do_not_inflate_consensus_counts():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"].append(event["bookmakers"][0])
+    result = market_readiness(event)
+    assert result["spread_books"] == 2
+    assert result["total_books"] == 2
+    assert any("duplicate bookmaker" in str(item) for item in result["market_diagnostics"])
+
+
+def test_market_diagnostics_explain_incomplete_book_quotes():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"][0]["markets"][0]["outcomes"] = []
+    result = market_readiness(event)
+    assert result["can_simulate"] is True
+    diagnostic = next(item for item in result["market_diagnostics"] if item["bookmaker"] == "book-a")
+    assert "complete" in diagnostic["spread"]
+
+
+def test_malformed_bookmaker_containers_are_handled_without_crashing():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"] = [None, "bad", {"key": "broken", "markets": None}]
+    result = market_readiness(event)
+    assert result["can_simulate"] is False
+    assert result["spread_books"] == 0
+    assert result["total_books"] == 0
+
+
+def test_simulation_rejects_non_dict_event():
+    try:
+        run_game_simulation(None)
+    except ValueError as exc:
+        assert "valid stored game event" in str(exc)
+    else:
+        raise AssertionError("Expected invalid event to be rejected")
