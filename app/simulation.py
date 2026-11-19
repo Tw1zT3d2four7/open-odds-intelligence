@@ -34,58 +34,82 @@ def _decimal(price):
     return 1 + (price / 100 if price > 0 else 100 / abs(price))
 
 
+def _team_identity(value):
+    """Normalize provider team labels without relying on display-case equality."""
+    return "".join(character.lower() for character in str(value or "") if character.isalnum())
+
+
 def _market_inputs(event):
-    home, away = event.get("home_team", ""), event.get("away_team", "")
+    home, away = _team_identity(event.get("home_team")), _team_identity(event.get("away_team"))
     spread_margins, totals = [], []
     for book in event.get("bookmakers", []):
-        markets = {m.get("key"): m for m in book.get("markets", [])}
+        markets = {str(m.get("key") or "").strip().lower(): m for m in book.get("markets", [])}
         spread = markets.get("spreads")
         if spread:
-            home_lines = [o.get("point") for o in spread.get("outcomes", [])
-                          if o.get("name") == home and o.get("point") is not None]
-            away_lines = [o.get("point") for o in spread.get("outcomes", [])
-                          if o.get("name") == away and o.get("point") is not None]
-            if home_lines:
-                spread_margins.append(-float(home_lines[0]))
-            elif away_lines:
-                spread_margins.append(float(away_lines[0]))
+            for outcome in spread.get("outcomes", []):
+                name = _team_identity(outcome.get("name"))
+                point = outcome.get("point")
+                if point is None or name not in (home, away):
+                    continue
+                try:
+                    value = float(point)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if name == home:
+                    spread_margins.append(-value)
+                    break
+                if name == away:
+                    spread_margins.append(value)
+                    break
         total = markets.get("totals")
         if total:
-            points = [float(o["point"]) for o in total.get("outcomes", [])
-                      if o.get("point") is not None and o.get("name", "").lower() in ("over", "under")]
+            points = []
+            for outcome in total.get("outcomes", []):
+                side = str(outcome.get("name") or "").strip().lower()
+                if outcome.get("point") is None or side not in ("over", "under"):
+                    continue
+                try:
+                    points.append(float(outcome["point"]))
+                except (TypeError, ValueError, OverflowError):
+                    continue
             if points:
                 totals.append(median(points))
-    if not spread_margins or not totals:
-        raise ValueError("This game needs a current sportsbook spread and total consensus before it can be simulated.")
+    missing = []
+    if not spread_margins:
+        missing.append("a spread line matching the event's home/away teams")
+    if not totals:
+        missing.append("a usable over/under total line")
+    if missing:
+        raise ValueError("The stored odds contain markets, but the simulator could not read " +
+                         " and ".join(missing) + ". Check provider outcome/team-name mapping.")
     return median(spread_margins), median(totals), len(spread_margins), len(totals)
-
 
 
 def market_readiness(event):
     """Report whether stored quotes contain usable spread and total lines."""
-    home, away = event.get("home_team", ""), event.get("away_team", "")
+    home = _team_identity(event.get("home_team"))
+    away = _team_identity(event.get("away_team"))
     has_spread = False
     has_total = False
     for book in event.get("bookmakers", []):
         for market in book.get("markets", []):
-            key = market.get("key")
+            key = str(market.get("key") or "").strip().lower()
             outcomes = market.get("outcomes", [])
             if key == "spreads" and any(
-                outcome.get("name") in (home, away) and outcome.get("point") is not None
-                for outcome in outcomes
+                _team_identity(outcome.get("name")) in (home, away)
+                and outcome.get("point") is not None for outcome in outcomes
             ):
                 has_spread = True
             elif key == "totals" and any(
-                outcome.get("name", "").lower() in ("over", "under")
-                and outcome.get("point") is not None
-                for outcome in outcomes
+                str(outcome.get("name") or "").strip().lower() in ("over", "under")
+                and outcome.get("point") is not None for outcome in outcomes
             ):
                 has_total = True
     missing = []
     if not has_spread:
-        missing.append("a usable sportsbook spread line")
+        missing.append("a spread line matching the event's home/away teams")
     if not has_total:
-        missing.append("a usable sportsbook total line")
+        missing.append("a usable over/under total line")
     return {
         "can_simulate": has_spread and has_total,
         "has_spread": has_spread,
