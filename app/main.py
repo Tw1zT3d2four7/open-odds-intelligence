@@ -8,7 +8,7 @@ from . import config
 from .service import service
 from .markets import market_board, analyze_markets
 from .limits import limits_monitor
-from .simulation import run_game_simulation, TRIALS as SIMULATION_TRIALS
+from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,19 @@ async def _limits_refresh_loop():
             logger.exception("Scheduled market-limits refresh failed")
         await asyncio.sleep(delay)
 
+
+
+
+async def _simulation_results_loop():
+    while True:
+        try:
+            await asyncio.to_thread(service.sync_simulation_results)
+        except Exception as exc:
+            service._simulation_results_status.update({
+                "last_error": "Unexpected score synchronization failure: " + str(exc),
+            })
+            logger.exception("Simulator final-score synchronization failed")
+        await asyncio.sleep(config.SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS)
 
 async def _automatic_refresh_loop():
     interval = (
@@ -48,10 +61,13 @@ async def _automatic_refresh_loop():
 async def lifespan(app: FastAPI):
     task = None
     limits_task = None
+    results_task = None
     if config.ODDSLINK_API_KEY:
         limits_task = asyncio.create_task(_limits_refresh_loop())
     if (config.ODDS_PROVIDER == "therundown" or config.ODDS_REFRESH_INTERVAL_SECONDS > 0 or config.DISCORD_WEBHOOK_URL) and service.configured:
         task = asyncio.create_task(_automatic_refresh_loop())
+    if config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY:
+        results_task = asyncio.create_task(_simulation_results_loop())
     try:
         yield
     finally:
@@ -65,6 +81,12 @@ async def lifespan(app: FastAPI):
             task.cancel()
             try:
                 await task
+            except asyncio.CancelledError:
+                pass
+        if results_task is not None:
+            results_task.cancel()
+            try:
+                await results_task
             except asyncio.CancelledError:
                 pass
 
@@ -181,14 +203,16 @@ def refresh_simulation_games(sport: str):
 
 
 @app.post("/api/simulation/run")
-def simulate_game(sport: str, event_id: str):
+def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
     event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
     try:
-        result = run_game_simulation(event, SIMULATION_TRIALS)
+        models = load_fitted_models(config.SIMULATION_MODEL_PATH)
+        result = run_game_simulation(event, SIMULATION_TRIALS, seed=seed,
+                                     model_parameters=models.get(sport))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return result

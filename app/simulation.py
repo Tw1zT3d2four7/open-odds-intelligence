@@ -1,5 +1,7 @@
+import json
 import math
 import random
+from pathlib import Path
 from statistics import median
 
 TRIALS = 10_000
@@ -242,7 +244,111 @@ def _poisson(rng, mean):
     return count - 1
 
 
-def run_game_simulation(event, trials=TRIALS):
+def _negative_binomial(rng, mean, alpha):
+    """Gamma-Poisson mixture; alpha=0 reduces exactly to Poisson."""
+    if alpha <= 1e-12:
+        return _poisson(rng, mean)
+    shape = 1.0 / alpha
+    latent_mean = rng.gammavariate(shape, mean / shape)
+    return _poisson(rng, latent_mean)
+
+
+def _validated_model_parameters(parameters, family, sport_key):
+    if parameters is None:
+        return None
+    if (not isinstance(parameters, dict) or parameters.get("family") != family
+            or parameters.get("sport_key") != sport_key):
+        raise ValueError("Fitted model parameters do not match the selected league.")
+    result = dict(parameters)
+    sample_size = result.get("sample_size", 0)
+    if isinstance(sample_size, bool) or not isinstance(sample_size, int) or sample_size < 0:
+        raise ValueError("Invalid fitted model parameter: sample_size.")
+    bounds = {"margin_sd": (0.1, 50.0), "total_sd": (0.1, 60.0),
+              "margin_total_corr": (-0.95, 0.95), "margin_bias": (-50.0, 50.0),
+              "total_bias": (-100.0, 100.0), "temperature": (0.5, 3.0),
+              "total_temperature": (0.5, 3.0),
+              "home_alpha": (0.0, 2.0),
+              "away_alpha": (0.0, 2.0)}
+    for key, (low, high) in bounds.items():
+        if key not in result:
+            continue
+        try:
+            value = float(result[key])
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid fitted model parameter: {key}.") from None
+        if not math.isfinite(value) or not low <= value <= high:
+            raise ValueError(f"Invalid fitted model parameter: {key}.")
+        result[key] = value
+    return result
+
+
+
+def load_fitted_models(path):
+    """Load operator-generated per-league model JSON; absent file means priors."""
+    if not path or not Path(path).is_file():
+        return {}
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Could not read fitted simulation models: {exc}") from None
+    models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(models, dict):
+        raise ValueError("Fitted simulation model file must contain a models object.")
+    for sport_key, parameters in models.items():
+        family = _family(sport_key)
+        if family is None:
+            raise ValueError(f"Unsupported league in fitted model file: {sport_key}")
+        _validated_model_parameters(parameters, family, sport_key)
+    return models
+
+
+
+def _resolve_tie(rng, sport_key, home_score, away_score):
+    """Apply simplified league-specific overtime/extra-inning resolution."""
+    if home_score != away_score:
+        return home_score, away_score, False
+    key = str(sport_key or "").lower()
+    if "soccer" in key:
+        return home_score, away_score, False
+    if "icehockey_nhl" in key:
+        for _ in range(20):
+            home_ot, away_ot = _poisson(rng, 0.22), _poisson(rng, 0.22)
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 1, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 1, True)
+    if key.startswith("basketball_"):
+        period_mean = 10.5 if key == "basketball_nba" else 7.0 if key == "basketball_ncaab" else 8.0
+        for _ in range(100):
+            home_ot, away_ot = _poisson(rng, period_mean), _poisson(rng, period_mean)
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 2, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 2, True)
+    if "baseball_mlb" in key:
+        for _ in range(100):
+            home_ot, away_ot = _poisson(rng, 0.65), _poisson(rng, 0.65)
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 1, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 1, True)
+    if "americanfootball_ncaaf" in key:
+        outcomes = ((0, 0.12), (3, 0.18), (6, 0.08), (7, 0.52), (8, 0.10))
+        values = [item[0] for item in outcomes]
+        weights = [item[1] for item in outcomes]
+        for _ in range(100):
+            home_ot = rng.choices(values, weights=weights, k=1)[0]
+            away_ot = rng.choices(values, weights=weights, k=1)[0]
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 3, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 3, True)
+    if "americanfootball_nfl" in key:
+        outcomes = ((0, 0.55), (3, 0.25), (7, 0.20))
+        values = [item[0] for item in outcomes]
+        weights = [item[1] for item in outcomes]
+        home_ot = rng.choices(values, weights=weights, k=1)[0]
+        away_ot = rng.choices(values, weights=weights, k=1)[0]
+        return home_score + home_ot, away_score + away_ot, True
+    return home_score, away_score, False
+
+def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
     if not isinstance(event, dict):
@@ -251,21 +357,44 @@ def run_game_simulation(event, trials=TRIALS):
     if family is None:
         raise ValueError("This league is not yet supported by the game simulator.")
     expected_margin, expected_total, spread_books, total_books = _market_inputs(event)
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
+        raise ValueError("Simulation seed must be an integer or None.")
     prior = LEAGUE_PRIORS[family]
-    rng = random.Random()
+    fitted = _validated_model_parameters(model_parameters, family, str(event.get('sport_key') or event.get('sport') or ''))
+    empirical_fit = bool(fitted and int(fitted.get("sample_size", 0)) > 0)
+    if fitted:
+        prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
+    rng = random.Random(seed)
     home_wins = away_wins = ties = over = under = pushes = 0
+    regulation_ties = overtime_games = 0
     home_scores, away_scores = [], []
     for _ in range(TRIALS):
         if prior["distribution"] == "poisson":
-            home_mean = max(0.05, (expected_total + expected_margin) / 2)
-            away_mean = max(0.05, (expected_total - expected_margin) / 2)
-            home_score = _poisson(rng, home_mean)
-            away_score = _poisson(rng, away_mean)
+            total_bias = fitted.get("total_bias", 0.0) if fitted else 0.0
+            margin_bias = fitted.get("margin_bias", 0.0) if fitted else 0.0
+            home_mean = max(0.05, (expected_total + total_bias + expected_margin + margin_bias) / 2)
+            away_mean = max(0.05, (expected_total + total_bias - expected_margin - margin_bias) / 2)
+            home_alpha = fitted.get("home_alpha", 0.0) if fitted else 0.0
+            away_alpha = fitted.get("away_alpha", 0.0) if fitted else 0.0
+            home_score = _negative_binomial(rng, home_mean, home_alpha)
+            away_score = _negative_binomial(rng, away_mean, away_alpha)
         else:
-            margin = rng.gauss(expected_margin, prior["margin_sd"])
-            total = max(0.0, rng.gauss(expected_total, prior["total_sd"]))
+            z_margin = rng.gauss(0.0, 1.0)
+            z_independent = rng.gauss(0.0, 1.0)
+            correlation = fitted.get("margin_total_corr", 0.0) if fitted else 0.0
+            margin = expected_margin + (fitted.get("margin_bias", 0.0) if fitted else 0.0) + z_margin * prior["margin_sd"]
+            total = expected_total + (fitted.get("total_bias", 0.0) if fitted else 0.0) + prior["total_sd"] * (
+                correlation * z_margin + math.sqrt(1.0 - correlation ** 2) * z_independent
+            )
+            total = max(0.0, total)
             home_score = max(0, round((total + margin) / 2))
             away_score = max(0, round((total - margin) / 2))
+        if home_score == away_score:
+            regulation_ties += 1
+            home_score, away_score, went_overtime = _resolve_tie(
+                rng, event.get("sport_key") or event.get("sport"), home_score, away_score
+            )
+            overtime_games += int(went_overtime)
         margin = home_score - away_score
         total = home_score + away_score
         home_scores.append(home_score)
@@ -283,9 +412,30 @@ def run_game_simulation(event, trials=TRIALS):
         else:
             pushes += 1
 
+    raw_probabilities = [home_wins / TRIALS, away_wins / TRIALS, ties / TRIALS]
+    temperature = fitted.get("temperature") if fitted else None
+    if temperature is not None:
+        weights = [max(1e-12, probability) ** (1.0 / temperature)
+                   for probability in raw_probabilities]
+        weight_total = sum(weights)
+        raw_probabilities = [weight / weight_total for weight in weights]
+    home_probability = round(raw_probabilities[0] * 100, 2)
+    away_probability = round(raw_probabilities[1] * 100, 2)
+    tie_probability = round(100.0 - home_probability - away_probability, 2)
+    raw_total_probabilities = [over / TRIALS, under / TRIALS, pushes / TRIALS]
+    total_temperature = fitted.get("total_temperature") if fitted else None
+    if total_temperature is not None:
+        weights = [max(1e-12, probability) ** (1.0 / total_temperature)
+                   for probability in raw_total_probabilities]
+        weight_total = sum(weights)
+        raw_total_probabilities = [weight / weight_total for weight in weights]
+    over_probability = round(raw_total_probabilities[0] * 100, 2)
+    under_probability = round(raw_total_probabilities[1] * 100, 2)
+    total_push_probability = round(100.0 - over_probability - under_probability, 2)
     pct = lambda n: round(n / TRIALS * 100, 2)
     return {
         "trials": TRIALS,
+        "simulation_seed": seed,
         "event_id": event.get("id"),
         "sport": event.get("sport_key"),
         "matchup": f"{event.get('away_team')} @ {event.get('home_team')}",
@@ -297,29 +447,48 @@ def run_game_simulation(event, trials=TRIALS):
             "away": round(sum(away_scores) / TRIALS, 2),
         },
         "win_probabilities": {
-            "home": pct(home_wins), "away": pct(away_wins), "tie": pct(ties),
+            "home": home_probability, "away": away_probability, "tie": tie_probability,
+        },
+        "game_resolution": {
+            "regulation_ties": regulation_ties, "games_with_overtime_or_extra_innings": overtime_games,
+            "rule": "league_specific_approximation",
         },
         "total_market": {
             "consensus_line": round(expected_total, 2),
-            "over": pct(over), "under": pct(under), "push": pct(pushes),
+            "over": over_probability, "under": under_probability, "push": total_push_probability,
+            "probability_temperature": total_temperature,
         },
         "margin_market": {
             "consensus_home_margin": round(expected_margin, 2),
             "home_margin_sd": prior["margin_sd"],
+            "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
+            "training_sample_size": fitted.get("sample_size") if fitted else 0,
+            "fitted_margin_bias": fitted.get("margin_bias") if empirical_fit else None,
+            "fitted_total_bias": fitted.get("total_bias") if empirical_fit else None,
+            "fitted_margin_total_correlation": fitted.get("margin_total_corr") if empirical_fit else None,
+            "probability_temperature": temperature,
         },
         "data_quality": {
             "spread_books": spread_books,
             "total_books": total_books,
             "distribution": prior["distribution"],
+            "model_source": "empirical_training_fit" if fitted else "broad_league_prior",
+            "training_sample_size": fitted.get("sample_size") if fitted else 0,
             "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
         "methodology": (
-            "Market-informed simulation: median complete, internally consistent "
-            "sportsbook spread pairs and Over/Under total pairs set this game's "
-            "expected margin and scoring level; league-level scoring volatility "
-            "priors generate the 10,000 outcomes. This is not a copy of any "
-            "sportsbook's proprietary model and does not currently ingest team "
-            "efficiency, injuries, lineups, weather or player-level projections. "
-            "The result is a market-based scenario model, not a validated forecast."
+            "Empirically fitted per-league market-residual model: stored sportsbook spread "
+            "and total anchor this game; earlier verified training events supply league-specific "
+            "residual bias, variance, correlation and count overdispersion. This is not a copy "
+            "of any sportsbook model and does not ingest team/player efficiency, injuries, "
+            "lineups or weather. It is not validated until evaluated on an adequate untouched "
+            "chronological holdout."
+            if empirical_fit else
+            "Market-informed scenario model with broad league-family priors; outcome "
+            "probabilities have a separately fitted calibration temperature."
+            if temperature is not None else
+            "Market-informed scenario model: median complete sportsbook spread and total "
+            "quotes anchor expected margin and scoring level; broad league-family priors "
+            "generate trial outcomes. It is not a validated forecast."
         ),
     }

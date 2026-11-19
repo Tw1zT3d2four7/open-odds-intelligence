@@ -17,8 +17,16 @@ ODDS_FORMAT = os.getenv("ODDS_FORMAT", "american")
 RUNDOWN_REFRESH_INTERVAL_SECONDS = max(300, int(os.getenv("RUNDOWN_REFRESH_INTERVAL_SECONDS", "14400")))
 RUNDOWN_UTC_OFFSET_MINUTES = int(os.getenv("RUNDOWN_UTC_OFFSET_MINUTES", "0"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/odds_history.sqlite3")
+SIMULATION_MODEL_PATH = os.getenv("SIMULATION_MODEL_PATH", "./data/simulation_models.json")
 # Flag stale odds snapshots without implying a manual-refresh feed is continuously live.
 ODDS_DATA_STALE_AFTER_SECONDS = max(300, int(os.getenv("ODDS_DATA_STALE_AFTER_SECONDS", "21600")))
+# TheRundown score-only sync is separate from odds polling and uses affiliate_ids=0.
+# Enable by default only when TheRundown is the active odds provider; can be disabled explicitly.
+SIMULATION_RESULTS_SYNC_ENABLED = os.getenv("SIMULATION_RESULTS_SYNC_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS = max(3600, int(os.getenv("SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS", "14400")))
+SIMULATION_RESULTS_RETRY_SECONDS = max(3600, int(os.getenv("SIMULATION_RESULTS_RETRY_SECONDS", "14400")))
+SIMULATION_RESULTS_LOOKBACK_DAYS = max(1, min(30, int(os.getenv("SIMULATION_RESULTS_LOOKBACK_DAYS", "7"))))
+SIMULATION_RESULTS_MAX_GROUPS_PER_RUN = max(1, min(50, int(os.getenv("SIMULATION_RESULTS_MAX_GROUPS_PER_RUN", "10"))))
 ODDS_SPORTS = [s.strip() for s in os.getenv(
     "ODDS_SPORTS",
     "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_epl"

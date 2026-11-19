@@ -71,6 +71,15 @@ class OddsDatabase:
                 );
                 CREATE INDEX IF NOT EXISTS idx_clv_pending
                     ON clv_entries(status, commence_time);
+                CREATE TABLE IF NOT EXISTS simulation_settlements (
+                    event_id TEXT PRIMARY KEY, sport_key TEXT NOT NULL,
+                    commence_time TEXT NOT NULL, home_team TEXT NOT NULL, away_team TEXT NOT NULL,
+                    home_score INTEGER NOT NULL, away_score INTEGER NOT NULL,
+                    status TEXT NOT NULL CHECK(status = 'final'), source TEXT NOT NULL,
+                    source_record_id TEXT NOT NULL, source_updated_at TEXT, imported_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_simulation_settlements_sport_time
+                    ON simulation_settlements(sport_key, commence_time);
             """)
             quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
             if "source_updated_at" not in quote_columns:
@@ -100,6 +109,116 @@ class OddsDatabase:
                       AND q.sport <> ''
                   )
             """)
+
+
+
+    @staticmethod
+    def _normalized_result_team(value):
+        return "".join(character.lower() for character in str(value or "") if character.isalnum())
+
+    def save_simulation_settlements(self, results):
+        """Persist only final results that exactly match an archived event identity."""
+        inserted = duplicates = 0
+        rejected = []
+        imported_at = datetime.now(timezone.utc).isoformat()
+        for result in results:
+            event_id = str(result.get("event_id") or "")
+            sport = str(result.get("sport_key") or "")
+            if not event_id or not sport or result.get("status") != "final":
+                rejected.append({"event_id": event_id, "reason": "missing event identity or non-final status"})
+                continue
+            try:
+                home_score, away_score = result["home_score"], result["away_score"]
+                if (isinstance(home_score, bool) or isinstance(away_score, bool)
+                        or not isinstance(home_score, int) or not isinstance(away_score, int)
+                        or home_score < 0 or away_score < 0):
+                    raise ValueError
+                result_time = datetime.fromisoformat(str(result["commence_time"]).replace("Z", "+00:00"))
+                if result_time.tzinfo is None:
+                    raise ValueError
+            except (KeyError, TypeError, ValueError):
+                rejected.append({"event_id": event_id, "reason": "invalid final score or timezone-aware start time"})
+                continue
+            with self.connect() as db:
+                archived = db.execute(
+                    "SELECT q.commence_time,q.home_team,q.away_team FROM quotes q "
+                    "JOIN snapshots s ON s.id=q.snapshot_id WHERE q.event_id=? AND q.sport=? "
+                    "ORDER BY s.id DESC LIMIT 1",
+                    (event_id, sport),
+                ).fetchall()
+                if not archived:
+                    rejected.append({"event_id": event_id, "reason": "event ID is not in the local odds archive"})
+                    continue
+                quote = archived[0]
+                try:
+                    archived_time = datetime.fromisoformat(str(quote["commence_time"]).replace("Z", "+00:00"))
+                    if archived_time.tzinfo is None:
+                        raise ValueError
+                except (TypeError, ValueError):
+                    rejected.append({"event_id": event_id, "reason": "archived event start time is invalid"})
+                    continue
+                if abs((archived_time - result_time).total_seconds()) > 300:
+                    rejected.append({"event_id": event_id, "reason": "result start time does not match archived event"})
+                    continue
+                if (self._normalized_result_team(quote["home_team"]) != self._normalized_result_team(result.get("home_team"))
+                        or self._normalized_result_team(quote["away_team"]) != self._normalized_result_team(result.get("away_team"))):
+                    rejected.append({"event_id": event_id, "reason": "result home/away teams do not match archived event"})
+                    continue
+                cursor = db.execute(
+                    """INSERT OR IGNORE INTO simulation_settlements(
+                       event_id,sport_key,commence_time,home_team,away_team,home_score,away_score,
+                       status,source,source_record_id,source_updated_at,imported_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (event_id, sport, result["commence_time"], result["home_team"], result["away_team"],
+                     home_score, away_score, "final", str(result.get("source") or "unknown"),
+                     str(result.get("source_record_id") or event_id), result.get("source_updated_at"), imported_at),
+                )
+                if cursor.rowcount:
+                    inserted += 1
+                else:
+                    duplicates += 1
+        return {"inserted": inserted, "duplicates": duplicates, "rejected": rejected}
+
+    def simulation_settlements(self, sport=None):
+        sql = "SELECT * FROM simulation_settlements"
+        args = []
+        if sport:
+            sql += " WHERE sport_key=?"
+            args.append(sport)
+        sql += " ORDER BY commence_time,event_id"
+        with self.connect() as db:
+            return [dict(row) for row in db.execute(sql, args).fetchall()]
+
+    def pending_simulation_result_dates(self, sports, lookback_days=7, now=None, offset_minutes=0):
+        """Return sport/date batches containing archived events without final results."""
+        if not sports:
+            return []
+        now = now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        since = now.astimezone(timezone.utc) - timedelta(days=max(1, int(lookback_days)))
+        placeholders = ",".join("?" for _ in sports)
+        sql = (
+            "SELECT DISTINCT q.event_id,q.sport,q.commence_time FROM quotes q "
+            "WHERE q.sport IN (" + placeholders + ") "
+            "AND substr(q.commence_time,1,10)>=? AND substr(q.commence_time,1,10)<=? "
+            "AND NOT EXISTS (SELECT 1 FROM simulation_settlements r WHERE r.event_id=q.event_id)"
+        )
+        with self.connect() as db:
+            rows = db.execute(sql, [*sports, since.date().isoformat(), now.date().isoformat()]).fetchall()
+        grouped = {}
+        for row in rows:
+            try:
+                commence = datetime.fromisoformat(str(row["commence_time"]).replace("Z", "+00:00"))
+                if commence.tzinfo is None or commence.astimezone(timezone.utc) >= now.astimezone(timezone.utc):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            event_date = (commence.astimezone(timezone.utc) + timedelta(minutes=int(offset_minutes))).date().isoformat()
+            key = (row["sport"], event_date)
+            grouped.setdefault(key, set()).add(row["event_id"])
+        return [{"sport": sport, "event_date": event_date, "pending_events": len(event_ids)}
+                for (sport, event_date), event_ids in sorted(grouped.items(), key=lambda item: (item[0][1], item[0][0]))]
 
     def get_state(self, key):
         with self.connect() as db:

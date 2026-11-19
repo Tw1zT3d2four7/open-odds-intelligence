@@ -47,9 +47,11 @@ The calculator can estimate a fair -1 run-line / puck-line price when a sportsbo
 
 The simulator is an on-demand, single-game tool. Select a configured league, choose one game from the latest locally stored odds snapshot, then click Run Simulation. Its league selector follows the same configured league catalog as the rest of the platform; college football and college basketball are included in the default coverage. The backend executes exactly 10,000 trials for that event; it does not loop over the league or request fresh provider data. A game is selectable only when current spread and total markets are available.
 
-The first version is deliberately market-informed: the median available sportsbook spread establishes the expected scoring margin, the median total establishes the expected scoring level, and broad league-level variance priors generate trial outcomes. Basketball and football use normal score/margin distributions; baseball, hockey and soccer use Poisson scoring distributions. The result reports simulated win/draw probabilities, average projected score and over/under probabilities against the consensus total. The simulator uses only the chosen event.
+The simulator remains market-informed: the latest archived sportsbook spread and total anchor expected margin and scoring level. It supports optional empirically fitted league parameters loaded from `SIMULATION_MODEL_PATH`; without a model file it clearly falls back to broad league-family priors. The training workflow estimates league-specific market-residual bias, scoring volatility and correlation for basketball/football, plus Gamma-Poisson overdispersion for low-scoring leagues. Separate later calibration data can fit per-league multiclass temperature scaling for game outcomes (home/away/tie) and totals (over/under/push). Basketball, NHL, MLB and NCAAF ties use sport-specific overtime/extra-inning approximations; soccer draws remain valid and NFL regular-season ties may remain. These resolution rules are explicit approximations, not full period-by-period rule models. An optional integer `seed` makes the 10,000-trial run reproducible.
 
-This is not a reproduction of any sportsbook's proprietary model. Sportsbooks may incorporate proprietary team/player ratings, play-by-play efficiency, pace, injuries, starting lineups, weather, rest/travel, matchup adjustments, correlated scoring models, market-making and risk/liability signals. Those feeds and validated league-specific models are not currently present in this application. The current simulation therefore must be described as a market-calibrated estimate, not a professional-book replica or proven predictive edge. The game list and simulation use saved odds only and consume no additional provider quota.
+A paper-only historical replay workflow reconstructs each forecast from the latest archived quote snapshot strictly before kickoff, matches verified final-score rows, and reports win/tie and totals Brier scores, log loss, class-specific calibration, projected-score MAE, total MAE and margin MAE. It requires separate chronological training, calibration and untouched holdout datasets, rejects event overlap and invalid time ordering, and compares fitted predictions with an unfitted broad-prior baseline on the same holdout events. The report includes paired event-bootstrap 95% uncertainty intervals overall and by league, and only labels a league evaluation-ready when its own holdout reaches the minimum sample threshold. The replay makes no provider requests and does not modify the quote database. See [docs/SIMULATOR_VALIDATION.md](docs/SIMULATOR_VALIDATION.md) for CSV requirements, command, thresholds and interpretation.
+
+**Important validation status:** the implementation and automated tests are in place, but no licensed historical settlement dataset is bundled and no real-world empirical fit or holdout performance is claimed. You must supply verified results that overlap your archived pregame quote history. Until a sufficiently large untouched holdout demonstrates reliable calibration and lower forecast error, treat all outputs as market-informed scenario estimates—not validated independent predictions, betting advice or evidence of a profitable edge. The simulator itself uses saved odds only and consumes no additional provider quota. Separately, an optional TheRundown score-only collector can retrieve final results for events already present in the local archive; it is disabled by default and consumes provider data points when enabled.
 
 ## Optional player props
 
@@ -108,7 +110,7 @@ Available sports are controlled by `ODDS_SPORTS`. Provider coverage, quota, hist
 - `GET /api/odds?sport=...` — latest stored event quotes.
 - `GET /api/simulation/leagues` — configured leagues available to the game simulator.
 - `GET /api/simulation/games?sport=...` — games in one league's latest stored snapshot.
-- `POST /api/simulation/run?sport=...&event_id=...` — run exactly 10,000 trials for the selected game only.
+- `POST /api/simulation/run?sport=...&event_id=...&seed=12345` — run exactly 10,000 trials for the selected game only; optional integer seed reproduces the same trial outcomes.
 - `POST /api/refresh?sport=...` — request a provider refresh.
 - `GET /api/market-board?sport=...` — best price for each exact market / outcome / line.
 - `GET /api/opportunities?sport=...&min_ev=1.0&min_consensus_books=2` — estimated EV opportunities.
@@ -127,16 +129,33 @@ Before enabling public subscriber access, confirm that the selected odds provide
 
 ## Development roadmap
 
-1. ~~Persistent SQLite quote and event storage~~
-2. ~~Exact-line best-price comparison~~
-3. ~~Multi-market EV screening using other-book consensus~~
-4. ~~Two-outcome cross-book arbitrage scanning~~
-5. ~~Consolidated line movement and quote timelines~~
-6. ~~Prospective closing-line value tracking~~; implement audited historical strategy backtesting after sufficient quote archives and trustworthy settlement data are available.
-7. Optional player props are implemented for The Odds API; expand provider coverage and add player-specific CLV only after identity and settlement validation.
-8. Harden the core with deeper operational monitoring, retention/backup guidance and additional provider diagnostics.
-9. Add application authentication, subscriber access tiers and recurring billing before any public commercial launch; add further licensed providers and injury/news feeds only where reliable data is available.
+### Completed foundations
+1. ~~Persistent SQLite quote and event storage.~~
+2. ~~Exact-line best-price comparison, multi-market EV screening and cross-book arbitrage scanning.~~
+3. ~~Consolidated line movement, quote timelines and prospective CLV capture.~~
+4. ~~On-demand 10,000-trial, single-game simulator with deterministic seed support and sport-specific tie/overtime resolution approximations.~~
+5. ~~Simulator historical-replay foundation: verified settlement CSV import, strictly pregame archived-quote reconstruction, chronological train/calibration/holdout separation, per-league scoring-parameter fitting, separate outcome/total probability calibration, holdout scoring and same-event broad-prior baseline comparison.~~
+6. ~~Automated simulator validation suite, documented paper-only backtest workflow, paired holdout uncertainty reporting and optional TheRundown final-score collection for locally archived events.~~
+
+### Active simulator validation — not yet a validated predictive model
+7. Collect authorized, trustworthy final results that overlap the locally archived pregame odds snapshots for each supported league.
+8. Run the three-stage workflow league by league; inspect sample sizes, score distributions, calibration buckets, Brier/log-loss and score-error deltas on untouched holdouts.
+9. Improve sport-specific scoring and overtime/extra-inning assumptions using historical evidence; add league-specific model components only when sample sizes justify them.
+10. Add stronger independent market benchmarks and rolling out-of-time evaluation. Keep fitted parameters disabled for any league that fails minimum sample, calibration or holdout quality gates.
+
+### Remaining platform work
+11. Optional player props are implemented for The Odds API; expand provider coverage and add player-specific CLV only after identity and settlement validation.
+12. Harden the core with deeper operational monitoring, retention/backup guidance and additional provider diagnostics.
+13. Add application authentication, subscriber access tiers and recurring billing before any public commercial launch; add further licensed providers and injury/news feeds only where reliable data is available.
+
+A successful CI run confirms code and test behavior; it does not replace real historical validation. No simulator image is considered ready for deployment solely because its automated tests pass.
 
 ## License
 
 MIT. Third-party odds data remains subject to each provider's terms and licenses.
+
+
+Historical simulator evaluation is available as a paper-only local replay. It uses verified final-score CSV imports and only archived pregame quote snapshots; it performs no provider requests. See [Simulator historical validation](docs/SIMULATOR_VALIDATION.md) for the required CSV format, command and interpretation limits. This does not yet make the simulator a validated independent predictive model.
+
+
+When TheRundown is the active odds provider, an optional score-only results collector can retrieve final scores for games already present in the local odds archive. It uses `affiliate_ids=0`, validates event identity against stored quotes, and is disabled by default to protect the provider data-point allowance. Enable it with `SIMULATION_RESULTS_SYNC_ENABLED=true` in `.env`. Stored results can be split chronologically and backtested with `python -m scripts.backtest_simulator --use-stored-results --training-cutoff YYYY-MM-DD --calibration-cutoff YYYY-MM-DD`. See [Simulator historical validation](docs/SIMULATOR_VALIDATION.md).

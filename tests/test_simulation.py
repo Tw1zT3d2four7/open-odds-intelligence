@@ -244,3 +244,137 @@ def test_simulation_rejects_non_dict_event():
         assert "valid stored game event" in str(exc)
     else:
         raise AssertionError("Expected invalid event to be rejected")
+
+
+def test_simulation_seed_reproduces_identical_results():
+    event = sample_event()
+    first = run_game_simulation(event, seed=20261119)
+    second = run_game_simulation(event, seed=20261119)
+    assert first == second
+    assert first["simulation_seed"] == 20261119
+
+
+def test_simulation_rejects_non_integer_seed():
+    event = sample_event()
+    try:
+        run_game_simulation(event, seed="not-an-integer")
+    except ValueError as exc:
+        assert "seed must be an integer" in str(exc)
+    else:
+        raise AssertionError("Expected invalid simulation seed to be rejected")
+
+
+def test_simulation_accepts_only_matching_empirical_league_parameters():
+    event = sample_event()
+    params = {
+        "sport_key": "basketball_nba", "family": "basketball", "sample_size": 250,
+        "margin_sd": 10.0, "total_sd": 15.0, "margin_total_corr": 0.35,
+        "margin_bias": 0.5, "total_bias": -1.0,
+    }
+    result = run_game_simulation(event, seed=7, model_parameters=params)
+    assert result["data_quality"]["model_source"] == "empirical_training_fit"
+    assert result["data_quality"]["training_sample_size"] == 250
+    assert result["margin_market"]["home_margin_sd"] == 10.0
+    params["sport_key"] = "basketball_ncaab"
+    try:
+        run_game_simulation(event, seed=7, model_parameters=params)
+    except ValueError as exc:
+        assert "selected league" in str(exc)
+    else:
+        raise AssertionError("Expected fitted model for another league to be rejected")
+
+
+def test_simulation_rejects_invalid_empirical_parameters():
+    event = sample_event()
+    params = {"sport_key": "basketball_nba", "family": "basketball",
+              "margin_sd": 0.0, "total_sd": 15.0}
+    try:
+        run_game_simulation(event, model_parameters=params)
+    except ValueError as exc:
+        assert "margin_sd" in str(exc)
+    else:
+        raise AssertionError("Expected invalid fitted variance to be rejected")
+
+def test_load_fitted_models_accepts_valid_per_league_file_and_missing_file(tmp_path):
+    import json
+    from app.simulation import load_fitted_models
+    assert load_fitted_models(tmp_path / "missing.json") == {}
+    path = tmp_path / "models.json"
+    path.write_text(json.dumps({"models": {"basketball_nba": {
+        "sport_key": "basketball_nba", "family": "basketball", "sample_size": 200,
+        "margin_sd": 10.0, "total_sd": 15.0, "margin_total_corr": 0.2,
+        "margin_bias": 0.0, "total_bias": 0.0,
+    }}}), encoding="utf-8")
+    assert load_fitted_models(path)["basketball_nba"]["sample_size"] == 200
+
+
+def test_load_fitted_models_rejects_wrong_league_identity(tmp_path):
+    import json
+    from app.simulation import load_fitted_models
+    path = tmp_path / "models.json"
+    path.write_text(json.dumps({"models": {"basketball_nba": {
+        "sport_key": "basketball_ncaab", "family": "basketball", "margin_sd": 10,
+    }}}), encoding="utf-8")
+    try:
+        load_fitted_models(path)
+    except ValueError as exc:
+        assert "selected league" in str(exc)
+    else:
+        raise AssertionError("Expected league mismatch to be rejected")
+
+def test_league_specific_tie_resolution_rules_are_applied():
+    import random
+    from app.simulation import _resolve_tie
+    for sport in ("basketball_nba", "basketball_ncaab", "icehockey_nhl",
+                  "baseball_mlb", "americanfootball_ncaaf"):
+        home, away, overtime = _resolve_tie(random.Random(1234), sport, 2, 2)
+        assert home != away
+        assert overtime is True
+    home, away, overtime = _resolve_tie(random.Random(1234), "soccer_epl", 1, 1)
+    assert (home, away, overtime) == (1, 1, False)
+
+
+def test_nba_simulation_reports_final_winner_after_overtime():
+    event = sample_event()
+    result = run_game_simulation(event, seed=12345)
+    assert result["win_probabilities"]["tie"] == 0
+    assert result["game_resolution"]["regulation_ties"] >= result["game_resolution"]["games_with_overtime_or_extra_innings"]
+
+
+def test_nhl_simulation_has_no_final_ties_after_overtime_or_shootout():
+    event = sample_event()
+    event["sport_key"] = "icehockey_nhl"
+    event["bookmakers"][0]["markets"][1]["outcomes"] = [
+        {"name": "Over", "point": 6.5, "price": -110},
+        {"name": "Under", "point": 6.5, "price": -110},
+    ]
+    event["bookmakers"][1]["markets"][1]["outcomes"] = [
+        {"name": "Over", "point": 6.5, "price": -110},
+        {"name": "Under", "point": 6.5, "price": -110},
+    ]
+    result = run_game_simulation(event, seed=12345)
+    assert result["win_probabilities"]["tie"] == 0
+    assert result["game_resolution"]["rule"] == "league_specific_approximation"
+
+def test_simulation_applies_fitted_multiclass_temperature():
+    event = sample_event()
+    params = {
+        "sport_key": "basketball_nba", "family": "basketball", "sample_size": 250,
+        "margin_sd": 10.0, "total_sd": 15.0, "margin_total_corr": 0.2,
+        "temperature": 1.5, "total_temperature": 1.7,
+    }
+    result = run_game_simulation(event, seed=22, model_parameters=params)
+    probs = result["win_probabilities"]
+    assert abs(probs["home"] + probs["away"] + probs["tie"] - 100) < 0.001
+    assert result["data_quality"]["model_source"] == "empirical_training_fit"
+    assert result["margin_market"]["probability_temperature"] == 1.5
+    assert result["total_market"]["probability_temperature"] == 1.7
+
+def test_nfl_regular_season_overtime_can_remain_tied():
+    from app.simulation import _resolve_tie
+    class NoScoreOvertime:
+        @staticmethod
+        def choices(values, weights, k):
+            return [0]
+    home, away, overtime = _resolve_tie(NoScoreOvertime(), "americanfootball_nfl", 20, 20)
+    assert (home, away, overtime) == (20, 20, True)
