@@ -251,3 +251,77 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
         "historical prices are used. Events without a valid archived spread and total are skipped."
     )
     return report
+
+
+def fit_league_models(database, training_settlements: list[dict], min_sample_size: int = 50) -> dict:
+    """Fit per-league residual variance from archived pregame lines and final scores.
+
+    This is a training-only operation. The caller must evaluate the returned
+    parameters on a later, untouched chronological test set.
+    """
+    from statistics import pstdev
+    from .simulation import LEAGUE_PRIORS, _collect_market_inputs, _family
+
+    if not isinstance(min_sample_size, int) or isinstance(min_sample_size, bool) or min_sample_size < 2:
+        raise ValueError("min_sample_size must be an integer of at least 2.")
+    buckets = {}
+    skipped = []
+    for settlement in training_settlements:
+        event, reason = _load_latest_pregame_event(database, settlement)
+        if reason:
+            skipped.append({"event_id": settlement.get("event_id"), "reason": reason})
+            continue
+        inputs = _collect_market_inputs(event)
+        if not inputs["spread_margins"] or not inputs["totals"]:
+            skipped.append({"event_id": settlement.get("event_id"), "reason": "pregame spread/total incomplete"})
+            continue
+        sport_key = str(settlement["sport_key"])
+        family = _family(sport_key)
+        if family not in LEAGUE_PRIORS:
+            skipped.append({"event_id": settlement.get("event_id"), "reason": "unsupported sport family"})
+            continue
+        market_margin = sum(inputs["spread_margins"]) / len(inputs["spread_margins"])
+        market_total = sum(inputs["totals"]) / len(inputs["totals"])
+        home_mean = max(0.05, (market_total + market_margin) / 2)
+        away_mean = max(0.05, (market_total - market_margin) / 2)
+        actual_home, actual_away = int(settlement["home_score"]), int(settlement["away_score"])
+        bucket = buckets.setdefault(sport_key, {"family": family, "margin_residuals": [],
+            "total_residuals": [], "home_dispersion": [], "away_dispersion": []})
+        bucket["margin_residuals"].append((actual_home - actual_away) - market_margin)
+        bucket["total_residuals"].append((actual_home + actual_away) - market_total)
+        bucket["home_dispersion"].append((actual_home - home_mean, home_mean))
+        bucket["away_dispersion"].append((actual_away - away_mean, away_mean))
+
+    models, insufficient = {}, {}
+    for sport_key, bucket in sorted(buckets.items()):
+        n = len(bucket["margin_residuals"])
+        if n < min_sample_size:
+            insufficient[sport_key] = {"sample_size": n, "required": min_sample_size}
+            continue
+        family = bucket["family"]
+        margin_residuals = bucket["margin_residuals"]
+        total_residuals = bucket["total_residuals"]
+        margin_bias = sum(margin_residuals) / n
+        total_bias = sum(total_residuals) / n
+        margin_sd = max(0.1, pstdev(margin_residuals))
+        total_sd = max(0.1, pstdev(total_residuals))
+        covariance = sum((m - margin_bias) * (t - total_bias)
+                         for m, t in zip(margin_residuals, total_residuals)) / n
+        correlation = max(-0.95, min(0.95, covariance / (margin_sd * total_sd)))
+        model = {"sport_key": sport_key, "family": family, "sample_size": n,
+                 "margin_bias": margin_bias, "total_bias": total_bias,
+                 "margin_sd": margin_sd, "total_sd": total_sd,
+                 "margin_total_corr": correlation}
+        if LEAGUE_PRIORS[family]["distribution"] == "poisson":
+            for side in ("home", "away"):
+                observations = bucket[side + "_dispersion"]
+                numerator = sum(residual ** 2 - mean for residual, mean in observations)
+                denominator = sum(mean ** 2 for _, mean in observations)
+                model[side + "_alpha"] = max(0.0, min(2.0, numerator / denominator if denominator else 0.0))
+        models[sport_key] = model
+    return {"models": models, "insufficient": insufficient,
+            "training_events_used": sum(len(x["margin_residuals"]) for x in buckets.values()),
+            "training_events_skipped": len(skipped), "skipped": skipped,
+            "minimum_sample_size": min_sample_size,
+            "warning": "Fit only on an earlier training period. Do not evaluate these fitted parameters on the same games."}
+
