@@ -20,9 +20,14 @@ def _positive(value: float, name: str) -> float:
 def american_to_decimal(odds: float) -> float:
     if isinstance(odds, bool):
         raise ValueError("American odds must be a finite non-zero number")
-    odds = float(odds)
+    try:
+        odds = float(odds)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("American odds must be a finite non-zero number") from None
     if not math.isfinite(odds) or odds == 0:
         raise ValueError("American odds must be a finite non-zero number")
+    if -100 < odds < 100:
+        raise ValueError("American odds must be +100 or greater, or -100 or lower")
     return 1 + (odds / 100 if odds > 0 else 100 / abs(odds))
 
 

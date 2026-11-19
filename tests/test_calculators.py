@@ -142,3 +142,19 @@ def test_run_line_minus_one_rejects_boolean_margin():
     from app.calculators import run_line_minus_one
     with pytest.raises(ValueError, match="score margin"):
         run_line_minus_one(100, -110, True)
+
+
+@pytest.mark.parametrize("odds", [-99, -50, -1, 1, 50, 99])
+def test_american_odds_reject_values_between_minus_and_plus_100(odds):
+    with pytest.raises(ValueError, match="\+100 or greater"):
+        american_to_decimal(odds)
+
+
+@pytest.mark.parametrize("odds, expected", [
+    (-100, 2.0),
+    (100, 2.0),
+    (-101, pytest.approx(1 + 100 / 101)),
+    (101, 2.01),
+])
+def test_american_odds_accept_standard_boundary_values(odds, expected):
+    assert american_to_decimal(odds) == expected
