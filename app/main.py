@@ -8,6 +8,8 @@ from . import config
 from .service import service
 from .markets import market_board, analyze_markets
 from .limits import limits_monitor
+from .simulation import run_game_simulation, TRIALS as SIMULATION_TRIALS
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +129,47 @@ def refresh(sport: str | None = None):
 @app.get("/api/market-board")
 def market_board_api(sport: str | None = None):
     return {"quotes": market_board(service.events(sport))}
+
+
+@app.get("/api/simulation/leagues")
+def simulation_leagues():
+    return {"leagues": [
+        {"sport": sport, "label": sport.replace("_", " ").upper()}
+        for sport in config.ODDS_SPORTS
+    ]}
+
+
+@app.get("/api/simulation/games")
+def simulation_games(sport: str):
+    if sport not in config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="Select a configured league.")
+    games = []
+    for event in service.events(sport):
+        if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
+            continue
+        games.append({
+            "event_id": event["id"],
+            "matchup": f'{event["away_team"]} @ {event["home_team"]}',
+            "commence_time": event.get("commence_time"),
+            "has_spread": any(m.get("key") == "spreads" for b in event.get("bookmakers", []) for m in b.get("markets", [])),
+            "has_total": any(m.get("key") == "totals" for b in event.get("bookmakers", []) for m in b.get("markets", [])),
+        })
+    games.sort(key=lambda item: item.get("commence_time") or "")
+    return {"games": games, "note": "Games come from the latest locally stored odds snapshot; opening this list makes no provider request."}
+
+
+@app.post("/api/simulation/run")
+def simulate_game(sport: str, event_id: str):
+    if sport not in config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="Select a configured league.")
+    event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
+    if event is None:
+        raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
+    try:
+        result = run_game_simulation(event, SIMULATION_TRIALS)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return result
 
 
 @app.get("/api/player-props")
