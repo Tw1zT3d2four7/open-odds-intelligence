@@ -567,3 +567,26 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
     return {"temperatures": temperatures, "insufficient": insufficient,
             "minimum_sample_size": min_sample_size,
             "warning": "Fit only on a separate chronological calibration set, after model fitting and before the final holdout."}
+
+
+def split_stored_settlements(settlements: list[dict], training_cutoff: str, calibration_cutoff: str):
+    """Split stored final results by exclusive ISO dates into train/calibration/holdout."""
+    from datetime import date
+    try:
+        training_date = date.fromisoformat(training_cutoff)
+        calibration_date = date.fromisoformat(calibration_cutoff)
+    except (TypeError, ValueError):
+        raise ValueError("Training and calibration cutoffs must be ISO dates (YYYY-MM-DD).") from None
+    if training_date >= calibration_date:
+        raise ValueError("Training cutoff must be earlier than calibration cutoff.")
+    training, calibration, holdout = [], [], []
+    for row in settlements:
+        game_date = _parse_timestamp(row["commence_time"]).date()
+        if game_date < training_date:
+            training.append(row)
+        elif game_date < calibration_date:
+            calibration.append(row)
+        else:
+            holdout.append(row)
+    return {"training": training, "calibration": calibration, "holdout": holdout,
+            "cutoffs": {"training_before": training_cutoff, "calibration_before": calibration_cutoff}}
