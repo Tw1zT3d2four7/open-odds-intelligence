@@ -110,11 +110,50 @@ def test_simulation_matches_provider_team_labels_case_and_whitespace_insensitive
 def test_simulation_reports_spread_team_mapping_separately_from_total():
     event = sample_event()
     for book in event["bookmakers"]:
-        book["markets"][0]["outcomes"][0]["name"] = "Home Team"
-        book["markets"][0]["outcomes"][1]["name"] = "Away Team"
+        book["markets"][0]["outcomes"][0]["name"] = "Unknown Home Club"
+        book["markets"][0]["outcomes"][1]["name"] = "Unknown Away Club"
     try:
         run_game_simulation(event)
     except ValueError as exc:
         assert "spread line matching" in str(exc)
     else:
         raise AssertionError("Expected unknown spread team labels to be rejected")
+
+
+def test_simulation_matches_city_event_names_to_full_nfl_bookmaker_names():
+    event = sample_event()
+    event["sport_key"] = "americanfootball_nfl"
+    event["home_team"] = "Houston"
+    event["away_team"] = "Indianapolis"
+    for book in event["bookmakers"]:
+        book["markets"][0]["outcomes"] = [
+            {"name": "Houston Texans", "point": -3.5, "price": -110},
+            {"name": "Indianapolis Colts", "point": 3.5, "price": -110},
+        ]
+    from app.simulation import market_readiness
+    assert market_readiness(event)["can_simulate"] is True
+    result = run_game_simulation(event)
+    assert result["data_quality"]["spread_books"] == 2
+    assert result["margin_market"]["consensus_home_margin"] == 3.5
+
+
+def test_simulation_matches_full_ncaab_school_names_to_event_names():
+    event = sample_event()
+    event["sport_key"] = "basketball_ncaab"
+    event["home_team"] = "West Virginia"
+    event["away_team"] = "Florida"
+    for book in event["bookmakers"]:
+        book["markets"][0]["outcomes"] = [
+            {"name": "Florida Gators", "point": -6.5, "price": -110},
+            {"name": "West Virginia Mountaineers", "point": 6.5, "price": -110},
+        ]
+    from app.simulation import market_readiness
+    assert market_readiness(event)["can_simulate"] is True
+    result = run_game_simulation(event)
+    assert result["data_quality"]["spread_books"] == 2
+    assert result["margin_market"]["consensus_home_margin"] == -6.5
+
+
+def test_team_prefix_matching_rejects_ambiguous_shared_abbreviations():
+    from app.simulation import _team_side
+    assert _team_side("LA", "Los Angeles Clippers", "Los Angeles Lakers") is None

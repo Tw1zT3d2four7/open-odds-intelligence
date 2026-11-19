@@ -39,6 +39,26 @@ def _team_identity(value):
     return "".join(character.lower() for character in str(value or "") if character.isalnum())
 
 
+def _team_side(value, home, away):
+    """Resolve provider labels such as 'Houston Texans' to event label 'Houston'.
+
+    Prefix matching is only accepted when it identifies exactly one event team.
+    This avoids silently assigning a quote when both teams share an abbreviation.
+    """
+    name = _team_identity(value)
+    if not name:
+        return None
+    if name == home:
+        return "home"
+    if name == away:
+        return "away"
+    matches = []
+    for side, team in (("home", home), ("away", away)):
+        if len(team) >= 4 and (name.startswith(team) or team.startswith(name)):
+            matches.append(side)
+    return matches[0] if len(matches) == 1 else None
+
+
 def _market_inputs(event):
     home, away = _team_identity(event.get("home_team")), _team_identity(event.get("away_team"))
     spread_margins, totals = [], []
@@ -47,18 +67,18 @@ def _market_inputs(event):
         spread = markets.get("spreads")
         if spread:
             for outcome in spread.get("outcomes", []):
-                name = _team_identity(outcome.get("name"))
+                side = _team_side(outcome.get("name"), home, away)
                 point = outcome.get("point")
-                if point is None or name not in (home, away):
+                if point is None or side is None:
                     continue
                 try:
                     value = float(point)
                 except (TypeError, ValueError, OverflowError):
                     continue
-                if name == home:
+                if side == "home":
                     spread_margins.append(-value)
                     break
-                if name == away:
+                if side == "away":
                     spread_margins.append(value)
                     break
         total = markets.get("totals")
@@ -97,7 +117,7 @@ def market_readiness(event):
             key = str(market.get("key") or "").strip().lower()
             outcomes = market.get("outcomes", [])
             if key == "spreads" and any(
-                _team_identity(outcome.get("name")) in (home, away)
+                _team_side(outcome.get("name"), home, away) is not None
                 and outcome.get("point") is not None for outcome in outcomes
             ):
                 has_spread = True
