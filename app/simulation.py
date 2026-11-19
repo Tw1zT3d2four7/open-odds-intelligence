@@ -439,7 +439,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "home": home_probability, "away": away_probability, "tie": tie_probability,
         },
         "game_resolution": {
-            "regulation_ties": regulation_ties, "overtime_or_extra_innings": overtime_games,
+            "regulation_ties": regulation_ties, "games_with_overtime_or_extra_innings": overtime_games,
             "rule": "league_specific_approximation",
         },
         "total_market": {
