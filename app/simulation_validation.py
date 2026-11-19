@@ -312,12 +312,16 @@ def paired_bootstrap_comparison(model_rows: list[dict], baseline_rows: list[dict
         raise ValueError("Paired bootstrap rows must have unique event IDs.")
     if model_by_id.keys() != baseline_by_id.keys():
         raise ValueError("Model and baseline rows must contain identical event IDs.")
-    metrics = ("brier_score", "log_loss", "total_brier_score", "total_log_loss",
-               "home_score_error", "away_score_error", "total_score_error", "margin_error")
+    metrics = {
+        "brier_score": "brier_score", "log_loss": "log_loss",
+        "total_brier_score": "total_brier_score", "total_log_loss": "total_log_loss",
+        "home_score_mae": "home_score_error", "away_score_mae": "away_score_error",
+        "total_score_mae": "total_score_error", "margin_mae": "margin_error",
+    }
     event_deltas = {
-        metric: [float(model_by_id[event_id][metric]) - float(baseline_by_id[event_id][metric])
-                 for event_id in sorted(model_by_id)]
-        for metric in metrics
+        label: [float(model_by_id[event_id][field]) - float(baseline_by_id[event_id][field])
+                for event_id in sorted(model_by_id)]
+        for label, field in metrics.items()
     }
     sample_size = len(model_rows)
     if not sample_size:
