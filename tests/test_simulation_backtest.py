@@ -50,6 +50,8 @@ def test_historical_backtest_uses_latest_pregame_snapshot_and_is_reproducible(tm
     assert first["events_scored"] == 1
     assert first["events_skipped"] == 0
     assert first["overall"]["sample_size"] == 1
+    assert first["market_prior_baseline"]["sample_size"] == 1
+    assert first["model_minus_baseline"]["brier_score"] == 0
     assert first["status"] == "DESCRIPTIVE_ONLY"
 
 
