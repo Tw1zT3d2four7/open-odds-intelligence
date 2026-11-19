@@ -87,3 +87,30 @@ def test_empty_evaluation_is_explicitly_insufficient():
     report = evaluate_predictions([])
     assert report["status"] == "INSUFFICIENT_DATA"
     assert report["sample_size"] == 0
+
+
+def test_chronological_split_rejects_overlapping_event_ids():
+    from app.simulation_validation import validate_chronological_split
+    row = {"event_id": "same", "sport_key": "basketball_nba",
+           "commence_time": "2026-01-01T00:00:00Z"}
+    with pytest.raises(ValueError, match="overlap by event_id"):
+        validate_chronological_split([row], [row])
+
+
+def test_chronological_split_rejects_time_leakage_within_league():
+    from app.simulation_validation import validate_chronological_split
+    training = [{"event_id": "train", "sport_key": "basketball_nba",
+                "commence_time": "2026-01-03T00:00:00Z"}]
+    test = [{"event_id": "test", "sport_key": "basketball_nba",
+            "commence_time": "2026-01-02T00:00:00Z"}]
+    with pytest.raises(ValueError, match="must all precede"):
+        validate_chronological_split(training, test)
+
+
+def test_chronological_split_accepts_separate_later_holdout():
+    from app.simulation_validation import validate_chronological_split
+    training = [{"event_id": "train", "sport_key": "basketball_nba",
+                "commence_time": "2026-01-01T00:00:00Z"}]
+    test = [{"event_id": "test", "sport_key": "basketball_nba",
+            "commence_time": "2026-01-02T00:00:00Z"}]
+    validate_chronological_split(training, test)
