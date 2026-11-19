@@ -163,3 +163,8 @@ Historical simulator evaluation is available as a paper-only local replay. It us
 
 
 When TheRundown is the active odds provider, an optional score-only results collector can retrieve final scores for games already present in the local odds archive. It uses `affiliate_ids=0`, validates event identity against stored quotes, and is disabled by default to protect the provider data-point allowance. Enable it with `SIMULATION_RESULTS_SYNC_ENABLED=true` in `.env`. Stored results can be split chronologically and backtested with `python -m scripts.backtest_simulator --use-stored-results --training-cutoff YYYY-MM-DD --calibration-cutoff YYYY-MM-DD`. See [Simulator historical validation](docs/SIMULATOR_VALIDATION.md).
+
+
+## Production operations
+
+See [docs/PRODUCTION_OPERATIONS.md](docs/PRODUCTION_OPERATIONS.md) for safe SQLite backups and restores, image update and rollback procedures, operational health checks, the current security boundary, and the gates that must be met before commercial subscriber access. The runbook does not change or automate the existing deployment.
