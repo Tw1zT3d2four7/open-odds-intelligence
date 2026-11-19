@@ -88,7 +88,7 @@ The holdout report also scores the same events with the unfitted broad-prior mar
 
 ## Automatic TheRundown score collection
 
-When TheRundown is the active odds provider and THERUNDOWN_API_KEY is configured, score-only collection is enabled by default. It queries only sport/date combinations already present in the local odds archive and containing games that started within the configured lookback window.
+When TheRundown is the active odds provider and THERUNDOWN_API_KEY is configured, score-only collection is optional and disabled by default to protect the provider data-point allowance. Enable it explicitly with SIMULATION_RESULTS_SYNC_ENABLED=true in .env. It queries only sport/date combinations already present in the local odds archive and containing games that started within the configured lookback window.
 
 - Requests use affiliate_ids=0, so sportsbook price rows are not requested.
 - The adapter accepts only explicit STATUS_FINAL records with numeric final scores.
