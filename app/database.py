@@ -71,6 +71,15 @@ class OddsDatabase:
                 );
                 CREATE INDEX IF NOT EXISTS idx_clv_pending
                     ON clv_entries(status, commence_time);
+                CREATE TABLE IF NOT EXISTS simulation_settlements (
+                    event_id TEXT PRIMARY KEY, sport_key TEXT NOT NULL,
+                    commence_time TEXT NOT NULL, home_team TEXT NOT NULL, away_team TEXT NOT NULL,
+                    home_score INTEGER NOT NULL, away_score INTEGER NOT NULL,
+                    status TEXT NOT NULL CHECK(status = "final"), source TEXT NOT NULL,
+                    source_record_id TEXT NOT NULL, source_updated_at TEXT, imported_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_simulation_settlements_sport_time
+                    ON simulation_settlements(sport_key, commence_time);
             """)
             quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
             if "source_updated_at" not in quote_columns:
