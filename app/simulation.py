@@ -278,9 +278,11 @@ def _validated_model_parameters(parameters, family, sport_key):
     for key, (low, high) in bounds.items():
         if key not in result:
             continue
+        if isinstance(result[key], bool):
+            raise ValueError(f"Invalid fitted model parameter: {key}.")
         try:
             value = float(result[key])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise ValueError(f"Invalid fitted model parameter: {key}.") from None
         if not math.isfinite(value) or not low <= value <= high:
             raise ValueError(f"Invalid fitted model parameter: {key}.")
