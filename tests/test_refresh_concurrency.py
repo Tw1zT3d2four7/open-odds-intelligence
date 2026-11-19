@@ -233,3 +233,44 @@ def test_service_clv_capture_records_each_book_not_only_best_price(tmp_path, mon
     report = service.clv_report("basketball_nba")
     assert report["summary"]["total"] == 12
     assert {entry["bookmaker_key"] for entry in report["entries"]} == {"a", "b", "c"}
+
+
+def test_health_reports_per_sport_freshness_and_missing_feeds(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    database = OddsDatabase(tmp_path / "freshness.sqlite3")
+    database.save_snapshot(
+        "basketball_nba", [], "test",
+        (now - timedelta(hours=1)).isoformat(),
+    )
+    database.save_snapshot(
+        "icehockey_nhl", [], "test",
+        (now - timedelta(hours=8)).isoformat(),
+    )
+    monkeypatch.setattr(config, "ODDS_SPORTS", [
+        "basketball_nba", "icehockey_nhl", "baseball_mlb",
+    ])
+    monkeypatch.setattr(config, "ODDS_DATA_STALE_AFTER_SECONDS", 6 * 60 * 60)
+
+    status = OddsService(database).status()
+    assert status["data_freshness"] == "stale"
+    by_sport = {row["sport"]: row for row in status["sport_freshness"]}
+    assert by_sport["basketball_nba"]["freshness"] == "current"
+    assert by_sport["icehockey_nhl"]["freshness"] == "stale"
+    assert by_sport["baseball_mlb"]["freshness"] == "unavailable"
+    assert by_sport["baseball_mlb"]["last_updated"] is None
+
+
+def test_health_reports_incomplete_when_configured_sport_has_no_snapshot(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    database = OddsDatabase(tmp_path / "freshness-partial.sqlite3")
+    database.save_snapshot(
+        "basketball_nba", [], "test", datetime.now(timezone.utc).isoformat(),
+    )
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba", "baseball_mlb"])
+    monkeypatch.setattr(config, "ODDS_DATA_STALE_AFTER_SECONDS", 6 * 60 * 60)
+
+    status = OddsService(database).status()
+    assert status["data_freshness"] == "partial"
