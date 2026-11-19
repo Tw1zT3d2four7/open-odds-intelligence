@@ -294,3 +294,30 @@ def test_simulation_rejects_invalid_empirical_parameters():
         assert "margin_sd" in str(exc)
     else:
         raise AssertionError("Expected invalid fitted variance to be rejected")
+
+def test_load_fitted_models_accepts_valid_per_league_file_and_missing_file(tmp_path):
+    import json
+    from app.simulation import load_fitted_models
+    assert load_fitted_models(tmp_path / "missing.json") == {}
+    path = tmp_path / "models.json"
+    path.write_text(json.dumps({"models": {"basketball_nba": {
+        "sport_key": "basketball_nba", "family": "basketball", "sample_size": 200,
+        "margin_sd": 10.0, "total_sd": 15.0, "margin_total_corr": 0.2,
+        "margin_bias": 0.0, "total_bias": 0.0,
+    }}}), encoding="utf-8")
+    assert load_fitted_models(path)["basketball_nba"]["sample_size"] == 200
+
+
+def test_load_fitted_models_rejects_wrong_league_identity(tmp_path):
+    import json
+    from app.simulation import load_fitted_models
+    path = tmp_path / "models.json"
+    path.write_text(json.dumps({"models": {"basketball_nba": {
+        "sport_key": "basketball_ncaab", "family": "basketball", "margin_sd": 10,
+    }}}), encoding="utf-8")
+    try:
+        load_fitted_models(path)
+    except ValueError as exc:
+        assert "selected league" in str(exc)
+    else:
+        raise AssertionError("Expected league mismatch to be rejected")
