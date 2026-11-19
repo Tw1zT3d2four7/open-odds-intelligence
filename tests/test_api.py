@@ -248,6 +248,9 @@ def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
     }
     other = dict(selected, id="not-selected")
     monkeypatch.setattr(main.service, "events", lambda sport=None: [selected, other])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current", "age_seconds": 60}]
+    })
     with TestClient(main.app) as client:
         response = client.post("/api/simulation/run?sport=basketball_nba&event_id=chosen-game")
         missing = client.post("/api/simulation/run?sport=basketball_nba&event_id=missing")
@@ -255,6 +258,47 @@ def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
     assert response.json()["event_id"] == "chosen-game"
     assert response.json()["trials"] == 10_000
     assert missing.status_code == 404
+
+
+
+def test_simulation_endpoint_blocks_stale_league_snapshot(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    event = {
+        "id": "chosen-game", "sport_key": "basketball_nba",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [],
+    }
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "stale", "age_seconds": 21601}]
+    })
+    with TestClient(main.app) as client:
+        response = client.post("/api/simulation/run?sport=basketball_nba&event_id=chosen-game")
+    assert response.status_code == 409
+    assert "stale" in response.json()["detail"]
+    assert "21601 seconds old" in response.json()["detail"]
+
+
+def test_simulation_endpoint_blocks_when_league_snapshot_is_unavailable(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    event = {"id": "chosen-game", "sport_key": "basketball_nba"}
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "status", lambda: {"sport_freshness": []})
+    with TestClient(main.app) as client:
+        response = client.post("/api/simulation/run?sport=basketball_nba&event_id=chosen-game")
+    assert response.status_code == 409
+    assert "unavailable" in response.json()["detail"]
+
+
+def test_simulation_freshness_lookup_is_league_specific(monkeypatch):
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [
+            {"sport": "americanfootball_nfl", "freshness": "stale"},
+            {"sport": "basketball_nba", "freshness": "current", "age_seconds": 30},
+        ]
+    })
+    assert main._simulation_snapshot_freshness("basketball_nba")["freshness"] == "current"
+    assert main._simulation_snapshot_freshness("icehockey_nhl") is None
 
 
 
