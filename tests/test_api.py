@@ -266,6 +266,7 @@ def test_optional_basic_auth_protects_dashboard_and_api_but_allows_health(monkey
     with TestClient(main.app) as client:
         assert client.get("/").status_code == 401
         assert client.get("/api/odds").status_code == 401
+        assert client.post("/api/refresh").status_code == 401
         assert client.get("/api/health").status_code == 200
         token = base64.b64encode(b"operator:CaseSensitive-Secret").decode()
         headers = {"Authorization": f"Basic {token}"}
