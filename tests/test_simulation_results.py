@@ -43,6 +43,8 @@ def test_therundown_scores_only_ignores_non_final_and_incomplete_scores(monkeypa
     assert provider.fetch_scores("soccer_epl", ["2026-01-02"]) == []
     monkeypatch.setattr(provider, "_request", lambda url: _score_payload(home_score=None))
     assert provider.fetch_scores("soccer_epl", ["2026-01-02"]) == []
+    monkeypatch.setattr(provider, "_request", lambda url: _score_payload(home_score=1.5))
+    assert provider.fetch_scores("soccer_epl", ["2026-01-02"]) == []
 
 
 def test_therundown_scores_only_rejects_invalid_dates():
