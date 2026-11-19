@@ -77,7 +77,8 @@ def market_consensus(
             names = [o.get("name") for o in outcomes]
             prices = [o.get("price") for o in outcomes]
             if any(not name for name in names) or any(
-                not isinstance(price, int) or price == 0 for price in prices
+                isinstance(price, bool) or not isinstance(price, int) or price == 0
+                for price in prices
             ):
                 continue
             probs = no_vig_probabilities(prices)
