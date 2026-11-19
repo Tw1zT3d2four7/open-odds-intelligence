@@ -242,7 +242,7 @@ def _poisson(rng, mean):
     return count - 1
 
 
-def run_game_simulation(event, trials=TRIALS):
+def run_game_simulation(event, trials=TRIALS, seed=None):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
     if not isinstance(event, dict):
@@ -251,8 +251,10 @@ def run_game_simulation(event, trials=TRIALS):
     if family is None:
         raise ValueError("This league is not yet supported by the game simulator.")
     expected_margin, expected_total, spread_books, total_books = _market_inputs(event)
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
+        raise ValueError("Simulation seed must be an integer or None.")
     prior = LEAGUE_PRIORS[family]
-    rng = random.Random()
+    rng = random.Random(seed)
     home_wins = away_wins = ties = over = under = pushes = 0
     home_scores, away_scores = [], []
     for _ in range(TRIALS):
@@ -286,6 +288,7 @@ def run_game_simulation(event, trials=TRIALS):
     pct = lambda n: round(n / TRIALS * 100, 2)
     return {
         "trials": TRIALS,
+        "simulation_seed": seed,
         "event_id": event.get("id"),
         "sport": event.get("sport_key"),
         "matchup": f"{event.get('away_team')} @ {event.get('home_team')}",
