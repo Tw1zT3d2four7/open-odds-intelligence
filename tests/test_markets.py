@@ -223,3 +223,52 @@ def test_incomplete_two_way_market_is_excluded_from_ev_and_arbitrage():
     }]
     result = analyze_markets(events, min_ev=-100, min_consensus_books=1)
     assert result == {"opportunities": [], "arbitrage": []}
+
+
+def test_missing_or_non_finite_non_h2h_lines_are_excluded_from_board_and_analysis():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "bad-lines", "sport_key": "americanfootball_nfl",
+        "sport_title": "NFL", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "price": 150},
+                    {"name": "Away", "point": float("nan"), "price": -170},
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "point": "not-a-line", "price": 145},
+                    {"name": "Away", "point": float("inf"), "price": -165},
+                ]}]},
+        ],
+    }]
+
+    assert market_board(events) == []
+    assert analyze_markets(events, min_ev=-100, min_consensus_books=1) == {
+        "opportunities": [], "arbitrage": []
+    }
+
+
+def test_valid_numeric_string_lines_are_canonicalized_for_analysis():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "string-lines", "sport_key": "americanfootball_nfl",
+        "sport_title": "NFL", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "point": "-3.5", "price": 110},
+                    {"name": "Away", "point": "3.5", "price": -130},
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "point": -3.5, "price": -110},
+                    {"name": "Away", "point": 3.5, "price": -110},
+                ]}]},
+        ],
+    }]
+    result = analyze_markets(events, min_ev=-100, min_consensus_books=1)
+    assert len(result["opportunities"]) == 4
