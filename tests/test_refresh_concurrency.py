@@ -274,3 +274,68 @@ def test_health_reports_incomplete_when_configured_sport_has_no_snapshot(tmp_pat
 
     status = OddsService(database).status()
     assert status["data_freshness"] == "partial"
+
+
+
+def test_provider_refresh_retries_transient_failure_with_bounded_backoff(tmp_path, monkeypatch):
+    from app.providers.the_odds_api import ProviderError
+
+    calls = []
+    sleeps = []
+
+    class FlakyProvider:
+        name = "fake"
+        usage = {}
+        def __init__(self, *args, **kwargs):
+            pass
+        def fetch_odds(self, sport):
+            calls.append(sport)
+            if len(calls) == 1:
+                raise ProviderError("temporary upstream failure", status_code=503, retryable=True)
+            return []
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(config, "PROVIDER_RETRY_ATTEMPTS", 2)
+    monkeypatch.setattr(config, "PROVIDER_RETRY_BASE_DELAY_SECONDS", 0.5)
+    monkeypatch.setattr(config, "PROVIDER_RETRY_MAX_DELAY_SECONDS", 2.0)
+    monkeypatch.setattr("app.service.time.sleep", sleeps.append)
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", FlakyProvider)
+
+    service = OddsService(OddsDatabase(tmp_path / "provider-retry.sqlite3"))
+    result = service.refresh()
+    assert result["ok"] is True
+    assert calls == ["basketball_nba", "basketball_nba"]
+    assert sleeps == [0.5]
+
+
+def test_provider_refresh_never_retries_quota_rate_limit(tmp_path, monkeypatch):
+    from app.providers.the_odds_api import ProviderError
+
+    calls = []
+
+    class RateLimitedProvider:
+        name = "fake"
+        usage = {"requests_remaining": "0"}
+        def __init__(self, *args, **kwargs):
+            pass
+        def fetch_odds(self, sport):
+            calls.append(sport)
+            raise ProviderError(
+                "rate limit reached", status_code=429, retry_after="1",
+                retryable=True,
+            )
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "CaseSensitiveKey")
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba", "icehockey_nhl"])
+    monkeypatch.setattr(config, "PROVIDER_RETRY_ATTEMPTS", 3)
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", RateLimitedProvider)
+
+    service = OddsService(OddsDatabase(tmp_path / "provider-429.sqlite3"))
+    result = service.refresh()
+    assert result["ok"] is False
+    assert calls == ["basketball_nba"]
+    assert service.status()["provider_usage"]["requests_remaining"] == "0"
