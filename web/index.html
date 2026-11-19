@@ -336,7 +336,7 @@ async function runSelectedSimulation(){
   const temperature=data.margin_market.probability_temperature;
   $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+(temperature!==null&&temperature!==undefined?" · probability calibrated":"");
   $("simDistributionDetail").textContent=empiricallyFitted?"Fitted scoring residual distribution":"Broad family-level scoring assumptions";
-  $("simResolution").textContent=Number(data.game_resolution.overtime_or_extra_innings||0).toLocaleString()+" OT / extras";
+  $("simResolution").textContent=Number(data.game_resolution.games_with_overtime_or_extra_innings||0).toLocaleString()+" games with OT / extras";
   $("simRegulationTies").textContent=Number(data.game_resolution.regulation_ties||0).toLocaleString()+" regulation ties";
   $("simMethodology").textContent=data.methodology;$("simResults").classList.remove("hidden");
   $("simStatus").textContent="Completed exactly 10,000 trials for "+data.matchup+".";
