@@ -40,6 +40,7 @@ def test_prediction_scoring_handles_home_away_and_tie():
         "event_id": "g1", "sport": "basketball_nba",
         "win_probabilities": {"home": 60, "away": 35, "tie": 5},
         "projected_score": {"home": 102, "away": 99},
+        "total_market": {"consensus_line": 200.0, "over": 45, "under": 45, "push": 10},
     }
     result = score_prediction(prediction, {
         "event_id": "g1", "sport_key": "basketball_nba", "home_score": 101, "away_score": 98,
@@ -69,9 +70,11 @@ def test_prediction_scoring_rejects_probability_sum_and_event_mismatch():
 def test_evaluation_reports_sample_sizes_metrics_and_calibration():
     rows = [
         {"sport": "nba", "actual_result": "home", "predicted_home_probability": .8, "predicted_away_probability": .15, "predicted_tie_probability": .05,
+         "predicted_over_probability": .7, "predicted_under_probability": .25, "predicted_total_push_probability": .05, "actual_total_result": "over", "total_brier_score": .2, "total_log_loss": .35,
          "brier_score": .08, "log_loss": .223, "home_score_error": 2,
          "away_score_error": 1, "total_score_error": 3, "margin_error": 1},
         {"sport": "nba", "actual_result": "away", "predicted_home_probability": .2, "predicted_away_probability": .75, "predicted_tie_probability": .05,
+         "predicted_over_probability": .2, "predicted_under_probability": .75, "predicted_total_push_probability": .05, "actual_total_result": "under", "total_brier_score": .2, "total_log_loss": .35,
          "brier_score": .08, "log_loss": .223, "home_score_error": 1,
          "away_score_error": 2, "total_score_error": 3, "margin_error": 1},
     ]
@@ -82,6 +85,7 @@ def test_evaluation_reports_sample_sizes_metrics_and_calibration():
     assert report["by_sport"]["nba"]["sample_size"] == 2
     assert sum(x["sample_size"] for x in report["calibration"]) == 2
     assert set(report["calibration_by_class"]) == {"home", "away", "tie"}
+    assert set(report["total_calibration_by_class"]) == {"over", "under", "push"}
 
 
 def test_empty_evaluation_is_explicitly_insufficient():
