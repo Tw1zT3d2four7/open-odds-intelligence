@@ -85,6 +85,10 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
   <button class="primary" id="runSimulation" disabled>Run 10,000 Simulations</button>
  </div>
  <p class="muted" id="simStatus" aria-live="polite">Select a league, then choose a game from the available odds snapshot.</p>
+ <details id="simMarketDiagnostics" class="hidden" style="margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:8px">
+  <summary>Selected game's sportsbook market diagnostics</summary>
+  <pre id="simMarketDiagnosticsBody" class="muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+ </details>
  <div id="simResults" class="hidden">
   <div class="cards">
    <div class="card"><small>SIMULATED HOME WIN</small><div class="value" id="simHomeWin">—</div><small id="simHomeTeam"></small></div>
@@ -264,6 +268,19 @@ document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.ad
 })();
 
 /* Selected-game Monte Carlo simulator: fixed 10,000 trials; no provider refresh. */
+let simulationGames=[];
+function renderSimulationDiagnostics(items){
+ const panel=$("simMarketDiagnostics"),body=$("simMarketDiagnosticsBody");
+ const diagnostics=Array.isArray(items)?items:[];
+ if(!diagnostics.length){panel.classList.add("hidden");body.textContent="";return}
+ body.textContent=diagnostics.map(item=>{
+  const issues=[];
+  if(item.spread)issues.push("spread: "+item.spread);
+  if(item.total)issues.push("total: "+item.total);
+  return (item.bookmaker||"Unknown bookmaker")+": "+issues.join("; ");
+ }).join("\n");
+ panel.classList.remove("hidden");
+}
 function populateSimulationLeagues(sports){
  const sel=$("simLeague"),current=sel.value;sel.innerHTML='<option value="">Select a league</option>';
  (sports||[]).forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s.replaceAll("_"," ").toUpperCase();sel.appendChild(o)});
@@ -280,14 +297,16 @@ async function loadSimulationGames(refreshSelected=false){
   const data=refreshSelected
    ?await (async()=>{const response=await fetch("/api/simulation/games/refresh?sport="+encodeURIComponent(sport),{method:"POST"});const payload=await response.json();if(!response.ok)throw Error(payload.detail||"Selected league refresh failed");return payload})()
    :await get(url);
+  simulationGames=data.games||[];
   game.innerHTML='<option value="">Select a game</option>';
-  (data.games||[]).forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.textContent=g.matchup+" · "+date(g.commence_time)+(g.can_simulate?"":" · missing usable spread/total");if(!g.can_simulate)o.disabled=true;game.appendChild(o)});
+  simulationGames.forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.textContent=g.matchup+" · "+date(g.commence_time)+" · spread "+(g.spread_books||0)+" books / total "+(g.total_books||0)+" books"+(g.can_simulate?"":" · incomplete markets");game.appendChild(o)});
   game.disabled=false;
   const count=(data.games||[]).length;
   const ready=(data.games||[]).filter(g=>g.can_simulate).length;
   $("simStatus").textContent=count
-   ?count+" games found for "+sport.replaceAll("_"," ").toUpperCase()+"; "+ready+" have usable spread and total lines. Incomplete games are disabled."
+   ?count+" games found for "+sport.replaceAll("_"," ").toUpperCase()+"; "+ready+" have complete spread and total markets. Select any game to inspect its sportsbook data."
    :"No games are currently stored for "+sport.replaceAll("_"," ").toUpperCase()+". Use Load / Refresh This League to request this league only.";
+  renderSimulationDiagnostics([]);
  }catch(e){game.innerHTML='<option value="">Could not load games</option>';$("simStatus").textContent=e.message}
  finally{loadButton.disabled=false}
 }
@@ -314,7 +333,13 @@ async function runSelectedSimulation(){
 }
 $("simLeague").addEventListener("change",()=>{ $("loadSimGames").disabled=!$("simLeague").value;loadSimulationGames(false); });
 $("loadSimGames").addEventListener("click",()=>loadSimulationGames(true));
-$("simGame").addEventListener("change",()=>{$("runSimulation").disabled=!$("simGame").value;$("simResults").classList.add("hidden")});
+$("simGame").addEventListener("change",()=>{
+ const selected=simulationGames.find(g=>g.event_id===$("simGame").value);
+ $("runSimulation").disabled=!selected||!selected.can_simulate;
+ $("simResults").classList.add("hidden");
+ renderSimulationDiagnostics(selected?selected.market_diagnostics:[]);
+ if(selected&&!selected.can_simulate)$("simStatus").textContent=selected.reason||"This game does not yet have complete, consistent spread and total markets.";
+});
 $("runSimulation").addEventListener("click",runSelectedSimulation);
 
 load();
