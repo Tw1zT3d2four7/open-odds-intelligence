@@ -10,6 +10,7 @@ import csv
 import io
 import math
 from collections import defaultdict
+from statistics import median
 
 REQUIRED_SETTLEMENT_FIELDS = {
     "event_id", "sport_key", "commence_time", "home_team", "away_team",
@@ -297,8 +298,8 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
         if family not in LEAGUE_PRIORS:
             skipped.append({"event_id": settlement.get("event_id"), "reason": "unsupported sport family"})
             continue
-        market_margin = sum(inputs["spread_margins"]) / len(inputs["spread_margins"])
-        market_total = sum(inputs["totals"]) / len(inputs["totals"])
+        market_margin = median(inputs["spread_margins"])
+        market_total = median(inputs["totals"])
         home_mean = max(0.05, (market_total + market_margin) / 2)
         away_mean = max(0.05, (market_total - market_margin) / 2)
         actual_home, actual_away = int(settlement["home_score"]), int(settlement["away_score"])
