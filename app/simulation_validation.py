@@ -159,7 +159,7 @@ def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
 
 
 def _parse_timestamp(value):
-    from datetime import datetime
+    from datetime import datetime, timezone
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
