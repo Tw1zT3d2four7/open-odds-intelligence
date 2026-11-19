@@ -80,8 +80,9 @@ def _market_inputs(event):
     if not totals:
         missing.append("a usable over/under total line")
     if missing:
-        raise ValueError("The stored odds contain markets, but the simulator could not read " +
-                         " and ".join(missing) + ". Check provider outcome/team-name mapping.")
+        raise ValueError("The simulator requires usable spread and total lines. The stored odds " +
+                         "could not provide " + " and ".join(missing) +
+                         ". Check provider outcome/team-name mapping.")
     return median(spread_margins), median(totals), len(spread_margins), len(totals)
 
 
