@@ -327,7 +327,7 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     if scored and baseline_scored:
         report["model_minus_baseline"] = {
             key: (report["overall"][key] - baseline_report["overall"][key])
-            for key in ("brier_score", "log_loss", "home_score_mae", "away_score_mae", "total_score_mae", "margin_mae")
+            for key in ("brier_score", "log_loss", "total_brier_score", "total_log_loss", "home_score_mae", "away_score_mae", "total_score_mae", "margin_mae")
         }
     report["settlements_submitted"] = len(settlements)
     report["events_scored"] = len(scored)
