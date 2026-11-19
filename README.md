@@ -47,9 +47,11 @@ The calculator can estimate a fair -1 run-line / puck-line price when a sportsbo
 
 The simulator is an on-demand, single-game tool. Select a configured league, choose one game from the latest locally stored odds snapshot, then click Run Simulation. Its league selector follows the same configured league catalog as the rest of the platform; college football and college basketball are included in the default coverage. The backend executes exactly 10,000 trials for that event; it does not loop over the league or request fresh provider data. A game is selectable only when current spread and total markets are available.
 
-The simulator remains market-informed: the median available sportsbook spread and total anchor expected margin and scoring level. Without an installed empirical model it uses broad league-family priors. When trained parameters are available, basketball/football use league-fitted correlated margin/total residual distributions and low-scoring leagues use league-fitted Gamma-Poisson overdispersion. Basketball, NHL, MLB and NCAAF regulation ties receive sport-specific overtime/extra-inning approximations; soccer draws remain valid and NFL regular-season ties may remain. These rules are explicitly approximations and must be validated against historical results. The result reports simulated win/draw probabilities, average projected score and over/under probabilities against the consensus total. The simulator uses only the chosen event. An optional integer `seed` on the simulation API makes a run exactly reproducible for model research and regression testing; when omitted, each run uses a fresh random stream.
+The simulator remains market-informed: the latest archived sportsbook spread and total anchor expected margin and scoring level. It supports optional empirically fitted league parameters loaded from `SIMULATION_MODEL_PATH`; without a model file it clearly falls back to broad league-family priors. The training workflow estimates league-specific market-residual bias, scoring volatility and correlation for basketball/football, plus Gamma-Poisson overdispersion for low-scoring leagues. Separate later calibration data can fit per-league multiclass temperature scaling for game outcomes (home/away/tie) and totals (over/under/push). Basketball, NHL, MLB and NCAAF ties use sport-specific overtime/extra-inning approximations; soccer draws remain valid and NFL regular-season ties may remain. These resolution rules are explicit approximations, not full period-by-period rule models. An optional integer `seed` makes the 10,000-trial run reproducible.
 
-This is not a reproduction of any sportsbook's proprietary model. Sportsbooks may incorporate proprietary team/player ratings, play-by-play efficiency, pace, injuries, starting lineups, weather, rest/travel, matchup adjustments, correlated scoring models, market-making and risk/liability signals. Those feeds and validated league-specific models are not currently present in this application. When a separate chronological calibration set is supplied, the simulator can apply per-league multiclass temperature scaling; otherwise its probabilities remain uncalibrated. Until adequate untouched holdout results demonstrate otherwise, describe it as a market-informed scenario estimate, not a professional-book replica or proven predictive edge. The game list and simulation use saved odds only and consume no additional provider quota.
+A paper-only historical replay workflow now reconstructs each forecast from the latest archived quote snapshot strictly before kickoff, matches verified final-score CSV rows, and reports win/tie and totals Brier scores, log loss, calibration buckets, projected-score MAE, total MAE and margin MAE. It requires separate chronological training, calibration and untouched holdout datasets, rejects event overlap and invalid time ordering, and compares fitted predictions with an unfitted broad-prior baseline on the same holdout events. The replay makes no provider requests and does not modify the quote database. See [docs/SIMULATOR_VALIDATION.md](docs/SIMULATOR_VALIDATION.md) for CSV requirements, command, thresholds and interpretation.
+
+**Important validation status:** the implementation and automated tests are in place, but no licensed historical settlement dataset is bundled and no real-world empirical fit or holdout performance is claimed. You must supply verified results that overlap your archived pregame quote history. Until a sufficiently large untouched holdout demonstrates reliable calibration and lower forecast error, treat all outputs as market-informed scenario estimates—not validated independent predictions, betting advice or evidence of a profitable edge. The simulator uses saved odds only and consumes no additional provider quota.
 
 ## Optional player props
 
@@ -127,15 +129,26 @@ Before enabling public subscriber access, confirm that the selected odds provide
 
 ## Development roadmap
 
-1. ~~Persistent SQLite quote and event storage~~
-2. ~~Exact-line best-price comparison~~
-3. ~~Multi-market EV screening using other-book consensus~~
-4. ~~Two-outcome cross-book arbitrage scanning~~
-5. ~~Consolidated line movement and quote timelines~~
-6. ~~Prospective closing-line value tracking~~; implement audited historical strategy backtesting after sufficient quote archives and trustworthy settlement data are available.
-7. Optional player props are implemented for The Odds API; expand provider coverage and add player-specific CLV only after identity and settlement validation.
-8. Harden the core with deeper operational monitoring, retention/backup guidance and additional provider diagnostics.
-9. Add application authentication, subscriber access tiers and recurring billing before any public commercial launch; add further licensed providers and injury/news feeds only where reliable data is available.
+### Completed foundations
+1. ~~Persistent SQLite quote and event storage.~~
+2. ~~Exact-line best-price comparison, multi-market EV screening and cross-book arbitrage scanning.~~
+3. ~~Consolidated line movement, quote timelines and prospective CLV capture.~~
+4. ~~On-demand 10,000-trial, single-game simulator with deterministic seed support and sport-specific tie/overtime resolution approximations.~~
+5. ~~Simulator historical-replay foundation: verified settlement CSV import, strictly pregame archived-quote reconstruction, chronological train/calibration/holdout separation, per-league scoring-parameter fitting, separate outcome/total probability calibration, holdout scoring and same-event broad-prior baseline comparison.~~
+6. ~~Automated simulator validation suite and documented paper-only backtest workflow.~~
+
+### Active simulator validation — not yet a validated predictive model
+7. Collect authorized, trustworthy final results that overlap the locally archived pregame odds snapshots for each supported league.
+8. Run the three-stage workflow league by league; inspect sample sizes, score distributions, calibration buckets, Brier/log-loss and score-error deltas on untouched holdouts.
+9. Improve sport-specific scoring and overtime/extra-inning assumptions using historical evidence; add league-specific model components only when sample sizes justify them.
+10. Add stronger independent market benchmarks and rolling out-of-time evaluation. Keep fitted parameters disabled for any league that fails minimum sample, calibration or holdout quality gates.
+
+### Remaining platform work
+11. Optional player props are implemented for The Odds API; expand provider coverage and add player-specific CLV only after identity and settlement validation.
+12. Harden the core with deeper operational monitoring, retention/backup guidance and additional provider diagnostics.
+13. Add application authentication, subscriber access tiers and recurring billing before any public commercial launch; add further licensed providers and injury/news feeds only where reliable data is available.
+
+A successful CI run confirms code and test behavior; it does not replace real historical validation. No simulator image is considered ready for deployment solely because its automated tests pass.
 
 ## License
 
