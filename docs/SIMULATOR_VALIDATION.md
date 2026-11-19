@@ -12,6 +12,14 @@ The backtest is paper-only and replays the application's own immutable SQLite qu
 
 It never requests odds from a provider, never uses a current quote as a historical quote, and never uses a post-start snapshot as a pregame input. Events without a valid pregame spread and total, matching team identities, and a final settlement are skipped with an explicit reason.
 
+## Interactive 10,000-trial simulation
+
+The dashboard's single-game simulator uses only the latest locally stored odds snapshot for the selected league. A game must have a complete, internally consistent sportsbook spread and total, and that league's snapshot must be marked current by the application's freshness monitor. The game selector shows the freshness state and age; stale, unavailable, or unknown snapshots are marked not ready, and the run endpoint independently rejects them with HTTP 409.
+
+Running the 10,000 trials makes no provider/API request. If the selected league's odds are stale or unavailable, use **Load / Refresh This League** to request only that league, then reload its game list. The default stale-data threshold is six hours (`ODDS_DATA_STALE_AFTER_SECONDS=21600`, with a five-minute minimum). The threshold measures the age of the stored snapshot, not the age of each individual sportsbook quote.
+
+This guard prevents old stored lines from being silently presented as current. It does not make a market price live or guarantee that a sportsbook still offers the displayed line; verify availability and settlement rules independently.
+
 ## Settlement CSV format
 
 Create a UTF-8 CSV with this exact required header:

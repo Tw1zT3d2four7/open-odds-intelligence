@@ -223,11 +223,30 @@ def _simulation_snapshot_freshness(sport: str):
 
 def _simulation_games_for_sport(sport: str):
     games = []
+    freshness = _simulation_snapshot_freshness(sport)
+    freshness_state = (
+        freshness.get("freshness", "unknown")
+        if isinstance(freshness, dict) else "unavailable"
+    )
+    freshness_age = freshness.get("age_seconds") if isinstance(freshness, dict) else None
     for event in service.events(sport):
         if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
             continue
         from .simulation import market_readiness
         readiness = market_readiness(event)
+        readiness["snapshot_freshness"] = freshness_state
+        readiness["snapshot_age_seconds"] = freshness_age
+        if freshness_state != "current":
+            readiness["can_simulate"] = False
+            freshness_reason = (
+                f"The league odds snapshot is {freshness_state}"
+                + (f" ({freshness_age} seconds old)" if isinstance(freshness_age, int) else "")
+                + "; refresh this league before simulating."
+            )
+            readiness["reason"] = (
+                f'{readiness["reason"]} {freshness_reason}'
+                if readiness.get("reason") else freshness_reason
+            )
         games.append({
             "event_id": event["id"],
             "matchup": f'{event["away_team"]} @ {event["home_team"]}',

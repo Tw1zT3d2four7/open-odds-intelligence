@@ -232,6 +232,59 @@ def test_simulation_game_list_is_scoped_to_selected_configured_league(monkeypatc
     assert invalid.status_code == 400
 
 
+
+def test_simulation_game_list_disables_games_when_league_snapshot_is_stale(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    event = {
+        "id": "nba-game", "sport_key": "basketball_nba",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [
+            {"key": "book-a", "markets": [
+                {"key": "spreads", "outcomes": [
+                    {"name": "Home", "point": -3.5}, {"name": "Away", "point": 3.5}]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "point": 220.5}, {"name": "Under", "point": 220.5}]},
+            ]},
+        ],
+    }
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "stale", "age_seconds": 21601}]
+    })
+    with TestClient(main.app) as client:
+        response = client.get("/api/simulation/games?sport=basketball_nba")
+
+    assert response.status_code == 200
+    game = response.json()["games"][0]
+    assert game["spread_books"] == 1
+    assert game["total_books"] == 1
+    assert game["snapshot_freshness"] == "stale"
+    assert game["snapshot_age_seconds"] == 21601
+    assert game["can_simulate"] is False
+    assert "refresh this league" in game["reason"]
+
+
+def test_simulation_game_list_marks_unavailable_snapshot_not_ready(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    event = {
+        "id": "nba-game", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [{"key": "book", "markets": [
+            {"key": "spreads", "outcomes": [
+                {"name": "Home", "point": -3.5}, {"name": "Away", "point": 3.5}]},
+            {"key": "totals", "outcomes": [
+                {"name": "Over", "point": 220.5}, {"name": "Under", "point": 220.5}]},
+        ]}],
+    }
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "status", lambda: {"sport_freshness": []})
+    with TestClient(main.app) as client:
+        response = client.get("/api/simulation/games?sport=basketball_nba")
+    game = response.json()["games"][0]
+    assert game["snapshot_freshness"] == "unavailable"
+    assert game["can_simulate"] is False
+
+
 def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
     selected = {

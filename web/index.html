@@ -305,12 +305,12 @@ async function loadSimulationGames(refreshSelected=false){
    :await get(url);
   simulationGames=data.games||[];
   game.innerHTML='<option value="">Select a game</option>';
-  simulationGames.forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.textContent=g.matchup+" · "+date(g.commence_time)+" · spread "+(g.spread_books||0)+" books / total "+(g.total_books||0)+" books"+(g.can_simulate?"":" · incomplete markets");game.appendChild(o)});
+  simulationGames.forEach(g=>{const o=document.createElement("option");o.value=g.event_id;const blocked=g.snapshot_freshness&&g.snapshot_freshness!=="current"?" · "+g.snapshot_freshness+" odds snapshot": " · incomplete markets";o.textContent=g.matchup+" · "+date(g.commence_time)+" · spread "+(g.spread_books||0)+" books / total "+(g.total_books||0)+" books"+(g.can_simulate?"":blocked);game.appendChild(o)});
   game.disabled=false;
   const count=(data.games||[]).length;
   const ready=(data.games||[]).filter(g=>g.can_simulate).length;
   $("simStatus").textContent=count
-   ?count+" games found for "+sport.replaceAll("_"," ").toUpperCase()+"; "+ready+" have complete spread and total markets. Select any game to inspect its sportsbook data."
+   ?count+" games found for "+sport.replaceAll("_"," ").toUpperCase()+"; "+ready+" are ready with complete markets and current odds. Select a game to inspect its sportsbook data."
    :"No games are currently stored for "+sport.replaceAll("_"," ").toUpperCase()+". Use Load / Refresh This League to request this league only.";
   renderSimulationDiagnostics([]);
  }catch(e){game.innerHTML='<option value="">Could not load games</option>';$("simStatus").textContent=e.message}
