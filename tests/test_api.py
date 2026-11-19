@@ -294,5 +294,5 @@ def test_simulation_dashboard_enables_game_selector_and_offers_explicit_league_l
     assert response.status_code == 200
     assert 'id="loadSimGames"' in response.text
     assert 'game.disabled=false;' in response.text
-    assert '"/api/simulation/games/refresh?sport="' in response.text
+    assert 'fetch("/api/simulation/games/refresh?sport="+' in response.text
 
