@@ -451,9 +451,9 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "home_margin_sd": prior["margin_sd"],
             "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
-            "fitted_margin_bias": fitted.get("margin_bias", 0.0) if fitted else None,
-            "fitted_total_bias": fitted.get("total_bias", 0.0) if fitted else None,
-            "fitted_margin_total_correlation": fitted.get("margin_total_corr", 0.0) if fitted else None,
+            "fitted_margin_bias": fitted.get("margin_bias") if empirical_fit else None,
+            "fitted_total_bias": fitted.get("total_bias") if empirical_fit else None,
+            "fitted_margin_total_correlation": fitted.get("margin_total_corr") if empirical_fit else None,
             "probability_temperature": temperature,
         },
         "data_quality": {
@@ -472,6 +472,9 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "lineups or weather. It is not validated until evaluated on an adequate untouched "
             "chronological holdout."
             if empirical_fit else
+            "Market-informed scenario model with broad league-family priors; outcome "
+            "probabilities have a separately fitted calibration temperature."
+            if temperature is not None else
             "Market-informed scenario model: median complete sportsbook spread and total "
             "quotes anchor expected margin and scoring level; broad league-family priors "
             "generate trial outcomes. It is not a validated forecast."
