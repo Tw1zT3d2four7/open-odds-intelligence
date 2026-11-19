@@ -98,7 +98,7 @@ class TheRundownProvider:
                 retry_after=retry_after,
                 retryable=exc.code in (408, 425, 429, 500, 502, 503, 504),
             ) from exc
-        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except (URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ProviderError(
                 f"TheRundown request failed: {exc}", retryable=True
             ) from exc
@@ -109,7 +109,7 @@ class TheRundownProvider:
             return None
         try:
             return float(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None
 
     @staticmethod
