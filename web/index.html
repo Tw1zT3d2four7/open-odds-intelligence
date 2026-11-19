@@ -66,7 +66,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
 </section>
 <div class="filters"><label class="muted" for="minEv">Minimum EV %</label><input id="minEv" type="number" min="-100" max="100" step=".25" value="1"><label class="muted" for="consensus">Other books</label><select id="consensus"><option value="1">1+</option><option value="2" selected>2+</option><option value="3">3+</option><option value="4">4+</option></select><button id="apply">Apply filters</button></div>
 <nav class="tabs" aria-label="Market views">
-<button class="tab active" data-tab="ev">EV opportunities</button><button class="tab" data-tab="arb">Arbitrage</button><button class="tab" data-tab="board">Best-price board</button><button class="tab" data-tab="movement">Line movement</button><button class="tab" data-tab="limits">Market limits</button><button class="tab" data-tab="clv">Closing-line value</button><button class="tab" data-tab="props">Player props</button><button class="tab" data-tab="calculators">Betting calculators</button>
+<button class="tab active" data-tab="ev">EV opportunities</button><button class="tab" data-tab="arb">Arbitrage</button><button class="tab" data-tab="board">Best-price board</button><button class="tab" data-tab="movement">Line movement</button><button class="tab" data-tab="limits">Market limits</button><button class="tab" data-tab="clv">Closing-line value</button><button class="tab" data-tab="props">Player props</button><button class="tab" data-tab="calculators">Betting calculators</button><button class="tab" data-tab="simulation">10,000 Game Sim</button>
 </nav>
 <section class="panel" id="view-ev"><h2>Estimated positive expected value</h2><div class="tablewrap"><table><thead><tr><th>Sport / matchup</th><th>Market</th><th>Outcome</th><th>Best book</th><th>Odds</th><th>Fair %</th><th>Est. EV</th><th>Consensus</th><th>Start</th></tr></thead><tbody id="evRows"><tr><td class="empty" colspan="9">Loading opportunities…</td></tr></tbody></table></div></section>
 <section class="panel hidden" id="view-arb"><h2>Cross-book arbitrage candidates</h2><div class="tablewrap"><table><thead><tr><th>Matchup</th><th>Market</th><th>Line</th><th>Arb %</th><th>Leg 1</th><th>Odds</th><th>Stake %</th><th>Leg 2</th><th>Odds</th><th>Stake %</th><th>Start</th></tr></thead><tbody id="arbRows"><tr><td class="empty" colspan="11">Loading arbitrage…</td></tr></tbody></table></div></section>
@@ -75,6 +75,31 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
 <section class="panel hidden" id="view-limits"><div class="bar"><div><h2>Posted sportsbook market limits</h2><small id="limitsStatus">Checking free limits feed…</small></div><button id="refreshLimits" class="primary">Refresh limits</button></div><p class="muted">Only explicit provider-reported posted market limits are displayed. Circa is the initial target; Pinnacle appears only if the free feed supplies a posted_limit field for it. These are market maximums in the book's currency—not your personal account limits. The free plan allows 1,000 price requests/month; automatic polling defaults to four hours across configured sports.</p><div class="bar" style="margin-top:18px"><div><h3>Detected limit changes</h3><small>Successive snapshots for the same event, sportsbook, market, selection and line.</small></div><select id="limitsDirection" aria-label="Limit change direction"><option value="increased">Increases only</option><option value="all">All changes</option><option value="decreased">Decreases only</option></select></div><div class="tablewrap"><table><thead><tr><th>Observed</th><th>Sportsbook</th><th>Matchup</th><th>Market / selection</th><th>Line</th><th>Previous → Current</th><th>Change</th></tr></thead><tbody id="limitChangesRows"><tr><td class="empty" colspan="7">No limit changes detected yet. A second snapshot is required.</td></tr></tbody></table></div><h3 style="margin-top:22px">Current posted limits</h3><div class="tablewrap"><table><thead><tr><th>Matchup</th><th>Sportsbook</th><th>Market</th><th>Selection</th><th>Line</th><th>Posted limit</th><th>Odds</th><th>Start</th><th>Observed</th></tr></thead><tbody id="limitsRows"><tr><td class="empty" colspan="9">No posted limits captured yet. Configure ODDSLINK_API_KEY to enable the free feed.</td></tr></tbody></table></div><div id="limitHistoryPanel" class="panel hidden" style="margin-top:16px"><div class="bar"><div><h3 id="limitHistoryTitle">Posted-limit history</h3><small id="limitHistoryMeta" class="muted">Select a detected change to inspect its saved snapshots.</small></div><button type="button" id="closeLimitHistory">Close history</button></div><div id="limitHistoryChart" style="width:100%;overflow:hidden"></div><div class="tablewrap"><table><thead><tr><th>Observed at</th><th>Posted limit</th><th>Odds</th><th>Change from prior</th></tr></thead><tbody id="limitHistoryRows"></tbody></table></div></div><p class="muted">A limit change alert is generated only after two observations of the same event, book, market, selection and line show a different provider-reported posted limit. No amount is inferred when the source omits it. Click any detected change to inspect its full saved limit history.</p></section>
 <section class="panel hidden" id="view-clv"><h2>Closing-line value (CLV) tracker</h2><p class="muted">Captures the first positive-EV quote per exact event, market, selection, line and sportsbook. After the event starts, it compares that entry price with the last pregame no-vig consensus price from at least two other complete same-line books. Positive CLV means the entry price beat the consensus close. This measures price quality, not betting profit, prediction accuracy or win rate.</p><div class="cards"><div class="card"><small>TRACKED ENTRIES</small><div class="value" id="clvTotal">0</div></div><div class="card"><small>CLOSED / VALID</small><div class="value" id="clvClosed">0</div></div><div class="card"><small>AVERAGE CLV</small><div class="value" id="clvAverage">—</div></div><div class="card"><small>POSITIVE / NEGATIVE</small><div class="value" id="clvRecord">0 / 0</div></div></div><div class="bar"><small id="clvMeta" class="muted">Entries are captured automatically during odds refreshes. Historical tracking begins after this version is installed.</small><button id="refreshClv">Refresh CLV report</button></div><div class="tablewrap"><table><thead><tr><th>Matchup</th><th>Market / selection</th><th>Sportsbook</th><th>Entry odds</th><th>Entry EV</th><th>Closing fair odds</th><th>Closing fair %</th><th>CLV</th><th>Close books</th><th>Status</th></tr></thead><tbody id="clvRows"><tr><td class="empty" colspan="10">No tracked entries yet. Refresh odds with positive-EV candidates to begin collecting entries.</td></tr></tbody></table></div></section>
 <section class="panel hidden" id="view-props"><h2>Player props market board</h2><p class="muted">Compares provider-supplied player prop quotes by player, market, over/under side, exact line and sportsbook. Player identity is kept separate from Over/Under so different athletes are never merged. This feed is opt-in and disabled by default because The Odds API requires individual event-odds requests for non-featured player markets. Each event request can consume quota; TheRundown Free currently supplies main markets only.</p><div class="bar"><small id="propsStatus" class="muted">Player props are disabled. Configure PLAYER_PROPS_ENABLED=true, PLAYER_PROPS_SPORT and PLAYER_PROPS_MARKETS only after reviewing provider quota.</small></div><div class="tablewrap"><table><thead><tr><th>Matchup</th><th>Player</th><th>Prop market</th><th>Side</th><th>Line</th><th>Sportsbook</th><th>Odds</th><th>Start</th></tr></thead><tbody id="propsRows"><tr><td class="empty" colspan="8">Player props are disabled by default. No requests are made until explicitly enabled.</td></tr></tbody></table></div></section>
+<section class="panel hidden" id="view-simulation">
+ <h2>10,000-trial single-game simulator</h2>
+ <p class="muted">Choose one league and one game. The simulation runs only after you click Run Simulation. It uses the latest locally stored sportsbook spread and total consensus and makes no provider/API requests.</p>
+ <div class="filters">
+  <label for="simLeague">League</label><select id="simLeague"><option value="">Select a league</option></select>
+  <label for="simGame">Game</label><select id="simGame" disabled><option value="">Select a league first</option></select>
+  <button class="primary" id="runSimulation" disabled>Run 10,000 Simulations</button>
+ </div>
+ <p class="muted" id="simStatus" aria-live="polite">Select a league, then choose a game from the available odds snapshot.</p>
+ <div id="simResults" class="hidden">
+  <div class="cards">
+   <div class="card"><small>SIMULATED HOME WIN</small><div class="value" id="simHomeWin">—</div><small id="simHomeTeam"></small></div>
+   <div class="card"><small>SIMULATED AWAY WIN</small><div class="value" id="simAwayWin">—</div><small id="simAwayTeam"></small></div>
+   <div class="card"><small>PROJECTED SCORE</small><div class="value" id="simScore">—</div><small id="simTie">Tie / draw —</small></div>
+   <div class="card"><small>SIMULATIONS RUN</small><div class="value" id="simTrials">10,000</div><small id="simDataQuality">—</small></div>
+  </div>
+  <div class="cards">
+   <div class="card"><small>OVER PROBABILITY</small><div class="value" id="simOver">—</div><small id="simTotalLine"></small></div>
+   <div class="card"><small>UNDER PROBABILITY</small><div class="value" id="simUnder">—</div><small id="simTotalPush">Push —</small></div>
+   <div class="card"><small>MARKET-IMPLIED HOME MARGIN</small><div class="value" id="simMargin">—</div></div>
+   <div class="card"><small>SIMULATION METHOD</small><div class="value" id="simDistribution">—</div><small>Market-informed scoring distribution</small></div>
+  </div>
+  <p class="muted" id="simMethodology"></p>
+ </div>
+</section>
 <section class="panel hidden" id="view-calculators">
  <div class="bar" style="justify-content:space-between"><div><h2>Betting calculators</h2><small class="muted">Independent tools · no provider requests · calculations run in your browser</small></div><div class="bar"><label for="calcOddsFormat">Odds format</label><select id="calcOddsFormat"><option value="american">American</option><option value="decimal">Decimal</option></select></div></div>
  <nav class="tabs" aria-label="Betting calculator tools">
@@ -118,7 +143,7 @@ const empty=(body,cols,msg)=>body.innerHTML='<tr><td class="empty" colspan="'+co
 async function get(path){const r=await fetch(path);if(!r.ok)throw Error("API "+r.status+" for "+path);return r.json()}
 async function getSafe(path,fallback,failures){try{return await get(path)}catch(err){failures.push(err.message);return fallback}}
 function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
-function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","movement","limits","clv","props","calculators"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
+function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
 async function load(){
  const apiFailures=[];
  try{
@@ -131,7 +156,7 @@ async function load(){
   const quota=health.provider_usage||{};const quotaText=quota.datapoints_remaining!==undefined?" · Data points remaining: "+quota.datapoints_remaining+(quota.datapoints_total!==undefined?" (last response "+quota.datapoints_total+")":"")+(quota.data_delay_seconds!==undefined?" · Data delay "+quota.data_delay_seconds+"s":""):quota.requests_remaining!==undefined?" · API requests remaining: "+quota.requests_remaining+(quota.requests_used!==undefined?" (used "+quota.requests_used+")":""):"";const refreshText=health.refresh_interval_seconds>0?" · Auto refresh every "+health.refresh_interval_seconds+"s":" · Manual refresh";
   const alertText=health.alerts_enabled===true?" · Discord ON · Sent "+(health.alerts_sent??0)+" · Qualified "+(health.last_alert_qualified??health.alerts_qualified??0)+" qualified this check · "+(health.last_alert_sent??0)+" sent last check"+(health.last_alert_error||health.alert_error?" · ALERT ERROR: "+(health.last_alert_error||health.alert_error):""): " · Discord OFF (webhook missing)";
   const sportFreshness=health.sport_freshness||[];const staleSports=sportFreshness.filter(x=>x.freshness==="stale").map(x=>x.sport);const missingSports=sportFreshness.filter(x=>x.freshness==="unavailable").map(x=>x.sport);const freshnessText=health.data_freshness==="stale"?" · STALE ODDS: "+staleSports.join(", "):health.data_freshness==="partial"?" · INCOMPLETE FEED: "+missingSports.join(", "):health.data_freshness==="current"?" · Feed current":" · Feed freshness unavailable";$("notice").textContent=status+quotaText+refreshText+alertText+freshnessText;$("updated").textContent=health.last_updated?"Updated "+date(health.last_updated):"No successful refresh";
-  const sel=$("sport"),current=state.sport;sellist(sel,health.sports||[],current);
+  const sel=$("sport"),current=state.sport;sellist(sel,health.sports||[],current);populateSimulationLeagues(health.sports||[]);
   const evRows=$("evRows");evRows.innerHTML="";(ev.opportunities||[]).forEach(x=>row(evRows,[x.matchup,x.market,(x.outcome_description?x.outcome_description+" · ":"")+(x.point===null||x.point===undefined?x.outcome:x.outcome+" ("+x.point+")"),x.bookmaker,fmtOdds(x.price),(x.fair_probability*100).toFixed(1)+"%",[Number(x.ev_percent).toFixed(2)+"%","good"],(x.consensus_books||0)+" books",date(x.commence_time)]));if(!evRows.children.length)empty(evRows,9,"No qualifying EV opportunities. More independent books may be required for consensus.");
   const arbRows=$("arbRows");arbRows.innerHTML="";(arb.arbitrage||[]).forEach(x=>{const a=x.legs||[];row(arbRows,[x.matchup,x.market,x.line??"—",[x.arb_percent.toFixed(3)+"%","good"],a[0]?.outcome||"—",a[0]?fmtOdds(a[0].price):"—",a[0]?a[0].stake_percent+"%":"—",a[1]?.outcome||"—",a[1]?fmtOdds(a[1].price):"—",a[1]?a[1].stake_percent+"%":"—",date(x.commence_time)]);});if(!arbRows.children.length)empty(arbRows,11,"No mathematical two-outcome arbitrage found in current quotes.");
   const boardRows=$("boardRows");boardRows.innerHTML="";(board.quotes||[]).forEach(x=>{const tr=document.createElement("tr");[x.matchup,x.market,x.outcome,x.point??"—",x.bookmaker,fmtOdds(x.price),date(x.commence_time)].forEach(v=>cell(tr,v));tr.title="Click to view saved price history";tr.style.cursor="pointer";tr.addEventListener("click",()=>showHistory(x));boardRows.appendChild(tr)});if(!boardRows.children.length)empty(boardRows,7,"No market quotes loaded.");
@@ -236,5 +261,47 @@ document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.ad
  document.querySelectorAll("#view-calculators input").forEach(input=>input.addEventListener("input",recalcAll));
  addLeg(-110);addLeg(100);recalcAll();
 })();
+
+/* Selected-game Monte Carlo simulator: fixed 10,000 trials; no provider refresh. */
+function populateSimulationLeagues(sports){
+ const sel=$("simLeague"),current=sel.value;sel.innerHTML='<option value="">Select a league</option>';
+ (sports||[]).forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s.replaceAll("_"," ").toUpperCase();sel.appendChild(o)});
+ if(sports.includes(current))sel.value=current;
+}
+async function loadSimulationGames(){
+ const sport=$("simLeague").value,game=$("simGame");game.innerHTML='<option value="">Loading games…</option>';
+ $("runSimulation").disabled=true;$("simResults").classList.add("hidden");
+ if(!sport){game.innerHTML='<option value="">Select a league first</option>';return}
+ try{
+  const data=await get("/api/simulation/games?sport="+encodeURIComponent(sport));game.innerHTML='<option value="">Select a game</option>';
+  (data.games||[]).forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.textContent=g.matchup+" · "+date(g.commence_time)+(g.has_spread&&g.has_total?"":" · incomplete markets");if(!g.has_spread||!g.has_total)o.disabled=true;game.appendChild(o)});
+  $("simStatus").textContent=(data.games||[]).length+" games in the latest stored snapshot. Games without both a spread and total are disabled.";
+ }catch(e){game.innerHTML='<option value="">Could not load games</option>';$("simStatus").textContent=e.message}
+}
+async function runSelectedSimulation(){
+ const sport=$("simLeague").value,eventId=$("simGame").value,btn=$("runSimulation");
+ if(!sport||!eventId)return;
+ btn.disabled=true;btn.textContent="Running 10,000…";$("simStatus").textContent="Running 10,000 trials for the selected game only…";
+ try{
+  const r=await fetch("/api/simulation/run?sport="+encodeURIComponent(sport)+"&event_id="+encodeURIComponent(eventId),{method:"POST"});
+  const data=await r.json();if(!r.ok)throw Error(data.detail||"Simulation failed");
+  $("simHomeWin").textContent=data.win_probabilities.home.toFixed(2)+"%";$("simAwayWin").textContent=data.win_probabilities.away.toFixed(2)+"%";
+  $("simHomeTeam").textContent=data.home_team;$("simAwayTeam").textContent=data.away_team;
+  $("simScore").textContent=data.projected_score.home.toFixed(1)+" – "+data.projected_score.away.toFixed(1);
+  $("simTie").textContent="Tie / draw "+data.win_probabilities.tie.toFixed(2)+"%";
+  $("simTrials").textContent=data.trials.toLocaleString();$("simDataQuality").textContent=data.data_quality.spread_books+" spread books · "+data.data_quality.total_books+" total books";
+  $("simOver").textContent=data.total_market.over.toFixed(2)+"%";$("simUnder").textContent=data.total_market.under.toFixed(2)+"%";
+  $("simTotalLine").textContent="Consensus total "+data.total_market.consensus_line;$("simTotalPush").textContent="Push "+data.total_market.push.toFixed(2)+"%";
+  $("simMargin").textContent=(data.margin_market.consensus_home_margin>0?"+":"")+data.margin_market.consensus_home_margin.toFixed(1);
+  $("simDistribution").textContent=data.data_quality.distribution.toUpperCase();
+  $("simMethodology").textContent=data.methodology;$("simResults").classList.remove("hidden");
+  $("simStatus").textContent="Completed exactly 10,000 trials for "+data.matchup+".";
+ }catch(e){$("simStatus").textContent="Simulation unavailable: "+e.message;$("simResults").classList.add("hidden")}
+ finally{btn.disabled=!$("simGame").value;btn.textContent="Run 10,000 Simulations"}
+}
+$("simLeague").addEventListener("change",loadSimulationGames);
+$("simGame").addEventListener("change",()=>{$("runSimulation").disabled=!$("simGame").value;$("simResults").classList.add("hidden")});
+$("runSimulation").addEventListener("click",runSelectedSimulation);
+
 load();
 </script></body></html>
