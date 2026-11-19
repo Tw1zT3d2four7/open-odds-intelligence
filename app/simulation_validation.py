@@ -61,6 +61,8 @@ def parse_settlements_csv(content: str) -> list[dict]:
         record["home_score"] = int(home_score)
         record["away_score"] = int(away_score)
         records.append(record)
+    if not records:
+        raise ValueError("Settlement CSV contains no result rows.")
     return records
 
 
@@ -163,7 +165,7 @@ def _parse_timestamp(value):
     except (TypeError, ValueError):
         raise ValueError(f"Invalid ISO-8601 timestamp: {value!r}") from None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        raise ValueError(f"Timestamp must include an explicit timezone: {value!r}")
     return parsed.astimezone(timezone.utc)
 
 
