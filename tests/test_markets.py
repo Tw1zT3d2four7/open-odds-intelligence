@@ -271,4 +271,7 @@ def test_valid_numeric_string_lines_are_canonicalized_for_analysis():
         ],
     }]
     result = analyze_markets(events, min_ev=-100, min_consensus_books=1)
-    assert len(result["opportunities"]) == 4
+    # Best-price output is one row per outcome/line, not one per book.
+    assert len(result["opportunities"]) == 2
+    assert {row["outcome"] for row in result["opportunities"]} == {"Home", "Away"}
+    assert all(row["consensus_books"] == 1 for row in result["opportunities"])
