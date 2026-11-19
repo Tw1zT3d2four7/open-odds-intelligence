@@ -94,7 +94,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                 groups = defaultdict(list)
                 for outcome in market.get("outcomes", []):
                     name, price = outcome.get("name"), outcome.get("price")
-                    if not name or not isinstance(price, int) or price == 0:
+                    if not name or isinstance(price, bool) or not isinstance(price, int) or price == 0:
                         continue
                     player_scope = (
                         outcome.get("description") or outcome.get("participant") or ""

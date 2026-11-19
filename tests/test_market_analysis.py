@@ -161,3 +161,18 @@ def test_full_book_ev_mode_preserves_each_qualifying_quote_for_clv():
         "a", "b", "c"
     }
     assert all(row["consensus_books"] == 2 for row in all_quotes["opportunities"])
+
+
+def test_market_analysis_ignores_boolean_american_prices():
+    event = event_fixture()
+    event[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = True
+    result = analyze_markets(event, min_ev=-100, min_consensus_books=1)
+    assert not any(
+        row["event_id"] == event[0]["id"] and row["bookmaker_key"] == "a"
+        and row["market"] == "h2h"
+        for row in result["opportunities"]
+    )
+    assert all(
+        leg["price"] is not True
+        for row in result["arbitrage"] for leg in row["legs"]
+    )

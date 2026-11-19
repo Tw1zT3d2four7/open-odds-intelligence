@@ -246,9 +246,12 @@ class OddsDatabase:
                 for book in event.get("bookmakers", []):
                     for market in book.get("markets", []):
                         for outcome in market.get("outcomes", []):
-                            try:
-                                price = int(outcome["price"])
-                            except (KeyError, TypeError, ValueError):
+                            # Provider odds are canonical integer American prices.
+                            # Do not coerce booleans, fractional values, or numeric strings:
+                            # coercion can silently turn malformed feed data into real quotes.
+                            price = outcome.get("price")
+                            if (isinstance(price, bool) or not isinstance(price, int)
+                                    or price == 0):
                                 continue
                             if not outcome.get("name") or not market.get("key") or not book.get("key"):
                                 continue

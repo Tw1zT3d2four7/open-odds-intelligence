@@ -36,3 +36,25 @@ def test_consensus_can_exclude_book_and_uses_median():
     without_a = market_consensus([event], exclude_bookmaker_key="book-a")["game-1"]
     assert all_books["Home"] != pytest.approx(without_a["Home"])
     assert without_a["Home"] > 0.5
+
+
+@pytest.mark.parametrize("price", [True, False, 0, float("inf"), float("-inf"), float("nan"), None, ""])
+def test_american_odds_helpers_reject_boolean_and_non_finite_prices(price):
+    with pytest.raises(ValueError):
+        american_to_decimal(price)
+    with pytest.raises(ValueError):
+        american_implied_probability(price)
+
+
+def test_market_consensus_skips_books_with_boolean_prices():
+    from app.math import market_consensus
+
+    event = {"id": "boolean-price", "bookmakers": [
+        {"key": "invalid", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": True}, {"name": "Away", "price": -110}]}]},
+        {"key": "valid", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": -120}, {"name": "Away", "price": 100}]}]},
+    ]}
+    consensus = market_consensus([event])["boolean-price"]
+    assert set(consensus) == {"Home", "Away"}
+    assert consensus["Home"] == pytest.approx((120 / 220) / ((120 / 220) + 0.5))
