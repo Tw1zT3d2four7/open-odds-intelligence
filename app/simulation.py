@@ -361,8 +361,10 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     home_scores, away_scores = [], []
     for _ in range(TRIALS):
         if prior["distribution"] == "poisson":
-            home_mean = max(0.05, (expected_total + expected_margin) / 2)
-            away_mean = max(0.05, (expected_total - expected_margin) / 2)
+            total_bias = fitted.get("total_bias", 0.0) if fitted else 0.0
+            margin_bias = fitted.get("margin_bias", 0.0) if fitted else 0.0
+            home_mean = max(0.05, (expected_total + total_bias + expected_margin + margin_bias) / 2)
+            away_mean = max(0.05, (expected_total + total_bias - expected_margin - margin_bias) / 2)
             home_alpha = fitted.get("home_alpha", 0.0) if fitted else 0.0
             away_alpha = fitted.get("away_alpha", 0.0) if fitted else 0.0
             home_score = _negative_binomial(rng, home_mean, home_alpha)
