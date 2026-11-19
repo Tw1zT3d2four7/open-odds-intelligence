@@ -46,7 +46,7 @@ def main():
             "warning": training_report["warning"],
         }
         Path(args.model_output).write_text(
-            json.dumps(model_payload, indent=2, sort_keys=True) + "\\n", encoding="utf-8"
+            json.dumps(model_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
     rendered = json.dumps(report, indent=2, sort_keys=True)
     if args.output:
