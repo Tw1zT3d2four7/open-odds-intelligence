@@ -34,6 +34,13 @@ def parse_settlements_csv(content: str) -> list[dict]:
         source = (raw.get("source") or "").strip()
         if not event_id:
             raise ValueError(f"Line {line_number}: event_id is required.")
+        for field in ("sport_key", "commence_time", "home_team", "away_team"):
+            if not (raw.get(field) or "").strip():
+                raise ValueError(f"Line {line_number}: {field} is required.")
+        try:
+            _parse_timestamp(raw["commence_time"])
+        except ValueError:
+            raise ValueError(f"Line {line_number}: commence_time must be ISO-8601 with timezone.") from None
         if event_id in seen:
             raise ValueError(f"Line {line_number}: duplicate event_id {event_id!r}.")
         seen.add(event_id)
