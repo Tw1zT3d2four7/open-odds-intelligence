@@ -12,8 +12,8 @@ def _score_payload(status="STATUS_FINAL", home_score=2, away_score=1):
         "event_id": "rundown-event-1",
         "event_date": "2026-01-02T23:30:00Z",
         "teams": [
-            {"team_id": 10, "name": "Home City", "mascot": "Home Club", "is_home": True},
-            {"team_id": 11, "name": "Away City", "mascot": "Away Club", "is_away": True},
+            {"team_id": 10, "name": "Home City Home Club", "mascot": "Home Club", "is_home": True},
+            {"team_id": 11, "name": "Away City Away Club", "mascot": "Away Club", "is_away": True},
         ],
         "score": {
             "event_status": status, "score_home": home_score, "score_away": away_score,
