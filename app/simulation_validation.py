@@ -471,8 +471,27 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
             loss = sum(losses) / len(losses)
             if loss < best_loss:
                 best_loss, best_temperature = loss, temperature
-        temperatures[sport] = {"temperature": best_temperature, "sample_size": len(rows),
-                               "calibration_log_loss": best_loss}
+        best_total_temperature, best_total_loss = 1.0, float("inf")
+        for step in range(50, 301, 2):
+            temperature = step / 100.0
+            losses = []
+            for row in rows:
+                probs = [float(row["predicted_over_probability"]),
+                         float(row["predicted_under_probability"]),
+                         float(row["predicted_total_push_probability"])]
+                weights = [max(1e-12, p) ** (1.0 / temperature) for p in probs]
+                denominator = sum(weights)
+                index = {"over": 0, "under": 1, "push": 2}[row["actual_total_result"]]
+                losses.append(-math.log(max(1e-12, weights[index] / denominator)))
+            loss = sum(losses) / len(losses)
+            if loss < best_total_loss:
+                best_total_loss, best_total_temperature = loss, temperature
+        temperatures[sport] = {
+            "temperature": best_temperature, "sample_size": len(rows),
+            "calibration_log_loss": best_loss,
+            "total_temperature": best_total_temperature,
+            "total_calibration_log_loss": best_total_loss,
+        }
     return {"temperatures": temperatures, "insufficient": insufficient,
             "minimum_sample_size": min_sample_size,
             "warning": "Fit only on a separate chronological calibration set, after model fitting and before the final holdout."}
