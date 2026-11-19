@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -28,10 +29,21 @@ class TheOddsAPIProvider(OddsProvider):
         self.usage = {}
 
     def _normalize_price(self, value):
-        """Store every provider quote as integer American odds."""
-        numeric = float(value)
+        """Validate provider prices before storing integer American odds."""
+        if isinstance(value, bool):
+            raise ValueError("Sportsbook price must be a finite non-zero number")
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("Sportsbook price must be a finite non-zero number") from None
+        if not math.isfinite(numeric):
+            raise ValueError("Sportsbook price must be a finite non-zero number")
         if self.odds_format == "decimal":
+            if numeric <= 1:
+                raise ValueError("Decimal odds must be greater than 1")
             return decimal_to_american(numeric)
+        if numeric == 0 or not numeric.is_integer():
+            raise ValueError("American odds must be a non-zero integer")
         return int(numeric)
 
     def fetch_player_props(self, sport: str, events: list[dict], markets: str, max_events=5) -> dict:
