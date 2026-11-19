@@ -284,6 +284,20 @@ def test_simulation_accepts_only_matching_empirical_league_parameters():
         raise AssertionError("Expected fitted model for another league to be rejected")
 
 
+@pytest.mark.parametrize("parameter", [
+    "margin_sd", "total_sd", "margin_total_corr", "margin_bias",
+    "total_bias", "temperature", "total_temperature", "home_alpha", "away_alpha",
+])
+def test_simulation_rejects_boolean_fitted_model_parameters(parameter):
+    event = sample_event()
+    params = {
+        "sport_key": "basketball_nba", "family": "basketball", "sample_size": 250,
+        parameter: True,
+    }
+    with pytest.raises(ValueError, match=parameter):
+        run_game_simulation(event, model_parameters=params)
+
+
 def test_simulation_rejects_invalid_empirical_parameters():
     event = sample_event()
     params = {"sport_key": "basketball_nba", "family": "basketball",
