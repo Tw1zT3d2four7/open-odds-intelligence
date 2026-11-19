@@ -114,7 +114,21 @@ The target sportsbook must not be included in its own fair-probability estimate.
 
 **Pass criteria:** opt-in only, event-specific market identity preserved, request count capped, polling throttled, provider quota visible and no fabricated props.
 
-### 8. Stability and operational checks
+### Provider failure and quota recovery
+
+Run these checks with mocked provider responses; do not use a live key to simulate failures.
+
+- A 401 or 403 is surfaced as a credential/permission failure and is not retried.
+- A 429 is surfaced with any available quota and `Retry-After` metadata, and the refresh stops without repeating that provider request or advancing to additional sports in the same run.
+- A transient 408, 425, 500, 502, 503, 504 or transport failure may be retried only within the configured `PROVIDER_RETRY_ATTEMPTS` limit.
+- Retry delays use bounded exponential backoff. A numeric or HTTP-date `Retry-After` is never shortened; when it exceeds `PROVIDER_RETRY_MAX_DELAY_SECONDS`, the request is deferred to a later refresh.
+- Verify quota headers returned with an HTTP error remain visible in provider diagnostics after the refresh fails.
+- Confirm a transient retry does not create a snapshot until a successful provider response is received, and a repeated manual refresh cannot run concurrently with the in-flight request.
+- Confirm retry settings are read from the private `.env`; leave the defaults in place unless the provider's rate/usage terms support a change.
+
+**Pass criteria:** no retries for credentials or quota exhaustion, no retry before a provider-specified deadline, bounded attempts and waits, visible quota diagnostics, and no duplicate/in-flight refresh amplification.
+
+## 8. Stability and operational checks
 
 - Leave the service running through multiple scheduled refresh intervals.
 - Confirm the container remains healthy and `GET /api/health` remains responsive.
