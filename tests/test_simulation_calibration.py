@@ -12,6 +12,10 @@ def test_temperature_calibration_requires_minimum_sample_and_fits_per_league():
             "predicted_home_probability": 0.8,
             "predicted_away_probability": 0.2,
             "predicted_tie_probability": 0.0,
+            "actual_total_result": "over" if index % 2 == 0 else "under",
+            "predicted_over_probability": 0.8,
+            "predicted_under_probability": 0.2,
+            "predicted_total_push_probability": 0.0,
         })
     result = fit_probability_temperatures(rows, min_sample_size=100)
     assert "basketball_nba" in result["temperatures"]
