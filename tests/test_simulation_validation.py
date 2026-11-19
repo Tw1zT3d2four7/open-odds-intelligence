@@ -114,3 +114,11 @@ def test_chronological_split_accepts_separate_later_holdout():
     test = [{"event_id": "test", "sport_key": "basketball_nba",
             "commence_time": "2026-01-02T00:00:00Z"}]
     validate_chronological_split(training, test)
+
+def test_settlement_csv_rejects_invalid_start_timestamp():
+    csv = (
+        "event_id,sport_key,commence_time,home_team,away_team,home_score,away_score,status,source\n"
+        "g1,basketball_nba,not-a-date,A,B,100,99,final,verified-feed\n"
+    )
+    with pytest.raises(ValueError, match="commence_time must be ISO-8601"):
+        parse_settlements_csv(csv)
