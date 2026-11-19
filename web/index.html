@@ -81,6 +81,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
  <div class="filters">
   <label for="simLeague">League</label><select id="simLeague"><option value="">Select a league</option></select>
   <label for="simGame">Game</label><select id="simGame" disabled><option value="">Select a league first</option></select>
+  <button id="loadSimGames" type="button" disabled>Load / Refresh This League</button>
   <button class="primary" id="runSimulation" disabled>Run 10,000 Simulations</button>
  </div>
  <p class="muted" id="simStatus" aria-live="polite">Select a league, then choose a game from the available odds snapshot.</p>
@@ -268,15 +269,26 @@ function populateSimulationLeagues(sports){
  (sports||[]).forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s.replaceAll("_"," ").toUpperCase();sel.appendChild(o)});
  if(sports.includes(current))sel.value=current;
 }
-async function loadSimulationGames(){
- const sport=$("simLeague").value,game=$("simGame");game.innerHTML='<option value="">Loading games…</option>';
+async function loadSimulationGames(refreshSelected=false){
+ const sport=$("simLeague").value,game=$("simGame");
  $("runSimulation").disabled=true;$("simResults").classList.add("hidden");
- if(!sport){game.innerHTML='<option value="">Select a league first</option>';return}
+ if(!sport){game.disabled=true;game.innerHTML='<option value="">Select a league first</option>';return}
+ game.disabled=true;game.innerHTML='<option value="">Loading games…</option>';
+ const loadButton=$("loadSimGames");loadButton.disabled=true;
  try{
-  const data=await get("/api/simulation/games?sport="+encodeURIComponent(sport));game.innerHTML='<option value="">Select a game</option>';
+  const url="/api/simulation/games?sport="+encodeURIComponent(sport);
+  const data=refreshSelected
+   ?await (async()=>{const response=await fetch("/api/simulation/games/refresh?sport="+encodeURIComponent(sport),{method:"POST"});const payload=await response.json();if(!response.ok)throw Error(payload.detail||"Selected league refresh failed");return payload})()
+   :await get(url);
+  game.innerHTML='<option value="">Select a game</option>';
   (data.games||[]).forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.textContent=g.matchup+" · "+date(g.commence_time)+(g.has_spread&&g.has_total?"":" · incomplete markets");if(!g.has_spread||!g.has_total)o.disabled=true;game.appendChild(o)});
-  $("simStatus").textContent=(data.games||[]).length+" games in the latest stored snapshot. Games without both a spread and total are disabled.";
+  game.disabled=false;
+  const count=(data.games||[]).length;
+  $("simStatus").textContent=count
+   ?count+" games found for "+sport.replaceAll("_"," ").toUpperCase()+". Games without both spread and total are disabled."
+   :"No games are currently stored for "+sport.replaceAll("_"," ").toUpperCase()+". Use Load / Refresh This League to request this league only.";
  }catch(e){game.innerHTML='<option value="">Could not load games</option>';$("simStatus").textContent=e.message}
+ finally{loadButton.disabled=false}
 }
 async function runSelectedSimulation(){
  const sport=$("simLeague").value,eventId=$("simGame").value,btn=$("runSimulation");
@@ -299,7 +311,8 @@ async function runSelectedSimulation(){
  }catch(e){$("simStatus").textContent="Simulation unavailable: "+e.message;$("simResults").classList.add("hidden")}
  finally{btn.disabled=!$("simGame").value;btn.textContent="Run 10,000 Simulations"}
 }
-$("simLeague").addEventListener("change",loadSimulationGames);
+$("simLeague").addEventListener("change",()=>{ $("loadSimGames").disabled=!$("simLeague").value;loadSimulationGames(false); });
+$("loadSimGames").addEventListener("click",()=>loadSimulationGames(true));
 $("simGame").addEventListener("change",()=>{$("runSimulation").disabled=!$("simGame").value;$("simResults").classList.add("hidden")});
 $("runSimulation").addEventListener("click",runSelectedSimulation);
 
