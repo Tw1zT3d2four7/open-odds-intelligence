@@ -338,7 +338,7 @@ def test_nba_simulation_reports_final_winner_after_overtime():
     event = sample_event()
     result = run_game_simulation(event, seed=12345)
     assert result["win_probabilities"]["tie"] == 0
-    assert result["game_resolution"]["regulation_ties"] >= result["game_resolution"]["overtime_or_extra_innings"]
+    assert result["game_resolution"]["regulation_ties"] >= result["game_resolution"]["games_with_overtime_or_extra_innings"]
 
 
 def test_nhl_simulation_has_no_final_ties_after_overtime_or_shootout():
