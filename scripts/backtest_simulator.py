@@ -11,6 +11,7 @@ from app import config
 from app.database import OddsDatabase
 from app.simulation_validation import (
     fit_league_models, parse_settlements_csv, run_historical_backtest,
+    validate_chronological_split,
 )
 
 
@@ -31,6 +32,7 @@ def main():
     if args.training_settlements:
         training_path = Path(args.training_settlements)
         training_rows = parse_settlements_csv(training_path.read_text(encoding="utf-8-sig"))
+        validate_chronological_split(training_rows, settlements)
         training_report = fit_league_models(database, training_rows, args.min_training_sample)
         models = training_report["models"]
     report = run_historical_backtest(database, settlements, model_parameters=models)
