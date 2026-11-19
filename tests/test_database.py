@@ -98,6 +98,47 @@ def test_snapshot_skips_unbindable_optional_quote_metadata(tmp_path):
     assert all(m["key"] != "h2h" for m in stored[0]["bookmakers"][0]["markets"])
 
 
+
+def test_snapshot_deduplicates_identical_quote_records(tmp_path):
+    db = OddsDatabase(tmp_path / "duplicate-identical.sqlite3")
+    event = fixture()[0]
+    duplicate = dict(event["bookmakers"][0]["markets"][0]["outcomes"][0])
+    event["bookmakers"][0]["markets"][0]["outcomes"].append(duplicate)
+
+    db.save_snapshot("basketball_nba", [event], "test", "2026-11-19T12:00:00Z")
+
+    stored = db.latest_events("basketball_nba")
+    spreads = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "spreads")
+    assert len(spreads["outcomes"]) == 2
+    assert sorted(item["name"] for item in spreads["outcomes"]) == ["Away", "Home"]
+
+
+def test_snapshot_drops_conflicting_duplicate_quote_identity(tmp_path):
+    db = OddsDatabase(tmp_path / "duplicate-conflict.sqlite3")
+    event = fixture()[0]
+    conflicting = dict(event["bookmakers"][0]["markets"][0]["outcomes"][0], price=-105)
+    event["bookmakers"][0]["markets"][0]["outcomes"].append(conflicting)
+
+    db.save_snapshot("basketball_nba", [event], "test", "2026-11-19T12:00:00Z")
+
+    stored = db.latest_events("basketball_nba")
+    spreads = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "spreads")
+    assert [item["name"] for item in spreads["outcomes"]] == ["Away"]
+
+
+def test_snapshot_drops_duplicate_quote_when_event_metadata_conflicts(tmp_path):
+    db = OddsDatabase(tmp_path / "duplicate-event-conflict.sqlite3")
+    first = fixture()[0]
+    second = fixture()[0]
+    second["home_team"] = "Different Home"
+
+    db.save_snapshot("basketball_nba", [first, second], "test", "2026-11-19T12:00:00Z")
+
+    stored = db.latest_events("basketball_nba")
+    assert stored == []
+    assert db.snapshot_status()["events"] == 1
+
+
 def test_history_keeps_each_refresh_and_filters_line(tmp_path):
     db = OddsDatabase(tmp_path / "history.sqlite3")
     db.save_snapshot("basketball_nba", fixture(), "test", "2026-11-17T12:00:00Z")
