@@ -338,3 +338,22 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
             "minimum_sample_size": min_sample_size,
             "warning": "Fit only on an earlier training period. Do not evaluate these fitted parameters on the same games."}
 
+
+
+def validate_chronological_split(training_settlements: list[dict], test_settlements: list[dict]) -> None:
+    """Reject overlapping event IDs and any per-league train/test time leakage."""
+    training_ids = {str(row.get("event_id")) for row in training_settlements}
+    test_ids = {str(row.get("event_id")) for row in test_settlements}
+    overlap = sorted(training_ids & test_ids)
+    if overlap:
+        raise ValueError("Training and test settlements overlap by event_id: " + ", ".join(overlap[:10]))
+    sports = {str(row.get("sport_key") or "") for row in training_settlements} & {
+        str(row.get("sport_key") or "") for row in test_settlements
+    }
+    for sport in sorted(sports):
+        training_times = [_parse_timestamp(row["commence_time"]) for row in training_settlements
+                          if str(row.get("sport_key") or "") == sport]
+        test_times = [_parse_timestamp(row["commence_time"]) for row in test_settlements
+                      if str(row.get("sport_key") or "") == sport]
+        if training_times and test_times and max(training_times) >= min(test_times):
+            raise ValueError(f"Training games for {sport} must all precede its holdout games.")
