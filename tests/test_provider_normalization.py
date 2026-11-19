@@ -448,14 +448,14 @@ def test_therundown_skips_malformed_nested_market_line_and_price_records():
 
     assert event["home_team"] == "Player A"
     assert event["away_team"] == "Player B"
-    assert len(event["bookmakers"]) == 2
-    by_book = {book["key"]: book for book in event["bookmakers"]}
-    assert by_book["draftkings"]["markets"][0]["outcomes"] == [
-        {"name": "Player A", "price": -110, "point": None, "updated_at": None}
+    assert len(event["bookmakers"]) == 1
+    book = event["bookmakers"][0]
+    assert book["key"] == "draftkings"
+    assert len(book["markets"]) == 1
+    assert book["markets"][0]["key"] == "h2h"
+    assert [(item["name"], item["price"]) for item in book["markets"][0]["outcomes"]] == [
+        ("Player A", -110), ("Player B", 105),
     ]
-    assert by_book["draftkings"]["markets"][0]["key"] == "h2h"
-    assert by_book["draftkings"]["markets"][0]["outcomes"][0]["price"] == -110
-    assert by_book["draftkings"]["markets"][0]["outcomes"] != []
 
 
 @pytest.mark.parametrize("markets", [None, {}, "malformed"])
