@@ -338,3 +338,26 @@ def test_odds_api_transport_errors_are_classified_as_retryable(monkeypatch):
     assert caught.value.status_code is None
     assert caught.value.retry_after is None
     assert caught.value.retryable is True
+
+
+def test_therundown_tennis_normalizes_players_from_moneyline_participants():
+    from app.providers.therundown import TheRundownProvider
+
+    provider = TheRundownProvider("case-Sensitive-Key")
+    event = provider._normalize_event({
+        "event_id": "tennis-match-1",
+        "event_date": "2026-11-20T18:00:00Z",
+        "markets": [{
+            "market_id": 1,
+            "participants": [
+                {"name": "Player A", "lines": [{"value": None, "prices": {"19": {"price": -110}}}]},
+                {"name": "Player B", "lines": [{"value": None, "prices": {"19": {"price": 100}}}]},
+            ],
+        }],
+    }, "tennis_atp", "ATP Tennis")
+
+    assert event["home_team"] == "Player A"
+    assert event["away_team"] == "Player B"
+    assert event["sport_key"] == "tennis_atp"
+    assert len(event["bookmakers"]) == 1
+    assert event["bookmakers"][0]["markets"][0]["key"] == "h2h"

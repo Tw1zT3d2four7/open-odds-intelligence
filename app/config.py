@@ -27,10 +27,27 @@ SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS = max(3600, int(os.getenv("SIMULATION_R
 SIMULATION_RESULTS_RETRY_SECONDS = max(3600, int(os.getenv("SIMULATION_RESULTS_RETRY_SECONDS", "14400")))
 SIMULATION_RESULTS_LOOKBACK_DAYS = max(1, min(30, int(os.getenv("SIMULATION_RESULTS_LOOKBACK_DAYS", "7"))))
 SIMULATION_RESULTS_MAX_GROUPS_PER_RUN = max(1, min(50, int(os.getenv("SIMULATION_RESULTS_MAX_GROUPS_PER_RUN", "10"))))
-ODDS_SPORTS = [s.strip() for s in os.getenv(
-    "ODDS_SPORTS",
-    "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_epl"
-).split(",") if s.strip()]
+BASE_DEFAULT_ODDS_SPORTS = (
+    "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,basketball_ncaab,"
+    "icehockey_nhl,baseball_mlb,soccer_epl"
+)
+PROVIDER_DEFAULT_ODDS_SPORTS = {
+    # TheRundown exposes ATP and WTA as stable league IDs. The Odds API uses
+    # tournament-specific tennis keys, so it must not receive generic aliases.
+    "therundown": BASE_DEFAULT_ODDS_SPORTS + ",tennis_atp,tennis_wta",
+    "the_odds_api": BASE_DEFAULT_ODDS_SPORTS,
+}
+
+
+def default_odds_sports(provider):
+    return PROVIDER_DEFAULT_ODDS_SPORTS.get(provider, BASE_DEFAULT_ODDS_SPORTS).split(",")
+
+
+ODDS_SPORTS = [
+    sport.strip() for sport in os.getenv(
+        "ODDS_SPORTS", ",".join(default_odds_sports(ODDS_PROVIDER))
+    ).split(",") if sport.strip()
+]
 
 # Automatic refresh is opt-in; 0 keeps refreshes manual.
 ODDS_REFRESH_INTERVAL_SECONDS = max(0, int(os.getenv("ODDS_REFRESH_INTERVAL_SECONDS", "0")))

@@ -7,7 +7,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - FastAPI backend and responsive dark dashboard.
 - Quota-free betting calculators: payout, multi-leg parlay, two-way no-vig, EV / fractional Kelly bankroll sizing, equal-outcome hedging, -1 run-line / puck-line settlement and a synthetic -1 line builder, with a dashboard-wide American / Decimal odds toggle.
 - Pluggable odds-provider interface with The Odds API and TheRundown V2 adapters.
-- Configurable sports, regions and supported market keys. NFL, NCAAF, NBA, NCAAB, NHL, MLB and EPL are included in the default league catalog; ATP and WTA are planned for a later tennis expansion when provider coverage is verified.
+- Configurable sports, regions and supported market keys. NFL, NCAAF, NBA, NCAAB, NHL, MLB and EPL are included in the base catalog. TheRundown deployments also default to ATP and WTA; The Odds API uses tournament-specific tennis keys.
 - Normalized event, sportsbook, market and outcome quotes.
 - Best available price for each exact event / market / outcome / line.
 - American-odds conversion and no-vig probability calculations.
@@ -24,6 +24,8 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Opt-in scheduled refresh at a configurable interval (disabled by default).
 - Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.
 - Docker Compose deployment and GitHub Actions tests.
+
+TheRundown ATP/WTA ingestion uses sport IDs 38 and 39 and the provider's pre-match moneyline, game-spread and total markets. Tennis competitors are normalized from the moneyline participant order into the shared matchup fields; those fields are neutral participant slots, not a claim that either player is a home competitor. The Odds API tennis coverage is tournament-specific: configure active `tennis_atp_*` and `tennis_wta_*` keys in `ODDS_SPORTS` rather than using generic aliases. Tennis ingestion does not imply that tennis is supported by the 10,000-trial simulator, historical settlement model, or OddsLink posted-limit feed.
 
 The EV calculation uses the median of other sportsbooks' no-vig probabilities for the same event, market, outcome and line. The default requires at least two other books (three books total). Results are estimates, not guarantees. Arbitrage candidates are mathematical price discrepancies only; verify both prices, limits, settlement rules and availability before acting.
 

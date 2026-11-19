@@ -32,3 +32,16 @@ def test_explicit_oddslink_sport_selection_is_respected():
         ["americanfootball_nfl", "americanfootball_ncaaf"],
         ["americanfootball_ncaaf"],
     ) == ["americanfootball_ncaaf"]
+
+
+
+def test_atp_wta_are_default_for_therundown_but_not_generic_odds_api_keys():
+    assert "tennis_atp" in config.default_odds_sports("therundown")
+    assert "tennis_wta" in config.default_odds_sports("therundown")
+    assert "tennis_atp" not in config.default_odds_sports("the_odds_api")
+    assert "tennis_wta" not in config.default_odds_sports("the_odds_api")
+
+
+def test_therundown_has_explicit_atp_and_wta_sport_id_mappings():
+    assert TheRundownProvider.SPORTS["tennis_atp"] == (38, "ATP Tennis")
+    assert TheRundownProvider.SPORTS["tennis_wta"] == (39, "WTA Tennis")
