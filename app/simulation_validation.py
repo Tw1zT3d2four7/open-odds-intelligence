@@ -227,7 +227,7 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     import hashlib
     from .simulation import run_game_simulation
 
-    scored, skipped = [], []
+    scored, baseline_scored, skipped = [], [], []
     for settlement in settlements:
         event, reason = _load_latest_pregame_event(database, settlement)
         if reason:
@@ -236,11 +236,22 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
         seed_material = f"{seed_salt}:{settlement['event_id']}".encode("utf-8")
         seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:4], "big")
         try:
-            prediction = run_game_simulation(event, seed=seed, model_parameters=(model_parameters or {}).get(event["sport_key"]))
+            baseline_prediction = run_game_simulation(event, seed=seed)
+            baseline_scored.append(score_prediction(baseline_prediction, settlement))
+            prediction = run_game_simulation(
+                event, seed=seed, model_parameters=(model_parameters or {}).get(event["sport_key"])
+            )
             scored.append(score_prediction(prediction, settlement))
         except (ValueError, TypeError, KeyError) as exc:
             skipped.append({"event_id": settlement.get("event_id"), "reason": str(exc)})
     report = evaluate_predictions(scored)
+    baseline_report = evaluate_predictions(baseline_scored)
+    report["market_prior_baseline"] = baseline_report
+    if scored and baseline_scored:
+        report["model_minus_baseline"] = {
+            key: (report["overall"][key] - baseline_report["overall"][key])
+            for key in ("brier_score", "log_loss", "home_score_mae", "away_score_mae", "total_score_mae", "margin_mae")
+        }
     report["settlements_submitted"] = len(settlements)
     report["events_scored"] = len(scored)
     report["events_skipped"] = len(skipped)
