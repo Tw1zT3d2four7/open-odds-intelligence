@@ -8,7 +8,7 @@ from . import config
 from .service import service
 from .markets import market_board, analyze_markets
 from .limits import limits_monitor
-from .simulation import run_game_simulation, TRIALS as SIMULATION_TRIALS
+from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,9 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
     try:
-        result = run_game_simulation(event, SIMULATION_TRIALS, seed=seed)
+        models = load_fitted_models(config.SIMULATION_MODEL_PATH)
+        result = run_game_simulation(event, SIMULATION_TRIALS, seed=seed,
+                                     model_parameters=models.get(sport))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return result
