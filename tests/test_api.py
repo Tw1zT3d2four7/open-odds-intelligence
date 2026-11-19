@@ -281,4 +281,7 @@ def test_authentication_fails_closed_when_only_one_credential_is_set(monkeypatch
     monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
     with TestClient(main.app) as client:
         assert client.get("/").status_code == 503
-        assert client.get("/api/health").status_code == 503
+        assert client.get("/api/odds").status_code == 503
+        # Health must remain available so Docker does not restart-loop on a
+        # recoverable application configuration error.
+        assert client.get("/api/health").status_code == 200
