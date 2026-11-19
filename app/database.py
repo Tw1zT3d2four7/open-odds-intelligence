@@ -1,4 +1,5 @@
 import sqlite3
+import math
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from statistics import median
@@ -277,16 +278,36 @@ class OddsDatabase:
                             if (isinstance(price, bool) or not isinstance(price, int)
                                     or price == 0):
                                 continue
-                            if not outcome.get("name") or not market.get("key") or not book.get("key"):
+                            market_key = market.get("key")
+                            book_key = book.get("key")
+                            outcome_name = outcome.get("name")
+                            if not all(isinstance(value, str) and value.strip()
+                                       for value in (market_key, book_key, outcome_name)):
+                                continue
+                            point = outcome.get("point")
+                            if point is not None:
+                                if isinstance(point, bool):
+                                    continue
+                                try:
+                                    point = float(point)
+                                except (TypeError, ValueError, OverflowError):
+                                    continue
+                                if not math.isfinite(point):
+                                    continue
+                            description = outcome.get("description") or outcome.get("participant") or ""
+                            if not isinstance(description, str):
+                                continue
+                            updated_at = (
+                                outcome.get("source_updated_at") or outcome.get("updated_at") or
+                                market.get("last_update") or book.get("last_update")
+                            )
+                            if updated_at is not None and not isinstance(updated_at, str):
                                 continue
                             rows.append((snapshot_id, str(event.get("id", "")), sport,
                                 event.get("sport_title", ""), event.get("commence_time", ""),
                                 event.get("home_team", ""), event.get("away_team", ""),
-                                book["key"], book.get("title", book["key"]), market["key"],
-                                outcome["name"], outcome.get("description") or outcome.get("participant") or "",
-                                outcome.get("point"), price,
-                                outcome.get("source_updated_at") or outcome.get("updated_at") or
-                                market.get("last_update") or book.get("last_update")))
+                                book_key, book.get("title", book_key), market_key,
+                                outcome_name, description, point, price, updated_at))
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
                 home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,point,price,
                 source_updated_at)
