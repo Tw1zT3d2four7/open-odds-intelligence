@@ -69,6 +69,7 @@ The command reads the existing DATABASE_PATH SQLite archive. It does not modify 
 - Fewer than 200 scored events are labelled `DESCRIPTIVE_ONLY`; even larger samples are not proof of profitability or future performance.
 - Use chronological development and untouched holdout periods. Do not tune volatility or distributions on the same games used for final evaluation.
 - The report's model-minus-baseline deltas are fitted-model metric minus unfitted-prior metric; negative values are better for Brier, log loss and MAE.
+- The paired uncertainty section resamples the same event-level fitted/baseline pairs and reports 95% bootstrap intervals for each metric delta. Negative deltas favor the fitted model. A one-event sample has no interval; small samples remain descriptive. These intervals describe sampling uncertainty only and do not fix archive-selection bias or establish future performance.
 - These metrics evaluate the current market-informed simulator against outcomes. They do not establish an independent predictive edge over the sportsbook market.
 
 ## Current limitations
