@@ -135,9 +135,8 @@ def test_snapshot_drops_duplicate_quote_when_event_metadata_conflicts(tmp_path):
     db.save_snapshot("basketball_nba", [first, second], "test", "2026-11-19T12:00:00Z")
 
     stored = db.latest_events("basketball_nba")
-    assert len(stored) == 1
-    spreads = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "spreads")
-    assert spreads["outcomes"] == []
+    assert stored == []
+    assert db.snapshot_status()["events"] == 1
 
 
 def test_history_keeps_each_refresh_and_filters_line(tmp_path):
