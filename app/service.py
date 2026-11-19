@@ -21,11 +21,12 @@ class OddsService:
         self._provider_usage = {}
         self._simulation_results_status = {
             "enabled": bool(config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY),
-            "provider": "therundown",
+            "provider": config.ODDS_PROVIDER,
             "last_sync": self.db.get_state("simulation_results_last_sync"),
             "last_error": self.db.get_state("simulation_results_last_error"),
             "settlements_stored": len(self.db.simulation_settlements()),
             "inserted_last_run": 0, "rejected_last_run": 0,
+            "reason": "Optional score synchronization is disabled." if not config.SIMULATION_RESULTS_SYNC_ENABLED else None,
         }
         saved_usage_provider = self.db.get_state("provider_usage_provider")
         saved_usage_fingerprint = self.db.get_state("provider_usage_key_fingerprint")
