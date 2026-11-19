@@ -231,3 +231,82 @@ class TheRundownProvider:
             "retrieved_at": datetime.now(timezone.utc).isoformat(),
             "bookmakers": bookmakers,
         }
+
+
+    @staticmethod
+    def _score_team_name(team):
+        if not isinstance(team, dict):
+            return ""
+        name = str(team.get("name") or team.get("team_name") or "").strip()
+        mascot = str(team.get("mascot") or "").strip()
+        if mascot and mascot.casefold() not in name.casefold():
+            name = (name + " " + mascot).strip()
+        return name
+
+    def fetch_scores(self, sport: str, event_dates: list[str]) -> list[dict]:
+        """Fetch final scores only for dates already present in the local odds archive.
+
+        affiliate_ids=0 omits all sportsbook price rows; the provider still bills
+        event and score rows. Only explicit STATUS_FINAL events are returned.
+        """
+        if sport not in self.SPORTS:
+            raise ProviderError(f"TheRundown does not currently map sport '{sport}'")
+        base_sport_id, sport_title = self.SPORTS[sport]
+        sport_ids = self.SEASON_VARIANTS.get(base_sport_id, (base_sport_id,))
+        results, seen = [], set()
+        for event_date in sorted(set(str(value) for value in event_dates if value)):
+            try:
+                datetime.strptime(event_date, "%Y-%m-%d")
+            except ValueError:
+                raise ProviderError(f"Invalid score lookup date: {event_date!r}") from None
+            for sport_id in sport_ids:
+                params = urlencode({"affiliate_ids": "0"})
+                payload = self._request(
+                    f"{self.base_url}/sports/{sport_id}/events/{event_date}?{params}"
+                )
+                raw_events = payload.get("events", []) if isinstance(payload, dict) else payload
+                if not isinstance(raw_events, list):
+                    raise ProviderError("TheRundown returned an unexpected scores response")
+                for raw in raw_events:
+                    if not isinstance(raw, dict):
+                        continue
+                    event_id = str(raw.get("event_id") or raw.get("id") or "")
+                    score = raw.get("score") or {}
+                    if not event_id or event_id in seen or score.get("event_status") != "STATUS_FINAL":
+                        continue
+                    home_score, away_score = score.get("score_home"), score.get("score_away")
+                    if home_score is None or away_score is None:
+                        continue
+                    try:
+                        home_score, away_score = int(home_score), int(away_score)
+                    except (TypeError, ValueError):
+                        continue
+                    if home_score < 0 or away_score < 0:
+                        continue
+                    teams = raw.get("teams") or []
+                    teams_by_id = {str(team.get("team_id")): team for team in teams
+                                   if isinstance(team, dict) and team.get("team_id") is not None}
+                    home_team = teams_by_id.get(str(score.get("team_id_home")))
+                    away_team = teams_by_id.get(str(score.get("team_id_away")))
+                    if home_team is None:
+                        home_team = next((team for team in teams if isinstance(team, dict)
+                                          and team.get("is_home") is True), None)
+                    if away_team is None:
+                        away_team = next((team for team in teams if isinstance(team, dict)
+                                          and team.get("is_away") is True), None)
+                    home_name = raw.get("home_team") or self._score_team_name(home_team)
+                    away_name = raw.get("away_team") or self._score_team_name(away_team)
+                    if not home_name or not away_name:
+                        continue
+                    results.append({
+                        "event_id": event_id, "sport_key": sport,
+                        "sport_title": raw.get("sport_name") or sport_title,
+                        "commence_time": self._event_time(raw),
+                        "home_team": str(home_name), "away_team": str(away_name),
+                        "home_score": home_score, "away_score": away_score,
+                        "status": "final", "source": self.name,
+                        "source_record_id": event_id,
+                        "source_updated_at": score.get("updated_at"),
+                    })
+                    seen.add(event_id)
+        return results
