@@ -29,6 +29,8 @@ def market_board(events):
     """Best quote for each exact market/outcome/line identity."""
     grouped = defaultdict(list)
     for event in events:
+        if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+            continue
         for book in event.get("bookmakers", []):
             for market in book.get("markets", []):
                 market_key = market.get("key")
@@ -74,6 +76,8 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
     """
     opportunities, arbitrage = [], []
     for event in events:
+        if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+            continue
         line_sets = defaultdict(list)
         candidate_sets = defaultdict(lambda: defaultdict(dict))
         sport_key = str(event.get("sport_key") or event.get("sport") or "").lower()
