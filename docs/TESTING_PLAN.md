@@ -15,7 +15,7 @@ This phase validates data quality, market calculations, alert delivery and opera
 - Discord alerts for qualifying EV and arbitrage candidates.
 - Manual refresh and Discord-enabled scheduled refresh.
 
-Full historical strategy backtesting, injury/news context, authentication, subscriber billing and simultaneous multi-provider comparison are not yet part of this test scope. Only one odds provider is active at a time. Player props are an optional, provider-quota-sensitive extension.
+Full historical strategy backtesting, injury/news context, subscriber billing and simultaneous multi-provider comparison are not yet part of this test scope. Optional HTTP Basic authentication is now included and must be validated before any remote deployment. Only one odds provider is active at a time. Player props are an optional, provider-quota-sensitive extension.
 
 ## Calculator validation
 
@@ -138,9 +138,17 @@ For each reviewed candidate, record:
 - Whether the candidate was a duplicate, changed quote or delivery retry
 - Any data or calculation discrepancy
 
-## Deployment safety
+## Authentication and deployment safety
 
-The current dashboard and API do not implement user authentication. Keep the test instance on a trusted private network. Do not port-forward it or expose it through a public reverse proxy until access control is added at the proxy or application layer. Anyone who can reach the refresh endpoint can consume the configured odds-provider quota.
+- Leave both `AUTH_USERNAME` and `AUTH_PASSWORD` blank only on a trusted private development network.
+- Configure both values in the private server-side `.env` file and restart the application. Never commit credentials or paste them into logs/issues.
+- Confirm an unauthenticated request to `/`, `/api/odds` and `/api/refresh` returns HTTP 401.
+- Confirm the correct case-sensitive Basic credentials allow the dashboard and API, and a wrong password is rejected.
+- Confirm configuring only one credential fails closed with HTTP 503.
+- Confirm `/api/health` remains reachable for the Docker health check. Do not expose detailed operational health publicly without a reverse-proxy/network policy.
+- Use HTTPS whenever credentials cross an untrusted network. Basic authentication over plain HTTP is not suitable for public internet access.
+- Before remote exposure, place the service behind a TLS-terminating reverse proxy, restrict inbound access, and verify that the proxy does not log Authorization headers.
+- Anyone who can reach an unprotected refresh endpoint can consume the configured odds-provider quota.
 
 ## Important interpretation limits
 
