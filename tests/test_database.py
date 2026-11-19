@@ -20,6 +20,51 @@ def test_snapshot_round_trip_and_points(tmp_path):
     assert db.snapshot_status()["snapshots"] == 1
 
 
+
+def test_snapshot_rejects_anonymous_events_and_skips_malformed_nested_records(tmp_path):
+    db = OddsDatabase(tmp_path / "identity.sqlite3")
+    valid = fixture()[0]
+    anonymous = {
+        "id": "",
+        "bookmakers": valid["bookmakers"],
+    }
+    partially_malformed = {
+        "id": "good-event",
+        "sport_title": "Basketball",
+        "home_team": "Good Home",
+        "away_team": "Good Away",
+        "bookmakers": [
+            None,
+            {"key": "bad-book", "markets": None},
+            {"key": "good-book", "markets": [
+                None,
+                {"key": "h2h", "outcomes": [
+                    None,
+                    {"name": "Good Home", "price": -110},
+                ]},
+            ]},
+        ],
+    }
+
+    db.save_snapshot(
+        "basketball_nba",
+        [valid, anonymous, None, partially_malformed],
+        "test",
+        "2026-11-19T12:00:00Z",
+    )
+
+    events = db.latest_events("basketball_nba")
+    assert {event["id"] for event in events} == {"evt", "good-event"}
+    assert all(event["id"] for event in events)
+    good = next(event for event in events if event["id"] == "good-event")
+    assert good["bookmakers"][0]["key"] == "good-book"
+    assert good["bookmakers"][0]["markets"][0]["outcomes"] == [
+        {"name": "Good Home", "price": -110}
+    ]
+    status = db.snapshot_status()
+    assert status["events"] == 2
+
+
 def test_history_keeps_each_refresh_and_filters_line(tmp_path):
     db = OddsDatabase(tmp_path / "history.sqlite3")
     db.save_snapshot("basketball_nba", fixture(), "test", "2026-11-17T12:00:00Z")
