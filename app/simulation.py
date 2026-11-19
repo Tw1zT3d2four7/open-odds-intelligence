@@ -433,6 +433,9 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "home_margin_sd": prior["margin_sd"],
             "model_source": "empirical_training_fit" if fitted else "broad_league_prior",
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
+            "fitted_margin_bias": fitted.get("margin_bias", 0.0) if fitted else None,
+            "fitted_total_bias": fitted.get("total_bias", 0.0) if fitted else None,
+            "fitted_margin_total_correlation": fitted.get("margin_total_corr", 0.0) if fitted else None,
         },
         "data_quality": {
             "spread_books": spread_books,
@@ -443,12 +446,15 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
         "methodology": (
-            "Market-informed simulation: median complete, internally consistent "
-            "sportsbook spread pairs and Over/Under total pairs set this game's "
-            "expected margin and scoring level; league-level scoring volatility "
-            "priors generate the 10,000 outcomes. This is not a copy of any "
-            "sportsbook's proprietary model and does not currently ingest team "
-            "efficiency, injuries, lineups, weather or player-level projections. "
-            "The result is a market-based scenario model, not a validated forecast."
+            "Empirically fitted per-league market-residual model: stored sportsbook spread "
+            "and total anchor this game; earlier verified training events supply league-specific "
+            "residual bias, variance, correlation and count overdispersion. This is not a copy "
+            "of any sportsbook model and does not ingest team/player efficiency, injuries, "
+            "lineups or weather. It is not validated until evaluated on an adequate untouched "
+            "chronological holdout."
+            if fitted else
+            "Market-informed scenario model: median complete sportsbook spread and total "
+            "quotes anchor expected margin and scoring level; broad league-family priors "
+            "generate trial outcomes. It is not a validated forecast."
         ),
     }
