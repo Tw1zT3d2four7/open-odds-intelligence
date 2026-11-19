@@ -58,3 +58,24 @@ def test_market_consensus_skips_books_with_boolean_prices():
     consensus = market_consensus([event])["boolean-price"]
     assert set(consensus) == {"Home", "Away"}
     assert consensus["Home"] == pytest.approx((120 / 220) / ((120 / 220) + 0.5))
+
+
+@pytest.mark.parametrize("price", [-99, -50, -1, 1, 50, 99])
+def test_market_odds_helpers_reject_prices_inside_invalid_range(price):
+    with pytest.raises(ValueError, match="\+100 or greater"):
+        american_to_decimal(price)
+    with pytest.raises(ValueError, match="\+100 or greater"):
+        american_implied_probability(price)
+
+
+@pytest.mark.parametrize("price, expected", [
+    (-100, 2.0),
+    (100, 2.0),
+    (-101, pytest.approx(1 + 100 / 101)),
+    (101, 2.01),
+])
+def test_market_odds_helpers_accept_valid_boundary_prices(price, expected):
+    assert american_to_decimal(price) == expected
+    assert american_implied_probability(price) == pytest.approx(
+        100 / (price + 100) if price > 0 else abs(price) / (abs(price) + 100)
+    )
