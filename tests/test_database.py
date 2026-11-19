@@ -1,3 +1,5 @@
+import pytest
+
 from app.database import OddsDatabase
 
 
@@ -63,6 +65,38 @@ def test_snapshot_rejects_anonymous_events_and_skips_malformed_nested_records(tm
     ]
     status = db.snapshot_status()
     assert status["events"] == 2
+
+
+
+@pytest.mark.parametrize(
+    "bad_point",
+    [True, False, "3.5", [3.5], {"value": 3.5}, float("nan"), float("inf")],
+)
+def test_snapshot_discards_malformed_points_without_aborting_valid_quotes(tmp_path, bad_point):
+    db = OddsDatabase(tmp_path / "bad-points.sqlite3")
+    event = fixture()[0]
+    event["bookmakers"][0]["markets"][0]["outcomes"][0]["point"] = bad_point
+
+    db.save_snapshot("basketball_nba", [event], "test", "2026-11-19T12:00:00Z")
+
+    stored = db.latest_events("basketball_nba")
+    assert len(stored) == 1
+    spreads = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "spreads")
+    assert [item["name"] for item in spreads["outcomes"]] == ["Away"]
+
+
+def test_snapshot_skips_unbindable_optional_quote_metadata(tmp_path):
+    db = OddsDatabase(tmp_path / "bad-metadata.sqlite3")
+    event = fixture()[0]
+    event["bookmakers"][0]["markets"][1]["outcomes"][0]["description"] = {"unexpected": "object"}
+    event["bookmakers"][0]["markets"][1]["outcomes"][1]["updated_at"] = ["not", "a", "timestamp"]
+
+    db.save_snapshot("basketball_nba", [event], "test", "2026-11-19T12:00:00Z")
+
+    stored = db.latest_events("basketball_nba")
+    assert len(stored) == 1
+    h2h = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "h2h")
+    assert h2h["outcomes"] == []
 
 
 def test_history_keeps_each_refresh_and_filters_line(tmp_path):
