@@ -193,6 +193,8 @@ def odds(sport: str | None = None):
 
 @app.post("/api/refresh")
 def refresh(sport: str | None = None):
+    if sport is not None and sport not in config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="Select a configured league or omit sport to refresh all configured leagues.")
     return service.refresh(sport)
 
 
