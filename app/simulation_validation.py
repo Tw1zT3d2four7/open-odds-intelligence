@@ -145,12 +145,30 @@ def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
                 "observed_home_win_rate": observed,
                 "absolute_calibration_error": abs(predicted - observed),
             })
+    calibration_by_class = {}
+    for label in ("home", "away", "tie"):
+        probability_key = "predicted_" + label + "_probability"
+        class_bins = []
+        for index in range(calibration_bins):
+            low, high = index / calibration_bins, (index + 1) / calibration_bins
+            bucket = [x for x in rows if low <= x[probability_key] < high
+                      or (index == calibration_bins - 1 and x[probability_key] == 1)]
+            if bucket:
+                predicted = _mean([x[probability_key] for x in bucket])
+                observed = sum(x["actual_result"] == label for x in bucket) / len(bucket)
+                class_bins.append({
+                    "lower_bound": round(low, 3), "upper_bound": round(high, 3),
+                    "sample_size": len(bucket), "mean_predicted": predicted,
+                    "observed_rate": observed, "absolute_calibration_error": abs(predicted - observed),
+                })
+        calibration_by_class[label] = class_bins
     return {
         "sample_size": len(rows),
         "status": "DESCRIPTIVE_ONLY" if len(rows) < 200 else "EVALUATION_AVAILABLE",
         "overall": summarize(rows),
         "by_sport": {sport: summarize(items) for sport, items in sorted(by_sport.items())},
         "calibration": calibration,
+        "calibration_by_class": calibration_by_class,
         "interpretation": (
             "Paper-only historical evaluation. Metrics describe this sample and do not prove "
             "future profitability. Use chronological holdouts; do not tune on the reported test set."
