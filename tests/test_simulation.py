@@ -92,3 +92,29 @@ def test_market_readiness_accepts_usable_spread_and_total_lines():
         "has_total": True,
         "reason": None,
     }
+
+
+def test_simulation_matches_provider_team_labels_case_and_whitespace_insensitively():
+    event = sample_event()
+    event["home_team"] = "  HOME "
+    event["away_team"] = "away"
+    event["bookmakers"][0]["markets"][0]["outcomes"][0]["name"] = "home"
+    event["bookmakers"][0]["markets"][0]["outcomes"][1]["name"] = " AWAY "
+    event["bookmakers"][1]["markets"][0]["outcomes"][0]["name"] = "Home"
+    event["bookmakers"][1]["markets"][0]["outcomes"][1]["name"] = "Away"
+    result = run_game_simulation(event)
+    assert result["data_quality"]["spread_books"] == 2
+    assert result["margin_market"]["consensus_home_margin"] == 4.75
+
+
+def test_simulation_reports_spread_team_mapping_separately_from_total():
+    event = sample_event()
+    for book in event["bookmakers"]:
+        book["markets"][0]["outcomes"][0]["name"] = "Home Team"
+        book["markets"][0]["outcomes"][1]["name"] = "Away Team"
+    try:
+        run_game_simulation(event)
+    except ValueError as exc:
+        assert "spread line matching" in str(exc)
+    else:
+        raise AssertionError("Expected unknown spread team labels to be rejected")
