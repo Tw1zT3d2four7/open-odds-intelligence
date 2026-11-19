@@ -354,6 +354,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         raise ValueError("Simulation seed must be an integer or None.")
     prior = LEAGUE_PRIORS[family]
     fitted = _validated_model_parameters(model_parameters, family, str(event.get('sport_key') or event.get('sport') or ''))
+    empirical_fit = bool(fitted and int(fitted.get("sample_size", 0)) > 0)
     if fitted:
         prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
     rng = random.Random(seed)
@@ -442,7 +443,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         "margin_market": {
             "consensus_home_margin": round(expected_margin, 2),
             "home_margin_sd": prior["margin_sd"],
-            "model_source": "empirical_training_fit" if fitted else "broad_league_prior",
+            "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
             "fitted_margin_bias": fitted.get("margin_bias", 0.0) if fitted else None,
             "fitted_total_bias": fitted.get("total_bias", 0.0) if fitted else None,
@@ -464,7 +465,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "of any sportsbook model and does not ingest team/player efficiency, injuries, "
             "lineups or weather. It is not validated until evaluated on an adequate untouched "
             "chronological holdout."
-            if fitted else
+            if empirical_fit else
             "Market-informed scenario model: median complete sportsbook spread and total "
             "quotes anchor expected margin and scoring level; broad league-family priors "
             "generate trial outcomes. It is not a validated forecast."
