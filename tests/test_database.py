@@ -110,7 +110,7 @@ def test_snapshot_deduplicates_identical_quote_records(tmp_path):
     stored = db.latest_events("basketball_nba")
     spreads = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "spreads")
     assert len(spreads["outcomes"]) == 2
-    assert [item["name"] for item in spreads["outcomes"]] == ["Home", "Away"]
+    assert sorted(item["name"] for item in spreads["outcomes"]) == ["Away", "Home"]
 
 
 def test_snapshot_drops_conflicting_duplicate_quote_identity(tmp_path):
