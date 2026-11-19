@@ -81,6 +81,7 @@ def test_evaluation_reports_sample_sizes_metrics_and_calibration():
     assert report["overall"]["brier_score"] == pytest.approx(.08)
     assert report["by_sport"]["nba"]["sample_size"] == 2
     assert sum(x["sample_size"] for x in report["calibration"]) == 2
+    assert set(report["calibration_by_class"]) == {"home", "away", "tie"}
 
 
 def test_empty_evaluation_is_explicitly_insufficient():
