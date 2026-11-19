@@ -1,14 +1,27 @@
 from collections import defaultdict
 from statistics import median
+import math
+
+
+def _valid_american_price(price):
+    if isinstance(price, bool):
+        raise ValueError("American odds must be a finite non-zero number")
+    try:
+        value = float(price)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("American odds must be a finite non-zero number") from None
+    if not math.isfinite(value) or value == 0:
+        raise ValueError("American odds must be a finite non-zero number")
+    return value
+
 
 def american_to_decimal(price: int) -> float:
-    if price == 0:
-        raise ValueError("American odds cannot be zero")
+    price = _valid_american_price(price)
     return 1 + (price / 100 if price > 0 else 100 / abs(price))
 
+
 def american_implied_probability(price: int) -> float:
-    if price == 0:
-        raise ValueError("American odds cannot be zero")
+    price = _valid_american_price(price)
     return 100 / (price + 100) if price > 0 else abs(price) / (abs(price) + 100)
 
 def decimal_to_american(decimal: float) -> int:
