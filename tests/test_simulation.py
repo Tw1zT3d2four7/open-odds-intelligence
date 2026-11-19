@@ -244,3 +244,21 @@ def test_simulation_rejects_non_dict_event():
         assert "valid stored game event" in str(exc)
     else:
         raise AssertionError("Expected invalid event to be rejected")
+
+
+def test_simulation_seed_reproduces_identical_results():
+    event = sample_event()
+    first = run_game_simulation(event, seed=20261119)
+    second = run_game_simulation(event, seed=20261119)
+    assert first == second
+    assert first["simulation_seed"] == 20261119
+
+
+def test_simulation_rejects_non_integer_seed():
+    event = sample_event()
+    try:
+        run_game_simulation(event, seed="not-an-integer")
+    except ValueError as exc:
+        assert "seed must be an integer" in str(exc)
+    else:
+        raise AssertionError("Expected invalid simulation seed to be rejected")
