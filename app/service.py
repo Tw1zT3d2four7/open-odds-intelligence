@@ -266,6 +266,89 @@ class OddsService:
             return {"ok": False, "error": self._last_error, "events": count}
 
 
+
+
+    def sync_simulation_results(self):
+        """Collect final scores only for games already present in local odds history."""
+        enabled = bool(config.SIMULATION_RESULTS_SYNC_ENABLED and
+                       config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY)
+        if not enabled:
+            self._simulation_results_status.update({
+                "enabled": False,
+                "reason": "Score sync is disabled or TheRundown is not the active configured odds provider.",
+            })
+            return {"ok": False, "skipped": True, "reason": "disabled"}
+        if not self._refresh_lock.acquire(blocking=False):
+            return {"ok": False, "skipped": True,
+                    "reason": "Odds refresh is active; score sync deferred to protect the provider rate limit."}
+        provider = TheRundownProvider(
+            config.THERUNDOWN_API_KEY, utc_offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES
+        )
+        now = datetime.now(timezone.utc)
+        inserted = duplicates = rejected = groups_checked = events_returned = 0
+        errors = []
+        try:
+            groups = self.db.pending_simulation_result_dates(
+                [sport for sport in config.ODDS_SPORTS if sport in provider.SPORTS],
+                lookback_days=config.SIMULATION_RESULTS_LOOKBACK_DAYS, now=now,
+                offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES,
+            )
+            due_groups = []
+            for group in groups:
+                state_key = "simulation_results_attempt:{}:{}".format(group["sport"], group["event_date"])
+                previous = self.db.get_state(state_key)
+                try:
+                    previous_at = datetime.fromisoformat(previous.replace("Z", "+00:00")) if previous else None
+                    if previous_at is not None and previous_at.tzinfo is None:
+                        previous_at = previous_at.replace(tzinfo=timezone.utc)
+                except (TypeError, ValueError):
+                    previous_at = None
+                if previous_at is None or (now - previous_at.astimezone(timezone.utc)).total_seconds() >= config.SIMULATION_RESULTS_RETRY_SECONDS:
+                    due_groups.append((group, state_key))
+            due_groups = due_groups[:config.SIMULATION_RESULTS_MAX_GROUPS_PER_RUN]
+            for group, state_key in due_groups:
+                self.db.set_state(state_key, datetime.now(timezone.utc).isoformat())
+                try:
+                    results = provider.fetch_scores(group["sport"], [group["event_date"]])
+                    events_returned += len(results)
+                    saved = self.db.save_simulation_settlements(results)
+                    inserted += saved["inserted"]
+                    duplicates += saved["duplicates"]
+                    rejected += len(saved["rejected"])
+                    groups_checked += 1
+                except ProviderError as exc:
+                    errors.append(str(group["sport"]) + " " + str(group["event_date"]) + ": " + str(exc))
+                    continue
+            self._remember_provider_usage(provider.usage)
+            last_sync = datetime.now(timezone.utc).isoformat()
+            last_error = "; ".join(errors)[:1000] if errors else None
+            self.db.set_state("simulation_results_last_sync", last_sync)
+            self.db.set_state("simulation_results_last_error", last_error or "")
+            self._simulation_results_status = {
+                "enabled": True, "provider": provider.name, "last_sync": last_sync,
+                "last_error": last_error, "groups_pending": len(groups),
+                "groups_checked": groups_checked, "events_returned": events_returned,
+                "inserted_last_run": inserted, "duplicates_last_run": duplicates,
+                "rejected_last_run": rejected,
+                "settlements_stored": len(self.db.simulation_settlements()),
+                "lookback_days": config.SIMULATION_RESULTS_LOOKBACK_DAYS,
+                "refresh_interval_seconds": config.SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS,
+                "retry_interval_seconds": config.SIMULATION_RESULTS_RETRY_SECONDS,
+                "max_groups_per_run": config.SIMULATION_RESULTS_MAX_GROUPS_PER_RUN,
+                "data_policy": "Score-only affiliate_ids=0 requests; only final scores for event IDs already in local odds snapshots are stored.",
+            }
+            return {"ok": not bool(errors), "groups_checked": groups_checked,
+                    "events_returned": events_returned, "inserted": inserted,
+                    "duplicates": duplicates, "rejected": rejected, "error": last_error}
+        except ProviderError as exc:
+            self._remember_provider_usage(provider.usage)
+            last_error = str(exc)
+            self.db.set_state("simulation_results_last_error", last_error)
+            self._simulation_results_status.update({"enabled": True, "last_error": last_error})
+            return {"ok": False, "error": last_error, "groups_checked": groups_checked}
+        finally:
+            self._refresh_lock.release()
+
     def _dispatch_alerts(self):
         """Send newly observed EV/arb candidates once; isolate failures per delivery."""
         self._last_alert_check = datetime.now(timezone.utc).isoformat()
