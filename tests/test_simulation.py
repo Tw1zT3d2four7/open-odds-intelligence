@@ -110,8 +110,8 @@ def test_simulation_matches_provider_team_labels_case_and_whitespace_insensitive
 def test_simulation_reports_spread_team_mapping_separately_from_total():
     event = sample_event()
     for book in event["bookmakers"]:
-        book["markets"][0]["outcomes"][0]["name"] = "Home Team"
-        book["markets"][0]["outcomes"][1]["name"] = "Away Team"
+        book["markets"][0]["outcomes"][0]["name"] = "Unknown Home Club"
+        book["markets"][0]["outcomes"][1]["name"] = "Unknown Away Club"
     try:
         run_game_simulation(event)
     except ValueError as exc:
