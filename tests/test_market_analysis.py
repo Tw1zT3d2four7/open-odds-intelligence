@@ -278,3 +278,25 @@ def test_market_analysis_sanitizes_non_scalar_outcome_descriptions():
     result = analyze_markets([event], min_ev=-100, min_consensus_books=1)
     assert result["opportunities"] == []
     assert result["arbitrage"] == []
+
+
+def test_market_analysis_rejects_prices_inside_invalid_american_range():
+    for invalid_price in (-99, -50, -1, 0, 1, 50, 99):
+        event = event_fixture()
+        event[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = invalid_price
+        board = market_board(event)
+        assert all(row["price"] != invalid_price for row in board)
+        result = analyze_markets(event, min_ev=-100, min_consensus_books=1)
+        assert not any(row["bookmaker_key"] == "a" for row in result["opportunities"])
+        assert all(
+            leg["price"] != invalid_price
+            for row in result["arbitrage"] for leg in row["legs"]
+        )
+
+
+def test_market_analysis_accepts_american_odds_boundaries():
+    for valid_price in (-100, 100):
+        event = event_fixture()
+        event[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = valid_price
+        board = market_board(event)
+        assert any(row["bookmaker_key"] == "a" and row["price"] == valid_price for row in board)
