@@ -52,7 +52,7 @@ def parse_settlements_csv(content: str) -> list[dict]:
         try:
             home_score = float(raw["home_score"])
             away_score = float(raw["away_score"])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise ValueError(f"Line {line_number}: scores must be numeric.") from None
         if (not math.isfinite(home_score) or not math.isfinite(away_score)
                 or home_score < 0 or away_score < 0
@@ -69,7 +69,20 @@ def parse_settlements_csv(content: str) -> list[dict]:
 
 def score_prediction(prediction: dict, settlement: dict) -> dict:
     """Score one simulated forecast against one independently imported result."""
-    if str(prediction.get("event_id")) != str(settlement.get("event_id")):
+    if not isinstance(prediction, dict) or not isinstance(settlement, dict):
+        raise ValueError("Prediction and settlement must be objects.")
+
+    def stable_event_id(value):
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            return None
+        value = str(value).strip()
+        return value or None
+
+    prediction_event_id = stable_event_id(prediction.get("event_id"))
+    settlement_event_id = stable_event_id(settlement.get("event_id"))
+    if prediction_event_id is None or settlement_event_id is None:
+        raise ValueError("Prediction and settlement must include stable event IDs.")
+    if prediction_event_id != settlement_event_id:
         raise ValueError("Prediction and settlement event IDs do not match.")
     prediction_sport = str(prediction.get("sport") or "")
     settlement_sport = str(settlement.get("sport_key") or "")
@@ -81,7 +94,7 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
             raise ValueError(f"{label} must be numeric, not boolean.")
         try:
             number = float(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise ValueError(f"{label} must be numeric.") from None
         if not math.isfinite(number):
             raise ValueError(f"{label} must be finite.")
@@ -95,6 +108,8 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     hs = final_score(settlement.get("home_score"), "Home score")
     aws = final_score(settlement.get("away_score"), "Away score")
     probs = prediction.get("win_probabilities") or {}
+    if not isinstance(probs, dict):
+        raise ValueError("Prediction win probabilities must be an object.")
     home = finite_number(probs.get("home", -1), "Home win probability") / 100
     away = finite_number(probs.get("away", -1), "Away win probability") / 100
     tie = finite_number(probs.get("tie", -1), "Tie probability") / 100
@@ -109,6 +124,8 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     actual_index = actual.index(1.0)
     log_loss = -math.log(max(eps, values[actual_index]))
     total_market = prediction.get("total_market") or {}
+    if not isinstance(total_market, dict):
+        raise ValueError("Prediction total market must be an object.")
     total_line = finite_number(total_market.get("consensus_line", float("nan")), "Consensus total")
     total_probs = tuple(finite_number(total_market.get(key, -1), f"{key.title()} probability") / 100
                         for key in ("over", "under", "push"))
@@ -122,12 +139,14 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     total_brier = sum((p - y) ** 2 for p, y in zip(total_probs, total_actual))
     total_log_loss = -math.log(max(eps, total_probs[total_actual.index(1.0)]))
     projected = prediction.get("projected_score") or {}
+    if not isinstance(projected, dict):
+        raise ValueError("Prediction projected score must be an object.")
     projected_home = finite_number(projected.get("home", float("nan")), "Projected home score")
     projected_away = finite_number(projected.get("away", float("nan")), "Projected away score")
     if not math.isfinite(projected_home) or not math.isfinite(projected_away):
         raise ValueError("Prediction contains invalid projected scores.")
     return {
-        "event_id": str(settlement["event_id"]),
+        "event_id": settlement_event_id,
         "sport": str(settlement.get("sport_key") or prediction.get("sport") or ""),
         "actual_result": "home" if hs > aws else "away" if hs < aws else "tie",
         "predicted_home_probability": home,
