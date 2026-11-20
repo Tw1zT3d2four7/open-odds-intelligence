@@ -306,7 +306,7 @@ async function loadSimulationGames(refreshSelected=false){
    :await get(url);
   simulationGames=data.games||[];
   game.innerHTML='<option value="">Select a game</option>';
-  simulationGames.forEach(g=>{const o=document.createElement("option");o.value=g.event_id;const blocked=g.snapshot_freshness&&g.snapshot_freshness!=="current"?" · "+g.snapshot_freshness+" odds snapshot": " · incomplete markets";o.textContent=g.matchup+" · "+date(g.commence_time)+" · spread "+(g.spread_books||0)+" books / total "+(g.total_books||0)+" books"+(g.can_simulate?"":blocked);game.appendChild(o)});
+  simulationGames.forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.title=g.reason||"";const blocked=g.snapshot_freshness&&g.snapshot_freshness!=="current"?" · "+g.snapshot_freshness+" odds snapshot":" · NOT READY";o.textContent=g.matchup+" · "+date(g.commence_time)+" · spread "+(g.spread_books||0)+" books / total "+(g.total_books||0)+" books"+(g.can_simulate?"":blocked);game.appendChild(o)});
   game.disabled=false;
   const count=(data.games||[]).length;
   const ready=(data.games||[]).filter(g=>g.can_simulate).length;
