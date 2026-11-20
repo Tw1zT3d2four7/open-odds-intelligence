@@ -384,7 +384,6 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
     if not isinstance(event, dict):
         raise ValueError("A valid stored game event is required.")
-    _validate_upcoming_event(event)
     family = _family(event.get("sport_key") or event.get("sport"))
     if family is None:
         raise ValueError("This league is not yet supported by the game simulator.")
