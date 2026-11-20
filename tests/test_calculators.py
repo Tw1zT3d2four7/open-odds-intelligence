@@ -184,3 +184,17 @@ def test_calculators_reject_fractional_american_odds(odds):
         payout(100, odds)
     with pytest.raises(ValueError, match="whole number"):
         parlay([odds])
+
+
+@pytest.mark.parametrize("call", [
+    lambda: payout(10 ** 308, 10 ** 308, "decimal"),
+    lambda: payout(1, 10 ** 308, "decimal"),
+    lambda: parlay([10 ** 308, 10 ** 308], "decimal"),
+    lambda: ev_kelly(10 ** 308, 0, 100, format="decimal"),
+    lambda: hedge(10 ** 308, 10 ** 308, 1.01, "decimal"),
+    lambda: run_line_minus_one(10 ** 308, 10 ** 308, 2, "decimal"),
+    lambda: decimal_to_american(10 ** 308),
+])
+def test_calculators_reject_finite_inputs_that_overflow_results(call):
+    with pytest.raises(ValueError):
+        call()
