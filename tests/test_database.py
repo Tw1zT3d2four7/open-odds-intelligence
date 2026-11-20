@@ -1036,3 +1036,38 @@ def test_clv_uses_latest_pregame_observation_time_not_insert_order(tmp_path):
     entry = report["entries"][0]
     assert entry["status"] == "closed"
     assert entry["close_at"] == latest_close_at.isoformat()
+
+
+def test_clv_candidate_ingestion_skips_malformed_metadata_and_nonfinite_values(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-candidate-validation.sqlite3")
+    now = datetime.now(timezone.utc)
+    base = {
+        "event_id": "candidate-event", "sport": "basketball_nba",
+        "matchup": "Away @ Home",
+        "commence_time": (now + timedelta(hours=1)).isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Entry Book", "bookmaker_key": "entry",
+        "price": -105, "fair_probability": 0.52, "ev_percent": 2.38,
+    }
+    malformed = [
+        None,
+        dict(base, event_id=[]),
+        dict(base, market=[]),
+        dict(base, outcome={}),
+        dict(base, bookmaker_key=["entry"]),
+        dict(base, point=[]),
+        dict(base, fair_probability=True),
+        dict(base, fair_probability=float("nan")),
+        dict(base, fair_probability=1.0),
+        dict(base, ev_percent=False),
+        dict(base, ev_percent=float("inf")),
+        dict(base, ev_percent=0),
+        dict(base, commence_time="not-a-timestamp"),
+    ]
+    assert db.record_clv_candidates(malformed, now.isoformat()) == 0
+    assert db.record_clv_candidates([base], now.isoformat()) == 1
+    assert db.record_clv_candidates(None, now.isoformat()) == 0
+    assert db.record_clv_candidates([base], "invalid-observed-time") == 0
+    assert db.clv_report("basketball_nba")["summary"]["total"] == 1
