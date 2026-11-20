@@ -300,3 +300,24 @@ def test_market_analysis_accepts_american_odds_boundaries():
         event[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = valid_price
         board = market_board(event)
         assert any(row["bookmaker_key"] == "a" and row["price"] == valid_price for row in board)
+
+
+def test_market_board_normalizes_malformed_sort_metadata():
+    event = {
+        "id": "bad-sort-metadata", "commence_time": [],
+        "home_team": {"unexpected": "object"}, "away_team": ["bad"],
+        "bookmakers": [
+            {"key": "a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -110, "point": []},
+                {"name": "Away", "price": -110, "point": {}},
+            ]}]},
+            {"key": "b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 100},
+                {"name": "Away", "price": -100},
+            ]}]},
+        ],
+    }
+    board = market_board([event])
+    assert len(board) == 2
+    assert all(row["commence_time"] == "" for row in board)
+    assert all(row["point"] is None for row in board)
