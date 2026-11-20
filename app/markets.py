@@ -84,6 +84,8 @@ def market_board(events):
                     if market_key != "h2h" and line is None:
                         continue
                     description = _outcome_description(outcome)
+                    if market_key.startswith("player_") and not description.strip():
+                        continue
                     # A spread side is identified by its outcome and
                     # handicap magnitude; providers may sign that handicap
                     # differently while still referring to the same side.
@@ -153,12 +155,11 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                     name = name.strip()
                     if isinstance(price, bool) or not isinstance(price, int) or price == 0:
                         continue
-                    player_scope = (
-                        _outcome_description(outcome)
-                        if market_key.startswith("player_") else None
-                    )
-                    if player_scope is not None and not isinstance(player_scope, str):
-                        continue
+                    player_scope = None
+                    if market_key.startswith("player_"):
+                        player_scope = _outcome_description(outcome).strip()
+                        if not player_scope:
+                            continue
                     line = _line_group(market_key, outcome.get("point"))
                     if market_key != "h2h" and line is None:
                         continue
