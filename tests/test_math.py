@@ -87,3 +87,36 @@ def test_market_math_rejects_fractional_american_prices(price):
         american_to_decimal(price)
     with pytest.raises(ValueError, match="whole number"):
         american_implied_probability(price)
+
+
+def test_market_consensus_skips_invalid_american_prices_and_malformed_books():
+    from app.math import market_consensus
+
+    valid = {"key": "valid", "markets": [{"key": "h2h", "outcomes": [
+        {"name": "Home", "price": -120}, {"name": "Away", "price": 100},
+    ]}]}
+    events = [
+        None,
+        {"id": [], "bookmakers": [valid]},
+        {
+            "id": "robust-consensus",
+            "bookmakers": [
+                None,
+                {"key": "bad-container", "markets": None},
+                {"key": "bad-market", "markets": [None, "not-a-market"]},
+                {"key": "invalid-range", "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 99}, {"name": "Away", "price": -110},
+                ]}]},
+                {"key": "fractional", "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -110.5}, {"name": "Away", "price": -110},
+                ]}]},
+                valid,
+            ],
+        },
+    ]
+    consensus = market_consensus(events)
+    assert set(consensus) == {"robust-consensus"}
+    assert set(consensus["robust-consensus"]) == {"Home", "Away"}
+    assert consensus["robust-consensus"]["Home"] == pytest.approx(
+        (120 / 220) / ((120 / 220) + 0.5)
+    )
