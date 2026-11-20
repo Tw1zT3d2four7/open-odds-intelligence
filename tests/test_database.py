@@ -1063,11 +1063,15 @@ def test_clv_candidate_ingestion_skips_malformed_metadata_and_nonfinite_values(t
         dict(base, fair_probability=1.0),
         dict(base, ev_percent=False),
         dict(base, ev_percent=float("inf")),
-        dict(base, ev_percent=0),
         dict(base, commence_time="not-a-timestamp"),
     ]
     assert db.record_clv_candidates(malformed, now.isoformat()) == 0
     assert db.record_clv_candidates([base], now.isoformat()) == 1
+    # The configured CLV threshold may be negative; finite negative EV is
+    # valid candidate data when an operator deliberately lowers that gate.
+    assert db.record_clv_candidates(
+        [dict(base, event_id="negative-ev", ev_percent=-0.5)], now.isoformat()
+    ) == 1
     assert db.record_clv_candidates(None, now.isoformat()) == 0
     assert db.record_clv_candidates([base], "invalid-observed-time") == 0
-    assert db.clv_report("basketball_nba")["summary"]["total"] == 1
+    assert db.clv_report("basketball_nba")["summary"]["total"] == 2
