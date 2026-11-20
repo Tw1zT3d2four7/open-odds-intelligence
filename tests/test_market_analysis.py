@@ -298,6 +298,7 @@ def test_market_analysis_accepts_american_odds_boundaries():
     for valid_price in (-100, 100):
         event = event_fixture()
         event[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = valid_price
+        event[0]["bookmakers"][1]["markets"][0]["outcomes"][0]["price"] = valid_price
         board = market_board(event)
         assert any(row["bookmaker_key"] == "a" and row["price"] == valid_price for row in board)
 
