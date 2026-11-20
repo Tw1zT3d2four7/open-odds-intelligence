@@ -5,6 +5,11 @@ from statistics import median
 from .math import american_to_decimal, no_vig_probabilities
 
 
+def _records(value):
+    """Return list-shaped provider records; ignore malformed container values."""
+    return value if isinstance(value, list) else []
+
+
 def _line_group(market_key, point):
     """Return a finite canonical line, or None when a required line is absent.
 
@@ -28,15 +33,21 @@ def _line_group(market_key, point):
 def market_board(events):
     """Best quote for each exact market/outcome/line identity."""
     grouped = defaultdict(list)
-    for event in events:
+    for event in _records(events):
         if not isinstance(event, dict) or not str(event.get("id") or "").strip():
             continue
-        for book in event.get("bookmakers", []):
-            for market in book.get("markets", []):
+        for book in _records(event.get("bookmakers")):
+            if not isinstance(book, dict):
+                continue
+            for market in _records(book.get("markets")):
+                if not isinstance(market, dict):
+                    continue
                 market_key = market.get("key")
                 if not market_key:
                     continue
-                for outcome in market.get("outcomes", []):
+                for outcome in _records(market.get("outcomes")):
+                    if not isinstance(outcome, dict):
+                        continue
                     name, price = outcome.get("name"), outcome.get("price")
                     if not name or isinstance(price, bool) or not isinstance(price, int) or price == 0:
                         continue
@@ -83,11 +94,15 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
         sport_key = str(event.get("sport_key") or event.get("sport") or "").lower()
 
         # Build complete no-vig market sets per sportsbook and exact line.
-        for book in event.get("bookmakers", []):
+        for book in _records(event.get("bookmakers")):
+            if not isinstance(book, dict):
+                continue
             book_key = book.get("key")
             if not book_key:
                 continue
-            for market in book.get("markets", []):
+            for market in _records(book.get("markets")):
+                if not isinstance(market, dict):
+                    continue
                 market_key = market.get("key")
                 if not market_key:
                     continue
@@ -96,7 +111,9 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                     else 2
                 )
                 groups = defaultdict(list)
-                for outcome in market.get("outcomes", []):
+                for outcome in _records(market.get("outcomes")):
+                    if not isinstance(outcome, dict):
+                        continue
                     name, price = outcome.get("name"), outcome.get("price")
                     if not name or isinstance(price, bool) or not isinstance(price, int) or price == 0:
                         continue
