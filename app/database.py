@@ -630,7 +630,7 @@ class OddsDatabase:
         snapshots = db.execute(
             """SELECT DISTINCT s.id,s.fetched_at FROM snapshots s
                JOIN quotes q ON q.snapshot_id=s.id
-               WHERE q.event_id=? ORDER BY s.id DESC""",
+               WHERE q.event_id=? ORDER BY s.fetched_at DESC,s.id DESC""",
             (entry["event_id"],)).fetchall()
         for snapshot in snapshots:
             fetched = self._as_utc(snapshot["fetched_at"])
