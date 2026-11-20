@@ -79,3 +79,11 @@ def test_market_odds_helpers_accept_valid_boundary_prices(price, expected):
     assert american_implied_probability(price) == pytest.approx(
         100 / (price + 100) if price > 0 else abs(price) / (abs(price) + 100)
     )
+
+
+@pytest.mark.parametrize("price", [-110.5, 110.5, "-110.5", "110.5"])
+def test_market_math_rejects_fractional_american_prices(price):
+    with pytest.raises(ValueError, match="whole number"):
+        american_to_decimal(price)
+    with pytest.raises(ValueError, match="whole number"):
+        american_implied_probability(price)
