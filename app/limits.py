@@ -173,7 +173,13 @@ class MarketLimitsMonitor:
         if not isinstance(events, list):
             return rows
         for event in events:
-            if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+            if not isinstance(event, dict):
+                continue
+            raw_event_id = event.get("id")
+            if isinstance(raw_event_id, bool) or not isinstance(raw_event_id, (str, int)):
+                continue
+            event_id = str(raw_event_id).strip()
+            if not event_id:
                 continue
             books = event.get("bookmakers")
             if not isinstance(books, list):
@@ -215,8 +221,10 @@ class MarketLimitsMonitor:
                                 price = float(raw_price)
                             except (TypeError, ValueError, OverflowError):
                                 continue
-                            if not math.isfinite(price) or price == 0:
+                            if (not math.isfinite(price) or not price.is_integer()
+                                    or price == 0 or -100 < price < 100):
                                 continue
+                            price = int(price)
                         point = outcome.get("point")
                         if point is not None:
                             if isinstance(point, bool) or not isinstance(point, (int, float)):
@@ -244,7 +252,7 @@ class MarketLimitsMonitor:
                         if not isinstance(title, str) or not title.strip():
                             title = book_key
                         rows.append((
-                            observed_at, sport, str(event.get("id")).strip(),
+                            observed_at, sport, event_id,
                             *metadata, book_key, title, market_key, outcome_name,
                             point, price, amount,
                         ))

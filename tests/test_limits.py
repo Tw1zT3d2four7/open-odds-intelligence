@@ -243,3 +243,46 @@ def test_oddslink_client_rejects_unexpected_response_shapes(monkeypatch):
     with pytest.raises(LimitsError, match="unexpected events response"):
         OddsLinkClient("CaseSensitiveKey").fetch("nfl")
 
+
+
+def test_extract_rejects_invalid_american_prices():
+    invalid_prices = (
+        True, False, 1.5, -1.5, -99, -50, -1, 0, 1, 50, 99,
+        float("nan"), float("inf"), [], {},
+    )
+    for invalid_price in invalid_prices:
+        events = fixture()
+        for outcome in events[0]["bookmakers"][0]["markets"][0]["outcomes"]:
+            outcome["price"] = invalid_price
+        assert MarketLimitsMonitor._extract(
+            "americanfootball_nfl", events, "2026-11-19T12:00:00Z"
+        ) == []
+
+
+def test_extract_accepts_american_odds_boundaries_and_missing_price():
+    for valid_price in (-100, 100):
+        events = fixture()
+        for outcome in events[0]["bookmakers"][0]["markets"][0]["outcomes"]:
+            outcome["price"] = valid_price
+        rows = MarketLimitsMonitor._extract(
+            "americanfootball_nfl", events, "2026-11-19T12:00:00Z"
+        )
+        assert len(rows) == 2
+        assert {row[11] for row in rows} == {valid_price}
+
+    events = fixture()
+    for outcome in events[0]["bookmakers"][0]["markets"][0]["outcomes"]:
+        outcome["price"] = None
+    rows = MarketLimitsMonitor._extract(
+        "americanfootball_nfl", events, "2026-11-19T12:00:00Z"
+    )
+    assert len(rows) == 2
+    assert {row[11] for row in rows} == {None}
+
+
+def test_extract_rejects_non_scalar_event_ids():
+    events = fixture()
+    events[0]["id"] = {"unexpected": "object"}
+    assert MarketLimitsMonitor._extract(
+        "americanfootball_nfl", events, "2026-11-19T12:00:00Z"
+    ) == []
