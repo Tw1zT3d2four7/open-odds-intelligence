@@ -168,7 +168,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                     if not isinstance(name, str) or not name.strip():
                         continue
                     name = name.strip()
-                    if isinstance(price, bool) or not isinstance(price, int) or price == 0:
+                    if not _valid_american_price(price):
                         continue
                     player_scope = None
                     if market_key.startswith("player_"):
