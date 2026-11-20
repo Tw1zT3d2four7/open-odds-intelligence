@@ -10,6 +10,15 @@ def _records(value):
     return value if isinstance(value, list) else []
 
 
+def _event_id(event):
+    """Return a stable scalar event identity, excluding bools and containers."""
+    value = event.get("id")
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        return None
+    value = str(value).strip()
+    return value or None
+
+
 def _line_group(market_key, point):
     """Return a finite canonical line, or None when a required line is absent.
 
@@ -34,7 +43,10 @@ def market_board(events):
     """Best quote for each exact market/outcome/line identity."""
     grouped = defaultdict(list)
     for event in _records(events):
-        if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+        if not isinstance(event, dict):
+            continue
+        event_id = _event_id(event)
+        if event_id is None:
             continue
         for book in _records(event.get("bookmakers")):
             if not isinstance(book, dict):
@@ -43,25 +55,31 @@ def market_board(events):
                 if not isinstance(market, dict):
                     continue
                 market_key = market.get("key")
-                if not market_key:
+                if not isinstance(market_key, str) or not market_key.strip():
                     continue
+                market_key = market_key.strip()
                 for outcome in _records(market.get("outcomes")):
                     if not isinstance(outcome, dict):
                         continue
                     name, price = outcome.get("name"), outcome.get("price")
-                    if not name or isinstance(price, bool) or not isinstance(price, int) or price == 0:
+                    if not isinstance(name, str) or not name.strip():
+                        continue
+                    name = name.strip()
+                    if isinstance(price, bool) or not isinstance(price, int) or price == 0:
                         continue
                     point = outcome.get("point")
                     line = _line_group(market_key, point)
                     if market_key != "h2h" and line is None:
                         continue
                     description = outcome.get("description") or outcome.get("participant") or ""
+                    if not isinstance(description, str):
+                        description = ""
                     # A spread side is identified by its outcome and
                     # handicap magnitude; providers may sign that handicap
                     # differently while still referring to the same side.
-                    key = (event.get("id"), market_key, name, line, description)
+                    key = (event_id, market_key, name, line, description)
                     grouped[key].append({
-                        "event_id": event.get("id"), "sport": event.get("sport_title"),
+                        "event_id": event_id, "sport": event.get("sport_title"),
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
                         "commence_time": event.get("commence_time"),
                         "market": market_key, "outcome": name, "outcome_description": description, "point": point,
@@ -87,7 +105,10 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
     """
     opportunities, arbitrage = [], []
     for event in events:
-        if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+        if not isinstance(event, dict):
+            continue
+        event_id = _event_id(event)
+        if event_id is None:
             continue
         line_sets = defaultdict(list)
         candidate_sets = defaultdict(lambda: defaultdict(dict))
@@ -98,14 +119,16 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
             if not isinstance(book, dict):
                 continue
             book_key = book.get("key")
-            if not book_key:
+            if not isinstance(book_key, str) or not book_key.strip():
                 continue
+            book_key = book_key.strip()
             for market in _records(book.get("markets")):
                 if not isinstance(market, dict):
                     continue
                 market_key = market.get("key")
-                if not market_key:
+                if not isinstance(market_key, str) or not market_key.strip():
                     continue
+                market_key = market_key.strip()
                 expected_outcomes = (
                     3 if market_key == "h2h" and sport_key.startswith("soccer_")
                     else 2
@@ -115,12 +138,17 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                     if not isinstance(outcome, dict):
                         continue
                     name, price = outcome.get("name"), outcome.get("price")
-                    if not name or isinstance(price, bool) or not isinstance(price, int) or price == 0:
+                    if not isinstance(name, str) or not name.strip():
+                        continue
+                    name = name.strip()
+                    if isinstance(price, bool) or not isinstance(price, int) or price == 0:
                         continue
                     player_scope = (
                         outcome.get("description") or outcome.get("participant") or ""
                         if market_key.startswith("player_") else None
                     )
+                    if player_scope is not None and not isinstance(player_scope, str):
+                        continue
                     line = _line_group(market_key, outcome.get("point"))
                     if market_key != "h2h" and line is None:
                         continue
@@ -180,7 +208,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                     continue
                 identity = (market_key, line, quote["identity"])
                 row = {
-                    "event_id": event.get("id"), "sport": event.get("sport_title"),
+                    "event_id": event_id, "sport": event.get("sport_title"),
                     "sport_key": event.get("sport_key") or event.get("sport"),
                     "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
                     "commence_time": event.get("commence_time"), "market": market_key,
@@ -233,7 +261,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
             side_quotes = [first, second]
             decimals = [first_decimal, second_decimal]
             arbitrage.append({
-                "event_id": event.get("id"), "sport": event.get("sport_title"),
+                "event_id": event_id, "sport": event.get("sport_title"),
                 "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
                 "commence_time": event.get("commence_time"), "market": market_key,
                 "line": line, "arb_percent": round((1 - implied_sum) * 100, 3),
