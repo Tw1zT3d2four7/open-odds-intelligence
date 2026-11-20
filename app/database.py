@@ -557,6 +557,12 @@ class OddsDatabase:
         inserted = 0
         with self.connect() as db:
             for row in candidates:
+                if not isinstance(row, dict):
+                    continue
+                price = row.get("price")
+                if (isinstance(price, bool) or not isinstance(price, int)
+                        or price == 0 or -100 < price < 100):
+                    continue
                 commence = row.get("commence_time")
                 if not commence or str(row.get("market") or "").startswith("player_"):
                     continue
@@ -626,6 +632,12 @@ class OddsDatabase:
                JOIN quotes q ON q.snapshot_id=s.id
                WHERE q.event_id=? ORDER BY s.id DESC""",
             (entry["event_id"],)).fetchall()
+        earliest = datetime.min.replace(tzinfo=timezone.utc)
+        snapshots = sorted(
+            snapshots,
+            key=lambda snapshot: self._as_utc(snapshot["fetched_at"]) or earliest,
+            reverse=True,
+        )
         for snapshot in snapshots:
             fetched = self._as_utc(snapshot["fetched_at"])
             # A closing observation must be strictly later than the
@@ -675,8 +687,11 @@ class OddsDatabase:
                      else o["point"])
                     for o in outcomes
                 ]
-                if (len(set(identities)) != len(identities) or
-                    any(not isinstance(o["price"], int) or o["price"] == 0 for o in outcomes)):
+                if (len(set(identities)) != len(identities) or any(
+                    isinstance(o["price"], bool) or not isinstance(o["price"], int)
+                    or o["price"] == 0 or -100 < o["price"] < 100
+                    for o in outcomes
+                )):
                     continue
                 valid_books[book] = (tuple(sorted(identities, key=lambda item: (item[0], str(item[1])))), outcomes)
             # Only compare complete peer markets with identical outcome/line sets.
@@ -698,7 +713,10 @@ class OddsDatabase:
                 for identities, outcomes in valid_books.values():
                     if identities != common:
                         continue
-                    probs = no_vig_probabilities([o["price"] for o in outcomes])
+                    try:
+                        probs = no_vig_probabilities([o["price"] for o in outcomes])
+                    except ValueError:
+                        continue
                     for outcome, probability in zip(outcomes, probs):
                         same_point = outcome["point"] == entry["point"]
                         if entry["market_key"] == "spreads":
@@ -713,8 +731,14 @@ class OddsDatabase:
                 fair = float(median(peer_probabilities))
                 if 0 < fair < 1:
                     close_decimal = 1 / fair
-                    entry_decimal = american_to_decimal(int(entry["entry_price"]))
+                    entry_price = entry["entry_price"]
+                    if (isinstance(entry_price, bool) or not isinstance(entry_price, int)
+                            or entry_price == 0 or -100 < entry_price < 100):
+                        return None
+                    entry_decimal = american_to_decimal(entry_price)
                     clv = (entry_decimal / close_decimal - 1) * 100
+                    if not math.isfinite(clv):
+                        return None
                     close_american = (round((close_decimal - 1) * 100) if close_decimal >= 2
                                       else round(-100 / (close_decimal - 1)))
                     return {"close_at": snapshot["fetched_at"],
