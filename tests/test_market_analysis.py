@@ -272,6 +272,9 @@ def test_market_analysis_sanitizes_non_scalar_outcome_descriptions():
     # Invalid descriptions are normalized to empty scope, never used as
     # unhashable grouping keys; the malformed outcomes are safely ignored
     # for player markets rather than being conflated with a named player.
+    board = market_board([event])
+    assert {row["outcome_description"] for row in board} == {"Player"}
+    assert {row["bookmaker_key"] for row in board} == {"b"}
     result = analyze_markets([event], min_ev=-100, min_consensus_books=1)
     assert result["opportunities"] == []
     assert result["arbitrage"] == []
