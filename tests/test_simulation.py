@@ -7,7 +7,7 @@ def sample_event():
     return {
         "id": "nba-1",
         "sport_key": "basketball_nba",
-        "commence_time": "2026-11-20T00:00:00Z",
+        "commence_time": "2099-11-20T00:00:00Z",
         "home_team": "Home",
         "away_team": "Away",
         "bookmakers": [
@@ -417,3 +417,27 @@ def test_simulation_market_readiness_ignores_fractional_price_quotes():
     assert result["can_simulate"] is False
     assert result["spread_books"] == 0
     assert result["total_books"] == 0
+
+
+@pytest.mark.parametrize("commence_time, message", [
+    ("2020-01-01T00:00:00Z", "only available before the game starts"),
+    ("not-a-timestamp", "valid ISO-8601"),
+    ("2099-11-20T00:00:00", "explicit timezone"),
+    (None, "upcoming game start time"),
+])
+def test_simulation_rejects_started_or_invalidly_scheduled_games(commence_time, message):
+    event = sample_event()
+    event["commence_time"] = commence_time
+    with pytest.raises(ValueError, match=message):
+        run_game_simulation(event)
+
+
+def test_market_readiness_blocks_started_or_invalidly_scheduled_games():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["commence_time"] = "2020-01-01T00:00:00Z"
+    readiness = market_readiness(event)
+    assert readiness["has_start_time"] is False
+    assert readiness["can_simulate"] is False
+    assert "before the game starts" in readiness["reason"]
