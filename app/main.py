@@ -288,6 +288,11 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
     event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
+    from .simulation import _validate_upcoming_event
+    try:
+        _validate_upcoming_event(event)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
     freshness = _simulation_snapshot_freshness(sport)
     if not isinstance(freshness, dict) or freshness.get("freshness") != "current":
         state = freshness.get("freshness", "unknown") if isinstance(freshness, dict) else "unavailable"

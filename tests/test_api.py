@@ -93,6 +93,8 @@ def test_dashboard_renders_synthetic_minus_one_builder_inputs_and_outputs():
     assert 'if(!Number.isInteger(v))throw Error("American odds must be a whole number.")' in html
     assert 'if(!Number.isFinite(raw))throw Error("American odds exceed the supported numeric range.")' in html
     assert 'const finiteResult=(v,label)=>{if(!Number.isFinite(v))throw Error(label+" exceeds the supported numeric range.");return v;}' in html
+    assert 'o.title=g.reason||""' in html
+    assert ' · NOT READY' in html
     assert 'if(v>-100&&v<100)throw Error("American odds must be +100 or greater, or -100 or lower.")' in html
     assert 'if(f<0||f>1)throw Error("Kelly fraction must be between 0 and 1.")' in html
 
@@ -294,6 +296,7 @@ def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
     selected = {
         "id": "chosen-game", "sport_key": "basketball_nba",
+        "commence_time": "2099-11-20T00:00:00Z",
         "home_team": "Home", "away_team": "Away",
         "bookmakers": [
             {"markets": [
@@ -323,6 +326,7 @@ def test_simulation_endpoint_blocks_stale_league_snapshot(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
     event = {
         "id": "chosen-game", "sport_key": "basketball_nba",
+        "commence_time": "2099-11-20T00:00:00Z",
         "home_team": "Home", "away_team": "Away",
         "bookmakers": [],
     }
@@ -339,7 +343,8 @@ def test_simulation_endpoint_blocks_stale_league_snapshot(monkeypatch):
 
 def test_simulation_endpoint_blocks_when_league_snapshot_is_unavailable(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
-    event = {"id": "chosen-game", "sport_key": "basketball_nba"}
+    event = {"id": "chosen-game", "sport_key": "basketball_nba",
+             "commence_time": "2099-11-20T00:00:00Z"}
     monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
     monkeypatch.setattr(main.service, "status", lambda: {"sport_freshness": []})
     with TestClient(main.app) as client:
@@ -407,3 +412,20 @@ def test_manual_refresh_without_sport_still_refreshes_all_configured_leagues(mon
         response = client.post("/api/refresh")
     assert response.status_code == 200
     assert called == [None]
+
+
+def test_simulation_endpoint_blocks_started_game_even_with_current_snapshot(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    event = {
+        "id": "started-game", "sport_key": "basketball_nba",
+        "commence_time": "2020-01-01T00:00:00Z",
+        "home_team": "Home", "away_team": "Away",
+    }
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current", "age_seconds": 30}]
+    })
+    with TestClient(main.app) as client:
+        response = client.post("/api/simulation/run?sport=basketball_nba&event_id=started-game")
+    assert response.status_code == 422
+    assert "before the game starts" in response.json()["detail"]

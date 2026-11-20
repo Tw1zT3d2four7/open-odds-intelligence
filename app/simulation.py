@@ -1,6 +1,7 @@
 import json
 import math
 import random
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
 
@@ -218,18 +219,40 @@ def _market_inputs(event):
     return median(spread_margins), median(totals), len(spread_margins), len(totals)
 
 
+def _validate_upcoming_event(event):
+    raw_start = event.get("commence_time")
+    if not isinstance(raw_start, str) or not raw_start.strip():
+        raise ValueError("A valid upcoming game start time is required for simulation.")
+    try:
+        start = datetime.fromisoformat(raw_start.strip().replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError("Game start time must be a valid ISO-8601 timestamp.") from None
+    if start.tzinfo is None or start.utcoffset() is None:
+        raise ValueError("Game start time must include an explicit timezone.")
+    if start.astimezone(timezone.utc) <= datetime.now(timezone.utc):
+        raise ValueError("Simulation is only available before the game starts.")
+    return start
+
+
 def market_readiness(event):
-    """Report whether stored quotes contain complete, internally consistent markets."""
+    """Report whether stored quotes and schedule permit a pregame simulation."""
     inputs = _collect_market_inputs(event)
     has_spread = bool(inputs["spread_margins"])
     has_total = bool(inputs["totals"])
+    has_start_time = True
     missing = []
+    try:
+        _validate_upcoming_event(event)
+    except ValueError as exc:
+        has_start_time = False
+        missing.append(str(exc))
     if not has_spread:
         missing.append("a complete, valid spread with matching home and away outcomes")
     if not has_total:
         missing.append("a complete, valid total with matching Over and Under outcomes")
     return {
-        "can_simulate": has_spread and has_total,
+        "can_simulate": has_start_time and has_spread and has_total,
+        "has_start_time": has_start_time,
         "has_spread": has_spread,
         "has_total": has_total,
         "spread_books": len(inputs["spread_books"]),
