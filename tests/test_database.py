@@ -940,7 +940,7 @@ def test_clv_candidate_ingestion_rejects_invalid_american_prices(tmp_path):
 
 def test_clv_skips_corrupt_legacy_closing_prices_without_crashing(tmp_path, monkeypatch):
     from datetime import datetime, timedelta, timezone
-    from app.config import config
+    from app import config
 
     monkeypatch.setattr(config, "CLV_CLOSE_GRACE_MINUTES", 0)
     db = OddsDatabase(tmp_path / "clv-corrupt-close.sqlite3")
