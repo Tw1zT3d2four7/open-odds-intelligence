@@ -205,3 +205,58 @@ def test_prediction_scoring_rejects_boolean_probabilities_and_projected_scores()
     invalid_score = {**base, "projected_score": {**base["projected_score"], "home": True}}
     with pytest.raises(ValueError, match="not boolean"):
         score_prediction(invalid_score, settlement)
+
+
+def test_prediction_scoring_rejects_overflowing_numeric_inputs():
+    prediction = {
+        "event_id": "g1", "sport": "basketball_nba",
+        "win_probabilities": {"home": 60, "away": 35, "tie": 5},
+        "projected_score": {"home": 10 ** 10000, "away": 99},
+        "total_market": {"consensus_line": 200, "over": 45, "under": 45, "push": 10},
+    }
+    settlement = {
+        "event_id": "g1", "sport_key": "basketball_nba",
+        "home_score": 100, "away_score": 99,
+    }
+    with pytest.raises(ValueError, match="Projected home score must be numeric"):
+        score_prediction(prediction, settlement)
+
+
+def test_prediction_scoring_rejects_malformed_nested_prediction_objects():
+    base = {
+        "event_id": "g1", "sport": "basketball_nba",
+        "win_probabilities": {"home": 60, "away": 35, "tie": 5},
+        "projected_score": {"home": 102, "away": 99},
+        "total_market": {"consensus_line": 200, "over": 45, "under": 45, "push": 10},
+    }
+    settlement = {
+        "event_id": "g1", "sport_key": "basketball_nba",
+        "home_score": 100, "away_score": 99,
+    }
+    for key, value, message in (
+        ("win_probabilities", [], "win probabilities must be an object"),
+        ("total_market", [], "total market must be an object"),
+        ("projected_score", [], "projected score must be an object"),
+    ):
+        malformed = {**base, key: value}
+        with pytest.raises(ValueError, match=message):
+            score_prediction(malformed, settlement)
+
+
+def test_prediction_scoring_requires_stable_scalar_event_ids_and_objects():
+    valid_prediction = {
+        "event_id": "g1", "win_probabilities": {"home": 60, "away": 35, "tie": 5},
+        "projected_score": {"home": 102, "away": 99},
+        "total_market": {"consensus_line": 200, "over": 45, "under": 45, "push": 10},
+    }
+    valid_settlement = {
+        "event_id": "g1", "home_score": 100, "away_score": 99,
+    }
+    with pytest.raises(ValueError, match="must be objects"):
+        score_prediction([], valid_settlement)
+    with pytest.raises(ValueError, match="must be objects"):
+        score_prediction(valid_prediction, None)
+    with pytest.raises(ValueError, match="stable event IDs"):
+        score_prediction({**valid_prediction, "event_id": []}, valid_settlement)
+    with pytest.raises(ValueError, match="stable event IDs"):
+        score_prediction(valid_prediction, {**valid_settlement, "event_id": True})
