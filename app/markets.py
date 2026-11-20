@@ -56,6 +56,13 @@ def market_board(events):
         for book in _records(event.get("bookmakers")):
             if not isinstance(book, dict):
                 continue
+            book_key = book.get("key")
+            if not isinstance(book_key, str) or not book_key.strip():
+                continue
+            book_key = book_key.strip()
+            book_title = book.get("title")
+            if not isinstance(book_title, str) or not book_title.strip():
+                book_title = book_key
             for market in _records(book.get("markets")):
                 if not isinstance(market, dict):
                     continue
@@ -86,8 +93,8 @@ def market_board(events):
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
                         "commence_time": event.get("commence_time"),
                         "market": market_key, "outcome": name, "outcome_description": description, "point": point,
-                        "bookmaker": book.get("title", book.get("key")),
-                        "bookmaker_key": book.get("key"), "price": price,
+                        "bookmaker": book_title,
+                        "bookmaker_key": book_key, "price": price,
                     })
     rows = []
     for quotes in grouped.values():
