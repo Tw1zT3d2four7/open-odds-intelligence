@@ -19,6 +19,11 @@ def _event_id(event):
     return value or None
 
 
+def _outcome_description(outcome):
+    value = outcome.get("description") or outcome.get("participant") or ""
+    return value if isinstance(value, str) else ""
+
+
 def _line_group(market_key, point):
     """Return a finite canonical line, or None when a required line is absent.
 
@@ -71,9 +76,7 @@ def market_board(events):
                     line = _line_group(market_key, point)
                     if market_key != "h2h" and line is None:
                         continue
-                    description = outcome.get("description") or outcome.get("participant") or ""
-                    if not isinstance(description, str):
-                        description = ""
+                    description = _outcome_description(outcome)
                     # A spread side is identified by its outcome and
                     # handicap magnitude; providers may sign that handicap
                     # differently while still referring to the same side.
@@ -144,7 +147,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                     if isinstance(price, bool) or not isinstance(price, int) or price == 0:
                         continue
                     player_scope = (
-                        outcome.get("description") or outcome.get("participant") or ""
+                        _outcome_description(outcome)
                         if market_key.startswith("player_") else None
                     )
                     if player_scope is not None and not isinstance(player_scope, str):
@@ -159,7 +162,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                         continue
                     identities = [
                         (outcome["name"], _line_group(market_key, outcome.get("point")),
-                         outcome.get("description") or outcome.get("participant") or "")
+                         _outcome_description(outcome))
                         for outcome in items
                     ]
                     if len(set(identities)) != expected_outcomes:
@@ -213,7 +216,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                     "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
                     "commence_time": event.get("commence_time"), "market": market_key,
                     "outcome": quote["outcome"]["name"],
-                    "outcome_description": quote["outcome"].get("description") or quote["outcome"].get("participant") or "",
+                    "outcome_description": _outcome_description(quote["outcome"]),
                     "point": quote["outcome"].get("point"),
                     "bookmaker": quote["book"].get("title", quote["book"].get("key")),
                     "bookmaker_key": quote["book"].get("key"), "price": price,
