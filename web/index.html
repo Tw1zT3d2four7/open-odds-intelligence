@@ -250,7 +250,7 @@ document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.ad
 (()=>{
  const el=id=>document.getElementById(id), money=n=>Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}), pct=n=>(n*100).toFixed(2)+"%";
  let format="american",legCount=0;
- const decimal=v=>{v=Number(v);if(!Number.isFinite(v)||v===0)throw Error("Enter valid non-zero odds.");if(format==="decimal"){if(v<=1)throw Error("Decimal odds must be greater than 1.00.");return v;}if(v>-100&&v<100)throw Error("American odds must be +100 or greater, or -100 or lower.");return 1+(v>0?v/100:100/Math.abs(v));};
+ const decimal=v=>{v=Number(v);if(!Number.isFinite(v)||v===0)throw Error("Enter valid non-zero odds.");if(format==="decimal"){if(v<=1)throw Error("Decimal odds must be greater than 1.00.");return v;}if(!Number.isInteger(v))throw Error("American odds must be a whole number.");if(v>-100&&v<100)throw Error("American odds must be +100 or greater, or -100 or lower.");return 1+(v>0?v/100:100/Math.abs(v));};
  const american=d=>{if(!Number.isFinite(d)||d<=1)throw Error("Odds must be greater than 1.00.");return Math.round(d>=2?(d-1)*100:-100/(d-1));};
  const oddsText=d=>format==="american"?(american(d)>0?"+"+american(d):String(american(d))):d.toFixed(3);
  const number=id=>{const v=Number(el(id).value);if(!Number.isFinite(v))throw Error("Enter valid numeric values.");return v;};
