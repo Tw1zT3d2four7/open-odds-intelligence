@@ -286,3 +286,41 @@ def test_extract_rejects_non_scalar_event_ids():
     assert MarketLimitsMonitor._extract(
         "americanfootball_nfl", events, "2026-11-19T12:00:00Z"
     ) == []
+
+
+def test_extract_deduplicates_identical_h2h_observations_with_null_points():
+    events = fixture()
+    outcomes = [
+        {"name": "Home", "price": 110, "size": {"kind": "posted_limit", "amount": 25000}},
+        {"name": "Away", "price": -110, "size": {"kind": "posted_limit", "amount": 25000}},
+    ]
+    outcomes.append(dict(outcomes[0]))
+    events[0]["bookmakers"][0]["markets"].append({
+        "key": "h2h", "outcomes": outcomes,
+    })
+
+    rows = MarketLimitsMonitor._extract(
+        "americanfootball_nfl", events, "2026-11-19T12:00:00Z"
+    )
+    h2h_rows = [row for row in rows if row[8] == "h2h"]
+    assert len(h2h_rows) == 2
+    assert {row[9] for row in h2h_rows} == {"Home", "Away"}
+
+
+def test_extract_drops_conflicting_duplicate_h2h_identity_with_null_point():
+    events = fixture()
+    outcomes = [
+        {"name": "Home", "price": 110, "size": {"kind": "posted_limit", "amount": 25000}},
+        {"name": "Away", "price": -110, "size": {"kind": "posted_limit", "amount": 25000}},
+        {"name": "Home", "price": 110, "size": {"kind": "posted_limit", "amount": 50000}},
+    ]
+    events[0]["bookmakers"][0]["markets"].append({
+        "key": "h2h", "outcomes": outcomes,
+    })
+
+    rows = MarketLimitsMonitor._extract(
+        "americanfootball_nfl", events, "2026-11-19T12:00:00Z"
+    )
+    h2h_rows = [row for row in rows if row[8] == "h2h"]
+    assert len(h2h_rows) == 1
+    assert h2h_rows[0][9] == "Away"
