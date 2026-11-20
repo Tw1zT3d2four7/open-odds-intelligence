@@ -1,7 +1,7 @@
 from statistics import median
 
 from app.math import no_vig_probabilities
-from app.markets import analyze_markets
+from app.markets import analyze_markets, market_board
 
 
 def event_fixture():
@@ -183,3 +183,142 @@ def test_market_analysis_ignores_events_without_stable_identity():
     result = analyze_markets([anonymous, None, "malformed"], min_ev=-100, min_consensus_books=1)
     assert result == {"opportunities": [], "arbitrage": []}
 
+
+
+def test_market_analysis_skips_malformed_nested_records_and_keeps_valid_books():
+    valid_event = {
+        "id": "valid-neighbor", "sport_key": "americanfootball_nfl",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -110}, {"name": "Away", "price": -110},
+            ]}]},
+            {"key": "b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -110}, {"name": "Away", "price": -110},
+            ]}]},
+        ],
+    }
+    malformed_event = {
+        "id": "malformed-event",
+        "bookmakers": [
+            None,
+            {"key": "bad-markets", "markets": None},
+            {"key": "bad-market-entry", "markets": [None, "not-a-market"]},
+            {"key": "bad-outcomes", "markets": [
+                {"key": "h2h", "outcomes": None},
+                {"key": "h2h", "outcomes": [None, "not-an-outcome"]},
+            ]},
+        ],
+    }
+
+    board = market_board([malformed_event, valid_event, None, "not-an-event"])
+    assert len(board) == 2
+    assert {row["event_id"] for row in board} == {"valid-neighbor"}
+
+    result = analyze_markets(
+        [malformed_event, valid_event, None, "not-an-event"],
+        min_ev=-100, min_consensus_books=1,
+    )
+    assert result["opportunities"]
+    assert {row["event_id"] for row in result["opportunities"]} == {"valid-neighbor"}
+    assert result["arbitrage"] == []
+
+
+def test_market_analysis_accepts_non_list_top_level_input_as_empty():
+    assert market_board(None) == []
+    assert market_board({"id": "not-a-list"}) == []
+    assert analyze_markets(None) == {"opportunities": [], "arbitrage": []}
+
+
+def test_market_analysis_skips_non_scalar_identity_fields():
+    malformed = [
+        {
+            "id": ["not", "an", "event-id"],
+            "bookmakers": [],
+        },
+        {
+            "id": "malformed-identity-fields",
+            "bookmakers": [
+                {"key": [], "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 110}, {"name": "Away", "price": -110},
+                ]}]},
+                {"key": "bad-market-key", "markets": [{"key": [], "outcomes": [
+                    {"name": "Home", "price": 110}, {"name": "Away", "price": -110},
+                ]}]},
+                {"key": "bad-outcome-name", "markets": [{"key": "h2h", "outcomes": [
+                    {"name": [], "price": 110}, {"name": {}, "price": -110},
+                ]}]},
+            ],
+        },
+    ]
+    assert market_board(malformed) == []
+    assert analyze_markets(malformed) == {"opportunities": [], "arbitrage": []}
+
+
+def test_market_analysis_sanitizes_non_scalar_outcome_descriptions():
+    event = {
+        "id": "description-shape",
+        "bookmakers": [
+            {"key": "a", "markets": [{"key": "player_points", "outcomes": [
+                {"name": "Over", "description": [], "point": 20.5, "price": -110},
+                {"name": "Under", "description": {}, "point": 20.5, "price": -110},
+            ]}]},
+            {"key": "b", "markets": [{"key": "player_points", "outcomes": [
+                {"name": "Over", "description": "Player", "point": 20.5, "price": -110},
+                {"name": "Under", "description": "Player", "point": 20.5, "price": -110},
+            ]}]},
+        ],
+    }
+    # Invalid descriptions are normalized to empty scope, never used as
+    # unhashable grouping keys; the malformed outcomes are safely ignored
+    # for player markets rather than being conflated with a named player.
+    board = market_board([event])
+    assert {row["outcome_description"] for row in board} == {"Player"}
+    assert {row["bookmaker_key"] for row in board} == {"b"}
+    result = analyze_markets([event], min_ev=-100, min_consensus_books=1)
+    assert result["opportunities"] == []
+    assert result["arbitrage"] == []
+
+
+def test_market_analysis_rejects_prices_inside_invalid_american_range():
+    for invalid_price in (-99, -50, -1, 0, 1, 50, 99):
+        event = event_fixture()
+        event[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = invalid_price
+        board = market_board(event)
+        assert all(row["price"] != invalid_price for row in board)
+        result = analyze_markets(event, min_ev=-100, min_consensus_books=1)
+        assert all(row["price"] != invalid_price for row in result["opportunities"])
+        assert all(
+            leg["price"] != invalid_price
+            for row in result["arbitrage"] for leg in row["legs"]
+        )
+
+
+def test_market_analysis_accepts_american_odds_boundaries():
+    for valid_price in (-100, 100):
+        event = event_fixture()
+        for book in event[0]["bookmakers"]:
+            book["markets"][0]["outcomes"][0]["price"] = valid_price
+        board = market_board(event)
+        assert any(row["bookmaker_key"] == "a" and row["price"] == valid_price for row in board)
+
+
+def test_market_board_normalizes_malformed_sort_metadata():
+    event = {
+        "id": "bad-sort-metadata", "commence_time": [],
+        "home_team": {"unexpected": "object"}, "away_team": ["bad"],
+        "bookmakers": [
+            {"key": "a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -110, "point": []},
+                {"name": "Away", "price": -110, "point": {}},
+            ]}]},
+            {"key": "b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 100},
+                {"name": "Away", "price": -100},
+            ]}]},
+        ],
+    }
+    board = market_board([event])
+    assert len(board) == 2
+    assert all(row["commence_time"] == "" for row in board)
+    assert all(row["point"] is None for row in board)
