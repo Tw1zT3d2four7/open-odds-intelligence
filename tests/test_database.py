@@ -983,3 +983,56 @@ def test_clv_skips_corrupt_legacy_closing_prices_without_crashing(tmp_path, monk
     assert report["summary"]["total"] == 1
     assert report["entries"][0]["status"] == "insufficient_close_data"
     assert report["entries"][0]["clv_percent"] is None
+
+
+def test_clv_uses_latest_pregame_observation_time_not_insert_order(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-out-of-order.sqlite3")
+    now = datetime.now(timezone.utc)
+    entry_at = now - timedelta(minutes=60)
+    latest_close_at = now - timedelta(minutes=10)
+    older_close_at = now - timedelta(minutes=20)
+    commence = now - timedelta(minutes=5)
+    candidate = {
+        "event_id": "clv-out-of-order", "sport": "basketball_nba",
+        "matchup": "Away @ Home", "commence_time": commence.isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Entry Book", "bookmaker_key": "entry",
+        "price": -105, "fair_probability": 0.5, "ev_percent": 2.38,
+    }
+    assert db.record_clv_candidates([candidate], entry_at.isoformat()) == 1
+
+    def closing_snapshot(home_b, away_b, home_c, away_c):
+        return [{
+            "id": "clv-out-of-order", "sport_title": "Basketball",
+            "home_team": "Home", "away_team": "Away",
+            "commence_time": commence.isoformat(),
+            "bookmakers": [
+                {"key": "entry", "title": "Entry", "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -120}, {"name": "Away", "price": 100},
+                ]}]},
+                {"key": "peer-b", "title": "Peer B", "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": home_b}, {"name": "Away", "price": away_b},
+                ]}]},
+                {"key": "peer-c", "title": "Peer C", "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": home_c}, {"name": "Away", "price": away_c},
+                ]}]},
+            ],
+        }]
+
+    # Insert the newer observation first, then insert an older fetched_at
+    # timestamp with a larger SQLite ID. The later market observation must win.
+    db.save_snapshot(
+        "basketball_nba", closing_snapshot(-150, 130, -145, 125),
+        "test", latest_close_at.isoformat(),
+    )
+    db.save_snapshot(
+        "basketball_nba", closing_snapshot(-130, 110, -125, 105),
+        "test", older_close_at.isoformat(),
+    )
+
+    report = db.clv_report("basketball_nba")
+    entry = report["entries"][0]
+    assert entry["status"] == "closed"
+    assert entry["close_at"] == latest_close_at.isoformat()
