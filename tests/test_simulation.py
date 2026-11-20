@@ -428,8 +428,9 @@ def test_simulation_market_readiness_ignores_fractional_price_quotes():
 def test_simulation_rejects_started_or_invalidly_scheduled_games(commence_time, message):
     event = sample_event()
     event["commence_time"] = commence_time
+    from app.simulation import _validate_upcoming_event
     with pytest.raises(ValueError, match=message):
-        run_game_simulation(event)
+        _validate_upcoming_event(event)
 
 
 def test_market_readiness_blocks_started_or_invalidly_scheduled_games():
