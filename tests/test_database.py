@@ -870,3 +870,50 @@ def test_snapshot_rejects_boolean_fractional_and_string_prices(tmp_path):
     saved = db.latest_events("basketball_nba")
     outcomes = saved[0]["bookmakers"][0]["markets"][0]["outcomes"]
     assert [(item["name"], item["price"]) for item in outcomes] == [("Valid", -110)]
+
+
+@pytest.mark.parametrize("invalid_price", [-99, -50, -1, 0, 1, 50, 99])
+def test_snapshot_rejects_invalid_american_price_range(tmp_path, invalid_price):
+    db = OddsDatabase(tmp_path / f"invalid-price-{invalid_price}.sqlite3")
+    event = fixture()[0]
+    event["bookmakers"][0]["markets"][1]["outcomes"][0]["price"] = invalid_price
+
+    db.save_snapshot("basketball_nba", [event], "test", "2026-11-19T12:00:00Z")
+
+    stored = db.latest_events("basketball_nba")
+    h2h = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "h2h")
+    assert [outcome["name"] for outcome in h2h["outcomes"]] == ["Away"]
+
+
+@pytest.mark.parametrize("valid_price", [-100, 100])
+def test_snapshot_accepts_american_odds_boundary_prices(tmp_path, valid_price):
+    db = OddsDatabase(tmp_path / f"valid-price-{valid_price}.sqlite3")
+    event = fixture()[0]
+    event["bookmakers"][0]["markets"][1]["outcomes"][0]["price"] = valid_price
+
+    db.save_snapshot("basketball_nba", [event], "test", "2026-11-19T12:00:00Z")
+
+    stored = db.latest_events("basketball_nba")
+    h2h = next(m for m in stored[0]["bookmakers"][0]["markets"] if m["key"] == "h2h")
+    home = next(outcome for outcome in h2h["outcomes"] if outcome["name"] == "Home")
+    assert home["price"] == valid_price
+
+
+def test_snapshot_rejects_non_scalar_event_ids_but_accepts_integer_zero(tmp_path):
+    db = OddsDatabase(tmp_path / "malformed-event-identities.sqlite3")
+    valid = fixture()[0]
+    zero_id = fixture()[0]
+    zero_id["id"] = 0
+    malformed = []
+    for event_id in (True, False, [], ["nested"], {"unexpected": "object"}):
+        event = fixture()[0]
+        event["id"] = event_id
+        malformed.append(event)
+
+    db.save_snapshot(
+        "basketball_nba", [valid, zero_id, *malformed],
+        "test", "2026-11-19T12:00:00Z",
+    )
+
+    assert {event["id"] for event in db.latest_events("basketball_nba")} == {"evt", "0"}
+    assert db.snapshot_status()["events"] == 2
