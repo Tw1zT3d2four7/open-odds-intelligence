@@ -54,6 +54,8 @@ def decimal_to_american(odds: float) -> int:
     if odds <= 1:
         raise ValueError("Decimal odds must be greater than 1.00")
     raw = (odds - 1) * 100 if odds >= 2 else -100 / (odds - 1)
+    if not math.isfinite(raw):
+        raise ValueError("American odds exceed the supported numeric range")
     return int(round(raw))
 
 
