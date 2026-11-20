@@ -256,7 +256,20 @@ class MarketLimitsMonitor:
                             *metadata, book_key, title, market_key, outcome_name,
                             point, price, amount,
                         ))
-        return rows
+
+        # SQLite UNIQUE constraints treat NULL values as distinct. Deduplicate
+        # this refresh batch explicitly so H2H observations (which have no line)
+        # cannot be inserted or alerted more than once for the same identity.
+        unique_rows = {}
+        conflicting = set()
+        for row in rows:
+            identity = (row[0], row[2], row[6], row[8], row[9], row[10])
+            previous = unique_rows.get(identity)
+            if previous is not None and previous != row:
+                conflicting.add(identity)
+            else:
+                unique_rows[identity] = row
+        return [row for identity, row in unique_rows.items() if identity not in conflicting]
 
     def refresh(self, force=False):
         # A startup poll and a manual dashboard refresh must not duplicate
