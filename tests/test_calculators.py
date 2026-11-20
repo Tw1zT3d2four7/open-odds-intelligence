@@ -174,3 +174,13 @@ def test_calculator_numeric_overflow_and_malformed_values_raise_value_error(call
     with pytest.raises(ValueError):
         call()
 
+
+
+@pytest.mark.parametrize("odds", [-110.5, 110.5, "-110.5", "110.5"])
+def test_calculators_reject_fractional_american_odds(odds):
+    with pytest.raises(ValueError, match="whole number"):
+        american_to_decimal(odds)
+    with pytest.raises(ValueError, match="whole number"):
+        payout(100, odds)
+    with pytest.raises(ValueError, match="whole number"):
+        parlay([odds])
