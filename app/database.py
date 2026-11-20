@@ -552,49 +552,87 @@ class OddsDatabase:
 
 
     def record_clv_candidates(self, candidates, observed_at=None):
-        """Persist the first positive-EV observation for each exact selection."""
+        """Persist the first valid EV observation for each exact selection."""
+        if not isinstance(candidates, list):
+            return 0
         observed_at = observed_at or datetime.now(timezone.utc).isoformat()
+        observed_dt = self._as_utc(observed_at)
+        if observed_dt is None:
+            return 0
         inserted = 0
         with self.connect() as db:
             for row in candidates:
                 if not isinstance(row, dict):
                     continue
+                event_value = row.get("event_id")
+                if isinstance(event_value, bool) or not isinstance(event_value, (str, int)):
+                    continue
+                event_id = str(event_value).strip()
+                if not event_id:
+                    continue
+
                 price = row.get("price")
                 if (isinstance(price, bool) or not isinstance(price, int)
                         or price == 0 or -100 < price < 100):
                     continue
+                market = row.get("market")
+                outcome = row.get("outcome")
+                bookmaker_key = row.get("bookmaker_key")
+                if not all(isinstance(value, str) and value.strip()
+                           for value in (market, outcome, bookmaker_key)):
+                    continue
+                market, outcome, bookmaker_key = (
+                    market.strip(), outcome.strip(), bookmaker_key.strip()
+                )
+                if market.startswith("player_"):
+                    continue
+
                 commence = row.get("commence_time")
-                if not commence or str(row.get("market") or "").startswith("player_"):
+                start = self._as_utc(commence)
+                if start is None or observed_dt >= start:
+                    continue
+
+                raw_probability = row.get("fair_probability")
+                raw_ev = row.get("ev_percent")
+                if isinstance(raw_probability, bool) or isinstance(raw_ev, bool):
                     continue
                 try:
-                    start = datetime.fromisoformat(str(commence).replace("Z", "+00:00"))
-                    observed = datetime.fromisoformat(str(observed_at).replace("Z", "+00:00"))
-                    if start.tzinfo is None:
-                        start = start.replace(tzinfo=timezone.utc)
-                    if observed.tzinfo is None:
-                        observed = observed.replace(tzinfo=timezone.utc)
-                    if observed >= start:
-                        continue
-                except (TypeError, ValueError):
+                    fair_probability = float(raw_probability)
+                    ev_percent = float(raw_ev)
+                except (TypeError, ValueError, OverflowError):
                     continue
+                if (not math.isfinite(fair_probability) or not 0 < fair_probability < 1
+                        or not math.isfinite(ev_percent)):
+                    continue
+
                 point = row.get("point")
                 if point is None:
                     point_key = ""
-                elif row.get("market") == "spreads":
-                    # Providers may reverse the sign convention for the
-                    # same team's handicap; keep one CLV entry per magnitude.
-                    point_key = str(abs(float(point)))
                 else:
-                    point_key = str(float(point))
-                if row.get("market") == "spreads" and point is not None:
+                    if isinstance(point, bool) or not isinstance(point, (int, float)):
+                        continue
+                    try:
+                        point = float(point)
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    if not math.isfinite(point):
+                        continue
+                    point_key = str(abs(point) if market == "spreads" else point)
+
+                sport = row.get("sport_key") or row.get("sport") or ""
+                matchup = row.get("matchup") or ""
+                title = row.get("bookmaker") or bookmaker_key
+                if not all(isinstance(value, str) for value in (sport, matchup, title)):
+                    continue
+
+                if market == "spreads" and point is not None:
                     legacy_or_current = db.execute(
                         """SELECT 1 FROM clv_entries
                            WHERE event_id=? AND market_key='spreads'
                              AND outcome_name=? AND bookmaker_key=?
                              AND point IS NOT NULL AND ABS(point)=?
                            LIMIT 1""",
-                        (str(row.get("event_id") or ""), str(row.get("outcome") or ""),
-                         str(row.get("bookmaker_key") or ""), abs(float(point))),
+                        (event_id, outcome, bookmaker_key, abs(point)),
                     ).fetchone()
                     if legacy_or_current:
                         continue
@@ -604,13 +642,9 @@ class OddsDatabase:
                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
                        entry_fair_probability,entry_ev_percent,entry_at)
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (str(row.get("event_id") or ""),
-                     str(row.get("sport_key") or row.get("sport") or ""),
-                     str(row.get("matchup") or ""), str(commence), str(row.get("market") or ""),
-                     str(row.get("outcome") or ""), point, point_key,
-                     str(row.get("bookmaker_key") or ""), str(row.get("bookmaker") or ""),
-                     int(row["price"]), float(row["fair_probability"]),
-                     float(row["ev_percent"]), observed_at))
+                    (event_id, sport, matchup, str(commence), market, outcome,
+                     point, point_key, bookmaker_key, title, price,
+                     fair_probability, ev_percent, str(observed_at)))
                 inserted += max(0, cur.rowcount)
         return inserted
 
