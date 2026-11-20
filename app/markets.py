@@ -24,6 +24,21 @@ def _outcome_description(outcome):
     return value if isinstance(value, str) else ""
 
 
+def _valid_american_price(value):
+    return (not isinstance(value, bool) and isinstance(value, int)
+            and value != 0 and not -100 < value < 100)
+
+
+def _finite_point(value):
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if isfinite(number) else None
+
+
 def _line_group(market_key, point):
     """Return a finite canonical line, or None when a required line is absent.
 
@@ -77,9 +92,9 @@ def market_board(events):
                     if not isinstance(name, str) or not name.strip():
                         continue
                     name = name.strip()
-                    if isinstance(price, bool) or not isinstance(price, int) or price == 0:
+                    if not _valid_american_price(price):
                         continue
-                    point = outcome.get("point")
+                    point = _finite_point(outcome.get("point"))
                     line = _line_group(market_key, point)
                     if market_key != "h2h" and line is None:
                         continue
