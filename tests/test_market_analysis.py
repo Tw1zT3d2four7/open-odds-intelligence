@@ -191,10 +191,10 @@ def test_market_analysis_skips_malformed_nested_records_and_keeps_valid_books():
         "home_team": "Home", "away_team": "Away",
         "bookmakers": [
             {"key": "a", "markets": [{"key": "h2h", "outcomes": [
-                {"name": "Home", "price": 110}, {"name": "Away", "price": -110},
+                {"name": "Home", "price": -110}, {"name": "Away", "price": -110},
             ]}]},
             {"key": "b", "markets": [{"key": "h2h", "outcomes": [
-                {"name": "Home", "price": 105}, {"name": "Away", "price": -105},
+                {"name": "Home", "price": -110}, {"name": "Away", "price": -110},
             ]}]},
         ],
     }
