@@ -242,11 +242,19 @@ class OddsDatabase:
         # Event IDs are the primary identity used by every downstream quote,
         # movement, CLV, and simulator lookup. Never persist anonymous events:
         # they would all collapse into one empty-ID matchup in latest_events().
+        def stable_event_id(event):
+            if not isinstance(event, dict):
+                return None
+            value = event.get("id")
+            if isinstance(value, bool) or not isinstance(value, (str, int)):
+                return None
+            value = str(value).strip()
+            return value or None
+
         valid_events = [
-            event for event in events
-            if isinstance(event, dict) and str(event.get("id") or "").strip()
+            event for event in events if stable_event_id(event) is not None
         ]
-        unique_event_ids = {str(event.get("id") or "").strip() for event in valid_events}
+        unique_event_ids = {stable_event_id(event) for event in valid_events}
         with self.connect() as db:
             cur = db.execute(
                 "INSERT INTO snapshots(sport,provider,fetched_at,event_count) VALUES(?,?,?,?)",
@@ -257,7 +265,7 @@ class OddsDatabase:
             event_metadata_by_id = {}
             conflicted_events = set()
             for event in valid_events:
-                event_id = str(event.get("id") or "").strip()
+                event_id = stable_event_id(event)
                 metadata = (
                     event.get("sport_title", ""), event.get("commence_time", ""),
                     event.get("home_team", ""), event.get("away_team", ""),
@@ -290,7 +298,7 @@ class OddsDatabase:
                             # coercion can silently turn malformed feed data into real quotes.
                             price = outcome.get("price")
                             if (isinstance(price, bool) or not isinstance(price, int)
-                                    or price == 0):
+                                    or price == 0 or -100 < price < 100):
                                 continue
                             market_key = market.get("key")
                             book_key = book.get("key")
@@ -326,7 +334,7 @@ class OddsDatabase:
                             book_title = book.get("title")
                             if not isinstance(book_title, str) or not book_title.strip():
                                 book_title = book_key
-                            row = (snapshot_id, str(event.get("id", "")).strip(), sport,
+                            row = (snapshot_id, event_id, sport,
                                    *event_metadata, book_key, book_title, market_key,
                                    outcome_name, description, point, price, updated_at)
                             identity = (row[1], book_key, market_key, outcome_name, description, point)
