@@ -108,7 +108,7 @@ def market_board(events):
                     grouped[key].append({
                         "event_id": event_id, "sport": event.get("sport_title"),
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
-                        "commence_time": event.get("commence_time"),
+                        "commence_time": event.get("commence_time") if isinstance(event.get("commence_time"), str) else "",
                         "market": market_key, "outcome": name, "outcome_description": description, "point": point,
                         "bookmaker": book_title,
                         "bookmaker_key": book_key, "price": price,
