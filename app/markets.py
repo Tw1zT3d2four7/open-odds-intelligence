@@ -107,7 +107,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
     most-common complete set is eligible for comparison.
     """
     opportunities, arbitrage = [], []
-    for event in events:
+    for event in _records(events):
         if not isinstance(event, dict):
             continue
         event_id = _event_id(event)
