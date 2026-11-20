@@ -107,7 +107,7 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
 
     hs = final_score(settlement.get("home_score"), "Home score")
     aws = final_score(settlement.get("away_score"), "Away score")
-    probs = prediction.get("win_probabilities") or {}
+    probs = prediction.get("win_probabilities")
     if not isinstance(probs, dict):
         raise ValueError("Prediction win probabilities must be an object.")
     home = finite_number(probs.get("home", -1), "Home win probability") / 100
@@ -123,7 +123,7 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     eps = 1e-12
     actual_index = actual.index(1.0)
     log_loss = -math.log(max(eps, values[actual_index]))
-    total_market = prediction.get("total_market") or {}
+    total_market = prediction.get("total_market")
     if not isinstance(total_market, dict):
         raise ValueError("Prediction total market must be an object.")
     total_line = finite_number(total_market.get("consensus_line", float("nan")), "Consensus total")
@@ -138,7 +138,7 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     total_actual = tuple(1.0 if actual_total_result == label else 0.0 for label in ("over", "under", "push"))
     total_brier = sum((p - y) ** 2 for p, y in zip(total_probs, total_actual))
     total_log_loss = -math.log(max(eps, total_probs[total_actual.index(1.0)]))
-    projected = prediction.get("projected_score") or {}
+    projected = prediction.get("projected_score")
     if not isinstance(projected, dict):
         raise ValueError("Prediction projected score must be an object.")
     projected_home = finite_number(projected.get("home", float("nan")), "Projected home score")
