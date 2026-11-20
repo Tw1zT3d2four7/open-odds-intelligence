@@ -27,6 +27,12 @@ def _positive(value: float, name: str) -> float:
     return value
 
 
+def _finite_result(value: float, name: str) -> float:
+    if not math.isfinite(value):
+        raise ValueError(f"{name} exceeds the supported numeric range")
+    return value
+
+
 def american_to_decimal(odds: float) -> float:
     if isinstance(odds, bool):
         raise ValueError("American odds must be a finite non-zero number")
@@ -74,10 +80,11 @@ def convert_odds(odds: float, from_format: str, to_format: str) -> float | int:
 def payout(stake: float, odds: float, format: str = "american") -> dict:
     stake = _positive(stake, "Stake")
     decimal = to_decimal(odds, format)
-    profit = stake * (decimal - 1)
+    profit = _finite_result(stake * (decimal - 1), "Profit")
+    total_return = _finite_result(stake * decimal, "Total return")
     return {
         "stake": round(stake, 2), "profit": round(profit, 2),
-        "total_return": round(stake * decimal, 2),
+        "total_return": round(total_return, 2),
         "break_even_probability": round(1 / decimal, 8),
         "decimal_odds": round(decimal, 6),
         "american_odds": decimal_to_american(decimal),
@@ -89,7 +96,7 @@ def parlay(legs: list[float], format: str = "american") -> dict:
         raise ValueError("Add at least one parlay leg")
     combined = 1.0
     for leg in legs:
-        combined *= to_decimal(leg, format)
+        combined = _finite_result(combined * to_decimal(leg, format), "Combined odds")
     return {
         "legs": len(legs), "decimal_odds": round(combined, 8),
         "american_odds": decimal_to_american(combined),
@@ -128,16 +135,19 @@ def ev_kelly(odds: float, win_probability: float, bankroll: float,
     if not math.isfinite(fraction) or not 0 <= fraction <= 1:
         raise ValueError("Kelly fraction must be between 0 and 1")
     net = decimal - 1
-    full_kelly = max(0.0, (probability * decimal - 1) / net)
-    sized_fraction = full_kelly * fraction
+    full_kelly = _finite_result(max(0.0, (probability * decimal - 1) / net), "Kelly fraction")
+    sized_fraction = _finite_result(full_kelly * fraction, "Fractional Kelly fraction")
+    ev_per_100 = _finite_result(100 * (probability * net - (1 - probability)), "Expected value")
+    full_stake = _finite_result(bankroll * full_kelly, "Full Kelly stake")
+    fractional_stake = _finite_result(bankroll * sized_fraction, "Fractional Kelly stake")
     return {
-        "ev_per_100": round(100 * (probability * net - (1 - probability)), 2),
+        "ev_per_100": round(ev_per_100, 2),
         "edge_percentage_points": round((probability - 1 / decimal) * 100, 4),
         "implied_probability": round(1 / decimal, 8),
         "full_kelly_fraction": round(full_kelly, 8),
         "fractional_kelly_fraction": round(sized_fraction, 8),
-        "full_kelly_stake": round(bankroll * full_kelly, 2),
-        "fractional_kelly_stake": round(bankroll * sized_fraction, 2),
+        "full_kelly_stake": round(full_stake, 2),
+        "fractional_kelly_stake": round(fractional_stake, 2),
     }
 
 
@@ -157,8 +167,8 @@ def run_line_minus_one(stake: float, odds: float, margin: float,
         raise ValueError("Final score margin must be a whole number")
     if margin > 1:
         result = "win"
-        profit = stake * (decimal - 1)
-        total_return = stake * decimal
+        profit = _finite_result(stake * (decimal - 1), "Profit")
+        total_return = _finite_result(stake * decimal, "Total return")
     elif margin == 1:
         result = "push"
         profit = 0.0
@@ -224,13 +234,15 @@ def hedge(original_stake: float, original_odds: float, hedge_odds: float,
     stake = _positive(original_stake, "Original stake")
     original_decimal = to_decimal(original_odds, format)
     hedge_decimal = to_decimal(hedge_odds, format)
-    hedge_stake = stake * original_decimal / hedge_decimal
-    locked_profit = stake * (original_decimal - 1) - hedge_stake
-    opposite_profit = hedge_stake * (hedge_decimal - 1) - stake
+    hedge_stake = _finite_result(stake * original_decimal / hedge_decimal, "Hedge stake")
+    locked_profit = _finite_result(stake * (original_decimal - 1) - hedge_stake, "Original outcome profit")
+    opposite_profit = _finite_result(hedge_stake * (hedge_decimal - 1) - stake, "Hedge outcome profit")
+    total_staked = _finite_result(stake + hedge_stake, "Total staked")
+    average_profit = _finite_result((locked_profit + opposite_profit) / 2, "Locked profit")
     return {
         "hedge_stake": round(hedge_stake, 2),
-        "total_staked": round(stake + hedge_stake, 2),
+        "total_staked": round(total_staked, 2),
         "profit_if_original_wins": round(locked_profit, 2),
         "profit_if_hedge_wins": round(opposite_profit, 2),
-        "locked_profit": round((locked_profit + opposite_profit) / 2, 2),
+        "locked_profit": round(average_profit, 2),
     }
