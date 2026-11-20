@@ -91,6 +91,7 @@ def test_dashboard_renders_synthetic_minus_one_builder_inputs_and_outputs():
         assert f'id="{element_id}"' in html
     assert "const fair=1+loss/cover;" in html
     assert 'if(!Number.isInteger(v))throw Error("American odds must be a whole number.")' in html
+    assert 'if(!Number.isFinite(raw))throw Error("American odds exceed the supported numeric range.")' in html
     assert 'if(v>-100&&v<100)throw Error("American odds must be +100 or greater, or -100 or lower.")' in html
     assert 'if(f<0||f>1)throw Error("Kelly fraction must be between 0 and 1.")' in html
 
