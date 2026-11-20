@@ -187,7 +187,7 @@ def test_calculators_reject_fractional_american_odds(odds):
 
 
 @pytest.mark.parametrize("call", [
-    lambda: payout(10 ** 308, 10 ** 308, "decimal"),
+    lambda: payout(1e308, 10 ** 308, "decimal"),
     lambda: payout(1, 10 ** 308, "decimal"),
     lambda: parlay([10 ** 308, 10 ** 308], "decimal"),
     lambda: ev_kelly(10 ** 308, 0, 100, format="decimal"),
