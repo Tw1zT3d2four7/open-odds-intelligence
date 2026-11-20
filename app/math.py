@@ -63,32 +63,60 @@ def market_consensus(
 ) -> dict:
     """Build robust no-vig consensus, optionally excluding one sportsbook.
 
-    Excluding the evaluated sportsbook prevents its own quote from feeding the
-    fair-probability estimate used to calculate its expected value.
+    Malformed event/book/market records and invalid American prices are
+    skipped independently so one provider record cannot abort the report.
+    Excluding the evaluated sportsbook prevents its own quote from feeding
+    the fair-probability estimate used to calculate its expected value.
     """
     result = {}
+    if not isinstance(events, list):
+        return result
     for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_id = event.get("id")
+        if (isinstance(event_id, bool) or not isinstance(event_id, (str, int))
+                or not str(event_id).strip()):
+            continue
         accum = defaultdict(list)
-        for book in event.get("bookmakers", []):
-            if exclude_bookmaker_key and book.get("key") == exclude_bookmaker_key:
-                continue
-            market = next((m for m in book.get("markets", []) if m.get("key") == market_key), None)
-            if not market:
-                continue
-            outcomes = market.get("outcomes", [])
-            if len(outcomes) < 2:
-                continue
-            names = [o.get("name") for o in outcomes]
-            prices = [o.get("price") for o in outcomes]
-            if any(not name for name in names) or any(
-                isinstance(price, bool) or not isinstance(price, int) or price == 0
-                for price in prices
-            ):
-                continue
-            probs = no_vig_probabilities(prices)
-            for name, probability in zip(names, probs):
-                accum[name].append(probability)
-        result[event["id"]] = {
+        books = event.get("bookmakers")
+        if isinstance(books, list):
+            for book in books:
+                if not isinstance(book, dict):
+                    continue
+                book_key = book.get("key")
+                if not isinstance(book_key, str) or not book_key.strip():
+                    continue
+                if exclude_bookmaker_key and book_key == exclude_bookmaker_key:
+                    continue
+                markets = book.get("markets")
+                if not isinstance(markets, list):
+                    continue
+                market = next((
+                    item for item in markets
+                    if isinstance(item, dict) and item.get("key") == market_key
+                ), None)
+                if not market:
+                    continue
+                outcomes = market.get("outcomes")
+                if not isinstance(outcomes, list) or len(outcomes) < 2:
+                    continue
+                if any(not isinstance(outcome, dict) for outcome in outcomes):
+                    continue
+                names = [outcome.get("name") for outcome in outcomes]
+                if (any(not isinstance(name, str) or not name.strip() for name in names)
+                        or len(set(names)) != len(names)):
+                    continue
+                prices = [outcome.get("price") for outcome in outcomes]
+                try:
+                    probabilities = no_vig_probabilities(prices)
+                except ValueError:
+                    continue
+                if len(probabilities) != len(names):
+                    continue
+                for name, probability in zip(names, probabilities):
+                    accum[name].append(probability)
+        result[event_id] = {
             name: median(values) for name, values in accum.items() if values
         }
     return result
