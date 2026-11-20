@@ -552,7 +552,7 @@ class OddsDatabase:
 
 
     def record_clv_candidates(self, candidates, observed_at=None):
-        """Persist the first valid positive-EV observation for each exact selection."""
+        """Persist the first valid EV observation for each exact selection."""
         if not isinstance(candidates, list):
             return 0
         observed_at = observed_at or datetime.now(timezone.utc).isoformat()
@@ -602,7 +602,7 @@ class OddsDatabase:
                 except (TypeError, ValueError, OverflowError):
                     continue
                 if (not math.isfinite(fair_probability) or not 0 < fair_probability < 1
-                        or not math.isfinite(ev_percent) or ev_percent <= 0):
+                        or not math.isfinite(ev_percent)):
                     continue
 
                 point = row.get("point")
