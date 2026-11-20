@@ -1,7 +1,7 @@
 from statistics import median
 
 from app.math import no_vig_probabilities
-from app.markets import analyze_markets
+from app.markets import analyze_markets, market_board
 
 
 def event_fixture():
@@ -228,3 +228,50 @@ def test_market_analysis_accepts_non_list_top_level_input_as_empty():
     assert market_board(None) == []
     assert market_board({"id": "not-a-list"}) == []
     assert analyze_markets(None) == {"opportunities": [], "arbitrage": []}
+
+
+def test_market_analysis_skips_non_scalar_identity_fields():
+    malformed = [
+        {
+            "id": ["not", "an", "event-id"],
+            "bookmakers": [],
+        },
+        {
+            "id": "malformed-identity-fields",
+            "bookmakers": [
+                {"key": [], "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 110}, {"name": "Away", "price": -110},
+                ]}]},
+                {"key": "bad-market-key", "markets": [{"key": [], "outcomes": [
+                    {"name": "Home", "price": 110}, {"name": "Away", "price": -110},
+                ]}]},
+                {"key": "bad-outcome-name", "markets": [{"key": "h2h", "outcomes": [
+                    {"name": [], "price": 110}, {"name": "Away", "price": -110},
+                ]}]},
+            ],
+        },
+    ]
+    assert market_board(malformed) == []
+    assert analyze_markets(malformed) == {"opportunities": [], "arbitrage": []}
+
+
+def test_market_analysis_sanitizes_non_scalar_outcome_descriptions():
+    event = {
+        "id": "description-shape",
+        "bookmakers": [
+            {"key": "a", "markets": [{"key": "player_points", "outcomes": [
+                {"name": "Over", "description": [], "point": 20.5, "price": -110},
+                {"name": "Under", "description": {}, "point": 20.5, "price": -110},
+            ]}]},
+            {"key": "b", "markets": [{"key": "player_points", "outcomes": [
+                {"name": "Over", "description": "Player", "point": 20.5, "price": -110},
+                {"name": "Under", "description": "Player", "point": 20.5, "price": -110},
+            ]}]},
+        ],
+    }
+    # Invalid descriptions are normalized to empty scope, never used as
+    # unhashable grouping keys; the malformed outcomes are safely ignored
+    # for player markets rather than being conflated with a named player.
+    result = analyze_markets([event], min_ev=-100, min_consensus_books=1)
+    assert result["opportunities"] == []
+    assert result["arbitrage"] == []
