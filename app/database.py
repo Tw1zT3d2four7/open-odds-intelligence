@@ -630,8 +630,14 @@ class OddsDatabase:
         snapshots = db.execute(
             """SELECT DISTINCT s.id,s.fetched_at FROM snapshots s
                JOIN quotes q ON q.snapshot_id=s.id
-               WHERE q.event_id=? ORDER BY s.fetched_at DESC,s.id DESC""",
+               WHERE q.event_id=? ORDER BY s.id DESC""",
             (entry["event_id"],)).fetchall()
+        earliest = datetime.min.replace(tzinfo=timezone.utc)
+        snapshots = sorted(
+            snapshots,
+            key=lambda snapshot: self._as_utc(snapshot["fetched_at"]) or earliest,
+            reverse=True,
+        )
         for snapshot in snapshots:
             fetched = self._as_utc(snapshot["fetched_at"])
             # A closing observation must be strictly later than the
