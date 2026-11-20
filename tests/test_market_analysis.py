@@ -183,3 +183,48 @@ def test_market_analysis_ignores_events_without_stable_identity():
     result = analyze_markets([anonymous, None, "malformed"], min_ev=-100, min_consensus_books=1)
     assert result == {"opportunities": [], "arbitrage": []}
 
+
+
+def test_market_analysis_skips_malformed_nested_records_and_keeps_valid_books():
+    valid_event = {
+        "id": "valid-neighbor", "sport_key": "americanfootball_nfl",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 110}, {"name": "Away", "price": -110},
+            ]}]},
+            {"key": "b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": 105}, {"name": "Away", "price": -105},
+            ]}]},
+        ],
+    }
+    malformed_event = {
+        "id": "malformed-event",
+        "bookmakers": [
+            None,
+            {"key": "bad-markets", "markets": None},
+            {"key": "bad-market-entry", "markets": [None, "not-a-market"]},
+            {"key": "bad-outcomes", "markets": [
+                {"key": "h2h", "outcomes": None},
+                {"key": "h2h", "outcomes": [None, "not-an-outcome"]},
+            ]},
+        ],
+    }
+
+    board = market_board([malformed_event, valid_event, None, "not-an-event"])
+    assert len(board) == 2
+    assert {row["event_id"] for row in board} == {"valid-neighbor"}
+
+    result = analyze_markets(
+        [malformed_event, valid_event, None, "not-an-event"],
+        min_ev=-100, min_consensus_books=1,
+    )
+    assert result["opportunities"]
+    assert {row["event_id"] for row in result["opportunities"]} == {"valid-neighbor"}
+    assert result["arbitrage"] == []
+
+
+def test_market_analysis_accepts_non_list_top_level_input_as_empty():
+    assert market_board(None) == []
+    assert market_board({"id": "not-a-list"}) == []
+    assert analyze_markets(None) == {"opportunities": [], "arbitrage": []}
