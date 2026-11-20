@@ -246,7 +246,7 @@ def test_market_analysis_skips_non_scalar_identity_fields():
                     {"name": "Home", "price": 110}, {"name": "Away", "price": -110},
                 ]}]},
                 {"key": "bad-outcome-name", "markets": [{"key": "h2h", "outcomes": [
-                    {"name": [], "price": 110}, {"name": "Away", "price": -110},
+                    {"name": [], "price": 110}, {"name": {}, "price": -110},
                 ]}]},
             ],
         },
