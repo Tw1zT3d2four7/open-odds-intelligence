@@ -324,6 +324,37 @@ async function loadSimulationGames(refreshSelected=false){
  }catch(e){game.innerHTML='<option value="">Could not load games</option>';$("simStatus").textContent=e.message}
  finally{loadButton.disabled=false}
 }
+function renderSimulationEdges(edge){
+ const panel=$("simEdgePanel"),body=$("simEdgeRows");
+ body.innerHTML="";
+ if(!edge){panel.classList.add("hidden");return}
+ const rows=[];
+ for(const market of ["spread","total","moneyline"]){
+  const group=edge[market];if(!group||!group.sides)continue;
+  for(const [side,value] of Object.entries(group.sides)){
+   const quote=value.best_available||{};
+   rows.push({
+    market:market.toUpperCase(),side:side.toUpperCase(),
+    model:value.model_probability,marketProbability:value.market_no_vig_probability,
+    edge:value.edge_percentage_points,price:quote.american_odds,
+    book:quote.bookmaker,ev:value.expected_value_percent
+   });
+  }
+ }
+ if(!rows.length){
+  const tr=document.createElement("tr"),td=document.createElement("td");
+  td.colSpan=8;td.className="empty";td.textContent="No complete sportsbook prices at the exact consensus line. The independent forecast is shown, but no price-based EV can be calculated.";
+  tr.appendChild(td);body.appendChild(tr);
+ }else{
+  rows.forEach(item=>{
+   const tr=document.createElement("tr");
+   const values=[item.market,item.side,item.model===undefined?"—":Number(item.model).toFixed(2)+"%",item.marketProbability===undefined?"—":Number(item.marketProbability).toFixed(2)+"%",item.edge===undefined?"—":(Number(item.edge)>0?"+":"")+Number(item.edge).toFixed(2)+" pp",item.price===undefined?"—":fmtOdds(item.price),item.book||"—",item.ev===undefined||item.ev===null?"—":(Number(item.ev)>0?"+":"")+Number(item.ev).toFixed(2)+"%"];
+   values.forEach(value=>{const td=document.createElement("td");td.textContent=value;tr.appendChild(td)});
+   body.appendChild(tr);
+  });
+ }
+ panel.classList.remove("hidden");
+}
 async function runSelectedSimulation(){
  const sport=$("simLeague").value,eventId=$("simGame").value,btn=$("runSimulation");
  if(!sport||!eventId)return;
@@ -334,7 +365,7 @@ async function runSelectedSimulation(){
   $("simHomeWin").textContent=data.win_probabilities.home.toFixed(2)+"%";$("simAwayWin").textContent=data.win_probabilities.away.toFixed(2)+"%";
   $("simHomeTeam").textContent=data.home_team;$("simAwayTeam").textContent=data.away_team;
   $("simTrials").textContent=data.trials.toLocaleString();
-  const outcomeOnly=data.simulation_type==="moneyline_outcome_only";
+  const outcomeOnly=String(data.simulation_type||"").includes("outcome");
   document.querySelectorAll("[data-sim-score],[data-sim-scoring]").forEach(el=>el.classList.toggle("hidden",outcomeOnly));
   $("simMoneylineCard").classList.toggle("hidden",!outcomeOnly);
   $("simDrawCard").classList.toggle("hidden",!outcomeOnly||data.win_probabilities.tie<=0);
@@ -342,8 +373,8 @@ async function runSelectedSimulation(){
     $("simMarketConsensus").textContent=data.market_moneyline.home_probability.toFixed(2)+"% / "+data.market_moneyline.away_probability.toFixed(2)+"% / "+data.market_moneyline.draw_probability.toFixed(2)+"%";
     $("simMoneylineBooks").textContent=data.market_moneyline.book_count+" bookmaker(s) · home / away / draw";
     $("simDrawProbability").textContent=data.win_probabilities.tie.toFixed(2)+"%";
-    $("simDataQuality").textContent=data.data_quality.moneyline_books+" moneyline books · no-vig consensus";
-    $("simStatus").textContent="Completed exactly 10,000 market-implied outcome trials for "+data.matchup+". This is not an independent forecast.";
+    $("simDataQuality").textContent="Independent Elo · "+(data.data_quality.model_matches||data.data_quality.training_sample_size||0)+" historical matches · "+data.market_moneyline.book_count+" market book(s)";
+    $("simStatus").textContent="Independent Elo forecast completed for "+data.matchup+"; sportsbook moneyline is comparison-only. Check the edge table and holdout status before interpreting value.";
   }else{
     $("simScore").textContent=data.projected_score.home.toFixed(1)+" – "+data.projected_score.away.toFixed(1);
     const ranges=data.simulation_ranges;
@@ -364,22 +395,23 @@ async function runSelectedSimulation(){
     $("simTotalLine").textContent="Consensus total "+data.total_market.consensus_line;$("simTotalPush").textContent="Push "+data.total_market.push.toFixed(2)+"%";
     $("simMargin").textContent=(data.margin_market.consensus_home_margin>0?"+":"")+data.margin_market.consensus_home_margin.toFixed(1);
     $("simDistribution").textContent=data.data_quality.distribution.toUpperCase();
-    const empiricallyFitted=data.data_quality.model_source==="empirical_training_fit";
-    $("simModelSource").textContent=empiricallyFitted?"EMPIRICAL LEAGUE FIT":"BROAD LEAGUE PRIOR";
+    const empiricallyFitted=data.data_quality.model_source==="independent_historical_team_model";
+    $("simModelSource").textContent=empiricallyFitted?"INDEPENDENT TEAM MODEL":"LEGACY MARKET MODEL";
     const trainingCount=Number(data.data_quality.training_sample_size||0);
     const temperature=data.margin_market.probability_temperature;
     const totalTemperature=data.total_market.probability_temperature;
     const spreadTemperature=data.spread_market.probability_temperature;
     $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+((temperature!==null&&temperature!==undefined)||(totalTemperature!==null&&totalTemperature!==undefined)||(spreadTemperature!==null&&spreadTemperature!==undefined)?" · probabilities calibrated":"");
-    $("simDistributionDetail").textContent=empiricallyFitted?"Fitted scoring residual distribution":"Broad family-level scoring assumptions";
+    $("simDistributionDetail").textContent=empiricallyFitted?"Historical team offense/defense ratings; family-level variance prior":"Legacy market-informed scoring assumptions";
     $("simResolution").textContent=Number(data.game_resolution.games_with_overtime_or_extra_innings||0).toLocaleString()+" games with OT / extras";
     const overtimeAdjustment=Number(data.game_resolution.expected_overtime_total_adjustment||0);
     const regulationAnchor=Number(data.game_resolution.regulation_total_anchor??data.total_market.consensus_line);
     $("simRegulationTies").textContent=Number(data.game_resolution.regulation_ties||0).toLocaleString()+" regulation ties · "+overtimeAdjustment.toFixed(2)+" expected OT points budgeted · regulation anchor "+regulationAnchor.toFixed(2);
     $("simStatus").textContent="Completed exactly 10,000 trials for "+data.matchup+".";
   }
+  renderSimulationEdges(data.market_edge_analysis);
   $("simMethodology").textContent=data.methodology;$("simResults").classList.remove("hidden");
-  $("simStatus").textContent="Completed exactly 10,000 trials for "+data.matchup+".";
+  if(!outcomeOnly)$("simStatus").textContent="Independent team forecast completed for "+data.matchup+"; sportsbook lines were used only for comparison.";
  }catch(e){$("simStatus").textContent="Simulation unavailable: "+e.message;$("simResults").classList.add("hidden")}
  finally{btn.disabled=!$("simGame").value;btn.textContent="Run 10,000 Simulations"}
 }
