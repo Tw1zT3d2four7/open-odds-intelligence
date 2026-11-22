@@ -688,3 +688,23 @@ def test_oddize_is_manual_only_and_adds_credit_limited_player_props(tmp_path, mo
     assert result["provider_results"]["basketball_nba"]["oddize_props"]["props_added"] == 2
     assert database.get_state("oddize_prop_cursor:basketball_nba") == "1"
     assert len(database.latest_events("basketball_nba")) == 1
+
+
+def test_per_key_quota_counters_survive_service_restart(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", False, raising=False)
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "Persistent-Quota-Key")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEYS", "", raising=False)
+    database = OddsDatabase(tmp_path / "persistent-key-usage.sqlite3")
+
+    first_service = OddsService(database)
+    pool = first_service._provider_key_pools["the_odds_api"]
+    lease = pool.acquire()
+    first_service._record_provider_key_usage(
+        "the_odds_api", pool, lease,
+        {"requests_remaining": 17, "requests_used": 3},
+    )
+
+    restarted_service = OddsService(database)
+    key_status = restarted_service.status()["provider_keys"]["the_odds_api"]["keys"][0]
+    assert key_status["usage"] == {"requests_remaining": 17, "requests_used": 3}
