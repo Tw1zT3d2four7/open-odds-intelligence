@@ -115,6 +115,16 @@ class OddsService:
                 "therundown", parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
             ),
         }
+        for provider_name, pool in self._provider_key_pools.items():
+            for key_status in pool.status()["keys"]:
+                saved = self.db.get_state(
+                    f"provider_key_usage:{provider_name}:{key_status['key_id']}"
+                )
+                if saved:
+                    try:
+                        pool.restore_usage(key_status["key_id"], json.loads(saved))
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        continue
         self._simulation_results_status = {
             "enabled": bool(config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY),
             "provider": config.ODDS_PROVIDER,
@@ -199,6 +209,14 @@ class OddsService:
         self._last_alert_sent = 0
         self._last_alert_error = None
 
+    def _record_provider_key_usage(self, provider_name, pool, lease, usage):
+        pool.record_usage(lease, usage)
+        if usage:
+            self.db.set_state(
+                f"provider_key_usage:{provider_name}:{lease.fingerprint}",
+                json.dumps(usage),
+            )
+
     def _current_provider_key_fingerprint(self, provider_name=None):
         provider_name = provider_name or config.ODDS_PROVIDER
         if provider_name == "therundown":
@@ -259,7 +277,7 @@ class OddsService:
                 # Preserve quota headers from failed keys too; they are often
                 # the only authoritative signal that a free allowance is spent.
                 usage = getattr(provider, "usage", {})
-                pool.record_usage(lease, usage)
+                self._record_provider_key_usage(provider_name, pool, lease, usage)
                 self._remember_provider_usage(usage, provider_name, lease.fingerprint)
                 disposition = pool.mark_failure(
                     lease,
@@ -271,7 +289,9 @@ class OddsService:
                 if disposition in ("disabled", "cooldown"):
                     continue
                 raise
-            pool.record_usage(lease, getattr(provider, "usage", {}))
+            self._record_provider_key_usage(
+                provider_name, pool, lease, getattr(provider, "usage", {})
+            )
             pool.mark_success(lease)
             return events, provider, lease
         if last_error is not None:
@@ -487,12 +507,16 @@ class OddsService:
                             self.db.set_state(
                                 cursor_key, str(oddize_props.get("next_cursor", 0))
                             )
-                            pool.record_usage(lease, provider.usage)
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
                             self._remember_provider_usage(
                                 provider.usage, provider_name, lease.fingerprint
                             )
                         except ProviderError as props_error:
-                            pool.record_usage(lease, provider.usage)
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
                             pool.mark_failure(
                                 lease,
                                 status_code=getattr(props_error, "status_code", None),
