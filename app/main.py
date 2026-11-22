@@ -9,6 +9,10 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 from . import config
 from .service import service
+
+# Reuse the monitor owned by the service so OddsLink odds refreshes and the
+# market-limits dashboard share one database-backed state object.
+limits_monitor = service.limits_monitor
 from .markets import market_board, analyze_markets
 from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
 from fastapi import HTTPException, Request
