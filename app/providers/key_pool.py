@@ -179,7 +179,15 @@ class ProviderKeyPool:
                 try:
                     delay = max(1.0, float(retry_after_seconds))
                 except (TypeError, ValueError):
-                    delay = max(1.0, float(default_cooldown_seconds))
+                    monthly_or_period_quota = any(
+                        token in lowered
+                        for token in ("out_of_usage_credits", "monthly", "daily allowance")
+                    )
+                    fallback = max(
+                        float(default_cooldown_seconds),
+                        86400.0 if monthly_or_period_quota else 1.0,
+                    )
+                    delay = fallback
                 blocked_until = self._clock() + delay
                 # All keys assigned to the same account share that account's
                 # free-tier allowance; do not hop keys to bypass a quota.
