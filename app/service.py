@@ -13,6 +13,79 @@ from .providers.therundown import TheRundownProvider
 from .markets import analyze_markets
 
 
+def _discord_event_time(value):
+    """Return a Discord-rendered event time without trusting malformed provider data."""
+    if not isinstance(value, str) or not value.strip():
+        return "Not supplied"
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return f"<t:{int(parsed.timestamp())}:F> (<t:{int(parsed.timestamp())}:R>)"
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "Time unavailable"
+
+
+def _discord_field(name, value, inline=False):
+    value = str(value) if value is not None else "—"
+    return {"name": str(name)[:256], "value": value[:1024] or "—", "inline": inline}
+
+
+def _discord_ev_embed(row):
+    """Build a compact, scannable embed for one positive-EV market quote."""
+    selection = row.get("outcome_description") or row.get("outcome") or "Selection"
+    point = row.get("point")
+    if point is not None:
+        selection = f"{selection} ({point:+g})" if isinstance(point, (int, float)) else f"{selection} ({point})"
+    fair = row.get("fair_probability")
+    fair_text = f"{float(fair) * 100:.1f}%" if isinstance(fair, (int, float)) else "Unavailable"
+    price = row.get("price")
+    price_text = f"{price:+d}" if isinstance(price, int) and not isinstance(price, bool) else str(price or "Unavailable")
+    return {
+        "title": f"VALUE ALERT  •  +{float(row.get('ev_percent', 0)):.2f}% EV",
+        "description": f"**{row.get('matchup') or 'Matchup unavailable'}**",
+        "color": 0x2ECC71,
+        "fields": [
+            _discord_field("Sport / Market", f"{row.get('sport') or row.get('sport_key') or 'Sport'} · {row.get('market') or 'Market'}"),
+            _discord_field("Selection", selection),
+            _discord_field("Sportsbook", row.get("bookmaker") or "Unknown book", True),
+            _discord_field("American odds", price_text, True),
+            _discord_field("Fair probability", fair_text, True),
+            _discord_field("Expected value", f"+{float(row.get('ev_percent', 0)):.2f}%", True),
+            _discord_field("Consensus", f"{row.get('consensus_books', 0)} comparison books", True),
+            _discord_field("Game time", _discord_event_time(row.get("commence_time"))),
+        ],
+        "footer": {"text": "Open Odds Intelligence · Market estimate, not a guaranteed outcome"},
+    }
+
+
+def _discord_arbitrage_embed(row):
+    """Build a leg-by-leg arbitrage card with book, side, price and stake split."""
+    fields = [
+        _discord_field("Sport / Market", f"{row.get('sport') or 'Sport'} · {row.get('market') or 'Market'}"),
+        _discord_field("Estimated arbitrage margin", f"{float(row.get('arb_percent', 0)):.3f}%", True),
+        _discord_field("Game time", _discord_event_time(row.get("commence_time"))),
+    ]
+    for index, leg in enumerate(row.get("legs") or [], start=1):
+        price = leg.get("price")
+        price_text = f"{price:+d}" if isinstance(price, int) and not isinstance(price, bool) else str(price or "Unavailable")
+        selection = leg.get("outcome") or "Selection"
+        point = leg.get("point")
+        if point is not None:
+            selection = f"{selection} ({point:+g})" if isinstance(point, (int, float)) else f"{selection} ({point})"
+        fields.append(_discord_field(
+            f"LEG {index}  ·  {leg.get('bookmaker') or 'Unknown book'}",
+            f"**{selection}**\nOdds: **{price_text}**  ·  Suggested stake split: **{leg.get('stake_percent', 0):.2f}%**",
+        ))
+    return {
+        "title": f"ARBITRAGE ALERT  •  {float(row.get('arb_percent', 0)):.3f}%",
+        "description": f"**{row.get('matchup') or 'Matchup unavailable'}**",
+        "color": 0x3498DB,
+        "fields": fields,
+        "footer": {"text": "Open Odds Intelligence · Verify both prices before acting; markets can move"},
+    }
+
+
 class OddsService:
     def __init__(self, database=None):
         self.db = database or OddsDatabase()
@@ -423,35 +496,34 @@ class OddsService:
                 identity = ["ev", row["event_id"], row["market"], row["outcome"],
                             row.get("outcome_description"), row.get("point"),
                             row["bookmaker_key"], row["price"]]
-                candidates.append(("ev", identity,
-                    f'**EV {row["ev_percent"]:.2f}%** · {row["matchup"]} · {row["market"]} '
-                    f'{row.get("outcome_description") + " " if row.get("outcome_description") else ""}'
-                    f'{row["outcome"]} {row.get("point") if row.get("point") is not None else ""} '
-                    f'@ {row["bookmaker"]} ({row["price"]:+d}) · '
-                    f'fair {row["fair_probability"]*100:.1f}% · {row["consensus_books"]} other books'))
+                summary = (
+                    f'VALUE +{row["ev_percent"]:.2f}% · {row["matchup"]} · '
+                    f'{row["market"]} · {row["outcome"]} · {row["bookmaker"]} '
+                    f'({row["price"]:+d})'
+                )
+                candidates.append(("ev", identity, summary, _discord_ev_embed(row)))
             for row in result["arbitrage"]:
                 if row["arb_percent"] < config.ALERT_MIN_ARB_PERCENT:
                     continue
                 identity = ["arb", row["event_id"], row["market"], row.get("line"),
                             sorted((leg["bookmaker_key"], leg["outcome"], leg["price"])
                                    for leg in row["legs"])]
-                legs = " / ".join(
-                    f'{leg["outcome"]} {leg["price"]:+d} at {leg["bookmaker"]}'
-                    for leg in row["legs"]
+                summary = (
+                    f'ARBITRAGE {row["arb_percent"]:.3f}% · {row["matchup"]} · '
+                    f'{row["market"]}'
                 )
-                candidates.append(("arbitrage", identity,
-                    f'**Arbitrage {row["arb_percent"]:.3f}%** · {row["matchup"]} · {row["market"]} · {legs}'))
+                candidates.append(("arbitrage", identity, summary, _discord_arbitrage_embed(row)))
 
             self._last_alert_evaluated += len(result["opportunities"]) + len(result["arbitrage"])
             self._last_alert_qualified += len(candidates)
-            for alert_type, identity, message in candidates:
+            for alert_type, identity, message, embed in candidates:
                 fingerprint = hashlib.sha256(
                     json.dumps(identity, sort_keys=True).encode()
                 ).hexdigest()
                 try:
                     if not self.db.claim_alert(fingerprint, alert_type, message):
                         continue
-                    payload = json.dumps({"content": message[:1900]}).encode()
+                    payload = json.dumps({"embeds": [embed], "allowed_mentions": {"parse": []}}).encode()
                     request = Request(
                         config.DISCORD_WEBHOOK_URL, data=payload,
                         headers={"Content-Type": "application/json",
