@@ -257,6 +257,27 @@ def test_simulation_rejects_non_dict_event():
         raise AssertionError("Expected invalid event to be rejected")
 
 
+
+def test_overtime_points_are_budgeted_inside_the_full_game_market_total():
+    event = sample_event()
+    result = run_game_simulation(event, seed=20261122)
+    simulated_total = result["projected_score"]["home"] + result["projected_score"]["away"]
+    market_total = result["total_market"]["consensus_line"]
+    assert result["game_resolution"]["expected_overtime_total_adjustment"] > 0
+    assert result["game_resolution"]["regulation_total_anchor"] < market_total
+    # The final-score distribution should remain centered near the full-game
+    # sportsbook total, rather than adding overtime on top of that total.
+    assert abs(simulated_total - market_total) < 0.75
+
+
+def test_soccer_draws_do_not_receive_an_overtime_total_adjustment():
+    event = sample_event()
+    event["sport_key"] = "soccer_epl"
+    result = run_game_simulation(event, seed=20261122)
+    assert result["game_resolution"]["expected_overtime_total_adjustment"] == 0
+    assert result["game_resolution"]["regulation_total_anchor"] == result["total_market"]["consensus_line"]
+
+
 def test_simulation_seed_reproduces_identical_results():
     event = sample_event()
     first = run_game_simulation(event, seed=20261119)
