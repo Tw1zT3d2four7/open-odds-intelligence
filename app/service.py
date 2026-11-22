@@ -246,9 +246,9 @@ class OddsService:
             except ProviderError as exc:
                 # Preserve quota headers from failed keys too; they are often
                 # the only authoritative signal that a free allowance is spent.
-                self._remember_provider_usage(
-                    getattr(provider, "usage", {}), provider_name, lease.fingerprint
-                )
+                usage = getattr(provider, "usage", {})
+                pool.record_usage(lease, usage)
+                self._remember_provider_usage(usage, provider_name, lease.fingerprint)
                 disposition = pool.mark_failure(
                     lease,
                     status_code=getattr(exc, "status_code", None),
@@ -259,6 +259,7 @@ class OddsService:
                 if disposition in ("disabled", "cooldown"):
                     continue
                 raise
+            pool.record_usage(lease, getattr(provider, "usage", {}))
             pool.mark_success(lease)
             return events, provider, lease
         if last_error is not None:
