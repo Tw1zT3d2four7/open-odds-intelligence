@@ -336,8 +336,8 @@ async function runSelectedSimulation(){
   document.querySelectorAll("[data-sim-score],[data-sim-scoring]").forEach(el=>el.classList.toggle("hidden",outcomeOnly));
   $("simMoneylineCard").classList.toggle("hidden",!outcomeOnly);
   if(outcomeOnly){
-    $("simMarketConsensus").textContent=data.market_moneyline.home_probability.toFixed(2)+"% / "+data.market_moneyline.away_probability.toFixed(2)+"%";
-    $("simMoneylineBooks").textContent=data.market_moneyline.book_count+" bookmaker(s) · home / away";
+    $("simMarketConsensus").textContent=data.market_moneyline.home_probability.toFixed(2)+"% / "+data.market_moneyline.away_probability.toFixed(2)+"% / "+data.market_moneyline.draw_probability.toFixed(2)+"%";
+    $("simMoneylineBooks").textContent=data.market_moneyline.book_count+" bookmaker(s) · home / away / draw";
     $("simDataQuality").textContent=data.data_quality.moneyline_books+" moneyline books · no-vig consensus";
     $("simStatus").textContent="Completed exactly 10,000 market-implied outcome trials for "+data.matchup+". This is not an independent forecast.";
   }else{
