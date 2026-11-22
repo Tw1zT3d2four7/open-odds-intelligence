@@ -719,7 +719,11 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     import hashlib
     from .simulation import run_game_simulation
 
+    from .simulation_market_benchmark import score_archived_spread_total, _paired_report
+
     scored, baseline_scored, skipped, market_scored = [], [], [], []
+    spread_model_rows, spread_market_rows = [], []
+    total_model_rows, total_market_rows = [], []
     for settlement in settlements:
         event, reason = _load_latest_pregame_event(database, settlement)
         if reason:
@@ -742,6 +746,42 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
                 event, seed=seed, model_parameters=(model_parameters or {}).get(event["sport_key"])
             )
             model_row = score_prediction(prediction, settlement)
+            market_lines = score_archived_spread_total(event, settlement, prediction)
+            for market_type, model_rows, market_rows in (
+                ("spread", spread_model_rows, spread_market_rows),
+                ("total", total_model_rows, total_market_rows),
+            ):
+                market_line = market_lines[market_type]
+                if market_line is None:
+                    continue
+                if market_type == "spread":
+                    actual_result = model_row.get("actual_spread_result")
+                    first_probability = model_row.get("predicted_home_cover_probability", 0.0)
+                    second_probability = model_row.get("predicted_away_cover_probability", 0.0)
+                else:
+                    actual_result = model_row.get("actual_total_result")
+                    first_probability = model_row.get("predicted_over_probability", 0.0)
+                    second_probability = model_row.get("predicted_under_probability", 0.0)
+                actual = ("first" if actual_result in ("home_cover", "over") else
+                          "second" if actual_result in ("away_cover", "under") else "push")
+                if actual == "push" or actual != market_line["actual"]:
+                    continue
+                denominator = first_probability + second_probability
+                if denominator <= 0:
+                    continue
+                probabilities = (first_probability / denominator, second_probability / denominator)
+                actual_index = 0 if actual == "first" else 1
+                model_rows.append({
+                    "event_id": str(settlement["event_id"]), "sport": settlement["sport_key"],
+                    "brier_score": sum((p - (1.0 if i == actual_index else 0.0)) ** 2
+                                       for i, p in enumerate(probabilities)),
+                    "log_loss": -math.log(max(1e-12, probabilities[actual_index])),
+                })
+                market_rows.append({
+                    "event_id": str(settlement["event_id"]), "sport": settlement["sport_key"],
+                    "brier_score": market_line["brier_score"], "log_loss": market_line["log_loss"],
+                    "book_count": market_line["book_count"],
+                })
             baseline_scored.append(baseline_row)
             scored.append(model_row)
         except (ValueError, TypeError, KeyError) as exc:
@@ -750,6 +790,12 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     baseline_report = evaluate_predictions(baseline_scored)
     report["market_prior_baseline"] = baseline_report
     report["sportsbook_moneyline_benchmark"] = _moneyline_benchmark_report(scored, market_scored)
+    report["sportsbook_spread_benchmark"] = _paired_report(
+        spread_model_rows, spread_market_rows, "sportsbook_no_vig_consensus"
+    )
+    report["sportsbook_total_benchmark"] = _paired_report(
+        total_model_rows, total_market_rows, "sportsbook_no_vig_consensus"
+    )
     if scored and baseline_scored:
         report["model_minus_baseline"] = {
             key: (report["overall"][key] - baseline_report["overall"][key])
