@@ -373,3 +373,30 @@ def test_market_limit_discord_alert_uses_readable_embed_and_deduplicates(tmp_pat
 
     monitor._send_alerts([change])
     assert len(sent) == 1
+
+
+def test_ingest_events_records_oddslink_posted_limits_without_api_call(tmp_path):
+    monitor = MarketLimitsMonitor(path=tmp_path / "ingest-limits.sqlite3")
+    result = monitor.ingest_events([{
+        "id": "oddslink-event",
+        "sport_key": "americanfootball_nfl",
+        "commence_time": "2026-11-23T20:00:00Z",
+        "home_team": "Kansas City Chiefs",
+        "away_team": "Las Vegas Raiders",
+        "bookmakers": [{
+            "key": "draftkings", "title": "DraftKings",
+            "markets": [{
+                "key": "spreads", "outcomes": [{
+                    "name": "Kansas City Chiefs", "point": -3.5, "price": -110,
+                    "size": {"kind": "posted_limit", "amount": 25000},
+                }],
+            }],
+        }],
+    }], observed_at="2026-11-23T18:00:00+00:00",
+       usage={"requests_remaining": 900})
+
+    assert result["ok"] is True
+    assert result["source"] == "stored_oddslink_snapshot"
+    assert result["observations"] == 1
+    assert result["usage"]["requests_remaining"] == 900
+    assert monitor.status()["last_updated"] == "2026-11-23T18:00:00+00:00"
