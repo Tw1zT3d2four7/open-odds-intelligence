@@ -71,6 +71,8 @@ def merge_provider_events(provider_results):
             event = dict(raw_event)
             event_id = str(event["id"])
             target = by_id.get((event.get("sport_key"), event_id))
+            if target is not None and not _same_event(target, event):
+                target = None
             identity = (
                 event.get("sport_key"),
                 _team_key(event.get("home_team")),
