@@ -405,3 +405,64 @@ def test_evaluation_reports_spread_brier_and_log_loss_when_available():
     assert report["overall"]["spread_sample_size"] == 1
     assert report["overall"]["spread_brier_score"] == pytest.approx(.205)
     assert report["overall"]["spread_log_loss"] == pytest.approx(.598)
+
+
+def test_historical_backtest_includes_same_snapshot_sportsbook_moneyline_benchmark(tmp_path):
+    from app.database import OddsDatabase
+    from app.simulation_validation import run_historical_backtest
+
+    database = OddsDatabase(tmp_path / "benchmark.sqlite3")
+    event = {
+        "id": "benchmark-event",
+        "sport_title": "Basketball",
+        "commence_time": "2026-11-18T00:00:00Z",
+        "home_team": "Home",
+        "away_team": "Away",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -120}, {"name": "Away", "price": 100},
+                ]},
+                {"key": "spreads", "outcomes": [
+                    {"name": "Home", "price": -110, "point": -3.5},
+                    {"name": "Away", "price": -110, "point": 3.5},
+                ]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "price": -110, "point": 220.5},
+                    {"name": "Under", "price": -110, "point": 220.5},
+                ]},
+            ]},
+            {"key": "book-b", "title": "Book B", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Away", "price": 105}, {"name": "Home", "price": -125},
+                ]},
+                {"key": "spreads", "outcomes": [
+                    {"name": "Home", "price": -105, "point": -4.0},
+                    {"name": "Away", "price": -115, "point": 4.0},
+                ]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "price": -105, "point": 221.0},
+                    {"name": "Under", "price": -115, "point": 221.0},
+                ]},
+            ]},
+        ],
+    }
+    database.save_snapshot(
+        "basketball_nba", [event], "test", "2026-11-17T12:00:00Z"
+    )
+    report = run_historical_backtest(database, [{
+        "event_id": "benchmark-event",
+        "sport_key": "basketball_nba",
+        "commence_time": "2026-11-18T00:00:00Z",
+        "home_team": "Home",
+        "away_team": "Away",
+        "home_score": 112,
+        "away_score": 105,
+        "status": "final",
+        "source": "test-fixture",
+    }])
+    benchmark = report["sportsbook_moneyline_benchmark"]
+    assert report["events_scored"] == 1
+    assert benchmark["sample_size"] == 1
+    assert benchmark["market_book_count_mean"] == 2
+    assert benchmark["simulator_minus_market"]["brier_score"]["ci_95"] is None
