@@ -1,5 +1,7 @@
 """OddsLink free-tier adapter: every listed book, pre-match markets, no paid props."""
 import json
+import threading
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -24,6 +26,9 @@ class OddsLinkProvider:
         "tennis_wta": ("tennis", {"tournament_prefix": "tennis_wta_"}),
     }
     MARKETS = "h2h,h2h_3_way,spreads,totals,team_totals"
+    _request_lock = threading.Lock()
+    _last_request_at = 0.0
+    MIN_REQUEST_INTERVAL_SECONDS = 0.55  # 2 requests/second on the free tier.
 
     def __init__(self, api_key: str):
         if not api_key:
@@ -50,7 +55,16 @@ class OddsLinkProvider:
         except (TypeError, ValueError, OverflowError):
             return value
 
+    @classmethod
+    def _pace(cls):
+        with cls._request_lock:
+            wait = cls.MIN_REQUEST_INTERVAL_SECONDS - (time.monotonic() - cls._last_request_at)
+            if wait > 0:
+                time.sleep(wait)
+            cls._last_request_at = time.monotonic()
+
     def _request(self, path, params=None):
+        self._pace()
         query = f"?{urlencode(params)}" if params else ""
         request = Request(
             f"{self.base_url}{path}{query}",
