@@ -45,6 +45,15 @@ def test_simulation_runs_exactly_ten_thousand_trials_for_one_event():
     assert result["margin_market"]["consensus_home_margin"] == 4.75
     assert abs(sum(result["win_probabilities"].values()) - 100) <= 0.02
     assert abs(result["total_market"]["over"] + result["total_market"]["under"] + result["total_market"]["push"] - 100) <= 0.02
+    ranges = result["simulation_ranges"]
+    for key in ("home_score", "away_score", "home_margin", "game_total"):
+        summary = ranges[key]
+        assert summary["p10"] <= summary["median"] <= summary["p90"]
+        assert summary["standard_deviation"] >= 0
+        assert summary["interval"] == "empirical_p10_p90"
+    assert ranges["home_score"]["mean"] == result["projected_score"]["home"]
+    assert ranges["away_score"]["mean"] == result["projected_score"]["away"]
+    assert "not a confidence interval" in ranges["interpretation"]
 
 
 def test_simulation_rejects_event_without_spread_or_total():
