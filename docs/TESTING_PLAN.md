@@ -60,7 +60,11 @@ The target sportsbook must not be included in its own fair-probability estimate.
 - Confirm `alerts_enabled` is true in `GET /api/health`.
 - Click **Refresh odds** when the dashboard shows a qualifying candidate.
 - Verify the refresh result reports evaluated, qualified and sent counts.
-- Verify the Discord message identifies the event, market, selection, sportsbook, price and estimated EV or arbitrage percentage.
+- Verify value and arbitrage notifications arrive as separate rich embeds, not long unformatted text.
+- For value alerts, verify matchup, sport/market, selection, sportsbook, American odds, fair probability, EV, consensus count and localized event time are readable.
+- For arbitrage alerts, verify each leg has its own clearly labelled sportsbook, selection, odds and suggested stake split.
+- For market-limit alerts, verify direction, sportsbook, market, selection, previous/new posted limit, change amount/percentage and localized event time.
+- Confirm embed footers explain the estimates/provider-reported nature, and no unintended user or role mentions are triggered.
 - Refresh again without changing quotes. The same exact candidate should not be repeatedly spammed.
 - When a quote changes and remains qualified, verify the changed quote can produce a new alert.
 - Review `last_alert_error` if a delivery fails. A failed candidate should remain retryable; one failed delivery should not prevent other candidates from being attempted.
