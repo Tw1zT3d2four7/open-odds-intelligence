@@ -22,6 +22,7 @@ from pathlib import Path
 from app import config
 from app.database import OddsDatabase
 from app.simulation_validation import parse_settlements_csv
+from app.team_model import fit_independent_outcome_models, fit_team_strength_models
 
 TEMPLATE_FIELDS = (
     "event_id", "sport_key", "commence_time", "home_team", "away_team",
@@ -97,6 +98,25 @@ def import_results(database: OddsDatabase, content: str, apply: bool = False) ->
         target, temporary_path = _dry_run_database(database)
     try:
         result = target.save_simulation_settlements(records)
+        stored = target.simulation_settlements()
+        team_fit = fit_team_strength_models(stored)
+        outcome_fit = fit_independent_outcome_models(stored)
+        coverage = {}
+        for sport, values in team_fit["league_coverage"].items():
+            coverage[sport] = {
+                "stored_final_games": values["league_games"],
+                "eligible_teams": values["teams_with_eligible_ratings"],
+                "total_teams_seen": values["teams_total"],
+                "model_family": "independent_team_strength",
+            }
+        for sport, values in outcome_fit["coverage"].items():
+            coverage[sport] = {
+                "stored_final_matches": values["training_matches"],
+                "eligible_competitors": values["eligible_athletes"],
+                "model_family": "independent_elo_outcomes",
+            }
+        result["stored_coverage"] = dict(sorted(coverage.items()))
+        result["model_artifact_exists"] = Path(config.SIMULATION_MODEL_PATH).is_file()
     finally:
         if temporary_path:
             Path(temporary_path).unlink(missing_ok=True)
