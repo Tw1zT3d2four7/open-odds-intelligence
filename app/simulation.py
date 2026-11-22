@@ -299,6 +299,61 @@ def _run_outcome_only_simulation(event, seed, family):
     }
 
 
+
+def _run_independent_outcome_simulation(event, seed, family, fitted):
+    from .team_model import project_outcome_matchup
+
+    model = fitted.get("independent_outcome_model") if fitted else None
+    projection = project_outcome_matchup(model, event.get("home_team"), event.get("away_team"))
+    market_probabilities, books, diagnostics = _moneyline_inputs(event)
+    if not market_probabilities:
+        raise ValueError("A complete sportsbook h2h market is required for comparison.")
+    rng = random.Random(seed)
+    probabilities = (projection["home_probability"], projection["away_probability"], projection["draw_probability"])
+    counts = [0, 0, 0]
+    for _ in range(TRIALS):
+        draw = rng.random()
+        if draw < probabilities[0]:
+            counts[0] += 1
+        elif draw < probabilities[0] + probabilities[1]:
+            counts[1] += 1
+        else:
+            counts[2] += 1
+    pct = [round(value / TRIALS * 100, 2) for value in counts]
+    market_pct = [round(value * 100, 2) for value in market_probabilities]
+    return {
+        "trials": TRIALS, "simulation_seed": seed,
+        "simulation_type": "independent_outcome_monte_carlo",
+        "sport": str(event.get("sport_key") or event.get("sport") or ""),
+        "event_id": event.get("id"),
+        "matchup": f'{event.get("away_team")} vs {event.get("home_team")}',
+        "commence_time": event.get("commence_time"),
+        "home_team": event.get("home_team"), "away_team": event.get("away_team"),
+        "win_probabilities": {"home": pct[0], "away": pct[1], "tie": pct[2]},
+        "model_projection": projection,
+        "market_moneyline": {
+            "home_probability": market_pct[0], "away_probability": market_pct[1],
+            "draw_probability": market_pct[2],
+            "outcome_count": 3 if market_probabilities[2] > 0 else 2,
+            "book_count": len(books), "bookmakers": books,
+        },
+        "model_vs_market": {
+            "home_probability_difference_pp": round(pct[0] - market_pct[0], 2),
+            "away_probability_difference_pp": round(pct[1] - market_pct[1], 2),
+            "draw_probability_difference_pp": round(pct[2] - market_pct[2], 2),
+        },
+        "data_quality": {
+            "model_source": "independent_historical_elo",
+            "training_sample_size": fitted.get("sample_size", 0),
+            "model_matches": model.get("training_matches", 0),
+            "market_moneyline_books": len(books),
+            "distribution": "elo_categorical_outcomes",
+            "market_diagnostics": diagnostics,
+        },
+        "methodology": "10,000 trials sampled from a chronological Elo model fitted only on earlier verified outcomes. Sportsbook moneyline prices are comparison benchmarks only; they do not set model probabilities. Not validated until tested on an untouched holdout.",
+    }
+
+
 def _collect_market_inputs(event):
     spread_margins, totals = [], []
     spread_books, total_books = [], []
