@@ -168,9 +168,11 @@ function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("spo
 function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))}
 function renderProviderStatus(health){
- const selected=health.providers||[],pools=health.provider_keys||{},auto=health.auto_refresh_providers||[];
+ const selected=health.providers||[],pools=health.provider_keys||{},schedule=health.auto_refresh_schedule||{};
  const labels={therundown:"TheRundown",the_odds_api:"The Odds API",sports_game_odds:"SportsGameOdds",oddize:"Oddize",oddslink:"OddsLink"};
- $("providerSummary").textContent=selected.length?selected.map(x=>labels[x]||x).join(" · ")+" · Auto refresh: "+(auto.map(x=>labels[x]||x).join(", ")||"manual only"):"No providers selected";
+ const intervalLabel=seconds=>seconds>=86400?Math.round(seconds/86400)+"d":seconds>=3600?Math.round(seconds/3600)+"h":Math.round(seconds/60)+"m";
+ const autoText=Object.entries(schedule).map(([name,seconds])=>(labels[name]||name)+" "+intervalLabel(seconds)).join(", ")||"manual only";
+ $("providerSummary").textContent=selected.length?selected.map(x=>labels[x]||x).join(" · ")+" · Auto refresh: "+autoText:"No providers selected";
  const cards=selected.map(name=>{
   const pool=pools[name]||{},keys=pool.keys||[];
   const rows=keys.map(key=>{
