@@ -464,7 +464,8 @@ class OddsService:
             }
             return {"ok": not bool(errors), "groups_checked": groups_checked,
                     "events_returned": events_returned, "inserted": inserted,
-                    "duplicates": duplicates, "rejected": rejected, "error": last_error}
+                    "corrected": corrected, "duplicates": duplicates,
+                    "rejected": rejected, "error": last_error}
         except ProviderError as exc:
             self._remember_provider_usage(provider.usage)
             last_error = str(exc)
