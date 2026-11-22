@@ -79,6 +79,7 @@ def test_oddslink_checks_free_account_allowance_before_priced_request(monkeypatc
         return FakeResponse([])
 
     monkeypatch.setattr(oddslink, "urlopen", fake_urlopen)
+    monkeypatch.setattr(OddsLinkProvider, "_pace", lambda self: None)
     provider = OddsLinkProvider("Case-Sensitive-OddsLink-Key")
     assert provider.fetch_odds("americanfootball_nfl") == []
     assert len(calls) == 2
@@ -109,6 +110,7 @@ def test_oddslink_blocks_spending_after_free_allowance_is_spent(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(oddslink, "urlopen", fake_urlopen)
+    monkeypatch.setattr(OddsLinkProvider, "_pace", lambda self: None)
     provider = OddsLinkProvider("Key")
     with pytest.raises(ProviderError, match="allowance is exhausted") as caught:
         provider.fetch_odds("americanfootball_nfl")
