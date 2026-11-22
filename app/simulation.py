@@ -440,20 +440,27 @@ def market_readiness(event, model_parameters=None, require_independent_model=Fal
     if family in ("tennis", "mma") or family is None or not (has_spread and has_total):
         moneyline, books, diagnostics = _moneyline_inputs(event)
         if require_independent_model:
+            projection = None
             try:
                 _validate_upcoming_event(event)
+                from .team_model import project_outcome_matchup
+                projection = project_outcome_matchup(
+                    (model_parameters or {}).get("independent_outcome_model"),
+                    event.get("home_team"), event.get("away_team"),
+                )
+                independent_reason = None if moneyline else "A complete sportsbook h2h market is required for comparison."
             except ValueError as exc:
-                has_start_time = False
+                has_start_time = "start time" not in str(exc).lower()
                 independent_reason = str(exc)
-            else:
-                independent_reason = "An independent historical tennis/combat-sport model is not available yet; sportsbook moneyline sampling is not an independent prediction."
             return {
-                "can_simulate": False,
-                "simulation_mode": "independent_model_unavailable",
+                "can_simulate": has_start_time and bool(moneyline) and projection is not None,
+                "simulation_mode": "independent_outcome_only" if projection is not None else "independent_model_unavailable",
+                "independent_model_available": projection is not None,
                 "has_start_time": has_start_time,
                 "has_h2h": bool(moneyline),
                 "has_spread": has_spread,
                 "has_total": has_total,
+                "moneyline_books": len(books),
                 "reason": independent_reason,
                 "market_diagnostics": diagnostics + inputs["diagnostics"],
             }
