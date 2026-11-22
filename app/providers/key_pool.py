@@ -121,9 +121,6 @@ class ProviderKeyPool:
         )
         with self._lock:
             self._last_error[lease.index] = detail
-            if status_code == 401:
-                self._disabled[lease.index] = "authentication rejected; check this key"
-                return "disabled"
             if quota_error:
                 try:
                     delay = max(1.0, float(retry_after_seconds))
@@ -131,6 +128,9 @@ class ProviderKeyPool:
                     delay = max(1.0, float(default_cooldown_seconds))
                 self._blocked_until[lease.index] = self._clock() + delay
                 return "cooldown"
+            if status_code == 401:
+                self._disabled[lease.index] = "authentication rejected; check this key"
+                return "disabled"
             return "unchanged"
 
     def status(self) -> dict:
