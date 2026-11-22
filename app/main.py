@@ -215,6 +215,7 @@ def refresh_limits():
             "ok": result.get("ok", False),
             "source": "oddslink_all_book_odds_refresh",
             "error": result.get("error"),
+            "diagnostic": status.get("last_diagnostic") or {},
             "odds_refresh": result,
         }
     return service.limits_monitor.refresh()
