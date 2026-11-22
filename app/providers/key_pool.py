@@ -41,7 +41,7 @@ def parse_api_key_entries(*values: str | None) -> list[tuple[str, str]]:
     for value in values:
         if not value:
             continue
-        for candidate in str(value).replace("\\r", "\\n").replace(",", "\\n").splitlines():
+        for candidate in str(value).replace("\r", "\n").replace(",", "\n").splitlines():
             item = candidate.strip()
             if not item:
                 continue
