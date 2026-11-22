@@ -32,7 +32,7 @@ class OddsLinkProvider:
     _tennis_cache_lock = threading.Lock()
     _tennis_cache_at = 0.0
     _tennis_cache_payload = None
-    TENNIS_CACHE_SECONDS = 30.0
+    TENNIS_CACHE_SECONDS = 10.0
 
     def __init__(self, api_key: str):
         if not api_key:
