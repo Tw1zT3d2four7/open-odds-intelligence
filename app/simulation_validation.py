@@ -714,6 +714,61 @@ def paired_bootstrap_comparison(model_rows: list[dict], baseline_rows: list[dict
     }
 
 
+
+def score_outcome_prediction(prediction: dict, settlement: dict) -> dict:
+    """Score an outcome-only tennis/MMA forecast without inventing score markets."""
+    if str(prediction.get("event_id")) != str(settlement.get("event_id")):
+        raise ValueError("Prediction and settlement event IDs do not match.")
+    if str(prediction.get("sport") or "") != str(settlement.get("sport_key") or ""):
+        raise ValueError("Prediction and settlement leagues do not match.")
+    probs = prediction.get("win_probabilities")
+    if not isinstance(probs, dict):
+        raise ValueError("Outcome-only prediction probabilities are missing.")
+    values = [float(probs.get(key, -1)) / 100 for key in ("home", "away", "tie")]
+    if any(not math.isfinite(x) or x < 0 or x > 1 for x in values) or abs(sum(values) - 1) > 0.005:
+        raise ValueError("Outcome-only prediction contains invalid probabilities.")
+    hs, aws = settlement.get("home_score"), settlement.get("away_score")
+    if (isinstance(hs, bool) or isinstance(aws, bool)
+            or not isinstance(hs, int) or not isinstance(aws, int)
+            or hs < 0 or aws < 0):
+        raise ValueError("Outcome-only settlement requires verified non-negative integer scores.")
+    actual = "home" if hs > aws else "away" if hs < aws else "tie"
+    actual_vector = (1.0, 0.0, 0.0) if actual == "home" else (0.0, 1.0, 0.0) if actual == "away" else (0.0, 0.0, 1.0)
+    brier = sum((p - y) ** 2 for p, y in zip(values, actual_vector))
+    index = {"home": 0, "away": 1, "tie": 2}[actual]
+    return {
+        "event_id": str(settlement["event_id"]),
+        "sport": str(settlement["sport_key"]),
+        "actual_result": actual,
+        "predicted_home_probability": values[0],
+        "predicted_away_probability": values[1],
+        "predicted_tie_probability": values[2],
+        "brier_score": brier,
+        "log_loss": -math.log(max(1e-12, values[index])),
+    }
+
+
+def evaluate_outcome_predictions(rows: list[dict]) -> dict:
+    """Summarize proper scoring rules for outcome-only leagues."""
+    by_sport = defaultdict(list)
+    for row in rows:
+        by_sport[row.get("sport") or "unknown"].append(row)
+    def mean(values):
+        return sum(values) / len(values) if values else None
+    def summary(items):
+        return {
+            "sample_size": len(items),
+            "status": "DESCRIPTIVE_ONLY" if len(items) < 200 else "EVALUATION_AVAILABLE",
+            "brier_score": mean([row["brier_score"] for row in items]),
+            "log_loss": mean([row["log_loss"] for row in items]),
+        }
+    return {
+        "sample_size": len(rows),
+        "status": "INSUFFICIENT_DATA" if not rows else ("DESCRIPTIVE_ONLY" if len(rows) < 200 else "EVALUATION_AVAILABLE"),
+        **summary(rows),
+        "by_sport": {sport: summary(items) for sport, items in sorted(by_sport.items())},
+    }
+
 def run_historical_backtest(database, settlements: list[dict], seed_salt: str = "ooi-sim-v1", model_parameters: dict | None = None, include_prediction_rows: bool = False) -> dict:
     """Replay the latest real pregame snapshot per settled event; never fetch odds."""
     import hashlib
