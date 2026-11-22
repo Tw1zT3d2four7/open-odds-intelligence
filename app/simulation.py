@@ -1009,21 +1009,24 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
     scoring_fit = dict(fitted or {})
     if fitted and fitted.get("independent_team_model"):
         from .team_model import project_matchup
-        independent_projection = project_matchup(
-            fitted["independent_team_model"], event.get("home_team"), event.get("away_team")
-        )
-        # The sportsbook lines below are comparison thresholds only. They do
-        # not set the independent expected score or residual mean.
-        expected_margin = independent_projection["expected_margin"]
-        expected_total = independent_projection["expected_total"]
-        # Do not leak market-residual variance estimates into the independent
-        # forecast. Until score-only variance calibration is available, use
-        # the conservative family prior for spread/total dispersion.
-        prior = dict(LEAGUE_PRIORS[family])
-        scoring_fit = {}
-    elif require_independent_model:
+        try:
+            independent_projection = project_matchup(
+                fitted["independent_team_model"], event.get("home_team"), event.get("away_team")
+            )
+        except ValueError:
+            if require_independent_model:
+                raise
+            independent_projection = None
+        if independent_projection:
+            # The sportsbook lines below are comparison thresholds only.
+            expected_margin = independent_projection["expected_margin"]
+            expected_total = independent_projection["expected_total"]
+            # Market-derived residual variance is not used by independent draws.
+            prior = dict(LEAGUE_PRIORS[family])
+            scoring_fit = {}
+    if require_independent_model and not independent_projection:
         raise ValueError(
-            "No independent historical team model is fitted for this league. "
+            "No independent historical team model with sufficient history is fitted for this league/matchup. "
             "Build it from an earlier verified-results training period; market-only simulation is blocked."
         )
 
