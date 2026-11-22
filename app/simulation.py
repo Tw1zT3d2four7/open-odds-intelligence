@@ -397,6 +397,11 @@ def _run_independent_outcome_simulation(event, seed, family, fitted):(event, see
             counts[2] += 1
     pct = [round(value / TRIALS * 100, 2) for value in counts]
     market_pct = [round(value * 100, 2) for value in market_probabilities]
+    moneyline_edge = _independent_moneyline_edge(
+        event,
+        {"home": probabilities[0], "away": probabilities[1], "draw": probabilities[2]},
+        market_probabilities,
+    )
     return {
         "trials": TRIALS, "simulation_seed": seed,
         "simulation_type": "independent_outcome_monte_carlo",
@@ -418,6 +423,7 @@ def _run_independent_outcome_simulation(event, seed, family, fitted):(event, see
             "away_probability_difference_pp": round(pct[1] - market_pct[1], 2),
             "draw_probability_difference_pp": round(pct[2] - market_pct[2], 2),
         },
+        "market_edge_analysis": {"moneyline": moneyline_edge},
         "data_quality": {
             "model_source": "independent_historical_elo",
             "training_sample_size": fitted.get("sample_size", 0),
