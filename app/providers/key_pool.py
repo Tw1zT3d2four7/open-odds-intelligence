@@ -183,7 +183,7 @@ class ProviderKeyPool:
                     except (TypeError, ValueError):
                         pass
             if delay is None:
-                delay = 86400.0
+                delay = max(1.0, 86400.0 - elapsed)
 
         with self._lock:
             self._usage[lease.index] = safe
