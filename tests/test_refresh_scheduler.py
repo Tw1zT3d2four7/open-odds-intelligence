@@ -8,6 +8,7 @@ from app import main
 
 def test_scheduled_refresh_runs_when_enabled(monkeypatch):
     called = threading.Event()
+    monkeypatch.setattr(main.config, "ODDS_PROVIDER", "the_odds_api")
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
     monkeypatch.setattr(main.service, "refresh", lambda **kwargs: called.set() or {"ok": True})
