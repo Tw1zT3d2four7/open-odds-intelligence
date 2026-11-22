@@ -161,13 +161,12 @@ def _total_quote(book):
 
 
 def _moneyline_inputs(event):
-    """Build a median no-vig two-way moneyline consensus for individual contests."""
+    """Build a median no-vig two- or three-way h2h consensus."""
     home = _team_identity(event.get("home_team"))
     away = _team_identity(event.get("away_team"))
     if not home or not away or home == away:
-        return [], []
-    home_probabilities, away_probabilities, books = [], [], []
-    diagnostics = []
+        return [], [], []
+    probability_rows, books, diagnostics = [], [], []
     seen_books = set()
     bookmakers = event.get("bookmakers", [])
     if not isinstance(bookmakers, list):
@@ -180,53 +179,75 @@ def _moneyline_inputs(event):
             diagnostics.append({"bookmaker": identity, "h2h": "duplicate bookmaker ignored"})
             continue
         seen_books.add(identity)
-        candidates = _market_candidates(book, "h2h")
         usable = None
-        for market in candidates:
+        for market in _market_candidates(book, "h2h"):
             outcomes = market.get("outcomes", [])
             if not isinstance(outcomes, list):
                 continue
-            sides = {"home": [], "away": []}
+            sides = {"home": [], "away": [], "draw": []}
             for outcome in outcomes:
-                if not isinstance(outcome, dict):
+                if not isinstance(outcome, dict) or not _valid_price(outcome.get("price")):
                     continue
+                label = _team_identity(outcome.get("name"))
                 side = _team_side(outcome.get("name"), home, away)
-                if side and _valid_price(outcome.get("price")):
+                if side:
                     sides[side].append(_decimal(outcome["price"]))
-            if len(sides["home"]) == 1 and len(sides["away"]) == 1:
-                implied_home = 1.0 / sides["home"][0]
-                implied_away = 1.0 / sides["away"][0]
-                denominator = implied_home + implied_away
+                elif label in ("draw", "tie", "x"):
+                    sides["draw"].append(_decimal(outcome["price"]))
+            if (len(sides["home"]) == 1 and len(sides["away"]) == 1
+                    and len(sides["draw"]) <= 1):
+                implied = [1.0 / sides["home"][0], 1.0 / sides["away"][0]]
+                if sides["draw"]:
+                    implied.append(1.0 / sides["draw"][0])
+                denominator = sum(implied)
                 if denominator > 0:
-                    usable = (implied_home / denominator, implied_away / denominator)
+                    normalized = [value / denominator for value in implied]
+                    if len(normalized) == 2:
+                        normalized.append(0.0)
+                    usable = normalized
                     break
         if usable is None:
             diagnostics.append({"bookmaker": identity,
-                                "h2h": "requires one valid home and away moneyline outcome"})
+                                "h2h": "requires one valid home and away outcome and, optionally, one draw"})
             continue
-        home_probabilities.append(usable[0])
-        away_probabilities.append(usable[1])
+        probability_rows.append(usable)
         books.append(identity)
-    return ([
-        median(home_probabilities), median(away_probabilities)
-    ] if home_probabilities else []), books, diagnostics
+    if not probability_rows:
+        return [], books, diagnostics
+    # Median each outcome, then renormalize to preserve a valid probability vector.
+    medians = [median([row[index] for row in probability_rows]) for index in range(3)]
+    total = sum(medians)
+    probabilities = [value / total for value in medians] if total > 0 else []
+    return probabilities, books, diagnostics
 
 
 def _run_outcome_only_simulation(event, seed, family):
     probabilities, books, diagnostics = _moneyline_inputs(event)
     if not probabilities:
         raise ValueError(
-            "This contest type requires a complete two-way h2h moneyline from at least one bookmaker. "
-            "Spread and total score markets are not required."
+            "This event requires a complete two-way or three-way h2h moneyline from at least one bookmaker. "
+            "A score spread and total are not required for this market-only mode."
         )
-    home_probability, away_probability = probabilities
+    home_probability, away_probability, draw_probability = probabilities
     rng = random.Random(seed)
-    home_wins = sum(rng.random() < home_probability for _ in range(TRIALS))
-    away_wins = TRIALS - home_wins
-    home_pct = round(home_wins / TRIALS * 100, 2)
-    away_pct = round(100.0 - home_pct, 2)
+    counts = [0, 0, 0]
+    for _ in range(TRIALS):
+        draw = rng.random()
+        if draw < home_probability:
+            counts[0] += 1
+        elif draw < home_probability + away_probability:
+            counts[1] += 1
+        else:
+            counts[2] += 1
+    home_pct = round(counts[0] / TRIALS * 100, 2)
+    away_pct = round(counts[1] / TRIALS * 100, 2)
+    draw_pct = round(100.0 - home_pct - away_pct, 2)
     sport_key = str(event.get("sport_key") or event.get("sport") or "")
-    kind = "tennis_match" if family == "tennis" else "combat_contest"
+    kind = (
+        "tennis_match" if family == "tennis" else
+        "combat_contest" if family == "mma" else
+        "generic_two_or_three_way_event"
+    )
     return {
         "trials": TRIALS,
         "simulation_seed": seed,
@@ -237,10 +258,12 @@ def _run_outcome_only_simulation(event, seed, family):
         "commence_time": event.get("commence_time"),
         "home_team": event.get("home_team"),
         "away_team": event.get("away_team"),
-        "win_probabilities": {"home": home_pct, "away": away_pct, "tie": 0.0},
+        "win_probabilities": {"home": home_pct, "away": away_pct, "tie": draw_pct},
         "market_moneyline": {
             "home_probability": round(home_probability * 100, 2),
             "away_probability": round(away_probability * 100, 2),
+            "draw_probability": round(draw_probability * 100, 2),
+            "outcome_count": 3 if draw_probability > 0 else 2,
             "book_count": len(books),
             "bookmakers": books,
         },
@@ -248,15 +271,14 @@ def _run_outcome_only_simulation(event, seed, family):
             "model_source": "sportsbook_no_vig_consensus",
             "simulation_mode": kind,
             "moneyline_books": len(books),
-            "distribution": "bernoulli_market_consensus",
+            "distribution": "categorical_market_consensus",
             "training_sample_size": 0,
             "market_diagnostics": diagnostics,
         },
         "methodology": (
             "10,000 outcome trials sampled from the median bookmaker-level no-vig "
-            "two-way moneyline consensus. This exposes the market-implied outcome "
-            "distribution; it is not an independent prediction, a player-strength model, "
-            "or a score/set/round simulation."
+            "two-way or three-way moneyline consensus. This exposes the market-implied "
+            "outcome distribution; it is not an independent prediction or a score simulation."
         ),
     }
 
@@ -342,7 +364,9 @@ def market_readiness(event):
     inputs = _collect_market_inputs(event)
     family = _family(event.get("sport_key") or event.get("sport"))
     has_start_time = True
-    if family in ("tennis", "mma"):
+    has_spread = bool(inputs["spread_margins"])
+    has_total = bool(inputs["totals"])
+    if family in ("tennis", "mma") or family is None or not (has_spread and has_total):
         moneyline, books, diagnostics = _moneyline_inputs(event)
         missing = []
         try:
@@ -351,22 +375,20 @@ def market_readiness(event):
             has_start_time = False
             missing.append(str(exc))
         if not moneyline:
-            missing.append("a complete two-way h2h moneyline")
+            missing.append("a complete two-way or three-way h2h moneyline")
         return {
             "can_simulate": has_start_time and bool(moneyline),
             "simulation_mode": "moneyline_outcome_only",
             "has_start_time": has_start_time,
             "has_h2h": bool(moneyline),
-            "has_spread": False,
-            "has_total": False,
+            "has_spread": has_spread,
+            "has_total": has_total,
             "moneyline_books": len(books),
-            "spread_books": 0,
-            "total_books": 0,
+            "spread_books": len(inputs["spread_books"]),
+            "total_books": len(inputs["total_books"]),
             "reason": None if not missing else "Missing " + " and ".join(missing) + ".",
-            "market_diagnostics": diagnostics,
+            "market_diagnostics": diagnostics + inputs["diagnostics"],
         }
-    has_spread = bool(inputs["spread_margins"])
-    has_total = bool(inputs["totals"])
     missing = []
     try:
         _validate_upcoming_event(event)
@@ -610,9 +632,9 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     if not isinstance(event, dict):
         raise ValueError("A valid stored game event is required.")
     family = _family(event.get("sport_key") or event.get("sport"))
-    if family is None:
-        raise ValueError("This league is not yet supported by the game simulator.")
-    if family in ("tennis", "mma"):
+    market_inputs = _collect_market_inputs(event)
+    has_complete_scoring_markets = bool(market_inputs["spread_margins"] and market_inputs["totals"])
+    if family in ("tennis", "mma") or family is None or not has_complete_scoring_markets:
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
             raise ValueError("Simulation seed must be an integer or None.")
         return _run_outcome_only_simulation(event, seed, family)
