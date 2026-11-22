@@ -381,7 +381,7 @@ def _independent_moneyline_edge(event, model_probabilities, market_probabilities
     return {"book_count": len(selected_rows), "outcome_count": selected_count, "sides": sides}
 
 
-def _run_independent_outcome_simulation(event, seed, family, fitted):(event, seed, family, fitted):
+def _run_independent_outcome_simulation(event, seed, family, fitted):
     from .team_model import project_outcome_matchup
 
     model = fitted.get("independent_outcome_model") if fitted else None
