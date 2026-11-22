@@ -71,3 +71,23 @@ def test_merge_deduplicates_same_event_and_same_exact_outcome():
     merged = merge_provider_events([("one", [event]), ("two", [duplicate])])
     outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
     assert len(outcomes) == 1
+
+
+def test_merge_matches_oddize_team_abbreviations_to_full_provider_names():
+    full_names = _event("rundown", [_book("draftkings", [
+        {"name": "Boston Celtics", "price": -110}
+    ])], home="Boston Celtics", away="New York Knicks")
+    abbreviations = _event("oddize", [_book("bet365", [
+        {"name": "BOS", "price": -105}
+    ])], home="BOS", away="NYK")
+
+    merged = merge_provider_events([
+        ("therundown", [full_names]),
+        ("oddize", [abbreviations]),
+    ])
+
+    assert len(merged) == 1
+    assert merged[0]["home_team"] == "Boston Celtics"
+    books = {book["key"]: book for book in merged[0]["bookmakers"]}
+    bet365_outcome = books["bet365"]["markets"][0]["outcomes"][0]
+    assert bet365_outcome["name"] == "Boston Celtics"
