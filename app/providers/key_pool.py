@@ -37,7 +37,7 @@ class KeyLease:
 def parse_api_key_entries(*values: str | None) -> list[tuple[str, str]]:
     """Parse optional group|key entries; ungrouped keys share one account quota."""
     entries: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
+    seen_keys: set[str] = set()
     for value in values:
         if not value:
             continue
@@ -52,10 +52,9 @@ def parse_api_key_entries(*values: str | None) -> list[tuple[str, str]]:
                     continue
             else:
                 group, key = "default", item
-            entry = (group, key)
-            if entry not in seen:
-                seen.add(entry)
-                entries.append(entry)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                entries.append((group, key))
     return entries
 
 
