@@ -27,16 +27,19 @@ def test_scheduled_refresh_stays_disabled_by_default(monkeypatch):
     assert not called.is_set()
 
 
-def test_discord_webhook_enables_automatic_refresh_when_general_refresh_is_off(monkeypatch):
+def test_discord_webhook_evaluates_stored_quotes_when_provider_polling_is_off(monkeypatch):
     called = threading.Event()
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
     monkeypatch.setattr(main.config, "DISCORD_ALERT_REFRESH_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
-    monkeypatch.setattr(main.service, "refresh", lambda: called.set() or {"ok": True})
+    monkeypatch.setattr(main.service, "evaluate_alerts", lambda: called.set() or 0)
+    refresh_called = threading.Event()
+    monkeypatch.setattr(main.service, "refresh", lambda: refresh_called.set() or {"ok": True})
 
     with TestClient(main.app):
         assert called.wait(timeout=1)
+    assert not refresh_called.is_set()
 
 
 def test_scheduled_refresh_failure_is_exposed_in_service_status(monkeypatch):
