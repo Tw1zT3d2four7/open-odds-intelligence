@@ -100,6 +100,11 @@ After deployment and during normal operations:
 
 Do not repeatedly click refresh to clear an error. A 401/403 requires credential or entitlement correction. A 429 means stop and respect provider quota and retry deadlines.
 
+### Optional final-score collection and corrections
+
+Final-score synchronization is disabled unless `SIMULATION_RESULTS_SYNC_ENABLED=true`. It uses TheRundown score-only requests (`affiliate_ids=0`) for events already present in the local odds archive. These requests still consume provider allowance. Keep `SIMULATION_RESULTS_RECHECK_DAYS=0` unless you specifically want recent completed dates checked again for provider corrections. A positive value is capped at seven days and adds score-only date lookups; it does not trigger odds refreshes. A stored score is replaced only when the provider supplies a strictly newer timezone-aware `source_updated_at` value and the event identity, teams, and start time still match the archived quote. Missing or stale timestamps never overwrite a stored settlement.
+
+
 ## 7. Security boundary of the current release
 
 Optional HTTP Basic authentication protects routes with one configured username/password pair. It is useful for a trusted, single-owner deployment, but it is **not** subscriber account management:
