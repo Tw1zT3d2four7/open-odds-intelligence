@@ -590,7 +590,7 @@ def test_multi_provider_refresh_keeps_successful_source_when_other_fails(tmp_pat
         "therundown"
     ]
     assert "the_odds_api" in result["provider_errors"][0]
-    assert len(database.latest_events("americanfootball_nfl")) == 0
+    assert len(database.latest_events("americanfootball_nfl")) == 1
 
 
 def test_sports_game_odds_is_manual_only_and_available_when_manually_refreshed(tmp_path, monkeypatch):
