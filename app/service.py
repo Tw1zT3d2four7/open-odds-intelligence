@@ -11,6 +11,7 @@ from .database import OddsDatabase
 from .providers.the_odds_api import TheOddsAPIProvider, ProviderError
 from .providers.therundown import TheRundownProvider
 from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
+from .providers.merge import merge_provider_events
 from .markets import analyze_markets
 
 
@@ -145,7 +146,7 @@ class OddsService:
         except (TypeError, ValueError):
             self._player_props_last_attempt = None
         if config.PLAYER_PROPS_ENABLED:
-            if config.ODDS_PROVIDER != "the_odds_api":
+            if "the_odds_api" not in self.active_provider_names():
                 self._player_props_status = {
                     "enabled": True, "sport": config.PLAYER_PROPS_SPORT,
                     "error": "Player props currently require The Odds API event-odds endpoint; TheRundown supplies main markets only.",
@@ -249,10 +250,21 @@ class OddsService:
             raise last_error
         raise ProviderError(f"No usable API keys remain for provider: {provider_name}")
 
+    def active_provider_names(self):
+        if getattr(config, "ODDS_PROVIDERS_EXPLICIT", False):
+            selected = config.ODDS_PROVIDERS
+        else:
+            selected = [config.ODDS_PROVIDER] if config.ODDS_PROVIDER else []
+        return list(dict.fromkeys(
+            name for name in selected if name in self._provider_key_pools
+        ))
+
     @property
     def configured(self):
-        pool = self._provider_key_pools.get(config.ODDS_PROVIDER)
-        return bool(pool and pool.configured)
+        return any(
+            self._provider_key_pools[name].configured
+            for name in self.active_provider_names()
+        )
 
     def status(self):
         stored = self.db.snapshot_status()
@@ -290,7 +302,9 @@ class OddsService:
         else:
             data_freshness = "current"
         alert_status = self.db.alert_status()
-        return {"provider": config.ODDS_PROVIDER, "configured": self.configured,
+        return {"provider": config.ODDS_PROVIDER,
+                "providers": self.active_provider_names(),
+                "configured": self.configured,
                 "last_updated": self._updated_at or stored.get("last_updated"),
                 "last_error": self._last_error, "sports": config.ODDS_SPORTS,
                 "odds_regions": config.ODDS_REGIONS,
@@ -377,89 +391,118 @@ class OddsService:
                 time.sleep(delay)
 
     def _refresh_locked(self, sport=None):
-        if not self.configured:
-            self._last_error = "No live odds provider configured. Configure a supported provider and API key."
+        provider_names = self.active_provider_names()
+        configured_names = [
+            name for name in provider_names if self._provider_key_pools[name].configured
+        ]
+        if not configured_names:
+            self._last_error = "No configured API keys for the selected odds providers."
             return {"ok": False, "error": self._last_error, "events": 0}
-        if config.ODDS_PROVIDER not in self._provider_key_pools:
-            self._last_error = f"Unsupported odds provider: {config.ODDS_PROVIDER}"
-            return {"ok": False, "error": self._last_error, "events": 0}
+        sports = [sport] if sport else config.ODDS_SPORTS
         count = 0
-        provider = None
-        lease = None
-        try:
-            for key in ([sport] if sport else config.ODDS_SPORTS):
-                events, provider, lease = self._fetch_provider_odds_with_rotation(
-                    config.ODDS_PROVIDER, key
-                )
-                self._remember_provider_usage(
-                    provider.usage, config.ODDS_PROVIDER, lease.fingerprint
-                )
-                if config.PLAYER_PROPS_ENABLED and key == config.PLAYER_PROPS_SPORT:
-                    if config.ODDS_PROVIDER == "the_odds_api":
+        successful_sports = 0
+        provider_errors = []
+        provider_results_summary = {}
+        for sport_key in sports:
+            source_results = []
+            successful_providers = []
+            for provider_name in provider_names:
+                pool = self._provider_key_pools.get(provider_name)
+                if pool is None or not pool.configured:
+                    provider_errors.append(
+                        f"{sport_key} / {provider_name}: no API key configured"
+                    )
+                    continue
+                try:
+                    events, provider, lease = self._fetch_provider_odds_with_rotation(
+                        provider_name, sport_key
+                    )
+                    self._remember_provider_usage(
+                        provider.usage, provider_name, lease.fingerprint
+                    )
+                    if (config.PLAYER_PROPS_ENABLED
+                            and sport_key == config.PLAYER_PROPS_SPORT
+                            and provider_name == "the_odds_api"):
                         now = datetime.now(timezone.utc)
-                        due = (self._player_props_last_attempt is None or
-                               (now - self._player_props_last_attempt).total_seconds() >=
-                               config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS)
+                        due = (
+                            self._player_props_last_attempt is None
+                            or (now - self._player_props_last_attempt).total_seconds()
+                            >= config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
+                        )
                         if due:
                             self._player_props_last_attempt = now
                             self.db.set_state("player_props_last_attempt", now.isoformat())
                             self._player_props_status = provider.fetch_player_props(
-                                key, events, config.PLAYER_PROPS_MARKETS,
+                                sport_key, events, config.PLAYER_PROPS_MARKETS,
                                 config.PLAYER_PROPS_MAX_EVENTS,
                             )
                             self._player_props_status["last_updated"] = now.isoformat()
-                            self._player_props_status["refresh_interval_seconds"] = config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
-                            self._remember_provider_usage(provider.usage)
+                            self._player_props_status["refresh_interval_seconds"] = (
+                                config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
+                            )
+                            self._remember_provider_usage(
+                                provider.usage, provider_name, lease.fingerprint
+                            )
                         else:
                             remaining = max(
-                                0, int(config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS -
-                                       (now - self._player_props_last_attempt).total_seconds())
+                                0, int(
+                                    config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
+                                    - (now - self._player_props_last_attempt).total_seconds()
+                                )
                             )
                             self._player_props_status = {
-                                "enabled": True, "sport": key, "events_requested": 0,
-                                "events_with_props": 0,
+                                "enabled": True, "sport": sport_key,
+                                "events_requested": 0, "events_with_props": 0,
                                 "reason": "Waiting for the quota-safe player-props refresh interval.",
                                 "next_refresh_seconds": remaining,
                                 "refresh_interval_seconds": config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS,
                             }
-                    else:
-                        self._player_props_status = {
-                            "enabled": True, "sport": key, "events_requested": 0,
-                            "events_with_props": 0,
-                            "error": "Player props currently require The Odds API event-odds endpoint; TheRundown adapter supplies main markets only.",
-                        }
-                fetched_at = datetime.now(timezone.utc).isoformat()
-                self.db.save_snapshot(key, events, provider.name, fetched_at)
-                self._cache[key] = events
-                # Capture the first positive-EV quote for each exact selection.
-                # The entry is immutable so later refreshes cannot rewrite the
-                # price whose closing-line value is being measured.
-                clv_candidates = analyze_markets(
-                    events, min_ev=config.CLV_MIN_EV_PERCENT,
-                    min_consensus_books=2, best_only=False,
-                )["opportunities"]
-                self.db.record_clv_candidates(clv_candidates, fetched_at)
-                count += len(events)
-            self._updated_at = datetime.now(timezone.utc).isoformat()
-            self._last_error = None
-            alerts_sent = self._dispatch_alerts()
-            alert_status = self.status()
-            return {"ok": True, "events": count, "updated_at": self._updated_at,
-                    "alerts_sent": alerts_sent,
-                    "alerts_enabled": alert_status["alerts_enabled"],
-                    "alerts_evaluated": alert_status["last_alert_evaluated"],
-                    "alerts_qualified": alert_status["last_alert_qualified"],
-                    "alert_error": alert_status["last_alert_error"]}
-        except ProviderError as exc:
-            self._remember_provider_usage(
-                getattr(provider, "usage", {}),
-                config.ODDS_PROVIDER,
-                getattr(lease, "fingerprint", None),
-            )
-            self._last_error = str(exc)
-            return {"ok": False, "error": self._last_error, "events": count}
+                    source_results.append((provider_name, events))
+                    successful_providers.append(provider_name)
+                except ProviderError as exc:
+                    provider_errors.append(f"{sport_key} / {provider_name}: {exc}")
+                    continue
 
+            if not source_results:
+                continue
 
+            events = merge_provider_events(source_results)
+            fetched_at = datetime.now(timezone.utc).isoformat()
+            snapshot_provider = "+".join(successful_providers)
+            self.db.save_snapshot(sport_key, events, snapshot_provider, fetched_at)
+            self._cache[sport_key] = events
+            clv_candidates = analyze_markets(
+                events, min_ev=config.CLV_MIN_EV_PERCENT,
+                min_consensus_books=2, best_only=False,
+            )["opportunities"]
+            self.db.record_clv_candidates(clv_candidates, fetched_at)
+            count += len(events)
+            successful_sports += 1
+            provider_results_summary[sport_key] = {
+                "providers_succeeded": successful_providers,
+                "events": len(events),
+            }
+
+        self._updated_at = datetime.now(timezone.utc).isoformat()
+        complete = successful_sports == len(sports)
+        self._last_error = "; ".join(provider_errors)[:2000] if provider_errors else None
+        alerts_sent = self._dispatch_alerts() if successful_sports else 0
+        alert_status = self.status()
+        return {
+            "ok": complete and successful_sports > 0,
+            "partial": bool(provider_errors) or not complete,
+            "events": count,
+            "sports_refreshed": successful_sports,
+            "sports_requested": len(sports),
+            "provider_results": provider_results_summary,
+            "provider_errors": provider_errors,
+            "updated_at": self._updated_at,
+            "alerts_sent": alerts_sent,
+            "alerts_enabled": alert_status["alerts_enabled"],
+            "alerts_evaluated": alert_status["last_alert_evaluated"],
+            "alerts_qualified": alert_status["last_alert_qualified"],
+            "alert_error": alert_status["last_alert_error"],
+        }
 
 
     def sync_simulation_results(self):
