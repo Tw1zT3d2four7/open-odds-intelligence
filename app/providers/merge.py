@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 
 
 def _team_key(value):
@@ -20,16 +21,53 @@ def _timestamp(value):
         return None
 
 
+def _team_abbreviations(value):
+    words = re.findall(r"[a-z0-9]+", str(value or "").lower())
+    if not words:
+        return set()
+    variants = {"".join(word[0] for word in words)}
+    if len(words) >= 2:
+        city, nickname = words[:-1], words[-1]
+        variants.add("".join(word[0] for word in city))
+        variants.add("".join(word[0] for word in city) + nickname[0])
+        variants.add(words[0][:3])
+        if len(city) >= 2:
+            variants.add(city[0][:2] + city[1][0])
+    return {item for item in variants if item}
+
+
+def _team_matches(left, right):
+    a, b = _team_key(left), _team_key(right)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if len(a) <= 4 and len(b) > 4:
+        return a in _team_abbreviations(right)
+    if len(b) <= 4 and len(a) > 4:
+        return b in _team_abbreviations(left)
+    return False
+
+
 def _same_event(left, right, tolerance_seconds=300):
     if left.get("sport_key") != right.get("sport_key"):
         return False
-    if _team_key(left.get("home_team")) != _team_key(right.get("home_team")):
+    if not _team_matches(left.get("home_team"), right.get("home_team")):
         return False
-    if _team_key(left.get("away_team")) != _team_key(right.get("away_team")):
+    if not _team_matches(left.get("away_team"), right.get("away_team")):
         return False
     a = _timestamp(left.get("commence_time"))
     b = _timestamp(right.get("commence_time"))
     return a is not None and b is not None and abs(a - b) <= tolerance_seconds
+
+
+def _canonical_outcome_name(outcome, source_event, target_event):
+    name = str(outcome.get("name") or "")
+    if _team_matches(name, source_event.get("home_team")):
+        return target_event.get("home_team") or name
+    if _team_matches(name, source_event.get("away_team")):
+        return target_event.get("away_team") or name
+    return name
 
 
 def _outcome_identity(outcome):
@@ -80,10 +118,10 @@ def merge_provider_events(provider_results):
                 _team_key(event.get("away_team")),
             )
             if target is None:
-                for candidate in by_identity.get(identity, []):
-                    if _same_event(candidate, event):
-                        target = candidate
-                        break
+                target = next(
+                    (candidate for candidate in merged if _same_event(candidate, event)),
+                    None,
+                )
             if target is None:
                 event["id"] = event_id
                 event["sources"] = [provider_name]
@@ -135,6 +173,9 @@ def merge_provider_events(provider_results):
                         if identity_key is None:
                             continue
                         candidate = dict(raw_outcome)
+                        candidate["name"] = _canonical_outcome_name(
+                            candidate, event, target
+                        )
                         candidate["source_provider"] = provider_name
                         existing_index = outcome_map.get(identity_key)
                         if existing_index is None:
