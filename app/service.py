@@ -523,6 +523,7 @@ class OddsService:
             source_key_fingerprints = {}
             successful_providers = []
             skipped_providers = []
+            skipped_unconfigured = []
             for provider_name in provider_names:
                 if (provider_name == "sports_game_odds"
                         and sport_key not in SPORTSGAMEODDS_SUPPORTED_SPORTS):
@@ -536,9 +537,7 @@ class OddsService:
                     continue
                 pool = self._provider_key_pools.get(provider_name)
                 if pool is None or not pool.configured:
-                    provider_errors.append(
-                        f"{sport_key} / {provider_name}: no API key configured"
-                    )
+                    skipped_unconfigured.append(provider_name)
                     continue
                 try:
                     events, provider, lease = self._fetch_provider_odds_with_rotation(
@@ -702,6 +701,7 @@ class OddsService:
                 **provider_results_summary.get(sport_key, {}),
                 "providers_succeeded": successful_providers,
                 "providers_skipped_for_league_coverage": skipped_providers,
+                "providers_skipped_unconfigured": skipped_unconfigured,
                 "events": len(events),
             }
 
