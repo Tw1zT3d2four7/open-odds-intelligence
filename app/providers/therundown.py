@@ -1,6 +1,7 @@
 """TheRundown V2 adapter, deliberately scoped to its free-plan odds feed."""
 import json
 import time
+import threading
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -43,6 +44,9 @@ class TheRundownProvider:
         6: (6, 27, 28),       # NHL regular season, preseason, playoffs
     }
     MARKETS = {1: "h2h", 2: "spreads", 3: "totals"}
+    _request_lock = threading.Lock()
+    _last_request_at = 0.0
+    MIN_REQUEST_INTERVAL_SECONDS = 1.05
 
     def __init__(self, api_key: str, utc_offset_minutes=0):
         if not api_key:
@@ -50,19 +54,21 @@ class TheRundownProvider:
         self.api_key = api_key
         self.utc_offset_minutes = int(utc_offset_minutes)
         self.usage = {}
-        self._last_request_at = 0.0
 
     def _request(self, url):
-        # Free tier is limited to one request per second.
-        wait = 1.05 - (time.monotonic() - self._last_request_at)
-        if wait > 0:
-            time.sleep(wait)
+        # Share pacing across adapter instances and API keys.
+        with self._request_lock:
+            wait = self.MIN_REQUEST_INTERVAL_SECONDS - (
+                time.monotonic() - type(self)._last_request_at
+            )
+            if wait > 0:
+                time.sleep(wait)
+            type(self)._last_request_at = time.monotonic()
         request = Request(url, headers={
             "X-TheRundown-Key": self.api_key,
             "User-Agent": "OpenOddsIntelligence/0.5",
             "Accept": "application/json",
         })
-        self._last_request_at = time.monotonic()
         try:
             with urlopen(request, timeout=25) as response:
                 payload = json.loads(response.read().decode("utf-8"))
