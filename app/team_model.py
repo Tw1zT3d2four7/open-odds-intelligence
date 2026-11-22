@@ -29,8 +29,8 @@ def fit_team_strength_models(
         raise ValueError("shrinkage_games must be positive and finite.")
 
     leagues = defaultdict(lambda: {
-        "home_scores": [], "away_scores": [], "teams": defaultdict(
-            lambda: {"display_name": "", "games": 0, "home_scores": [], "away_scores": [], "allowed_at_home": [], "allowed_away": []}
+        "home_scores": [], "away_scores": [], "games": [], "teams": defaultdict(
+            lambda: {"display_name": "", "games": 0}
         )
     })
     for row in settlements:
@@ -55,10 +55,7 @@ def fit_team_strength_models(
         a["display_name"] = away_name
         h["games"] += 1
         a["games"] += 1
-        h["home_scores"].append(hs)
-        h["allowed_at_home"].append(aws)
-        a["away_scores"].append(aws)
-        a["allowed_away"].append(hs)
+        bucket["games"].append((home, away, hs, aws))
 
     output, insufficient = {}, {}
     for sport, bucket in sorted(leagues.items()):
@@ -67,28 +64,50 @@ def fit_team_strength_models(
             continue
         home_base = sum(bucket["home_scores"]) / count
         away_base = sum(bucket["away_scores"]) / count
+        team_stats = bucket["teams"]
+        ratings = {key: {"offense": 0.0, "defense": 0.0}
+                   for key in team_stats}
+        # Iterative opponent adjustment: a team's attack is evaluated against
+        # opponent defense and its defense against opponent attack. This avoids
+        # treating every schedule as equally difficult.
+        for _ in range(30):
+            offense_observations = defaultdict(list)
+            defense_observations = defaultdict(list)
+            for home, away, home_score, away_score in bucket["games"]:
+                offense_observations[home].append(
+                    home_score - home_base + ratings[away]["defense"]
+                )
+                offense_observations[away].append(
+                    away_score - away_base + ratings[home]["defense"]
+                )
+                defense_observations[home].append(
+                    away_base + ratings[away]["offense"] - away_score
+                )
+                defense_observations[away].append(
+                    home_base + ratings[home]["offense"] - home_score
+                )
+            updated = {}
+            for key, stats in team_stats.items():
+                games = stats["games"]
+                shrink = games / (games + float(shrinkage_games))
+                raw_offense = sum(offense_observations[key]) / games
+                raw_defense = sum(defense_observations[key]) / games
+                updated[key] = {
+                    "offense": raw_offense * shrink,
+                    "defense": raw_defense * shrink,
+                }
+            ratings = updated
+
         teams = {}
-        for key, stats in sorted(bucket["teams"].items()):
+        for key, stats in sorted(team_stats.items()):
             games = stats["games"]
             if games < min_team_games:
                 continue
-            # Venue-adjusted offense and defense residuals, computed after
-            # league baselines so results are independent of sportsbook prices.
-            home_n, away_n = len(stats["home_scores"]), len(stats["away_scores"])
-            raw_offense = (
-                sum(x - home_base for x in stats["home_scores"])
-                + sum(x - away_base for x in stats["away_scores"])
-            ) / games
-            raw_defense = (
-                sum(away_base - x for x in stats["allowed_at_home"])
-                + sum(home_base - x for x in stats["allowed_away"])
-            ) / games
-            shrink = games / (games + float(shrinkage_games))
             teams[key] = {
                 "display_name": stats["display_name"],
                 "games": games,
-                "offense": raw_offense * shrink,
-                "defense": raw_defense * shrink,
+                "offense": ratings[key]["offense"],
+                "defense": ratings[key]["defense"],
             }
         output[sport] = {
             "version": MODEL_VERSION,
@@ -97,6 +116,8 @@ def fit_team_strength_models(
             "league_away_mean": away_base,
             "minimum_team_games": min_team_games,
             "shrinkage_games": float(shrinkage_games),
+            "rating_method": "iterative_opponent_adjusted_offense_defense",
+            "rating_iterations": 30,
             "teams": teams,
         }
         insufficient[sport] = {
