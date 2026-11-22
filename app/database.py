@@ -81,6 +81,15 @@ class OddsDatabase:
                 );
                 CREATE INDEX IF NOT EXISTS idx_simulation_settlements_sport_time
                     ON simulation_settlements(sport_key, commence_time);
+                CREATE TABLE IF NOT EXISTS simulation_training_settlements (
+                    event_id TEXT PRIMARY KEY, sport_key TEXT NOT NULL,
+                    commence_time TEXT NOT NULL, home_team TEXT NOT NULL, away_team TEXT NOT NULL,
+                    home_score INTEGER NOT NULL, away_score INTEGER NOT NULL,
+                    status TEXT NOT NULL CHECK(status = 'final'), source TEXT NOT NULL,
+                    source_record_id TEXT NOT NULL, source_updated_at TEXT, imported_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_simulation_training_sport_time
+                    ON simulation_training_settlements(sport_key, commence_time);
             """)
             quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
             if "source_updated_at" not in quote_columns:
@@ -215,8 +224,74 @@ class OddsDatabase:
                     duplicates += 1
         return {"inserted": inserted, "corrected": corrected, "duplicates": duplicates, "rejected": rejected}
 
+    def save_simulation_training_settlements(self, results):
+        """Persist operator-verified historical outcomes used only for model training.
+
+        Unlike live settlements, these rows need not have archived odds. They
+        remain in a separate table and are marked training_only when read back,
+        so they cannot silently become calibration or holdout observations.
+        """
+        from .simulation import _family
+
+        inserted = duplicates = 0
+        rejected = []
+        imported_at = datetime.now(timezone.utc).isoformat()
+        for result in results:
+            event_id = str(result.get("event_id") or "").strip()
+            sport = str(result.get("sport_key") or "").strip()
+            if not event_id or not sport or result.get("status") != "final":
+                rejected.append({"event_id": event_id, "reason": "missing event identity or non-final status"})
+                continue
+            if _family(sport) is None:
+                rejected.append({"event_id": event_id, "reason": "unsupported simulator league"})
+                continue
+            source = str(result.get("source") or "").strip()
+            home_team = str(result.get("home_team") or "").strip()
+            away_team = str(result.get("away_team") or "").strip()
+            try:
+                home_score, away_score = result["home_score"], result["away_score"]
+                commence = datetime.fromisoformat(str(result["commence_time"]).replace("Z", "+00:00"))
+                if (isinstance(home_score, bool) or isinstance(away_score, bool)
+                        or not isinstance(home_score, int) or not isinstance(away_score, int)
+                        or home_score < 0 or away_score < 0 or commence.tzinfo is None
+                        or not home_team or not away_team
+                        or self._normalized_result_team(home_team) == self._normalized_result_team(away_team)
+                        or not source):
+                    raise ValueError
+            except (KeyError, TypeError, ValueError):
+                rejected.append({"event_id": event_id, "reason": "invalid final score, teams, source, or timezone-aware start time"})
+                continue
+            with self.connect() as db:
+                archived = db.execute(
+                    "SELECT 1 FROM simulation_settlements WHERE event_id=?", (event_id,)
+                ).fetchone()
+                existing = db.execute(
+                    "SELECT 1 FROM simulation_training_settlements WHERE event_id=?", (event_id,)
+                ).fetchone()
+                if archived or existing:
+                    duplicates += 1
+                    continue
+                db.execute(
+                    """INSERT INTO simulation_training_settlements(
+                       event_id,sport_key,commence_time,home_team,away_team,home_score,away_score,
+                       status,source,source_record_id,source_updated_at,imported_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (event_id, sport, result["commence_time"], home_team, away_team,
+                     home_score, away_score, "final", source,
+                     str(result.get("source_record_id") or event_id), None, imported_at),
+                )
+                inserted += 1
+        return {"inserted": inserted, "corrected": 0, "duplicates": duplicates, "rejected": rejected}
+
     def simulation_settlements(self, sport=None):
-        sql = "SELECT * FROM simulation_settlements"
+        sql = """SELECT * FROM (
+            SELECT a.*, 0 AS training_only FROM simulation_settlements a
+            UNION ALL
+            SELECT t.*, 1 AS training_only FROM simulation_training_settlements t
+            WHERE NOT EXISTS (
+                SELECT 1 FROM simulation_settlements a WHERE a.event_id=t.event_id
+            )
+        )"""
         args = []
         if sport:
             sql += " WHERE sport_key=?"
