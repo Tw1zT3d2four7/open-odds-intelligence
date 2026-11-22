@@ -10,7 +10,7 @@ The backtest is paper-only and replays the application's own immutable SQLite qu
 4. Scores the forecast against the imported final result.
 5. Reports Brier score, log loss, calibration buckets, projected home/away score MAE, total MAE and margin MAE.
 
-It never requests odds from a provider, never uses a current quote as a historical quote, and never uses a post-start snapshot as a pregame input. Events without a valid pregame spread and total, matching team identities, and a final settlement are skipped with an explicit reason.
+It never requests odds from a provider, never uses a current quote as a historical quote, and never uses a post-start snapshot as a pregame input. Score-based leagues require a valid pregame spread and total; tennis/MMA require a complete pregame h2h market. All events require matching team/competitor identities and a verified final settlement, or are skipped with an explicit reason.
 
 ## Interactive 10,000-trial simulation
 
@@ -85,7 +85,7 @@ The command reads the existing DATABASE_PATH SQLite archive. It does not modify 
 
 ## Current limitations
 
-This is a model-development and evaluation foundation, not proof of a validated predictive model. League-specific fitted scoring parameters and separate outcome/total probability temperatures are supported, but they only exist for leagues with sufficient supplied training and calibration rows. The live simulator falls back to broad priors for leagues without eligible fitted parameters. Sport-specific overtime and extra-inning handling is approximate and does not yet model every period, possession, lineup or competition-specific rule.
+This is a model-development and evaluation foundation, not proof of a validated predictive model. League-specific fitted scoring parameters and separate outcome/total probability temperatures are supported, but they only exist for leagues with sufficient supplied training and calibration rows. The live simulator blocks leagues or matchups without eligible independent fitted parameters; broad market-anchored priors remain available only as explicit historical baselines, not as live independent forecasts. Sport-specific overtime and extra-inning handling is approximate and does not yet model every period, possession, lineup or competition-specific rule.
 
 A valid backtest requires overlap between the local odds archive and imported settlement IDs. The application does not contain a bundled, licensed historical results dataset; the operator must supply verified results and retain enough archived pregame quotes. Empty or thin archives correctly produce skipped events or inconclusive reports. Passing automated tests does not establish predictive accuracy. Do not describe a league as calibrated or validated until its untouched holdout has adequate sample size, acceptable calibration and forecast errors, and performance that is robust across multiple chronological windows.
 
@@ -93,7 +93,7 @@ A valid backtest requires overlap between the local odds archive and imported se
 
 The simulator now resolves regulation ties for NBA/WNBA/NCAAB with repeated overtime scoring periods, NHL with overtime-goal/shootout resolution, MLB with repeated extra innings, and NCAAF with repeated overtime possessions. EPL soccer draws remain valid. NFL regular-season ties can remain tied after a simplified overtime period. The NFL overtime tie branch uses a 6% conditional tie prior rather than independently drawing both teams' overtime points (which had implied a 40.5% conditional tie rate). The 6% prior reflects the approximate 2012–2024 regular-season rate (12 ties in 200 overtime games); the 2025 rule change is newer and its early sample is small, so this is a transparent approximation pending a larger rule-era dataset. These are transparent approximations, not official league rulebooks or period-by-period team models; NFL postseason rules and competition-specific tournament formats are not inferred from the event feed. The output exposes regulation tie and overtime/extra-inning counts. Because sportsbook game totals normally include overtime/extra innings, each run estimates the expected extra points added after regulation from a deterministic 10,000-trial pilot and lowers the regulation scoring anchor by that amount before the final 10,000 trials. This avoids adding overtime on top of a full-game market total; the reported `expected_overtime_total_adjustment` and `regulation_total_anchor` make the correction inspectable. It remains a simulation-based approximation and must be checked against verified historical results.
 
-The holdout report also scores the same events with the unfitted broad-prior market-anchored simulator and reports paired metric deltas. This is a baseline comparison, not a sportsbook closing-line or independently generated market-probability benchmark; interpret it accordingly.
+For score-based leagues, the holdout report also scores the same events with the unfitted broad-prior market-anchored baseline and reports paired metric deltas. For tennis/MMA, it separately reports independent Elo outcome-only Brier/log-loss metrics and compares them with the market-implied categorical baseline on the same settled events. These are retrospective benchmarks, not proof of future profitability.
 
 
 ## Automatic TheRundown score collection
@@ -108,7 +108,7 @@ When TheRundown is the active odds provider and THERUNDOWN_API_KEY is configured
 - Defaults: four-hour synchronization cadence, four-hour retry interval, seven-day lookback, and at most ten sport/date groups per run.
 - The health endpoint and dashboard notice show whether collection is enabled, how many results are stored, and the latest inserted count/errors.
 
-To use automatically stored results, choose exclusive date cutoffs. Games before the training cutoff fit scoring parameters; games between cutoffs fit probability temperatures; later games are the untouched holdout:
+To use automatically stored results, choose exclusive date cutoffs. Games before the training cutoff fit independent team ratings / Elo models; games between cutoffs fit probability temperatures where supported; later games are the untouched holdout:
 
 ```bash
 python -m scripts.backtest_simulator --use-stored-results --training-cutoff 2026-09-01 --calibration-cutoff 2026-10-01 --model-output ./data/simulation_models.json --output simulator-backtest.json
