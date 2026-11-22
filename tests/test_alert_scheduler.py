@@ -38,7 +38,7 @@ def test_discord_loop_evaluates_stored_quotes_without_provider_refresh(monkeypat
     except asyncio.CancelledError:
         pass
 
-    assert calls == [("sleep", 300), ("thread", "evaluate_alerts")]
+    assert calls == [("sleep", 300), ("thread", "evaluate_alerts"), ("sleep", 300)]
 
 
 def test_overlapping_alert_dispatch_is_skipped():
