@@ -469,6 +469,9 @@ class OddsService:
                     self._remember_provider_usage(
                         provider.usage, provider_name, lease.fingerprint
                     )
+                    oddize_quota_blocked = False
+                    oddize_props = None
+                    oddize_alts = None
                     if provider_name == "oddize" and config.ODDIZE_PROPS_ENABLED:
                         cursor_key = f"oddize_prop_cursor:{sport_key}"
                         try:
@@ -496,6 +499,7 @@ class OddsService:
                                 message=str(props_error),
                                 retry_after_seconds=getattr(props_error, "retry_after", None),
                             )
+                            oddize_quota_blocked = getattr(props_error, "status_code", None) in (402, 429)
                             provider_errors.append(
                                 f"{sport_key} / {provider_name} props: {props_error}"
                             )
@@ -503,8 +507,28 @@ class OddsService:
                                 "prop_types_requested": [], "props_added": 0,
                                 "reason": str(props_error),
                             }
-                    else:
-                        oddize_props = None
+                    if (provider_name == "oddize" and config.ODDIZE_ALTS_ENABLED
+                            and not oddize_quota_blocked):
+                        try:
+                            oddize_alts = provider.fetch_alternate_lines(
+                                sport_key, events,
+                                max_events=config.ODDIZE_ALT_EVENTS_PER_REFRESH,
+                            )
+                            pool.record_usage(lease, provider.usage)
+                            self._remember_provider_usage(
+                                provider.usage, provider_name, lease.fingerprint
+                            )
+                        except ProviderError as alt_error:
+                            pool.record_usage(lease, provider.usage)
+                            pool.mark_failure(
+                                lease,
+                                status_code=getattr(alt_error, "status_code", None),
+                                message=str(alt_error),
+                                retry_after_seconds=getattr(alt_error, "retry_after", None),
+                            )
+                            provider_errors.append(
+                                f"{sport_key} / {provider_name} alternate lines: {alt_error}"
+                            )
                     if (config.PLAYER_PROPS_ENABLED
                             and sport_key == config.PLAYER_PROPS_SPORT
                             and provider_name == "the_odds_api"):
@@ -545,7 +569,10 @@ class OddsService:
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
                     if provider_name == "oddize":
-                        provider_results_summary.setdefault(sport_key, {})["oddize_props"] = oddize_props
+                        provider_results_summary.setdefault(sport_key, {}).update({
+                            "oddize_props": oddize_props,
+                            "oddize_alternate_lines": oddize_alts,
+                        })
                 except ProviderError as exc:
                     provider_errors.append(f"{sport_key} / {provider_name}: {exc}")
                     continue
