@@ -89,6 +89,8 @@ def main():
                 models.setdefault(sport, {"sport_key": sport, "family": family, "sample_size": 0})
                 models[sport]["temperature"] = values["temperature"]
                 models[sport]["total_temperature"] = values["total_temperature"]
+                if "spread_temperature" in values:
+                    models[sport]["spread_temperature"] = values["spread_temperature"]
 
     report = run_historical_backtest(database, settlements, model_parameters=models)
     if training_report is not None:
