@@ -1009,6 +1009,23 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
     under_probability = round(raw_total_probabilities[1] * 100, 2)
     total_push_probability = round(100.0 - over_probability - under_probability, 2)
     pct = lambda n: round(n / TRIALS * 100, 2)
+    market_edge_analysis = None
+    if independent_projection:
+        market_edge_analysis = {
+            "spread": _independent_market_edge(
+                event, "spreads", market_margin,
+                {"home": home_cover_probability / 100,
+                 "away": away_cover_probability / 100,
+                 "push": spread_push_probability / 100},
+            ),
+            "total": _independent_market_edge(
+                event, "totals", market_total,
+                {"over": over_probability / 100,
+                 "under": under_probability / 100,
+                 "push": total_push_probability / 100},
+            ),
+            "warning": "Positive estimated EV is a model signal, not proof of a profitable edge. Require adequate chronological holdout performance, line/price freshness and sufficient sample size.",
+        }
     return {
         "trials": TRIALS,
         "simulation_seed": seed,
@@ -1059,6 +1076,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
             "over": over_probability, "under": under_probability, "push": total_push_probability,
             "probability_temperature": total_temperature,
         },
+        "market_edge_analysis": market_edge_analysis,
         "margin_market": {
             "consensus_home_margin": round(expected_margin, 2),
             "home_margin_sd": prior["margin_sd"],
