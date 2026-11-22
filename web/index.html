@@ -93,7 +93,8 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
   <div class="cards">
    <div class="card"><small>SIMULATED HOME WIN</small><div class="value" id="simHomeWin">—</div><small id="simHomeTeam"></small></div>
    <div class="card"><small>SIMULATED AWAY WIN</small><div class="value" id="simAwayWin">—</div><small id="simAwayTeam"></small></div>
-   <div class="card"><small>PROJECTED SCORE</small><div class="value" id="simScore">—</div><small id="simTie">Tie / draw —</small></div>
+   <div class="card"><small>PROJECTED SCORE (MEAN)</small><div class="value" id="simScore">—</div><small id="simTie">Tie / draw —</small></div>
+   <div class="card"><small>SIMULATED SCORE RANGE (P10–P90)</small><div class="value" id="simScoreRange">—</div><small id="simScoreRangeDetail">Middle 80% of simulated final scores</small></div>
    <div class="card"><small>SIMULATIONS RUN</small><div class="value" id="simTrials">10,000</div><small id="simDataQuality">—</small></div>
   </div>
   <div class="cards">
@@ -329,6 +330,14 @@ async function runSelectedSimulation(){
   $("simHomeWin").textContent=data.win_probabilities.home.toFixed(2)+"%";$("simAwayWin").textContent=data.win_probabilities.away.toFixed(2)+"%";
   $("simHomeTeam").textContent=data.home_team;$("simAwayTeam").textContent=data.away_team;
   $("simScore").textContent=data.projected_score.home.toFixed(1)+" – "+data.projected_score.away.toFixed(1);
+  const ranges=data.simulation_ranges;
+  if(ranges&&ranges.home_score&&ranges.away_score){
+    $("simScoreRange").textContent=ranges.home_score.p10+"–"+ranges.home_score.p90+" : "+ranges.away_score.p10+"–"+ranges.away_score.p90;
+    $("simScoreRangeDetail").textContent="Home / away P10–P90 · "+ranges.home_score.standard_deviation.toFixed(1)+" / "+ranges.away_score.standard_deviation.toFixed(1)+" point SD";
+  }else{
+    $("simScoreRange").textContent="Unavailable";
+    $("simScoreRangeDetail").textContent="This simulator response has no outcome-range summary.";
+  }
   $("simTie").textContent="Tie / draw "+data.win_probabilities.tie.toFixed(2)+"%";
   $("simHomeCover").textContent=data.spread_market.home_cover.toFixed(2)+"%";
   $("simAwayCover").textContent=data.spread_market.away_cover.toFixed(2)+"%";
