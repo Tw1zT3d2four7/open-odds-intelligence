@@ -1047,7 +1047,7 @@ def validate_chronological_split(training_settlements: list[dict], test_settleme
 
 
 def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size: int = 100) -> dict:
-    """Fit per-league multiclass temperature scaling on a separate calibration set."""
+    """Fit per-league temperatures on separate chronological calibration data."""
     if not isinstance(min_sample_size, int) or isinstance(min_sample_size, bool) or min_sample_size < 2:
         raise ValueError("min_sample_size must be an integer of at least 2.")
     grouped = {}
@@ -1055,14 +1055,18 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
         grouped.setdefault(row.get("sport") or "unknown", []).append(row)
     temperatures, insufficient = {}, {}
     for sport, rows in sorted(grouped.items()):
-        if len(rows) < min_sample_size:
-            insufficient[sport] = {"sample_size": len(rows), "required": min_sample_size}
+        outcome_rows = [row for row in rows if all(key in row for key in (
+            "predicted_home_probability", "predicted_away_probability",
+            "predicted_tie_probability", "actual_result",
+        ))]
+        if len(outcome_rows) < min_sample_size:
+            insufficient[sport] = {"sample_size": len(outcome_rows), "required": min_sample_size}
             continue
         best_temperature, best_loss = 1.0, float("inf")
         for step in range(50, 301, 2):
             temperature = step / 100.0
             losses = []
-            for row in rows:
+            for row in outcome_rows:
                 probs = [float(row["predicted_home_probability"]),
                          float(row["predicted_away_probability"]),
                          float(row["predicted_tie_probability"])]
@@ -1073,12 +1077,17 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
             loss = sum(losses) / len(losses)
             if loss < best_loss:
                 best_loss, best_temperature = loss, temperature
-        best_spread_temperature = None
+        values = {
+            "temperature": best_temperature,
+            "sample_size": len(outcome_rows),
+            "calibration_log_loss": best_loss,
+        }
+
         spread_rows = [row for row in rows if all(key in row for key in (
             "predicted_home_cover_probability", "predicted_away_cover_probability",
             "predicted_spread_push_probability", "actual_spread_result",
         ))]
-        if spread_rows:
+        if len(spread_rows) >= min_sample_size:
             best_spread_temperature, best_spread_loss = 1.0, float("inf")
             for step in range(50, 301, 2):
                 temperature = step / 100.0
@@ -1094,29 +1103,36 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
                 loss = sum(losses) / len(losses)
                 if loss < best_spread_loss:
                     best_spread_loss, best_spread_temperature = loss, temperature
-        best_total_temperature, best_total_loss = 1.0, float("inf")
-        for step in range(50, 301, 2):
-            temperature = step / 100.0
-            losses = []
-            for row in rows:
-                probs = [float(row["predicted_over_probability"]),
-                         float(row["predicted_under_probability"]),
-                         float(row["predicted_total_push_probability"])]
-                weights = [max(1e-12, p) ** (1.0 / temperature) for p in probs]
-                denominator = sum(weights)
-                index = {"over": 0, "under": 1, "push": 2}[row["actual_total_result"]]
-                losses.append(-math.log(max(1e-12, weights[index] / denominator)))
-            loss = sum(losses) / len(losses)
-            if loss < best_total_loss:
-                best_total_loss, best_total_temperature = loss, temperature
-        temperatures[sport] = {
-            "temperature": best_temperature, "sample_size": len(rows),
-            "calibration_log_loss": best_loss,
-            "total_temperature": best_total_temperature,
-            "total_calibration_log_loss": best_total_loss,
-            **({"spread_temperature": best_spread_temperature,
-                "spread_calibration_log_loss": best_spread_loss} if spread_rows else {}),
-        }
+            values.update({"spread_temperature": best_spread_temperature,
+                           "spread_calibration_log_loss": best_spread_loss})
+        elif spread_rows:
+            insufficient[sport + ":spread"] = {"sample_size": len(spread_rows), "required": min_sample_size}
+
+        total_rows = [row for row in rows if all(key in row for key in (
+            "predicted_over_probability", "predicted_under_probability",
+            "predicted_total_push_probability", "actual_total_result",
+        ))]
+        if len(total_rows) >= min_sample_size:
+            best_total_temperature, best_total_loss = 1.0, float("inf")
+            for step in range(50, 301, 2):
+                temperature = step / 100.0
+                losses = []
+                for row in total_rows:
+                    probs = [float(row["predicted_over_probability"]),
+                             float(row["predicted_under_probability"]),
+                             float(row["predicted_total_push_probability"])]
+                    weights = [max(1e-12, p) ** (1.0 / temperature) for p in probs]
+                    denominator = sum(weights)
+                    index = {"over": 0, "under": 1, "push": 2}[row["actual_total_result"]]
+                    losses.append(-math.log(max(1e-12, weights[index] / denominator)))
+                loss = sum(losses) / len(losses)
+                if loss < best_total_loss:
+                    best_total_loss, best_total_temperature = loss, temperature
+            values.update({"total_temperature": best_total_temperature,
+                           "total_calibration_log_loss": best_total_loss})
+        elif total_rows:
+            insufficient[sport + ":total"] = {"sample_size": len(total_rows), "required": min_sample_size}
+        temperatures[sport] = values
     return {"temperatures": temperatures, "insufficient": insufficient,
             "minimum_sample_size": min_sample_size,
             "warning": "Fit only on a separate chronological calibration set, after model fitting and before the final holdout."}
