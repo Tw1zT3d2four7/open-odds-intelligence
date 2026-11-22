@@ -324,3 +324,52 @@ def test_extract_drops_conflicting_duplicate_h2h_identity_with_null_point():
     h2h_rows = [row for row in rows if row[8] == "h2h"]
     assert len(h2h_rows) == 1
     assert h2h_rows[0][9] == "Away"
+
+
+def test_market_limit_discord_alert_uses_readable_embed_and_deduplicates(tmp_path, monkeypatch):
+    import app.limits as module
+
+    monkeypatch.setattr(module.config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monitor = MarketLimitsMonitor(tmp_path / "limit-alert-embed.sqlite3")
+    sent = []
+
+    class FakeResponse:
+        status = 204
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+
+    def fake_urlopen(request, timeout):
+        sent.append((json.loads(request.data.decode()), timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(module, "urlopen", fake_urlopen)
+    change = {
+        "event_id": "limit-event", "bookmaker_key": "circa",
+        "bookmaker": "Circa Sports", "matchup": "Away @ Home",
+        "market": "spreads", "outcome": "Home", "point": -3.5,
+        "previous_limit": 10000, "limit_amount": 25000,
+        "change_amount": 15000, "change_percent": 150.0,
+        "direction": "increased", "observed_at": "2026-11-22T14:00:00Z",
+        "commence_time": "2026-11-23T01:00:00Z",
+    }
+
+    monitor._send_alerts([change])
+    assert len(sent) == 1
+    payload, timeout = sent[0]
+    assert timeout == 8
+    assert payload["allowed_mentions"] == {"parse": []}
+    assert len(payload["embeds"]) == 1
+    embed = payload["embeds"][0]
+    assert embed["title"] == "MARKET LIMIT INCREASED"
+    assert embed["description"] == "**Away @ Home**"
+    assert {"Sportsbook", "Market", "Selection", "Previous posted limit",
+            "New posted limit", "Change", "Game time"} <= {
+        field["name"] for field in embed["fields"]
+    }
+    assert any("Circa Sports" in field["value"] for field in embed["fields"])
+    assert any("<t:" in field["value"] for field in embed["fields"])
+
+    monitor._send_alerts([change])
+    assert len(sent) == 1

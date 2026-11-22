@@ -163,6 +163,12 @@ class MarketLimitsMonitor:
                     state_key TEXT PRIMARY KEY,
                     state_value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS sent_alerts (
+                    fingerprint TEXT PRIMARY KEY,
+                    sent_at TEXT NOT NULL,
+                    alert_type TEXT NOT NULL,
+                    summary TEXT NOT NULL
+                );
             """)
 
     @staticmethod
@@ -447,7 +453,7 @@ class MarketLimitsMonitor:
     def _send_alerts(self, changes):
         if not config.DISCORD_WEBHOOK_URL:
             return
-        from urllib.request import Request, urlopen
+        from urllib.request import Request
         for change in changes:
             if change["direction"] != "increased" and not config.LIMITS_ALERT_DECREASES:
                 continue
@@ -456,14 +462,40 @@ class MarketLimitsMonitor:
                 change["outcome"], change["point"], change["previous_limit"],
                 change["limit_amount"], change["observed_at"],
             ], sort_keys=True)
+            direction = change["direction"].upper()
+            point = change.get("point")
+            selection = change.get("outcome") or "Selection"
+            if point is not None:
+                selection = f"{selection} ({point:+g})"
+            commence = change.get("commence_time")
+            try:
+                parsed = datetime.fromisoformat(str(commence).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                game_time = f"<t:{int(parsed.timestamp())}:F> (<t:{int(parsed.timestamp())}:R>)"
+            except (TypeError, ValueError, OverflowError, OSError):
+                game_time = "Time unavailable"
+            change_percent = change.get("change_percent")
+            percent_text = f"{change_percent:+.2f}%" if isinstance(change_percent, (int, float)) else "Unavailable"
             message = (
-                f'**MARKET LIMIT {change["direction"].upper()}** · {change["bookmaker"]} · '
-                f'{change["matchup"]} · {change["market"]} {change["outcome"]} '
-                f'{change["point"] if change["point"] is not None else ""} · '
-                f'{change["previous_limit"]:,.0f} → {change["limit_amount"]:,.0f} '
-                f'({change["change_percent"]:+.2f}%) · '
-                "Provider-reported posted market limit; currency follows the book."
+                f"MARKET LIMIT {direction} · {change.get('bookmaker', 'Unknown book')} · "
+                f"{change.get('matchup', 'Matchup unavailable')} · {change.get('market', 'Market')} · {selection}"
             )
+            embed = {
+                "title": f"MARKET LIMIT {direction}",
+                "description": f"**{change.get('matchup') or 'Matchup unavailable'}**",
+                "color": 0x2ECC71 if direction == "INCREASED" else 0xE67E22,
+                "fields": [
+                    {"name": "Sportsbook", "value": str(change.get("bookmaker") or "Unknown book"), "inline": True},
+                    {"name": "Market", "value": str(change.get("market") or "Market"), "inline": True},
+                    {"name": "Selection", "value": selection, "inline": True},
+                    {"name": "Previous posted limit", "value": f"{change['previous_limit']:,.0f}", "inline": True},
+                    {"name": "New posted limit", "value": f"{change['limit_amount']:,.0f}", "inline": True},
+                    {"name": "Change", "value": f"{change.get('change_amount', 0):+,.0f} ({percent_text})", "inline": True},
+                    {"name": "Game time", "value": game_time, "inline": False},
+                ],
+                "footer": {"text": "Provider-reported posted market maximum · Currency follows the sportsbook · Not account-specific"},
+            }
             fingerprint = hashlib.sha256(identity.encode()).hexdigest()
             with self._connect() as db:
                 exists = db.execute(
@@ -477,7 +509,7 @@ class MarketLimitsMonitor:
             try:
                 request = Request(
                     config.DISCORD_WEBHOOK_URL,
-                    data=json.dumps({"content": message[:1900]}).encode(),
+                    data=json.dumps({"embeds": [embed], "allowed_mentions": {"parse": []}}).encode(),
                     headers={"Content-Type": "application/json",
                              "User-Agent": "OpenOddsIntelligence/0.5"},
                     method="POST",

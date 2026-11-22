@@ -23,6 +23,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Sport filter, EV threshold and minimum independent-book consensus controls.
 - Opt-in scheduled refresh at a configurable interval (disabled by default).
 - Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.
+- Discord notifications use structured embeds for value, arbitrage and posted-market-limit changes, with separate fields, localized event times, clear alert types and no automatic user mentions.
 - Docker Compose deployment and GitHub Actions tests.
 
 TheRundown ATP/WTA ingestion uses sport IDs 38 and 39 and the provider's pre-match moneyline, game-spread and total markets. Tennis competitors are normalized from the moneyline participant order into the shared matchup fields; those fields are neutral participant slots, not a claim that either player is a home competitor. The Odds API tennis coverage is tournament-specific: configure active `tennis_atp_*` and `tennis_wta_*` keys in `ODDS_SPORTS` rather than using generic aliases. Tennis ingestion does not imply that tennis is supported by the 10,000-trial simulator, historical settlement model, or OddsLink posted-limit feed.
