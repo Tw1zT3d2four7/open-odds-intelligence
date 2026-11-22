@@ -139,3 +139,102 @@ def project_matchup(model: dict, home_team: str, away_team: str) -> dict:
         "model_version": MODEL_VERSION,
         "source": "historical_team_offense_defense",
     }
+
+
+
+def fit_independent_outcome_models(
+    settlements: list[dict],
+    min_team_matches: int = 5,
+    k_factor: float = 24.0,
+) -> dict:
+    """Fit chronological Elo ratings for tennis and combat sports from final outcomes."""
+    if isinstance(min_team_matches, bool) or not isinstance(min_team_matches, int) or min_team_matches < 2:
+        raise ValueError("min_team_matches must be an integer of at least 2.")
+    if not math.isfinite(float(k_factor)) or k_factor <= 0:
+        raise ValueError("k_factor must be positive and finite.")
+    grouped = defaultdict(list)
+    for row in settlements:
+        sport = str(row.get("sport_key") or "").lower()
+        if "tennis" not in sport and "mma" not in sport and "mixed_martial_arts" not in sport:
+            continue
+        home, away = normalize_team(row.get("home_team")), normalize_team(row.get("away_team"))
+        hs, aws = row.get("home_score"), row.get("away_score")
+        if (not sport or not home or not away or home == away
+                or isinstance(hs, bool) or isinstance(aws, bool)
+                or not isinstance(hs, int) or not isinstance(aws, int)
+                or hs < 0 or aws < 0):
+            continue
+        grouped[sport].append((str(row.get("commence_time") or ""), home, away,
+                               str(row.get("home_team") or ""), str(row.get("away_team") or ""),
+                               1.0 if hs > aws else 0.0 if hs < aws else 0.5))
+
+    models = {}
+    for sport, games in sorted(grouped.items()):
+        games.sort(key=lambda row: row[0])
+        ratings, counts = defaultdict(lambda: 1500.0), defaultdict(int)
+        displays = {}
+        draws = 0
+        for _, home, away, home_label, away_label, actual in games:
+            displays[home], displays[away] = home_label, away_label
+            expected_home = 1.0 / (1.0 + 10.0 ** ((ratings[away] - ratings[home]) / 400.0))
+            change = float(k_factor) * (actual - expected_home)
+            ratings[home] += change
+            ratings[away] -= change
+            counts[home] += 1
+            counts[away] += 1
+            draws += int(actual == 0.5)
+        eligible = {
+            key: {"display_name": displays[key], "rating": rating, "matches": counts[key]}
+            for key, rating in ratings.items() if counts[key] >= min_team_matches
+        }
+        models[sport] = {
+            "version": MODEL_VERSION,
+            "training_matches": len(games),
+            "minimum_team_matches": min_team_matches,
+            "draw_rate": (draws + 1.0) / (len(games) + 50.0),
+            "teams": eligible,
+        }
+    return {
+        "models": models,
+        "coverage": {
+            sport: {"training_matches": model["training_matches"],
+                    "eligible_athletes": len(model["teams"])}
+            for sport, model in models.items()
+        },
+        "training_matches": sum(model["training_matches"] for model in models.values()),
+    }
+
+
+def project_outcome_matchup(model: dict, home_team: str, away_team: str) -> dict:
+    """Generate independent match/contest probabilities from historical Elo ratings."""
+    if not isinstance(model, dict) or model.get("version") != MODEL_VERSION:
+        raise ValueError("An independently fitted athlete/team outcome model is required.")
+    teams = model.get("teams")
+    home_key, away_key = normalize_team(home_team), normalize_team(away_team)
+    if not isinstance(teams, dict) or not home_key or not away_key:
+        raise ValueError("Independent athlete/team ratings are unavailable.")
+    home, away = teams.get(home_key), teams.get(away_key)
+    minimum = int(model.get("minimum_team_matches", 5))
+    if not home or not away:
+        missing = home_team if not home else away_team
+        raise ValueError(f"No independent rating with sufficient history for {missing}.")
+    if int(home.get("matches", 0)) < minimum or int(away.get("matches", 0)) < minimum:
+        raise ValueError("Both competitors need more historical matches before an independent projection is available.")
+    home_rating, away_rating = float(home["rating"]), float(away["rating"])
+    home_win_no_draw = 1.0 / (1.0 + 10.0 ** ((away_rating - home_rating) / 400.0))
+    draw_rate = float(model.get("draw_rate", 0.0))
+    if not math.isfinite(draw_rate) or not 0 <= draw_rate <= 0.25:
+        raise ValueError("Independent outcome model has an invalid draw rate.")
+    home_probability = home_win_no_draw * (1.0 - draw_rate)
+    away_probability = (1.0 - home_win_no_draw) * (1.0 - draw_rate)
+    return {
+        "home_probability": home_probability,
+        "away_probability": away_probability,
+        "draw_probability": draw_rate,
+        "home_rating": home_rating,
+        "away_rating": away_rating,
+        "home_matches": int(home["matches"]),
+        "away_matches": int(away["matches"]),
+        "model_version": MODEL_VERSION,
+        "source": "historical_elo",
+    }
