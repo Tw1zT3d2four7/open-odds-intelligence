@@ -44,7 +44,8 @@ class OddsDatabase:
                     outcome_name TEXT NOT NULL, outcome_description TEXT NOT NULL DEFAULT '', point REAL, price INTEGER NOT NULL,
                     source_updated_at TEXT,
                     source_provider TEXT NOT NULL DEFAULT '',
-                    is_main INTEGER
+                    is_main INTEGER,
+                    size_json TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_quotes_lookup
                     ON quotes(event_id, market_key, outcome_name, point, bookmaker_key);
@@ -102,6 +103,8 @@ class OddsDatabase:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_provider TEXT NOT NULL DEFAULT ''")
             if "is_main" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN is_main INTEGER")
+            if "size_json" not in quote_columns:
+                db.execute("ALTER TABLE quotes ADD COLUMN size_json TEXT")
             # Older CLV rows stored the provider's display title instead of
             # the canonical sport key, which made sport-filtered reports miss them.
             # Recover the key from the immutable quote archive where possible.
@@ -459,7 +462,9 @@ class OddsDatabase:
                                    *event_metadata, book_key, book_title, market_key,
                                    outcome_name, description, point, price, updated_at,
                                    str(outcome.get("source_provider") or ""),
-                                   (1 if outcome.get("main") else 0) if "main" in outcome else None)
+                                   (1 if outcome.get("main") else 0) if "main" in outcome else None,
+                                   json.dumps(outcome.get("size"), sort_keys=True)
+                                   if isinstance(outcome.get("size"), dict) else None)
                             identity = (row[1], book_key, market_key, outcome_name, description, point)
                             if identity in conflicted_quotes:
                                 continue
@@ -479,8 +484,8 @@ class OddsDatabase:
             ]
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
                 home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,point,price,
-                source_updated_at,source_provider,is_main)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
+                source_updated_at,source_provider,is_main,size_json)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
         return snapshot_id
 
     def latest_events(self, sport=None):
@@ -523,6 +528,11 @@ class OddsDatabase:
                         outcome["source_provider"] = row["source_provider"]
                     if row["is_main"] is not None:
                         outcome["main"] = bool(row["is_main"])
+                    if row["size_json"]:
+                        try:
+                            outcome["size"] = json.loads(row["size_json"])
+                        except (TypeError, ValueError):
+                            pass
                     if row["point"] is not None:
                         outcome["point"] = row["point"]
                     market["outcomes"].append(outcome)
