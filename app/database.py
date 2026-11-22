@@ -455,7 +455,7 @@ class OddsDatabase:
                             row = (snapshot_id, event_id, sport,
                                    *event_metadata, book_key, book_title, market_key,
                                    outcome_name, description, point, price, updated_at,
-                                   str(outcome.get("source_provider") or provider or "unknown"))
+                                   str(outcome.get("source_provider") or ""))
                             identity = (row[1], book_key, market_key, outcome_name, description, point)
                             if identity in conflicted_quotes:
                                 continue
