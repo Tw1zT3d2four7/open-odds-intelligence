@@ -35,6 +35,19 @@ ODDIZE_API_KEY=one-free-developer-key
 ODDIZE_API_KEYS=another-free-account-key
 ```
 
+For providers that issue more than one key, comma-separate keys. Keys from the
+same account share one group (and therefore one shared quota cooldown). Use
+a label before the pipe only when keys belong to genuinely separate accounts:
+
+```dotenv
+ODDSLINK_API_KEYS=primary|key-one,primary|key-two,backup-account|key-three
+THE_ODDS_API_KEYS=primary|key-one,backup-account|key-two
+```
+
+Do not use different group labels to try to bypass one account's shared
+allowance. The adapter blocks the entire group when the provider reports that
+account's quota is exhausted.
+
 The parser trims surrounding whitespace, removes exact duplicates, and
 **preserves key case**. The legacy single-key value is also included in the
 pool when supplied.
