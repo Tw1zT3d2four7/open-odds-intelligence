@@ -542,6 +542,8 @@ class OddsService:
                     events, provider, lease = self._fetch_provider_odds_with_rotation(
                         provider_name, sport_key
                     )
+                    source_usages[provider_name] = dict(getattr(provider, "usage", {}) or {})
+                    source_key_fingerprints[provider_name] = lease.fingerprint
                     self._remember_provider_usage(
                         provider.usage, provider_name, lease.fingerprint
                     )
