@@ -19,8 +19,8 @@ def normalize_team(name: str) -> str:
 
 def fit_team_strength_models(
     settlements: list[dict],
-    min_team_games: int = 4,
-    shrinkage_games: float = 8.0,
+    min_team_games: int = 8,
+    shrinkage_games: float = 12.0,
 ) -> dict:
     """Fit league scoring baselines and shrunk team offense/defense ratings."""
     if isinstance(min_team_games, bool) or not isinstance(min_team_games, int) or min_team_games < 2:
@@ -142,7 +142,7 @@ def project_matchup(model: dict, home_team: str, away_team: str) -> dict:
     if not isinstance(teams, dict) or not home_key or not away_key:
         raise ValueError("Independent team ratings are unavailable for this matchup.")
     home, away = teams.get(home_key), teams.get(away_key)
-    minimum = int(model.get("minimum_team_games", 4))
+    minimum = int(model.get("minimum_team_games", 8))
     if not home or not away:
         missing = home_team if not home else away_team
         raise ValueError(f"No independent rating with sufficient history for {missing}.")
@@ -167,7 +167,7 @@ def project_matchup(model: dict, home_team: str, away_team: str) -> dict:
 
 def fit_independent_outcome_models(
     settlements: list[dict],
-    min_team_matches: int = 5,
+    min_team_matches: int = 8,
     k_factor: float = 24.0,
 ) -> dict:
     """Fit chronological Elo ratings for tennis and combat sports from final outcomes."""
@@ -237,7 +237,7 @@ def project_outcome_matchup(model: dict, home_team: str, away_team: str) -> dict
     if not isinstance(teams, dict) or not home_key or not away_key:
         raise ValueError("Independent athlete/team ratings are unavailable.")
     home, away = teams.get(home_key), teams.get(away_key)
-    minimum = int(model.get("minimum_team_matches", 5))
+    minimum = int(model.get("minimum_team_matches", 8))
     if not home or not away:
         missing = home_team if not home else away_team
         raise ValueError(f"No independent rating with sufficient history for {missing}.")
