@@ -427,7 +427,9 @@ class OddsService:
                 },
                 "simulation_results": self._simulation_results_status,
                 "player_props": self._player_props_status,
-                "refresh_interval_seconds": config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown" else config.ODDS_REFRESH_INTERVAL_SECONDS,
+                "auto_refresh_schedule": self.auto_refresh_schedule(),
+                "refresh_interval_seconds": min(self.auto_refresh_schedule().values())
+                if self.auto_refresh_schedule() else 0,
                 "alert_refresh_interval_seconds": config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0,
                 "alerts_evaluated": self._alerts_evaluated,
                 "alerts_qualified": self._alerts_qualified,
