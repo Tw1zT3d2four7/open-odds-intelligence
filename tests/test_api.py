@@ -5,6 +5,23 @@ from fastapi.testclient import TestClient
 from app import main
 
 
+def _api_independent_models(sport_key, home="Home", away="Away"):
+    from app.team_model import fit_team_strength_models
+    from app.simulation import _family
+    rows = []
+    for index in range(8):
+        rows.append({
+            "sport_key": sport_key, "home_team": home, "away_team": away,
+            "home_score": 100 + index + (5 if index % 2 == 0 else 0),
+            "away_score": 90 + index,
+        })
+    fitted = fit_team_strength_models(rows, min_team_games=4)["models"][sport_key]
+    return {sport_key: {
+        "sport_key": sport_key, "family": _family(sport_key),
+        "sample_size": 8, "independent_team_model": fitted,
+    }}
+
+
 def test_manual_refresh_endpoint_passes_sport_and_returns_alert_diagnostics(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
     monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "")
@@ -311,6 +328,7 @@ def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
     }
     other = dict(selected, id="not-selected")
     monkeypatch.setattr(main.service, "events", lambda sport=None: [selected, other])
+    monkeypatch.setattr(main, "load_fitted_models", lambda path: _api_independent_models("basketball_nba"))
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": "basketball_nba", "freshness": "current", "age_seconds": 60}]
     })
@@ -469,6 +487,7 @@ def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key
         }],
     }
     monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main, "load_fitted_models", lambda path: _api_independent_models(sport_key))
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": sport_key, "freshness": "current", "age_seconds": 30}]
     })
@@ -480,14 +499,11 @@ def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key
 
     assert games.status_code == 200
     game = games.json()["games"][0]
-    assert game["can_simulate"] is True
-    assert game["simulation_mode"] == "moneyline_outcome_only"
-    assert game["moneyline_books"] == 1
-    assert result.status_code == 200
-    payload = result.json()
-    assert payload["simulation_type"] == "moneyline_outcome_only"
-    assert payload["trials"] == 10_000
-    assert payload["data_quality"]["model_source"] == "sportsbook_no_vig_consensus"
+    assert game["can_simulate"] is False
+    assert game["simulation_mode"] == "independent_model_unavailable"
+    assert "not an independent prediction" in game["reason"]
+    assert result.status_code == 422
+    assert "independent historical tennis/combat-sport model" in result.json()["detail"]
 
 
 @pytest.mark.parametrize("sport_key,total_line,spread_line", [
