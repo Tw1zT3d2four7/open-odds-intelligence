@@ -177,6 +177,8 @@ def merge_provider_events(provider_results):
                             candidate, event, target
                         )
                         candidate["source_provider"] = provider_name
+                        if "size" in candidate:
+                            candidate.setdefault("size_source_provider", provider_name)
                         existing_index = outcome_map.get(identity_key)
                         if existing_index is None:
                             outcome_map[identity_key] = len(market["outcomes"])
@@ -184,8 +186,6 @@ def merge_provider_events(provider_results):
                             continue
                         existing = market["outcomes"][existing_index]
                         existing_provider = existing.get("source_provider", "")
-                        if "size" in candidate:
-                            candidate.setdefault("size_source_provider", provider_name)
                         if "size" in existing:
                             existing.setdefault("size_source_provider", existing_provider)
                         if _quote_rank(candidate, provider_rank.get(provider_name, 999)) > _quote_rank(
