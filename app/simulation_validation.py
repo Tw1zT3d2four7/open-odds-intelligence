@@ -777,6 +777,7 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     from .simulation_market_benchmark import score_archived_spread_total, _paired_report
 
     scored, baseline_scored, skipped, market_scored = [], [], [], []
+    outcome_scored, outcome_baseline_scored = [], []
     spread_model_rows, spread_market_rows = [], []
     total_model_rows, total_market_rows = [], []
     for settlement in settlements:
@@ -796,10 +797,14 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
                     market_row["book_count"] = market["book_count"]
                     market_scored.append(market_row)
             baseline_prediction = run_game_simulation(event, seed=seed)
-            baseline_row = score_prediction(baseline_prediction, settlement)
             prediction = run_game_simulation(
                 event, seed=seed, model_parameters=(model_parameters or {}).get(event["sport_key"])
             )
+            if prediction.get("simulation_type") == "independent_outcome_monte_carlo":
+                outcome_baseline_scored.append(score_outcome_prediction(baseline_prediction, settlement))
+                outcome_scored.append(score_outcome_prediction(prediction, settlement))
+                continue
+            baseline_row = score_prediction(baseline_prediction, settlement)
             model_row = score_prediction(prediction, settlement)
             market_lines = score_archived_spread_total(event, settlement, prediction)
             for market_type, model_rows, market_rows in (
@@ -858,12 +863,24 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
             if report["overall"].get(key) is not None and baseline_report["overall"].get(key) is not None
         }
         report["paired_uncertainty"] = paired_bootstrap_comparison(scored, baseline_scored)
+    if outcome_scored:
+        report["outcome_only_validation"] = evaluate_outcome_predictions(outcome_scored)
+        report["outcome_only_market_prior_baseline"] = evaluate_outcome_predictions(outcome_baseline_scored)
+        if outcome_scored and outcome_baseline_scored:
+            report["outcome_only_model_minus_market_prior"] = {
+                key: report["outcome_only_validation"][key] - report["outcome_only_market_prior_baseline"][key]
+                for key in ("brier_score", "log_loss")
+                if report["outcome_only_validation"].get(key) is not None
+                and report["outcome_only_market_prior_baseline"].get(key) is not None
+            }
     report["settlements_submitted"] = len(settlements)
-    report["events_scored"] = len(scored)
+    report["events_scored"] = len(scored) + len(outcome_scored)
+    report["outcome_only_events_scored"] = len(outcome_scored)
     report["events_skipped"] = len(skipped)
     report["skipped"] = skipped
     if include_prediction_rows:
         report["scored_predictions"] = scored
+        report["scored_outcome_predictions"] = outcome_scored
     report["data_policy"] = (
         "Uses only the latest archived sportsbook snapshot strictly before each event's "
         "commence_time. No provider requests, current odds, post-start quotes, or synthetic "
