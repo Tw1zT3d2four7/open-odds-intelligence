@@ -97,6 +97,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
    <div class="card" data-sim-score><small>SIMULATED SCORE RANGE (P10–P90)</small><div class="value" id="simScoreRange">—</div><small id="simScoreRangeDetail">Middle 80% of simulated final scores</small></div>
    <div class="card"><small>SIMULATIONS RUN</small><div class="value" id="simTrials">10,000</div><small id="simDataQuality">—</small></div>
    <div class="card hidden" id="simMoneylineCard"><small>NO-VIG BOOK CONSENSUS</small><div class="value" id="simMarketConsensus">—</div><small id="simMoneylineBooks">—</small></div>
+   <div class="card hidden" id="simDrawCard"><small>SIMULATED DRAW / TIE</small><div class="value" id="simDrawProbability">—</div></div>
   </div>
   <div class="cards" data-sim-scoring>
    <div class="card"><small>OVER PROBABILITY</small><div class="value" id="simOver">—</div><small id="simTotalLine"></small></div>
@@ -335,9 +336,11 @@ async function runSelectedSimulation(){
   const outcomeOnly=data.simulation_type==="moneyline_outcome_only";
   document.querySelectorAll("[data-sim-score],[data-sim-scoring]").forEach(el=>el.classList.toggle("hidden",outcomeOnly));
   $("simMoneylineCard").classList.toggle("hidden",!outcomeOnly);
+  $("simDrawCard").classList.toggle("hidden",!outcomeOnly||data.win_probabilities.tie<=0);
   if(outcomeOnly){
     $("simMarketConsensus").textContent=data.market_moneyline.home_probability.toFixed(2)+"% / "+data.market_moneyline.away_probability.toFixed(2)+"% / "+data.market_moneyline.draw_probability.toFixed(2)+"%";
     $("simMoneylineBooks").textContent=data.market_moneyline.book_count+" bookmaker(s) · home / away / draw";
+    $("simDrawProbability").textContent=data.win_probabilities.tie.toFixed(2)+"%";
     $("simDataQuality").textContent=data.data_quality.moneyline_books+" moneyline books · no-vig consensus";
     $("simStatus").textContent="Completed exactly 10,000 market-implied outcome trials for "+data.matchup+". This is not an independent forecast.";
   }else{
