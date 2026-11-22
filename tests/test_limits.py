@@ -233,13 +233,16 @@ def test_oddslink_client_rejects_unexpected_response_shapes(monkeypatch):
     import app.limits as module
     from app.limits import LimitsError
 
-    class FakeResponse:
-        headers = {}
-        def __enter__(self): return self
-        def __exit__(self, *args): return False
-        def read(self): return json.dumps({"events": "not-a-list"}).encode()
+    class FakeProvider:
+        usage = {}
+        def __init__(self, key):
+            assert key == "CaseSensitiveKey"
+        def fetch_usage(self):
+            return 10
+        def _request(self, path, params=None):
+            return {"events": "not-a-list"}
 
-    monkeypatch.setattr(module, "urlopen", lambda request, timeout: FakeResponse())
+    monkeypatch.setattr(module, "OddsLinkProvider", FakeProvider)
     with pytest.raises(LimitsError, match="unexpected events response"):
         OddsLinkClient("CaseSensitiveKey").fetch("nfl")
 
