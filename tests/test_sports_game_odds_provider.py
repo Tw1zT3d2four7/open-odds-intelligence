@@ -70,29 +70,68 @@ def test_sgo_normalizes_main_markets_and_player_props():
 def test_sgo_fetch_uses_case_sensitive_header_and_free_league_filter(monkeypatch):
     class FakeResponse:
         headers = {"x-ratelimit-remaining": "9"}
+        def __init__(self, payload): self.payload = payload
         def __enter__(self): return self
         def __exit__(self, *args): return False
-        def read(self):
-            return json.dumps({"success": True, "data": []}).encode()
+        def read(self): return json.dumps(self.payload).encode()
 
-    seen = {}
+    seen = {"urls": []}
     def fake_urlopen(request, timeout):
-        seen["url"] = request.full_url
+        seen["urls"].append(request.full_url)
         seen["headers"] = dict(request.header_items())
         seen["timeout"] = timeout
-        return FakeResponse()
+        if "/account/usage" in request.full_url:
+            return FakeResponse({"success": True, "data": {
+                "tier": "amateur",
+                "rateLimits": {"per-month": {
+                    "max-entities": "2500", "current-entities": "100"
+                }},
+            }})
+        return FakeResponse({"success": True, "data": []})
 
     monkeypatch.setattr(sports_game_odds, "urlopen", fake_urlopen)
     monkeypatch.setattr(SportsGameOddsProvider, "_pace", lambda self: None)
     provider = SportsGameOddsProvider("Case-Sensitive-SGO")
     assert provider.fetch_odds("basketball_nba") == []
-    assert "leagueID=NBA" in seen["url"]
-    assert "oddsAvailable=true" in seen["url"]
+    events_url = next(url for url in seen["urls"] if "/events/" in url)
+    assert "leagueID=NBA" in events_url
+    assert "oddsAvailable=true" in events_url
+    assert "limit=100" in events_url
+    assert all("apiKey=" not in url for url in seen["urls"])
     assert seen["headers"]["X-api-key"] == "Case-Sensitive-SGO"
-    assert provider.usage["requests_remaining"] == "9"
+    assert provider.usage["tier"] == "amateur"
+    assert provider.usage["monthly_objects_remaining"] == 2400
 
 
 def test_sgo_rejects_leagues_outside_published_free_tier():
     provider = SportsGameOddsProvider("Key")
     with pytest.raises(ProviderError, match="does not include"):
         provider.fetch_odds("soccer_epl")
+
+
+def test_sgo_blocks_event_request_when_free_monthly_object_allowance_is_exhausted(monkeypatch):
+    calls = []
+    class FakeResponse:
+        headers = {}
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return json.dumps(self.payload).encode()
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        return FakeResponse({"success": True, "data": {
+            "tier": "amateur",
+            "rateLimits": {"per-month": {
+                "max-entities": "2500", "current-entities": "2500"
+            }},
+        }})
+
+    monkeypatch.setattr(sports_game_odds, "urlopen", fake_urlopen)
+    monkeypatch.setattr(SportsGameOddsProvider, "_pace", lambda self: None)
+    provider = SportsGameOddsProvider("Key")
+    with pytest.raises(ProviderError, match="allowance is exhausted") as caught:
+        provider.fetch_odds("basketball_nba")
+    assert caught.value.status_code == 429
+    assert len(calls) == 1
+    assert "/account/usage" in calls[0]
