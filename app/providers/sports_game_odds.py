@@ -252,6 +252,25 @@ class SportsGameOddsProvider:
                     "updated_at": quote.get("lastUpdatedAt"),
                     "source_provider": self.name,
                 })
+                for alternate in quote.get("altLines") or []:
+                    if not isinstance(alternate, dict) or alternate.get("available") is False:
+                        continue
+                    alternate_price = self._price(alternate.get("odds"))
+                    if alternate_price is None:
+                        continue
+                    alternate_point = self._point(
+                        alternate.get(point_field) if point_field else None
+                    )
+                    if alternate_point is None:
+                        continue
+                    market["outcomes"].append({
+                        "name": outcome_name,
+                        "description": description,
+                        "point": alternate_point,
+                        "price": alternate_price,
+                        "updated_at": alternate.get("lastUpdatedAt") or quote.get("lastUpdatedAt"),
+                        "source_provider": self.name,
+                    })
 
         bookmakers = []
         for book in books.values():
