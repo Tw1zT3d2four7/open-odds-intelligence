@@ -168,7 +168,7 @@ function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("spo
 function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))}
 function renderProviderStatus(health){
- const selected=health.providers||[],pools=health.provider_keys||{},schedule=health.auto_refresh_schedule||{};
+ const selected=health.providers||[],pools=health.provider_keys||{},schedule=health.auto_refresh_schedule||{},coverage=health.provider_coverage||{};
  const labels={therundown:"TheRundown",the_odds_api:"The Odds API",sports_game_odds:"SportsGameOdds",oddize:"Oddize",oddslink:"OddsLink"};
  const intervalLabel=seconds=>seconds>=86400?Math.round(seconds/86400)+"d":seconds>=3600?Math.round(seconds/3600)+"h":Math.round(seconds/60)+"m";
  const autoText=Object.entries(schedule).map(([name,seconds])=>(labels[name]||name)+" "+intervalLabel(seconds)).join(", ")||"manual only";
@@ -188,7 +188,12 @@ function renderProviderStatus(health){
    return '<div class="provider-key"><span>Key '+escapeHtml(String(key.key_id||"").slice(0,8))+' · '+escapeHtml(key.account_group||"default")+'</span> <span class="pill '+pill+'">'+escapeHtml(status)+'</span><small>'+escapeHtml(quota.join(" · ")||"Quota not reported yet")+'</small>'+(key.cooldown_seconds>0?'<small>Retry in '+escapeHtml(key.cooldown_seconds)+'s</small>':"")+(key.last_error?'<small class="warn">'+escapeHtml(key.last_error)+'</small>':"")+'</div>';
   }).join("");
   const state=pool.configured?"Configured":"No API key";
-  return '<div class="provider-card"><div class="provider-head"><strong>'+escapeHtml(labels[name]||name)+'</strong><span class="pill '+(pool.configured?"good":"warn")+'">'+state+'</span></div>'+(rows||'<small class="muted">Add this provider key in the environment file to enable it.</small>')+'</div>';
+  const covered=Object.entries(coverage).filter(([,sportData])=>(sportData.provider_coverage||{})[name]);
+  const sports=covered.map(([sport])=>sport);
+  const books=new Set(),markets=new Set();let quotes=0,props=0;
+  covered.forEach(([,sportData])=>{const item=sportData.provider_coverage[name];(item.books||[]).forEach(book=>books.add(book));(item.markets||[]).forEach(market=>markets.add(market));quotes+=Number(item.quotes||0);props+=Number(item.prop_quotes||0)});
+  const coverageHtml=covered.length?'<small class="muted">Sports: '+escapeHtml(sports.join(", "))+'</small><small class="muted">Books: '+books.size+' · Markets: '+markets.size+' · Quotes: '+quotes+' · Prop quotes: '+props+'</small>':'<small class="muted">Coverage appears after the first successful refresh.</small>';
+  return '<div class="provider-card"><div class="provider-head"><strong>'+escapeHtml(labels[name]||name)+'</strong><span class="pill '+(pool.configured?"good":"warn")+'">'+state+'</span></div>'+(rows||'<small class="muted">Add this provider key in the environment file to enable it.</small>')+coverageHtml+'</div>';
  }).join("");
  $("providerGrid").innerHTML=cards||'<div class="muted">Select providers with ODDS_PROVIDERS in the environment file.</div>';
 }
