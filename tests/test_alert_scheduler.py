@@ -39,3 +39,36 @@ def test_discord_loop_evaluates_stored_quotes_without_provider_refresh(monkeypat
         pass
 
     assert calls == [("sleep", 300), ("thread", "evaluate_alerts")]
+
+
+def test_overlapping_alert_dispatch_is_skipped():
+    import threading
+
+    from app.service import OddsService
+
+    instance = object.__new__(OddsService)
+    instance._alert_lock = threading.Lock()
+    instance._alert_lock.acquire()
+    called = []
+    instance._dispatch_alerts_locked = lambda: called.append(True) or 1
+
+    try:
+        assert instance._dispatch_alerts() == 0
+        assert called == []
+    finally:
+        instance._alert_lock.release()
+
+
+def test_alert_dispatch_runs_once_when_lock_is_available():
+    import threading
+
+    from app.service import OddsService
+
+    instance = object.__new__(OddsService)
+    instance._alert_lock = threading.Lock()
+    called = []
+    instance._dispatch_alerts_locked = lambda: called.append(True) or 2
+
+    assert instance._dispatch_alerts() == 2
+    assert called == [True]
+    assert not instance._alert_lock.locked()
