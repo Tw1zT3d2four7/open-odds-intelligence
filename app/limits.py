@@ -671,10 +671,7 @@ class MarketLimitsMonitor:
                 "SELECT state_value FROM market_limit_state WHERE state_key='last_key_fingerprint'"
             ).fetchone()
         last_attempt = state["state_value"] if state else None
-        current_key_fingerprint = (
-            hashlib.sha256(oddslink_api_key().encode("utf-8")).hexdigest()
-            if oddslink_api_key() else ""
-        )
+        current_key_fingerprint = oddslink_keyset_fingerprint() or ""
         key_changed = bool(
             last_key_state and last_key_state["state_value"] != current_key_fingerprint
         )
