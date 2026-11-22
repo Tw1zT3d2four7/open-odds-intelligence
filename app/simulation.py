@@ -520,7 +520,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "spread_books": spread_books,
             "total_books": total_books,
             "distribution": prior["distribution"],
-            "model_source": "empirical_training_fit" if fitted else "broad_league_prior",
+            "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
             "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
