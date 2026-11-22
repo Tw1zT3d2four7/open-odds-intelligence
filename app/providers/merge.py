@@ -52,9 +52,16 @@ def _team_matches(left, right):
 def _same_event(left, right, tolerance_seconds=300):
     if left.get("sport_key") != right.get("sport_key"):
         return False
-    if not _team_matches(left.get("home_team"), right.get("home_team")):
-        return False
-    if not _team_matches(left.get("away_team"), right.get("away_team")):
+    same_orientation = (
+        _team_matches(left.get("home_team"), right.get("home_team"))
+        and _team_matches(left.get("away_team"), right.get("away_team"))
+    )
+    tennis = str(left.get("sport_key") or "").startswith("tennis_")
+    swapped_orientation = tennis and (
+        _team_matches(left.get("home_team"), right.get("away_team"))
+        and _team_matches(left.get("away_team"), right.get("home_team"))
+    )
+    if not (same_orientation or swapped_orientation):
         return False
     a = _timestamp(left.get("commence_time"))
     b = _timestamp(right.get("commence_time"))
@@ -64,9 +71,15 @@ def _same_event(left, right, tolerance_seconds=300):
 def _canonical_outcome_name(outcome, source_event, target_event):
     name = str(outcome.get("name") or "")
     if _team_matches(name, source_event.get("home_team")):
-        return target_event.get("home_team") or name
+        if _team_matches(source_event.get("home_team"), target_event.get("home_team")):
+            return target_event.get("home_team") or name
+        if _team_matches(source_event.get("home_team"), target_event.get("away_team")):
+            return target_event.get("away_team") or name
     if _team_matches(name, source_event.get("away_team")):
-        return target_event.get("away_team") or name
+        if _team_matches(source_event.get("away_team"), target_event.get("away_team")):
+            return target_event.get("away_team") or name
+        if _team_matches(source_event.get("away_team"), target_event.get("home_team")):
+            return target_event.get("home_team") or name
     return name
 
 
