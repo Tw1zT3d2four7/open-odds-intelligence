@@ -517,6 +517,8 @@ class OddsService:
         provider_results_summary = {}
         for sport_key in sports:
             source_results = []
+            source_usages = {}
+            source_key_fingerprints = {}
             successful_providers = []
             skipped_providers = []
             for provider_name in provider_names:
@@ -670,6 +672,21 @@ class OddsService:
             snapshot_provider = "+".join(successful_providers)
             self.db.save_snapshot(sport_key, events, snapshot_provider, fetched_at)
             self._cache[sport_key] = events
+            if "oddslink" in successful_providers:
+                oddslink_events = next(
+                    (items for name, items in source_results if name == "oddslink"), []
+                )
+                try:
+                    self.limits_monitor.ingest_events(
+                        oddslink_events,
+                        observed_at=fetched_at,
+                        usage=source_usages.get("oddslink"),
+                        key_fingerprint=source_key_fingerprints.get("oddslink"),
+                    )
+                except Exception as limits_error:
+                    provider_results_summary.setdefault(sport_key, {})[
+                        "limits_ingest_warning"
+                    ] = str(limits_error)
             clv_candidates = analyze_markets(
                 events, min_ev=config.CLV_MIN_EV_PERCENT,
                 min_consensus_books=2, best_only=False,
