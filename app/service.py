@@ -320,31 +320,50 @@ class OddsService:
             name for name in selected if name in self._provider_key_pools
         ))
 
-    def auto_refresh_provider_names(self):
-        # This app currently runs one shared refresh loop. Include only
-        # providers whose configured interval matches that loop; slower
-        # quota-limited sources stay manual rather than being over-polled.
-        intervals = []
+    def auto_refresh_schedule(self):
+        """Provider-specific intervals for sources safe to poll automatically."""
+        schedule = {}
         providers = self.active_provider_names()
-        if "therundown" in providers and self._provider_key_pools["therundown"].configured:
-            intervals.append(config.RUNDOWN_REFRESH_INTERVAL_SECONDS)
-        if ("the_odds_api" in providers
-                and self._provider_key_pools["the_odds_api"].configured
+        rundown_pool = self._provider_key_pools.get("therundown")
+        if ("therundown" in providers and rundown_pool and rundown_pool.configured
+                and config.RUNDOWN_REFRESH_INTERVAL_SECONDS > 0):
+            schedule["therundown"] = config.RUNDOWN_REFRESH_INTERVAL_SECONDS
+        odds_api_pool = self._provider_key_pools.get("the_odds_api")
+        if ("the_odds_api" in providers and odds_api_pool and odds_api_pool.configured
                 and config.ODDS_REFRESH_INTERVAL_SECONDS > 0):
-            intervals.append(config.ODDS_REFRESH_INTERVAL_SECONDS)
-        if not intervals:
-            return []
-        loop_interval = min(intervals)
-        names = []
-        if ("therundown" in providers
-                and self._provider_key_pools["therundown"].configured
-                and config.RUNDOWN_REFRESH_INTERVAL_SECONDS == loop_interval):
-            names.append("therundown")
-        if ("the_odds_api" in providers
-                and self._provider_key_pools["the_odds_api"].configured
-                and config.ODDS_REFRESH_INTERVAL_SECONDS == loop_interval):
-            names.append("the_odds_api")
-        return names
+            schedule["the_odds_api"] = config.ODDS_REFRESH_INTERVAL_SECONDS
+        # SportsGameOdds, Oddize and OddsLink remain manual-only by default:
+        # their small free monthly object/credit/request budgets are protected.
+        return schedule
+
+    def auto_refresh_provider_names(self):
+        return list(self.auto_refresh_schedule())
+
+    def providers_due_for_auto_refresh(self):
+        now = datetime.now(timezone.utc)
+        due = []
+        for provider_name, interval in self.auto_refresh_schedule().items():
+            last = self.db.get_state(f"provider_auto_refresh_last:{provider_name}")
+            if not last:
+                due.append(provider_name)
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age = (now - parsed.astimezone(timezone.utc)).total_seconds()
+            except (TypeError, ValueError):
+                due.append(provider_name)
+                continue
+            if age >= interval:
+                due.append(provider_name)
+        return due
+
+    def mark_auto_refresh(self, providers):
+        stamp = datetime.now(timezone.utc).isoformat()
+        for provider_name in providers:
+            self.db.set_state(f"provider_auto_refresh_last:{provider_name}", stamp)
+        return stamp
 
     @property
     def configured(self):
