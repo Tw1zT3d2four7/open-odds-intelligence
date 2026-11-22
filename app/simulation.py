@@ -334,12 +334,8 @@ def _independent_moneyline_edge(event, model_probabilities, market_probabilities
             decimals = [_decimal(price) for price in prices]
             implied = [1.0 / value for value in decimals]
             total = sum(implied)
-            rows.append((count, [value / total for value in implied]))
-            for side, price in zip(("home", "away", "draw"), prices):
-                decimal = _decimal(price)
-                if best[side] is None or decimal > best[side]["decimal_odds"]:
-                    best[side] = {"bookmaker": identity, "american_odds": price,
-                                  "decimal_odds": round(decimal, 5)}
+            rows.append((count, [value / total for value in implied],
+                         dict(zip(("home", "away", "draw"), prices)), identity))
             seen.add(identity)
             break
     if not rows:
@@ -347,8 +343,17 @@ def _independent_moneyline_edge(event, model_probabilities, market_probabilities
                 "reason": "No complete h2h prices were available for model-edge comparison."}
     counts = {n: sum(row[0] == n for row in rows) for n in (2, 3)}
     selected_count = max((n for n in (2, 3) if counts[n]), key=lambda n: (counts[n], n))
-    selected = [probabilities for count, probabilities in rows if count == selected_count]
+    selected_rows = [row for row in rows if row[0] == selected_count]
+    selected = [row[1] for row in selected_rows]
     labels = ("home", "away", "draw") if selected_count == 3 else ("home", "away")
+    best = {side: None for side in labels}
+    for _, _, prices_by_side, identity in selected_rows:
+        for side in labels:
+            price = prices_by_side[side]
+            decimal = _decimal(price)
+            if best[side] is None or decimal > best[side]["decimal_odds"]:
+                best[side] = {"bookmaker": identity, "american_odds": price,
+                              "decimal_odds": round(decimal, 5)}
     consensus = [median([row[i] for row in selected]) for i in range(selected_count)]
     sides = {}
     for index, side in enumerate(labels):
@@ -373,7 +378,7 @@ def _independent_moneyline_edge(event, model_probabilities, market_probabilities
             "expected_value_percent": round(ev, 2) if ev is not None else None,
             "push_probability": round(push_probability * 100, 2),
         }
-    return {"book_count": len(selected), "outcome_count": selected_count, "sides": sides}
+    return {"book_count": len(selected_rows), "outcome_count": selected_count, "sides": sides}
 
 
 def _run_independent_outcome_simulation(event, seed, family, fitted):(event, seed, family, fitted):
