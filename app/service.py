@@ -714,11 +714,12 @@ class OddsService:
                     (items for name, items in source_results if name == "oddslink"), []
                 )
                 try:
+                    from .limits import oddslink_keyset_fingerprint
                     self.limits_monitor.ingest_events(
                         oddslink_events,
                         observed_at=fetched_at,
                         usage=source_usages.get("oddslink"),
-                        key_fingerprint=source_key_fingerprints.get("oddslink"),
+                        key_fingerprint=oddslink_keyset_fingerprint(),
                     )
                 except Exception as limits_error:
                     provider_results_summary.setdefault(sport_key, {})[
