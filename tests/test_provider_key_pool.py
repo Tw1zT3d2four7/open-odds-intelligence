@@ -101,5 +101,5 @@ def test_monthly_credit_exhaustion_401_is_cooldown_not_invalid_key_disable():
         lease, status_code=401, message="OUT_OF_USAGE_CREDITS"
     ) == "cooldown"
     key = pool.status()["keys"][0]
-    assert key["status"] == "cooldown"
+    assert key["status"] == "quota_cooldown"
     assert key["cooldown_seconds"] >= 86400
