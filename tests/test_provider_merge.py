@@ -91,3 +91,13 @@ def test_merge_matches_oddize_team_abbreviations_to_full_provider_names():
     books = {book["key"]: book for book in merged[0]["bookmakers"]}
     bet365_outcome = books["bet365"]["markets"][0]["outcomes"][0]
     assert bet365_outcome["name"] == "Boston Celtics"
+
+
+def test_abbreviation_event_merge():
+    full = _event('rundown', [_book('draftkings', [{'name': 'Boston Celtics', 'price': -110}])], home='Boston Celtics', away='New York Knicks')
+    short = _event('oddize', [_book('bet365', [{'name': 'BOS', 'price': -105}])], home='BOS', away='NYK')
+    merged = merge_provider_events([('therundown', [full]), ('oddize', [short])])
+    assert len(merged) == 1
+    assert merged[0]['home_team'] == 'Boston Celtics'
+    books = {book['key']: book for book in merged[0]['bookmakers']}
+    assert books['bet365']['markets'][0]['outcomes'][0]['name'] == 'Boston Celtics'
