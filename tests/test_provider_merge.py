@@ -101,3 +101,22 @@ def test_abbreviation_event_merge():
     assert merged[0]['home_team'] == 'Boston Celtics'
     books = {book['key']: book for book in merged[0]['bookmakers']}
     assert books['bet365']['markets'][0]['outcomes'][0]['name'] == 'Boston Celtics'
+
+
+def test_merge_preserves_oddslink_posted_limit_when_newer_price_replaces_quote():
+    oddslink = _event("oddslink", [_book("draftkings", [
+        {"name": "KC", "price": -110, "point": -3.5,
+         "updated_at": "2026-11-23T18:00:00Z",
+         "size": {"kind": "posted_limit", "amount": 25000}, "main": True}
+    ])], home="Kansas City Chiefs", away="Las Vegas Raiders")
+    newer = _event("the_odds_api", [_book("draftkings", [
+        {"name": "Kansas City Chiefs", "price": -105, "point": -3.5,
+         "updated_at": "2026-11-23T18:05:00Z"}
+    ])], home="Kansas City Chiefs", away="Las Vegas Raiders")
+
+    merged = merge_provider_events([("oddslink", [oddslink]), ("the_odds_api", [newer])])
+    outcome = merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert outcome["source_provider"] == "the_odds_api"
+    assert outcome["size"] == {"kind": "posted_limit", "amount": 25000}
+    assert outcome["size_source_provider"] == "oddslink"
+    assert outcome["main"] is True
