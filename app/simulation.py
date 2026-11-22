@@ -399,12 +399,22 @@ def _resolve_tie(rng, sport_key, home_score, away_score):
                 return home_score + home_ot, away_score + away_ot, True
         return (home_score + 3, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 3, True)
     if "americanfootball_nfl" in key:
+        # Regular-season overtime ties are rare. Independent team score draws
+        # from the same 0/3/7 distribution made equal scores far too common:
+        # 40.5% of overtime trials. Use a conservative historical tie-rate
+        # prior (about 6% of OT games in 2012-2024); the 2025 both-teams-possession
+        # rule has only a small early sample, so this remains an approximation.
+        if rng.random() < 0.06:
+            return home_score, away_score, True
         outcomes = ((0, 0.55), (3, 0.25), (7, 0.20))
         values = [item[0] for item in outcomes]
         weights = [item[1] for item in outcomes]
-        home_ot = rng.choices(values, weights=weights, k=1)[0]
-        away_ot = rng.choices(values, weights=weights, k=1)[0]
-        return home_score + home_ot, away_score + away_ot, True
+        for _ in range(100):
+            home_ot = rng.choices(values, weights=weights, k=1)[0]
+            away_ot = rng.choices(values, weights=weights, k=1)[0]
+            if home_ot != away_ot:
+                return home_score + home_ot, away_score + away_ot, True
+        return (home_score + 3, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 3, True)
     return home_score, away_score, False
 
 def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
