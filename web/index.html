@@ -77,7 +77,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
 <section class="panel hidden" id="view-props"><h2>Player props market board</h2><p class="muted">Compares provider-supplied player prop quotes by player, market, over/under side, exact line and sportsbook. Player identity is kept separate from Over/Under so different athletes are never merged. This feed is opt-in and disabled by default because The Odds API requires individual event-odds requests for non-featured player markets. Each event request can consume quota; TheRundown Free currently supplies main markets only.</p><div class="bar"><small id="propsStatus" class="muted">Player props are disabled. Configure PLAYER_PROPS_ENABLED=true, PLAYER_PROPS_SPORT and PLAYER_PROPS_MARKETS only after reviewing provider quota.</small></div><div class="tablewrap"><table><thead><tr><th>Matchup</th><th>Player</th><th>Prop market</th><th>Side</th><th>Line</th><th>Sportsbook</th><th>Odds</th><th>Start</th></tr></thead><tbody id="propsRows"><tr><td class="empty" colspan="8">Player props are disabled by default. No requests are made until explicitly enabled.</td></tr></tbody></table></div></section>
 <section class="panel hidden" id="view-simulation">
  <h2>10,000-trial single-game simulator</h2>
- <p class="muted">Choose a league and a game. Score-based leagues use complete sportsbook spread and total markets; tennis and MMA use a separate two-way moneyline outcome simulation when score markets are not applicable. The selected game's latest locally stored odds are used; no provider/API requests occur unless you click Load / Refresh This League.</p>
+ <p class="muted">Choose a league and game. The simulator requires an independent historical team model or tennis/MMA Elo model; sportsbook prices are comparison benchmarks, not prediction inputs. A matchup without enough historical data is blocked. Simulations use stored odds only and make no provider/API requests.</p>
  <div class="filters">
   <label for="simLeague">League</label><select id="simLeague"><option value="">Select a league</option></select>
   <label for="simGame">Game</label><select id="simGame" disabled><option value="">Select a league first</option></select>
@@ -102,7 +102,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
   <div class="cards" data-sim-scoring>
    <div class="card"><small>OVER PROBABILITY</small><div class="value" id="simOver">—</div><small id="simTotalLine"></small></div>
    <div class="card"><small>UNDER PROBABILITY</small><div class="value" id="simUnder">—</div><small id="simTotalPush">Push —</small></div>
-   <div class="card"><small>MARKET-IMPLIED HOME MARGIN</small><div class="value" id="simMargin">—</div></div>
+   <div class="card"><small>MODEL-EXPECTED HOME MARGIN</small><div class="value" id="simMargin">—</div></div>
    <div class="card"><small>HOME SPREAD COVER</small><div class="value" id="simHomeCover">—</div><small id="simSpreadLine"></small></div>
    <div class="card"><small>AWAY SPREAD COVER</small><div class="value" id="simAwayCover">—</div><small id="simSpreadPush">Push —</small></div>
    <div class="card"><small>SIMULATION METHOD</small><div class="value" id="simDistribution">—</div><small id="simDistributionDetail">Market-informed scoring distribution</small></div>
@@ -111,6 +111,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
    <div class="card"><small>SCORING MODEL</small><div class="value" id="simModelSource">—</div><small id="simModelTraining">—</small></div>
    <div class="card"><small>GAME RESOLUTION</small><div class="value" id="simResolution">—</div><small id="simRegulationTies">—</small></div>
   </div>
+  <section class="panel hidden" id="simEdgePanel" style="margin-top:14px"><h3>Independent model vs sportsbook market</h3><p class="muted">EV is estimated from model win/loss probabilities and the best available price at the exact consensus line. Pushes return the stake. Positive EV is a model signal, not proof of profitability.</p><div class="tablewrap"><table><thead><tr><th>Market</th><th>Selection</th><th>Model %</th><th>Market no-vig %</th><th>Edge pp</th><th>Best price</th><th>Sportsbook</th><th>Estimated EV</th></tr></thead><tbody id="simEdgeRows"><tr><td class="empty" colspan="8">No exact-line edge analysis available.</td></tr></tbody></table></div></section>
   <p class="muted" id="simMethodology"></p>
  </div>
 </section>
