@@ -1,6 +1,7 @@
 """SportsGameOdds v2 adapter, scoped to its permanently free Amateur tier."""
 import json
 import math
+import os
 import threading
 import time
 from datetime import datetime, timezone
