@@ -709,7 +709,11 @@ def test_per_key_quota_counters_survive_service_restart(tmp_path, monkeypatch):
 
     restarted_service = OddsService(database)
     key_status = restarted_service.status()["provider_keys"]["the_odds_api"]["keys"][0]
-    assert key_status["usage"] == {"requests_remaining": 17, "requests_used": 3}
+    assert {
+        key: value for key, value in key_status["usage"].items()
+        if key != "usage_observed_at"
+    } == {"requests_remaining": 17, "requests_used": 3}
+    assert key_status["usage"]["usage_observed_at"]
 
 
 def test_oddslink_is_manual_only_and_preserves_all_book_lines(tmp_path, monkeypatch):
