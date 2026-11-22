@@ -431,6 +431,7 @@ class OddsService:
                 "sport_freshness": sport_freshness,
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
+                "provider_coverage": self._last_provider_results,
                 "provider_keys": {
                     name: pool.status() for name, pool in self._provider_key_pools.items()
                 },
@@ -528,6 +529,7 @@ class OddsService:
             source_results = []
             source_usages = {}
             source_key_fingerprints = {}
+            source_coverage = {}
             successful_providers = []
             skipped_providers = []
             skipped_unconfigured = []
@@ -664,6 +666,27 @@ class OddsService:
                                 "refresh_interval_seconds": config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS,
                             }
                     source_usages[provider_name] = dict(getattr(provider, "usage", {}) or {})
+                    books_seen, markets_seen = set(), set()
+                    quote_count = prop_quote_count = 0
+                    for source_event in events:
+                        for source_book in source_event.get("bookmakers") or []:
+                            books_seen.add(source_book.get("key"))
+                            for source_market in source_book.get("markets") or []:
+                                market_key = str(source_market.get("key") or "")
+                                markets_seen.add(market_key)
+                                outcomes = source_market.get("outcomes") or []
+                                quote_count += len(outcomes)
+                                if "player" in market_key.lower() or "prop" in market_key.lower():
+                                    prop_quote_count += len(outcomes)
+                    source_coverage[provider_name] = {
+                        "events": len(events),
+                        "books": sorted(book for book in books_seen if book),
+                        "book_count": len([book for book in books_seen if book]),
+                        "markets": sorted(markets_seen),
+                        "market_count": len(markets_seen),
+                        "quotes": quote_count,
+                        "prop_quotes": prop_quote_count,
+                    }
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
                     if provider_name == "oddize":
@@ -710,6 +733,7 @@ class OddsService:
                 "providers_succeeded": successful_providers,
                 "providers_skipped_for_league_coverage": skipped_providers,
                 "providers_skipped_unconfigured": skipped_unconfigured,
+                "provider_coverage": source_coverage,
                 "events": len(events),
             }
 
