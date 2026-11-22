@@ -392,6 +392,11 @@ def market_readiness(event):
             missing.append(str(exc))
         if not moneyline:
             missing.append("a complete two-way or three-way h2h moneyline")
+            if family not in ("tennis", "mma") and family is not None:
+                if not has_spread:
+                    missing.append("a complete, valid spread")
+                if not has_total:
+                    missing.append("a complete, valid total")
         return {
             "can_simulate": has_start_time and bool(moneyline),
             "simulation_mode": "moneyline_outcome_only",
