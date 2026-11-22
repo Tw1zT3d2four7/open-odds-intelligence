@@ -708,3 +708,50 @@ def test_per_key_quota_counters_survive_service_restart(tmp_path, monkeypatch):
     restarted_service = OddsService(database)
     key_status = restarted_service.status()["provider_keys"]["the_odds_api"]["keys"][0]
     assert key_status["usage"] == {"requests_remaining": 17, "requests_used": 3}
+
+
+def test_oddslink_is_manual_only_and_preserves_all_book_lines(tmp_path, monkeypatch):
+    class FakeOddsLink:
+        name = "oddslink"
+        usage = {"plan": "free", "requests_remaining": 999}
+        def __init__(self, api_key):
+            assert api_key == "OddsLink-Free-Key"
+        def fetch_odds(self, sport):
+            return [{
+                "id": "oddslink-fixture", "sport_key": sport,
+                "sport_title": "NFL", "commence_time": "2026-11-23T20:00:00Z",
+                "home_team": "Kansas City Chiefs", "away_team": "Las Vegas Raiders",
+                "bookmakers": [{
+                    "key": "draftkings", "title": "DraftKings",
+                    "markets": [{"key": "spreads", "outcomes": [
+                        {"name": "Kansas City Chiefs", "point": -3.5,
+                         "price": -110, "main": True,
+                         "source_provider": "oddslink"},
+                        {"name": "Kansas City Chiefs", "point": -4.5,
+                         "price": 105, "main": False,
+                         "source_provider": "oddslink"},
+                    ]}],
+                }],
+            }]
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "oddslink")
+    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", True, raising=False)
+    monkeypatch.setattr(config, "ODDS_PROVIDERS", ["oddslink"], raising=False)
+    monkeypatch.setattr(config, "ODDSLINK_API_KEY", "OddsLink-Free-Key", raising=False)
+    monkeypatch.setattr(config, "ODDSLINK_API_KEYS", "", raising=False)
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["americanfootball_nfl"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(config, "PLAYER_PROPS_ENABLED", False)
+    monkeypatch.setattr("app.service.OddsLinkProvider", FakeOddsLink)
+
+    database = OddsDatabase(tmp_path / "oddslink-manual.sqlite3")
+    service = OddsService(database)
+    assert service.auto_refresh_provider_names() == []
+
+    result = service.refresh()
+    assert result["ok"] is True
+    stored = database.latest_events("americanfootball_nfl")
+    outcomes = stored[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert {item["point"] for item in outcomes} == {-3.5, -4.5}
+    assert {item["main"] for item in outcomes} == {True, False}
+    assert {item["source_provider"] for item in outcomes} == {"oddslink"}
