@@ -65,6 +65,27 @@ class SimulationResultsImportTests(unittest.TestCase):
         self.assertEqual(result["inserted"], 1)
         self.assertEqual(len(self.db.simulation_settlements()), 1)
 
+    def test_historical_training_only_import_accepts_unarchived_event(self):
+        result = import_results(
+            self.db, self._csv(event_id="historical-event-1"),
+            apply=True, training_only=True,
+        )
+        self.assertEqual(result["inserted"], 1)
+        self.assertEqual(result["dataset"], "training_only")
+        stored = self.db.simulation_settlements()
+        self.assertEqual(len(stored), 1)
+        self.assertTrue(stored[0]["training_only"])
+        self.assertEqual(stored[0]["event_id"], "historical-event-1")
+
+    def test_training_only_dry_run_does_not_persist(self):
+        result = import_results(
+            self.db, self._csv(event_id="historical-event-2"),
+            apply=False, training_only=True,
+        )
+        self.assertEqual(result["inserted"], 1)
+        self.assertEqual(result["mode"], "dry_run")
+        self.assertEqual(self.db.simulation_settlements(), [])
+
     def test_mismatched_team_is_rejected(self):
         result = import_results(self.db, self._csv(home="Wrong Team"), apply=False)
         self.assertEqual(result["inserted"], 0)
