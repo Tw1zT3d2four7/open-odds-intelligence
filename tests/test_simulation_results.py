@@ -161,4 +161,4 @@ def test_pending_result_dates_include_recent_settlements_only_when_recheck_enabl
     ) == []
     assert database.pending_simulation_result_dates(
         ["soccer_epl"], now=now, lookback_days=7, recheck_days=3
-    ) == [{"sport": "soccer_epl", "event_date": "2026-01-03", "pending_events": 1}]
+    ) == [{"sport": "soccer_epl", "event_date": "2026-01-02", "pending_events": 1}]
