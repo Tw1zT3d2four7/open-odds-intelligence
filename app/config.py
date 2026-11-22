@@ -85,7 +85,11 @@ ODDS_SPORTS = [
 ]
 
 # Automatic refresh is opt-in; 0 keeps refreshes manual.
-ODDS_REFRESH_INTERVAL_SECONDS = max(0, int(os.getenv("ODDS_REFRESH_INTERVAL_SECONDS", "0")))
+_odds_api_refresh_interval = max(0, int(os.getenv("ODDS_REFRESH_INTERVAL_SECONDS", "0")))
+# Keep the 500-credit free tier from being drained by frequent background polling.
+ODDS_REFRESH_INTERVAL_SECONDS = (
+    max(86400, _odds_api_refresh_interval) if _odds_api_refresh_interval > 0 else 0
+)
 
 # Discord webhook alerts are disabled unless a URL is configured.
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
@@ -98,7 +102,7 @@ DISCORD_ALERT_REFRESH_INTERVAL_SECONDS = max(60, int(os.getenv("DISCORD_ALERT_RE
 # Optional OddsLink free-tier posted-market-limit feed. Keys are case-sensitive.
 ODDSLINK_API_KEY = os.getenv("ODDSLINK_API_KEY", "")
 # Five configured sports x six polls/day x 30 days = about 900 calls/month.
-LIMITS_REFRESH_INTERVAL_SECONDS = max(14400, int(os.getenv("LIMITS_REFRESH_INTERVAL_SECONDS", "86400")))
+LIMITS_REFRESH_INTERVAL_SECONDS = max(86400, int(os.getenv("LIMITS_REFRESH_INTERVAL_SECONDS", "86400")))
 LIMITS_SPORTS = [s.strip() for s in os.getenv("LIMITS_SPORTS", "").split(",") if s.strip()]
 LIMITS_ALERT_DECREASES = os.getenv("LIMITS_ALERT_DECREASES", "false").strip().lower() in ("1", "true", "yes", "on")
 
