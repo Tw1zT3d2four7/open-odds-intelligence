@@ -284,7 +284,11 @@ def test_spread_probability_scoring_handles_cover_and_push_results():
     assert cover["spread_brier_score"] == pytest.approx((.55-1)**2 + .4**2 + .05**2)
     assert cover["spread_log_loss"] == pytest.approx(-__import__("math").log(.55))
 
-    push = score_prediction(prediction, {
+    push_prediction = {
+        **prediction,
+        "spread_market": {**prediction["spread_market"], "consensus_home_spread": -4.0},
+    }
+    push = score_prediction(push_prediction, {
         "event_id": "spread-1", "sport_key": "basketball_nba",
         "home_score": 104, "away_score": 100,
     })
