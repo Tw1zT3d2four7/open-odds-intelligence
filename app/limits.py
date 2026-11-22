@@ -63,7 +63,7 @@ def oddslink_api_key():
 
 def oddslink_keyset_fingerprint():
     entries = oddslink_key_entries()
-    material = "\\0".join(f"{group}\\0{key}" for group, key in entries)
+    material = "\x00".join(f"{group}\x00{key}" for group, key in entries)
     return hashlib.sha256(material.encode("utf-8")).hexdigest() if material else ""
 
 
