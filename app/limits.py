@@ -617,8 +617,8 @@ class MarketLimitsMonitor:
             ).fetchone()
         last_attempt = state["state_value"] if state else None
         current_key_fingerprint = (
-            hashlib.sha256(config.ODDSLINK_API_KEY.encode("utf-8")).hexdigest()
-            if config.ODDSLINK_API_KEY else ""
+            hashlib.sha256(oddslink_api_key().encode("utf-8")).hexdigest()
+            if oddslink_api_key() else ""
         )
         key_changed = bool(
             last_key_state and last_key_state["state_value"] != current_key_fingerprint
