@@ -663,6 +663,7 @@ class OddsService:
                                 "next_refresh_seconds": remaining,
                                 "refresh_interval_seconds": config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS,
                             }
+                    source_usages[provider_name] = dict(getattr(provider, "usage", {}) or {})
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
                     if provider_name == "oddize":
