@@ -90,6 +90,15 @@ class OddizeProvider:
             return None
         return number if math.isfinite(number) else None
 
+    @staticmethod
+    def _header_value(value):
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError):
+            return value
+
     def _request(self, path, params=None):
         query = f"?{urlencode(params, doseq=True)}" if params else ""
         request = Request(
@@ -102,10 +111,10 @@ class OddizeProvider:
                 payload = json.loads(response.read().decode("utf-8"))
                 headers = response.headers
                 self.usage.update({
-                    "credits_remaining": headers.get("X-Credits-Remaining"),
-                    "credits_cost": headers.get("X-Credits-Cost"),
-                    "rate_limit_rpm": headers.get("X-RateLimit-Limit"),
-                    "rate_limit_remaining": headers.get("X-RateLimit-Remaining"),
+                    "credits_remaining": self._header_value(headers.get("X-Credits-Remaining")),
+                    "credits_cost": self._header_value(headers.get("X-Credits-Cost")),
+                    "rate_limit_rpm": self._header_value(headers.get("X-RateLimit-Limit")),
+                    "rate_limit_remaining": self._header_value(headers.get("X-RateLimit-Remaining")),
                 })
                 return payload
         except HTTPError as exc:
