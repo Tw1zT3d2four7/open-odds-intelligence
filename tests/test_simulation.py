@@ -592,3 +592,55 @@ def test_tennis_and_mma_do_not_require_spread_or_total_quotes():
     assert _family("tennis_atp") == "tennis"
     assert _family("tennis_wta") == "tennis"
     assert _family("mma_mixed_martial_arts") == "mma"
+
+
+def test_three_way_moneyline_fallback_includes_draw_probability_for_soccer():
+    from app.simulation import market_readiness
+
+    event = _contest_event("soccer_epl")
+    event["home_team"], event["away_team"] = "Home", "Away"
+    event["bookmakers"] = [{
+        "key": "book-3way",
+        "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": 110},
+            {"name": "Draw", "price": 220},
+            {"name": "Away", "price": 250},
+        ]}],
+    }]
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is True
+    assert readiness["simulation_mode"] == "moneyline_outcome_only"
+    result = run_game_simulation(event, seed=2026)
+    assert result["market_moneyline"]["outcome_count"] == 3
+    assert result["market_moneyline"]["draw_probability"] > 0
+    assert result["win_probabilities"]["tie"] > 0
+    assert sum(result["win_probabilities"].values()) == 100
+
+
+def test_score_based_league_falls_back_to_h2h_when_spread_or_total_is_missing():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"] = [{
+        "key": "book-a",
+        "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": -130}, {"name": "Away", "price": 110},
+        ]}],
+    }]
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is True
+    assert readiness["simulation_mode"] == "moneyline_outcome_only"
+    result = run_game_simulation(event, seed=7)
+    assert result["simulation_type"] == "moneyline_outcome_only"
+    assert result["market_moneyline"]["book_count"] == 1
+
+
+def test_unmapped_two_participant_league_can_use_two_way_h2h_fallback():
+    from app.simulation import market_readiness
+
+    event = _contest_event("boxing")
+    event["home_team"], event["away_team"] = "Fighter A", "Fighter B"
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is True
+    result = run_game_simulation(event, seed=9)
+    assert result["win_probabilities"]["tie"] == 0
