@@ -397,12 +397,29 @@ def test_simulation_applies_fitted_multiclass_temperature():
 
 def test_nfl_regular_season_overtime_can_remain_tied():
     from app.simulation import _resolve_tie
-    class NoScoreOvertime:
+    class TiedOvertime:
         @staticmethod
-        def choices(values, weights, k):
-            return [0]
-    home, away, overtime = _resolve_tie(NoScoreOvertime(), "americanfootball_nfl", 20, 20)
+        def random():
+            return 0.01
+    home, away, overtime = _resolve_tie(TiedOvertime(), "americanfootball_nfl", 20, 20)
     assert (home, away, overtime) == (20, 20, True)
+
+
+def test_nfl_overtime_tie_rate_uses_historical_prior_not_independent_equal_scores():
+    import random
+    from app.simulation import _resolve_tie
+
+    rng = random.Random(20261122)
+    overtime_ties = 0
+    trials = 20_000
+    for _ in range(trials):
+        home, away, entered_overtime = _resolve_tie(
+            rng, "americanfootball_nfl", 20, 20
+        )
+        assert entered_overtime is True
+        overtime_ties += home == away
+    observed = overtime_ties / trials
+    assert 0.05 <= observed <= 0.07
 
 def test_simulator_rejects_fractional_and_non_finite_american_prices():
     import pytest
