@@ -63,6 +63,7 @@ def test_oddize_usage_preflight_and_current_odds_request(monkeypatch):
         return FakeResponse({"sport": "nba", "events": []})
 
     monkeypatch.setattr(oddize, "urlopen", fake_urlopen)
+    monkeypatch.setattr(OddizeProvider, "_pace", lambda self: None)
     provider = OddizeProvider("Case-Sensitive-Oddize-Key")
     assert provider.fetch_odds("basketball_nba") == []
     assert len(calls) == 2
@@ -91,6 +92,7 @@ def test_oddize_blocks_credit_spending_when_free_allowance_is_empty(monkeypatch)
         return FakeResponse()
 
     monkeypatch.setattr(oddize, "urlopen", fake_urlopen)
+    monkeypatch.setattr(OddizeProvider, "_pace", lambda self: None)
     provider = OddizeProvider("Key")
     with pytest.raises(ProviderError, match="0 credits") as caught:
         provider.fetch_odds("basketball_nba")
