@@ -47,9 +47,9 @@ def _odds_refresh_interval_seconds():
     """Return the shortest enabled provider poll interval; alerts never poll odds."""
     providers = service.active_provider_names()
     intervals = []
-    if "therundown" in providers and service._provider_key_pools["therundown"].configured:
+    if "therundown" in providers:
         intervals.append(config.RUNDOWN_REFRESH_INTERVAL_SECONDS)
-    if "the_odds_api" in providers and service._provider_key_pools["the_odds_api"].configured:
+    if "the_odds_api" in providers:
         if config.ODDS_REFRESH_INTERVAL_SECONDS > 0:
             intervals.append(config.ODDS_REFRESH_INTERVAL_SECONDS)
     return min(intervals) if intervals else 0
