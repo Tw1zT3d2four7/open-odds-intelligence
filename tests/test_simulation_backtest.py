@@ -312,3 +312,50 @@ def test_tennis_elo_holdout_is_scored_without_fabricated_score_markets(tmp_path)
     assert report["outcome_only_validation"]["sample_size"] == 1
     assert report["outcome_only_validation"]["by_sport"]["tennis_atp"]["sample_size"] == 1
     assert report["scored_outcome_predictions"][0]["actual_result"] == "home"
+
+def test_holdout_never_uses_market_fallback_when_independent_team_history_is_thin(tmp_path):
+    from app.team_model import fit_team_strength_models
+
+    database = OddsDatabase(tmp_path / "strict-independent.sqlite3")
+    event = {
+        "id": "thin-history-event", "sport_key": "basketball_nba",
+        "sport_title": "NBA", "commence_time": "2026-02-01T12:00:00Z",
+        "home_team": "Home Club", "away_team": "Away Club",
+        "bookmakers": [{
+            "key": "book-a",
+            "markets": [
+                {"key": "spreads", "outcomes": [
+                    {"name": "Home Club", "point": -2.5, "price": -110},
+                    {"name": "Away Club", "point": 2.5, "price": -110},
+                ]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "point": 210.5, "price": -110},
+                    {"name": "Under", "point": 210.5, "price": -110},
+                ]},
+            ],
+        }],
+    }
+    database.save_snapshot("basketball_nba", [event], provider="fixture",
+                           fetched_at="2026-02-01T10:00:00+00:00")
+    training = [{
+        "sport_key": "basketball_nba", "home_team": "Home Club",
+        "away_team": "Away Club", "home_score": 110, "away_score": 105,
+    }]
+    fitted = fit_team_strength_models(training)["models"]["basketball_nba"]
+    parameters = {
+        "sport_key": "basketball_nba", "family": "basketball",
+        "sample_size": 1, "independent_team_model": fitted,
+    }
+    settlement = {
+        "event_id": "thin-history-event", "sport_key": "basketball_nba",
+        "commence_time": event["commence_time"],
+        "home_team": "Home Club", "away_team": "Away Club",
+        "home_score": 110, "away_score": 105, "status": "final",
+        "source": "verified-test-fixture",
+    }
+    report = run_historical_backtest(
+        database, [settlement], model_parameters={"basketball_nba": parameters},
+    )
+    assert report["events_scored"] == 0
+    assert report["events_skipped"] == 1
+    assert "No independent rating" in report["skipped"][0]["reason"]
