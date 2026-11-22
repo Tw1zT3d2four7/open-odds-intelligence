@@ -295,7 +295,7 @@ def _validated_model_parameters(parameters, family, sport_key):
     bounds = {"margin_sd": (0.1, 50.0), "total_sd": (0.1, 60.0),
               "margin_total_corr": (-0.95, 0.95), "margin_bias": (-50.0, 50.0),
               "total_bias": (-100.0, 100.0), "temperature": (0.5, 3.0),
-              "total_temperature": (0.5, 3.0),
+              "total_temperature": (0.5, 3.0), "spread_temperature": (0.5, 3.0),
               "home_alpha": (0.0, 2.0),
               "away_alpha": (0.0, 2.0)}
     for key, (low, high) in bounds.items():
@@ -452,6 +452,17 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         else:
             pushes += 1
 
+    raw_spread_probabilities = [home_covers / TRIALS, away_covers / TRIALS, spread_pushes / TRIALS]
+    spread_temperature = fitted.get("spread_temperature") if fitted else None
+    if spread_temperature is not None:
+        weights = [max(1e-12, probability) ** (1.0 / spread_temperature)
+                   for probability in raw_spread_probabilities]
+        weight_total = sum(weights)
+        raw_spread_probabilities = [weight / weight_total for weight in weights]
+    home_cover_probability = round(raw_spread_probabilities[0] * 100, 2)
+    away_cover_probability = round(raw_spread_probabilities[1] * 100, 2)
+    spread_push_probability = round(100.0 - home_cover_probability - away_cover_probability, 2)
+
     raw_probabilities = [home_wins / TRIALS, away_wins / TRIALS, ties / TRIALS]
     temperature = fitted.get("temperature") if fitted else None
     if temperature is not None:
@@ -491,10 +502,10 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         },
         "spread_market": {
             "consensus_home_spread": round(-expected_margin, 2),
-            "home_cover": round(home_covers / TRIALS * 100, 2),
-            "away_cover": round(away_covers / TRIALS * 100, 2),
-            "push": round(100.0 - round(home_covers / TRIALS * 100, 2)
-                          - round(away_covers / TRIALS * 100, 2), 2),
+            "home_cover": home_cover_probability,
+            "away_cover": away_cover_probability,
+            "push": spread_push_probability,
+            "probability_temperature": spread_temperature,
             "settlement_basis": "simulated_final_score",
         },
         "game_resolution": {
