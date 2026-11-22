@@ -75,8 +75,13 @@ def _dry_run_database(database: OddsDatabase) -> tuple[OddsDatabase, str]:
     path = handle.name
     handle.close()
     try:
-        with database.connect() as source, sqlite3.connect(path) as target:
+        source = database.connect()
+        target = sqlite3.connect(path)
+        try:
             source.backup(target)
+        finally:
+            source.close()
+            target.close()
         return OddsDatabase(path), path
     except Exception:
         Path(path).unlink(missing_ok=True)
