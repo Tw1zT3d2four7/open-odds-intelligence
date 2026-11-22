@@ -323,7 +323,7 @@ class MarketLimitsMonitor:
             self.last_diagnostic = {
                 "source": "multi_provider_oddslink_snapshot",
                 "sports_received": list(by_sport),
-                "events_received": sum(len(value) for value in by_sport.values()),
+                "events_returned": sum(len(value) for value in by_sport.values()),
                 "posted_limit_outcomes": len(rows),
             }
             with self._connect() as db:
