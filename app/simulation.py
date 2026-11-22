@@ -417,6 +417,66 @@ def _resolve_tie(rng, sport_key, home_score, away_score):
         return (home_score + 3, away_score, True) if rng.random() < 0.5 else (home_score, away_score + 3, True)
     return home_score, away_score, False
 
+
+def _draw_regulation_scores(rng, family, expected_margin, expected_total, prior, fitted):
+    """Draw regulation scores from market anchors before overtime is applied."""
+    if prior["distribution"] == "poisson":
+        total_bias = fitted.get("total_bias", 0.0) if fitted else 0.0
+        margin_bias = fitted.get("margin_bias", 0.0) if fitted else 0.0
+        home_mean = max(0.05, (expected_total + total_bias + expected_margin + margin_bias) / 2)
+        away_mean = max(0.05, (expected_total + total_bias - expected_margin - margin_bias) / 2)
+        home_alpha = fitted.get("home_alpha", 0.0) if fitted else 0.0
+        away_alpha = fitted.get("away_alpha", 0.0) if fitted else 0.0
+        shared_alpha = fitted.get("shared_alpha", 0.0) if fitted else 0.0
+        shared_multiplier = (
+            rng.gammavariate(1.0 / shared_alpha, shared_alpha)
+            if shared_alpha > 1e-12 else 1.0
+        )
+        home_score = _negative_binomial(rng, home_mean * shared_multiplier, home_alpha)
+        away_score = _negative_binomial(rng, away_mean * shared_multiplier, away_alpha)
+        return home_score, away_score
+
+    z_margin = rng.gauss(0.0, 1.0)
+    z_independent = rng.gauss(0.0, 1.0)
+    correlation = fitted.get("margin_total_corr", 0.0) if fitted else 0.0
+    margin = expected_margin + (fitted.get("margin_bias", 0.0) if fitted else 0.0) + z_margin * prior["margin_sd"]
+    total = expected_total + (fitted.get("total_bias", 0.0) if fitted else 0.0) + prior["total_sd"] * (
+        correlation * z_margin + math.sqrt(1.0 - correlation ** 2) * z_independent
+    )
+    total = max(0.0, total)
+    return max(0, round((total + margin) / 2)), max(0, round((total - margin) / 2))
+
+
+def _estimate_overtime_total_adjustment(sport_key, family, expected_margin, expected_total, prior, fitted, seed):
+    """Estimate points added after regulation so full-game market totals stay anchored.
+
+    Sportsbook totals generally include overtime/extra innings. The simulator
+    must therefore lower its regulation scoring anchor by the expected points
+    added when a regulation tie occurs, rather than adding overtime on top of
+    an already full-game total.
+    """
+    if "soccer" in str(sport_key or "").lower():
+        return 0.0
+    adjustment = 0.0
+    pilot_seed = (seed ^ 0x5A17C0DE) if seed is not None else None
+    for _ in range(2):
+        pilot_rng = random.Random(pilot_seed)
+        added_points = 0
+        for _ in range(TRIALS):
+            home, away = _draw_regulation_scores(
+                pilot_rng, family, expected_margin, expected_total - adjustment, prior, fitted
+            )
+            if home == away:
+                final_home, final_away, _ = _resolve_tie(pilot_rng, sport_key, home, away)
+                added_points += final_home + final_away - home - away
+        revised = added_points / TRIALS
+        if abs(revised - adjustment) < 0.005:
+            adjustment = revised
+            break
+        adjustment = revised
+    return adjustment
+
+
 def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
@@ -433,39 +493,20 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     empirical_fit = bool(fitted and int(fitted.get("sample_size", 0)) > 0)
     if fitted:
         prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
+    overtime_total_adjustment = _estimate_overtime_total_adjustment(
+        event.get("sport_key") or event.get("sport"), family,
+        expected_margin, expected_total, prior, fitted, seed,
+    )
+    regulation_total_anchor = expected_total - overtime_total_adjustment
     rng = random.Random(seed)
     home_wins = away_wins = ties = over = under = pushes = 0
     home_covers = away_covers = spread_pushes = 0
     regulation_ties = overtime_games = 0
     home_scores, away_scores, margins, game_totals = [], [], [], []
     for _ in range(TRIALS):
-        if prior["distribution"] == "poisson":
-            total_bias = fitted.get("total_bias", 0.0) if fitted else 0.0
-            margin_bias = fitted.get("margin_bias", 0.0) if fitted else 0.0
-            home_mean = max(0.05, (expected_total + total_bias + expected_margin + margin_bias) / 2)
-            away_mean = max(0.05, (expected_total + total_bias - expected_margin - margin_bias) / 2)
-            home_alpha = fitted.get("home_alpha", 0.0) if fitted else 0.0
-            away_alpha = fitted.get("away_alpha", 0.0) if fitted else 0.0
-            shared_alpha = fitted.get("shared_alpha", 0.0) if fitted else 0.0
-            # A shared Gamma game-environment factor captures positive
-            # home/away scoring covariance learned from prior league results.
-            shared_multiplier = (
-                rng.gammavariate(1.0 / shared_alpha, shared_alpha)
-                if shared_alpha > 1e-12 else 1.0
-            )
-            home_score = _negative_binomial(rng, home_mean * shared_multiplier, home_alpha)
-            away_score = _negative_binomial(rng, away_mean * shared_multiplier, away_alpha)
-        else:
-            z_margin = rng.gauss(0.0, 1.0)
-            z_independent = rng.gauss(0.0, 1.0)
-            correlation = fitted.get("margin_total_corr", 0.0) if fitted else 0.0
-            margin = expected_margin + (fitted.get("margin_bias", 0.0) if fitted else 0.0) + z_margin * prior["margin_sd"]
-            total = expected_total + (fitted.get("total_bias", 0.0) if fitted else 0.0) + prior["total_sd"] * (
-                correlation * z_margin + math.sqrt(1.0 - correlation ** 2) * z_independent
-            )
-            total = max(0.0, total)
-            home_score = max(0, round((total + margin) / 2))
-            away_score = max(0, round((total - margin) / 2))
+        home_score, away_score = _draw_regulation_scores(
+            rng, family, expected_margin, regulation_total_anchor, prior, fitted
+        )
         if home_score == away_score:
             regulation_ties += 1
             home_score, away_score, went_overtime = _resolve_tie(
@@ -567,6 +608,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         },
         "game_resolution": {
             "regulation_ties": regulation_ties, "games_with_overtime_or_extra_innings": overtime_games,
+            "expected_overtime_total_adjustment": round(overtime_total_adjustment, 3),
+            "regulation_total_anchor": round(regulation_total_anchor, 2),
             "rule": "league_specific_approximation",
         },
         "total_market": {
