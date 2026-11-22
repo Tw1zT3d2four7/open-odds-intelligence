@@ -44,12 +44,15 @@ async def _simulation_results_loop():
         await asyncio.sleep(config.SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS)
 
 def _odds_refresh_interval_seconds():
-    """Return only the configured provider-polling interval; alert checks never poll odds."""
-    return (
-        config.RUNDOWN_REFRESH_INTERVAL_SECONDS
-        if config.ODDS_PROVIDER == "therundown"
-        else config.ODDS_REFRESH_INTERVAL_SECONDS
-    )
+    """Return the shortest enabled provider poll interval; alerts never poll odds."""
+    providers = service.active_provider_names()
+    intervals = []
+    if "therundown" in providers and service._provider_key_pools["therundown"].configured:
+        intervals.append(config.RUNDOWN_REFRESH_INTERVAL_SECONDS)
+    if "the_odds_api" in providers and service._provider_key_pools["the_odds_api"].configured:
+        if config.ODDS_REFRESH_INTERVAL_SECONDS > 0:
+            intervals.append(config.ODDS_REFRESH_INTERVAL_SECONDS)
+    return min(intervals) if intervals else 0
 
 
 async def _automatic_refresh_loop():
@@ -90,7 +93,9 @@ async def lifespan(app: FastAPI):
         task = asyncio.create_task(_automatic_refresh_loop())
     if service.configured and config.DISCORD_WEBHOOK_URL:
         alert_task = asyncio.create_task(_discord_alert_loop())
-    if config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY:
+    if (config.SIMULATION_RESULTS_SYNC_ENABLED
+            and "therundown" in service.active_provider_names()
+            and (config.THERUNDOWN_API_KEY or config.THERUNDOWN_API_KEYS)):
         results_task = asyncio.create_task(_simulation_results_loop())
     try:
         yield
