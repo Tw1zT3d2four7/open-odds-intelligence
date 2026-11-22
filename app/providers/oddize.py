@@ -251,6 +251,63 @@ class OddizeProvider:
             if isinstance(event, dict) and event.get("event_id")
         ]
 
+    def fetch_alternate_lines(self, sport, events, *, max_events=1):
+        """Add alternate spreads/totals for a small, configurable upcoming slate."""
+        api_sport = self.SPORTS.get(sport)
+        if not api_sport or max_events <= 0:
+            return {"events_requested": 0, "alternate_quotes_added": 0}
+        selected = [event for event in events if event.get("id")][:int(max_events)]
+        quotes_added = 0
+        for event in selected:
+            for alt_type, market_key in (("alt_s", "spreads"), ("alt_t", "totals")):
+                self._require_credits(2)
+                payload = self._request(
+                    f"/events/{api_sport}/{event['id']}/alts",
+                    {"alt_type": alt_type},
+                )
+                for line_group in payload.get("lines", []) if isinstance(payload, dict) else []:
+                    if not isinstance(line_group, dict):
+                        continue
+                    group_line = self._line(line_group.get("line"))
+                    for quote in line_group.get("prices") or []:
+                        if not isinstance(quote, dict):
+                            continue
+                        price = self._price(quote.get("american_odds"))
+                        book_code = str(quote.get("book") or "").lower()
+                        selection = str(quote.get("team") or "").strip()
+                        if price is None or not book_code or not selection:
+                            continue
+                        book_key = self.BOOKS.get(book_code, book_code)
+                        book_map = {book.get("key"): book for book in event["bookmakers"]}
+                        book = book_map.get(book_key)
+                        if book is None:
+                            book = {
+                                "key": book_key,
+                                "title": str(quote.get("book_name") or book_key),
+                                "markets": [],
+                            }
+                            event["bookmakers"].append(book)
+                        market_map = {market.get("key"): market for market in book["markets"]}
+                        market = market_map.get(market_key)
+                        if market is None:
+                            market = {"key": market_key, "outcomes": []}
+                            book["markets"].append(market)
+                        market["outcomes"].append({
+                            "name": selection,
+                            "description": "",
+                            "point": self._line(quote.get("line")) if quote.get("line") is not None else group_line,
+                            "price": price,
+                            "updated_at": quote.get("timestamp"),
+                            "source_provider": self.name,
+                        })
+                        quotes_added += 1
+        return {
+            "events_requested": len(selected),
+            "alternate_quotes_added": quotes_added,
+            "credits_remaining": self.usage.get("credits_remaining"),
+            "resets_in_seconds": self.usage.get("resets_in_seconds"),
+        }
+
     def fetch_props(self, sport, events, *, max_prop_types=1, cursor=0):
         api_sport = self.SPORTS.get(sport)
         if not api_sport or max_prop_types <= 0:
