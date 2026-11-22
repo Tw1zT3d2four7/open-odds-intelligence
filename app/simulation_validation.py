@@ -384,6 +384,201 @@ def _load_latest_pregame_event(database, settlement):
     return event, None
 
 
+
+def _moneyline_market_probabilities(event: dict) -> dict | None:
+    """Build median no-vig h2h probabilities from complete archived book markets."""
+    from .math import no_vig_probabilities
+    from .simulation import _team_identity, _team_side
+
+    home = _team_identity(event.get("home_team"))
+    away = _team_identity(event.get("away_team"))
+    if not home or not away or home == away:
+        return None
+    grouped = {2: [], 3: []}
+    seen_books = set()
+    books = event.get("bookmakers", [])
+    if not isinstance(books, list):
+        return None
+    for book in books:
+        if not isinstance(book, dict):
+            continue
+        book_key = str(book.get("key") or book.get("title") or "").strip().lower()
+        if not book_key or book_key in seen_books:
+            continue
+        seen_books.add(book_key)
+        markets = book.get("markets", [])
+        if not isinstance(markets, list):
+            continue
+        market = next((item for item in markets if isinstance(item, dict)
+                       and str(item.get("key") or "").lower() == "h2h"), None)
+        outcomes = market.get("outcomes", []) if isinstance(market, dict) else []
+        if not isinstance(outcomes, list) or len(outcomes) not in (2, 3):
+            continue
+        sides = {}
+        valid = True
+        for outcome in outcomes:
+            if not isinstance(outcome, dict):
+                valid = False
+                break
+            name = str(outcome.get("name") or "").strip()
+            normalized = _normalized_team(name)
+            side = _team_side(name, home, away)
+            if side is None and normalized in {"draw", "tie", "x"}:
+                side = "draw"
+            if side is None or side in sides:
+                valid = False
+                break
+            sides[side] = outcome.get("price")
+        expected_sides = {"home", "away"} if len(outcomes) == 2 else {"home", "away", "draw"}
+        if not valid or set(sides) != expected_sides:
+            continue
+        try:
+            ordered_sides = ("home", "away") if len(outcomes) == 2 else ("home", "away", "draw")
+            fair = no_vig_probabilities([sides[key] for key in ordered_sides])
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if len(fair) != len(expected_sides):
+            continue
+        grouped[len(outcomes)].append({
+            "home": fair[0], "away": fair[1],
+            **({"draw": fair[2]} if len(outcomes) == 3 else {}),
+        })
+    if not grouped[2] and not grouped[3]:
+        return None
+    outcome_count = 3 if len(grouped[3]) > len(grouped[2]) else 2
+    selected = grouped[outcome_count]
+    labels = ("home", "away", "draw") if outcome_count == 3 else ("home", "away")
+    probabilities = {label: median([row[label] for row in selected]) for label in labels}
+    denominator = sum(probabilities.values())
+    if denominator <= 0:
+        return None
+    probabilities = {label: value / denominator for label, value in probabilities.items()}
+    if outcome_count == 2:
+        probabilities["draw"] = 0.0
+    return {"probabilities": probabilities, "outcome_count": outcome_count,
+            "book_count": len(selected)}
+
+
+def _score_moneyline_probabilities(probabilities: dict, outcome_count: int, settlement: dict) -> dict | None:
+    """Score a no-vig moneyline market; two-way markets exclude tied finals."""
+    home_score, away_score = int(settlement["home_score"]), int(settlement["away_score"])
+    actual = "home" if home_score > away_score else "away" if home_score < away_score else "draw"
+    if outcome_count == 2:
+        if actual == "draw":
+            return None
+        denominator = probabilities["home"] + probabilities["away"]
+        if denominator <= 0:
+            return None
+        probs = (probabilities["home"] / denominator, probabilities["away"] / denominator)
+        actual_index = 0 if actual == "home" else 1
+    else:
+        probs = tuple(probabilities[key] for key in ("home", "away", "draw"))
+        actual_index = {"home": 0, "away": 1, "draw": 2}[actual]
+    brier = sum((probability - (1.0 if index == actual_index else 0.0)) ** 2
+                for index, probability in enumerate(probs))
+    return {
+        "event_id": str(settlement["event_id"]),
+        "sport": str(settlement.get("sport_key") or ""),
+        "actual_result": actual,
+        "outcome_count": outcome_count,
+        "brier_score": brier,
+        "log_loss": -math.log(max(1e-12, probs[actual_index])),
+    }
+
+
+def _moneyline_benchmark_report(model_rows: list[dict], market_rows: list[dict]) -> dict:
+    """Compare simulator win probabilities with paired archived no-vig h2h consensus."""
+    model_by_id = {str(row["event_id"]): row for row in model_rows}
+    market_by_id = {str(row["event_id"]): row for row in market_rows}
+    paired = []
+    for event_id in sorted(model_by_id.keys() & market_by_id.keys()):
+        model, market = model_by_id[event_id], market_by_id[event_id]
+        if model.get("actual_result") != market.get("actual_result"):
+            continue
+        if market["outcome_count"] == 2:
+            if market["actual_result"] == "draw":
+                continue
+            denominator = model["predicted_home_probability"] + model["predicted_away_probability"]
+            if denominator <= 0:
+                continue
+            probs = (model["predicted_home_probability"] / denominator,
+                     model["predicted_away_probability"] / denominator)
+            actual_index = 0 if market["actual_result"] == "home" else 1
+        else:
+            probs = (model["predicted_home_probability"], model["predicted_away_probability"],
+                     model["predicted_tie_probability"])
+            actual_index = {"home": 0, "away": 1, "draw": 2}[market["actual_result"]]
+        model_brier = sum((p - (1.0 if index == actual_index else 0.0)) ** 2
+                          for index, p in enumerate(probs))
+        model_log_loss = -math.log(max(1e-12, probs[actual_index]))
+        paired.append({
+            "event_id": event_id, "sport": market.get("sport") or "unknown",
+            "model_brier": model_brier, "market_brier": market["brier_score"],
+            "model_log_loss": model_log_loss, "market_log_loss": market["log_loss"],
+            "market_books": market.get("book_count", 0),
+        })
+
+    def summarize(rows, seed=20261123):
+        if not rows:
+            return {"sample_size": 0, "simulator": None,
+                    "sportsbook_no_vig_consensus": None, "simulator_minus_market": {}}
+        deltas = {
+            "brier_score": [row["model_brier"] - row["market_brier"] for row in rows],
+            "log_loss": [row["model_log_loss"] - row["market_log_loss"] for row in rows],
+        }
+        rng = random.Random(seed)
+        comparison = {}
+        for metric, values in deltas.items():
+            observed = sum(values) / len(values)
+            if len(values) < 2:
+                interval = probability = None
+            else:
+                estimates = sorted(
+                    sum(values[rng.randrange(len(values))] for _ in range(len(values))) / len(values)
+                    for _ in range(2000)
+                )
+                interval = [estimates[49], estimates[1949]]
+                probability = sum(value < 0 for value in estimates) / len(estimates)
+            comparison[metric] = {
+                "mean_delta": observed, "ci_95": interval,
+                "bootstrap_probability_delta_below_zero": probability,
+                "interpretation": (
+                    "INCONCLUSIVE_SINGLE_EVENT" if len(values) < 2 else
+                    "DIRECTIONALLY_FAVORABLE_ON_THIS_SAMPLE" if interval[1] < 0 else
+                    "DIRECTIONALLY_UNFAVORABLE_ON_THIS_SAMPLE" if interval[0] > 0 else
+                    "UNCERTAINTY_INTERVAL_INCLUDES_ZERO"
+                ),
+            }
+        return {
+            "sample_size": len(rows),
+            "market_book_count_mean": sum(row["market_books"] for row in rows) / len(rows),
+            "simulator": {
+                "brier_score": sum(row["model_brier"] for row in rows) / len(rows),
+                "log_loss": sum(row["model_log_loss"] for row in rows) / len(rows),
+            },
+            "sportsbook_no_vig_consensus": {
+                "brier_score": sum(row["market_brier"] for row in rows) / len(rows),
+                "log_loss": sum(row["market_log_loss"] for row in rows) / len(rows),
+            },
+            "simulator_minus_market": comparison,
+        }
+
+    grouped = defaultdict(list)
+    for row in paired:
+        grouped[row["sport"]].append(row)
+    return {
+        **summarize(paired),
+        "by_sport": {sport: summarize(rows, 20261123 + index + 1)
+                     for index, (sport, rows) in enumerate(sorted(grouped.items()))},
+        "benchmark": "median bookmaker-level no-vig h2h probabilities from the same pregame snapshot",
+        "settlement_note": (
+            "Two-way moneyline rows exclude tied final results because a two-way quote "
+            "does not identify a draw probability; three-way markets score home/away/draw."
+        ),
+        "caution": "This is an archived sportsbook benchmark, not an independent forecast or proof of profitability.",
+    }
+
+
 def paired_bootstrap_comparison(model_rows: list[dict], baseline_rows: list[dict], iterations: int = 2000, seed: int = 20261119) -> dict:
     """Estimate uncertainty in paired model-minus-baseline metric differences.
 
@@ -477,7 +672,7 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     import hashlib
     from .simulation import run_game_simulation
 
-    scored, baseline_scored, skipped = [], [], []
+    scored, baseline_scored, skipped, market_scored = [], [], [], []
     for settlement in settlements:
         event, reason = _load_latest_pregame_event(database, settlement)
         if reason:
@@ -486,6 +681,14 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
         seed_material = f"{seed_salt}:{settlement['event_id']}".encode("utf-8")
         seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:4], "big")
         try:
+            market = _moneyline_market_probabilities(event)
+            if market is not None:
+                market_row = _score_moneyline_probabilities(
+                    market["probabilities"], market["outcome_count"], settlement
+                )
+                if market_row is not None:
+                    market_row["book_count"] = market["book_count"]
+                    market_scored.append(market_row)
             baseline_prediction = run_game_simulation(event, seed=seed)
             baseline_row = score_prediction(baseline_prediction, settlement)
             prediction = run_game_simulation(
@@ -499,6 +702,7 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     report = evaluate_predictions(scored)
     baseline_report = evaluate_predictions(baseline_scored)
     report["market_prior_baseline"] = baseline_report
+    report["sportsbook_moneyline_benchmark"] = _moneyline_benchmark_report(scored, market_scored)
     if scored and baseline_scored:
         report["model_minus_baseline"] = {
             key: (report["overall"][key] - baseline_report["overall"][key])
