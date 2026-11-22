@@ -139,7 +139,7 @@ def _paired_report(model_rows: list[dict], market_rows: list[dict], market_name:
             pass
         paired.append({
             "event_id": event_id, "sport": model.get("sport") or "unknown",
-            "model_brier": model["brier_score"], "market_brier": market["brier_score"],
+            "model_brier_score": model["brier_score"], "market_brier_score": market["brier_score"],
             "model_log_loss": model["log_loss"], "market_log_loss": market["log_loss"],
             "market_books": market["book_count"],
         })
@@ -176,11 +176,11 @@ def _paired_report(model_rows: list[dict], market_rows: list[dict], market_name:
             "sample_size": len(items),
             "market_book_count_mean": sum(row["market_books"] for row in items) / len(items),
             "simulator": {
-                "brier_score": sum(row["model_brier"] for row in items) / len(items),
+                "brier_score": sum(row["model_brier_score"] for row in items) / len(items),
                 "log_loss": sum(row["model_log_loss"] for row in items) / len(items),
             },
             market_name: {
-                "brier_score": sum(row["market_brier"] for row in items) / len(items),
+                "brier_score": sum(row["market_brier_score"] for row in items) / len(items),
                 "log_loss": sum(row["market_log_loss"] for row in items) / len(items),
             },
             "simulator_minus_market": comparison,
