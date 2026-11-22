@@ -100,7 +100,7 @@ def test_sgo_fetch_uses_case_sensitive_header_and_free_league_filter(monkeypatch
     events_url = next(url for url in seen["urls"] if "/events/" in url)
     assert "leagueID=NBA" in events_url
     assert "oddsAvailable=true" in events_url
-    assert "limit=100" in events_url
+    assert "limit=25" in events_url
     assert all("apiKey=" not in url for url in seen["urls"])
     assert seen["headers"]["X-api-key"] == "Case-Sensitive-SGO"
     assert provider.usage["tier"] == "amateur"
