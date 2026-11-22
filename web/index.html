@@ -173,7 +173,8 @@ function renderProviderStatus(health){
  const intervalLabel=seconds=>seconds>=86400?Math.round(seconds/86400)+"d":seconds>=3600?Math.round(seconds/3600)+"h":Math.round(seconds/60)+"m";
  const autoText=Object.entries(schedule).map(([name,seconds])=>(labels[name]||name)+" "+intervalLabel(seconds)).join(", ")||"manual only";
  $("providerSummary").textContent=selected.length?selected.map(x=>labels[x]||x).join(" · ")+" · Auto refresh: "+autoText:"No providers selected";
- const cards=selected.map(name=>{
+ const allNames=["therundown","the_odds_api","sports_game_odds","oddize","oddslink"];
+ const cards=allNames.map(name=>{
   const pool=pools[name]||{},keys=pool.keys||[];
   const rows=keys.map(key=>{
    const usage=key.usage||{},quota=[];
@@ -187,15 +188,17 @@ function renderProviderStatus(health){
    const status=key.status||"unknown",pill=status==="available"?"good":status==="disabled"?"bad":"warn";
    return '<div class="provider-key"><span>Key '+escapeHtml(String(key.key_id||"").slice(0,8))+' · '+escapeHtml(key.account_group||"default")+'</span> <span class="pill '+pill+'">'+escapeHtml(status)+'</span><small>'+escapeHtml(quota.join(" · ")||"Quota not reported yet")+'</small>'+(key.retry_in_seconds>0?'<small>Retry in '+escapeHtml(key.retry_in_seconds)+'s</small>':"")+(key.last_error?'<small class="warn">'+escapeHtml(key.last_error)+'</small>':"")+'</div>';
   }).join("");
-  const state=pool.configured?"Configured":"No API key";
+  const isSelected=selected.includes(name);
+  const state=pool.configured?(isSelected?"Enabled":"Key set · not selected"):(isSelected?"Missing API key":"No API key");
+  const stateClass=pool.configured&&isSelected?"good":pool.configured?"warn":"bad";
   const covered=Object.entries(coverage).filter(([,sportData])=>(sportData.provider_coverage||{})[name]);
   const sports=covered.map(([sport])=>sport);
   const books=new Set(),markets=new Set();let quotes=0,props=0;
   covered.forEach(([,sportData])=>{const item=sportData.provider_coverage[name];(item.books||[]).forEach(book=>books.add(book));(item.markets||[]).forEach(market=>markets.add(market));quotes+=Number(item.quotes||0);props+=Number(item.prop_quotes||0)});
   const coverageHtml=covered.length?'<small class="muted">Sports: '+escapeHtml(sports.join(", "))+'</small><small class="muted">Books: '+books.size+' · Markets: '+markets.size+' · Quotes: '+quotes+' · Prop quotes: '+props+'</small>':'<small class="muted">Coverage appears after the first successful refresh.</small>';
-  return '<div class="provider-card"><div class="provider-head"><strong>'+escapeHtml(labels[name]||name)+'</strong><span class="pill '+(pool.configured?"good":"warn")+'">'+state+'</span></div>'+(rows||'<small class="muted">Add this provider key in the environment file to enable it.</small>')+coverageHtml+'</div>';
+  return '<div class="provider-card"><div class="provider-head"><strong>'+escapeHtml(labels[name]||name)+'</strong><span class="pill '+stateClass+'">'+state+'</span></div>'+(rows||'<small class="muted">Add this provider key in the environment file to enable it.</small>')+coverageHtml+'</div>';
  }).join("");
- $("providerGrid").innerHTML=cards||'<div class="muted">Select providers with ODDS_PROVIDERS in the environment file.</div>';
+ $("providerGrid").innerHTML=cards||'<div class="muted">No provider information is available.</div>';
 }
 async function load(){
  const apiFailures=[];
