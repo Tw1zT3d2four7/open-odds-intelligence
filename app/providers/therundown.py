@@ -210,10 +210,10 @@ class TheRundownProvider:
                     home = name
                 elif home_flag is False or away_flag is True or side in ("away", "a"):
                     away = name
-        # Tennis events may expose competitors only as moneyline participants,
-        # not as home/away teams. Preserve the provider's participant order as
-        # a stable neutral A/B matchup identity for the shared event schema.
-        if sport in ("tennis_atp", "tennis_wta") and (not home or not away):
+        # Tennis and MMA events may expose competitors only as moneyline
+        # participants, not as home/away teams. Preserve provider participant
+        # order as neutral A/B matchup identity for the shared event schema.
+        if sport in ("tennis_atp", "tennis_wta", "mma_mixed_martial_arts") and (not home or not away):
             for raw_market in raw.get("markets") or []:
                 if not isinstance(raw_market, dict) or raw_market.get("market_id") != 1:
                     continue
