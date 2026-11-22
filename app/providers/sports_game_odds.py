@@ -100,7 +100,7 @@ class SportsGameOddsProvider:
         try:
             with urlopen(request, timeout=25) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-                self.usage = {
+                self.usage.update({
                     key: response.headers.get(header)
                     for key, header in {
                         "requests_remaining": "x-ratelimit-remaining",
@@ -108,7 +108,7 @@ class SportsGameOddsProvider:
                         "objects_remaining": "x-objects-remaining",
                         "objects_used": "x-objects-used",
                     }.items() if response.headers.get(header) is not None
-                }
+                })
                 return payload
         except HTTPError as exc:
             headers = exc.headers or {}
