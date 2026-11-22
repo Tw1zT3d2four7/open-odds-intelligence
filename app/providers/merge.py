@@ -1,0 +1,148 @@
+"""Deterministic merging of normalized odds from independent providers."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+
+def _team_key(value):
+    return "".join(char.lower() for char in str(value or "") if char.isalnum())
+
+
+def _timestamp(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return None
+        return parsed.astimezone(timezone.utc).timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _same_event(left, right, tolerance_seconds=300):
+    if left.get("sport_key") != right.get("sport_key"):
+        return False
+    if _team_key(left.get("home_team")) != _team_key(right.get("home_team")):
+        return False
+    if _team_key(left.get("away_team")) != _team_key(right.get("away_team")):
+        return False
+    a = _timestamp(left.get("commence_time"))
+    b = _timestamp(right.get("commence_time"))
+    return a is not None and b is not None and abs(a - b) <= tolerance_seconds
+
+
+def _outcome_identity(outcome):
+    point = outcome.get("point")
+    try:
+        point = None if point is None else float(point)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return (
+        str(outcome.get("name") or ""),
+        str(outcome.get("description") or outcome.get("participant") or ""),
+        point,
+    )
+
+
+def _quote_rank(outcome, provider_rank):
+    updated = _timestamp(outcome.get("updated_at") or outcome.get("source_updated_at"))
+    return (updated if updated is not None else float("-inf"), -provider_rank)
+
+
+def merge_provider_events(provider_results):
+    """Merge normalized event lists in explicit source-priority order.
+
+    Event identity is strict: sport, ordered home/away identities, and kickoff
+    within five minutes. A provider cannot silently reverse home/away. Exact
+    event IDs are preferred, then the strict matchup identity. For a duplicate
+    book/market/selection/line, the newest provider timestamp wins; when no
+    timestamps exist, earlier provider order wins.
+    """
+    merged = []
+    by_id = {}
+    by_identity = {}
+    provider_rank = {name: index for index, (name, _) in enumerate(provider_results)}
+
+    for provider_name, events in provider_results:
+        for raw_event in events or []:
+            if not isinstance(raw_event, dict) or not raw_event.get("id"):
+                continue
+            event = dict(raw_event)
+            event_id = str(event["id"])
+            target = by_id.get((event.get("sport_key"), event_id))
+            identity = (
+                event.get("sport_key"),
+                _team_key(event.get("home_team")),
+                _team_key(event.get("away_team")),
+            )
+            if target is None:
+                for candidate in by_identity.get(identity, []):
+                    if _same_event(candidate, event):
+                        target = candidate
+                        break
+            if target is None:
+                event["id"] = event_id
+                event["sources"] = [provider_name]
+                event["source"] = provider_name
+                event["bookmakers"] = []
+                merged.append(event)
+                by_id[(event.get("sport_key"), event_id)] = event
+                by_identity.setdefault(identity, []).append(event)
+                target = event
+            else:
+                if provider_name not in target["sources"]:
+                    target["sources"].append(provider_name)
+                target["source"] = "+".join(target["sources"])
+                by_id[(event.get("sport_key"), event_id)] = target
+
+            book_map = {book.get("key"): book for book in target["bookmakers"]}
+            for raw_book in event.get("bookmakers") or []:
+                if not isinstance(raw_book, dict) or not raw_book.get("key"):
+                    continue
+                book_key = str(raw_book["key"])
+                book = book_map.get(book_key)
+                if book is None:
+                    book = {
+                        "key": book_key,
+                        "title": raw_book.get("title") or book_key,
+                        "markets": [],
+                    }
+                    target["bookmakers"].append(book)
+                    book_map[book_key] = book
+                market_map = {market.get("key"): market for market in book["markets"]}
+                for raw_market in raw_book.get("markets") or []:
+                    if not isinstance(raw_market, dict) or not raw_market.get("key"):
+                        continue
+                    market_key = str(raw_market["key"])
+                    market = market_map.get(market_key)
+                    if market is None:
+                        market = {"key": market_key, "outcomes": []}
+                        book["markets"].append(market)
+                        market_map[market_key] = market
+                    outcome_map = {
+                        _outcome_identity(item): index
+                        for index, item in enumerate(market["outcomes"])
+                        if _outcome_identity(item) is not None
+                    }
+                    for raw_outcome in raw_market.get("outcomes") or []:
+                        if not isinstance(raw_outcome, dict):
+                            continue
+                        identity_key = _outcome_identity(raw_outcome)
+                        if identity_key is None:
+                            continue
+                        candidate = dict(raw_outcome)
+                        candidate["source_provider"] = provider_name
+                        existing_index = outcome_map.get(identity_key)
+                        if existing_index is None:
+                            outcome_map[identity_key] = len(market["outcomes"])
+                            market["outcomes"].append(candidate)
+                            continue
+                        existing = market["outcomes"][existing_index]
+                        existing_provider = existing.get("source_provider", "")
+                        if _quote_rank(candidate, provider_rank.get(provider_name, 999)) > _quote_rank(
+                            existing, provider_rank.get(existing_provider, 999)
+                        ):
+                            market["outcomes"][existing_index] = candidate
+
+    return merged
