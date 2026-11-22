@@ -566,6 +566,7 @@ class OddsService:
             count += len(events)
             successful_sports += 1
             provider_results_summary[sport_key] = {
+                **provider_results_summary.get(sport_key, {}),
                 "providers_succeeded": successful_providers,
                 "providers_skipped_for_league_coverage": skipped_providers,
                 "events": len(events),
