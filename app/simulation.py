@@ -422,6 +422,8 @@ def market_readiness(event):
         missing.append("a complete, valid total with matching Over and Under outcomes")
     return {
         "can_simulate": has_start_time and has_spread and has_total,
+        "simulation_mode": "score_based_monte_carlo",
+        "sport_family": family,
         "has_start_time": has_start_time,
         "has_spread": has_spread,
         "has_total": has_total,
@@ -749,6 +751,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     return {
         "trials": TRIALS,
         "simulation_seed": seed,
+        "simulation_type": "score_based_monte_carlo",
+        "sport_family": family,
         "event_id": event.get("id"),
         "sport": event.get("sport_key"),
         "matchup": f"{event.get('away_team')} @ {event.get('home_team')}",

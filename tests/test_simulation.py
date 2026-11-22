@@ -644,3 +644,28 @@ def test_unmapped_two_participant_league_can_use_two_way_h2h_fallback():
     assert readiness["can_simulate"] is True
     result = run_game_simulation(event, seed=9)
     assert result["win_probabilities"]["tie"] == 0
+
+
+@pytest.mark.parametrize("sport_key,family", [
+    ("basketball_nba", "basketball"),
+    ("basketball_ncaab", "basketball"),
+    ("basketball_wnba", "basketball"),
+    ("americanfootball_nfl", "football"),
+    ("americanfootball_ncaaf", "football"),
+    ("baseball_mlb", "baseball"),
+    ("icehockey_nhl", "hockey"),
+    ("soccer_epl", "soccer"),
+    ("soccer_mls", "soccer"),
+])
+def test_score_based_leagues_expose_consistent_simulation_capability(sport_key, family):
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["sport_key"] = sport_key
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is True
+    assert readiness["simulation_mode"] == "score_based_monte_carlo"
+    assert readiness["sport_family"] == family
+    result = run_game_simulation(event, seed=17)
+    assert result["simulation_type"] == "score_based_monte_carlo"
+    assert result["sport_family"] == family
