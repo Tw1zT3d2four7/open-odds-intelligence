@@ -443,3 +443,46 @@ def test_dashboard_has_separate_draw_card_for_moneyline_only_simulations():
     assert 'id="simDrawCard"' in dashboard
     assert 'id="simDrawProbability"' in dashboard
     assert 'data.win_probabilities.tie<=0' in dashboard
+
+
+@pytest.mark.parametrize("sport_key,home,away", [
+    ("tennis_atp", "Player Alpha", "Player Beta"),
+    ("tennis_wta", "Player Gamma", "Player Delta"),
+    ("mma_mixed_martial_arts", "Fighter Alpha", "Fighter Beta"),
+])
+def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key, home, away):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", [sport_key])
+    event = {
+        "id": "outcome-only-api-event",
+        "sport_key": sport_key,
+        "commence_time": "2099-11-20T00:00:00Z",
+        "home_team": home,
+        "away_team": away,
+        "bookmakers": [{
+            "key": "book-a",
+            "markets": [{"key": "h2h", "outcomes": [
+                {"name": home, "price": -140},
+                {"name": away, "price": 120},
+            ]}],
+        }],
+    }
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [{"sport": sport_key, "freshness": "current", "age_seconds": 30}]
+    })
+    with TestClient(main.app) as client:
+        games = client.get(f"/api/simulation/games?sport={sport_key}")
+        result = client.post(
+            f"/api/simulation/run?sport={sport_key}&event_id=outcome-only-api-event"
+        )
+
+    assert games.status_code == 200
+    game = games.json()["games"][0]
+    assert game["can_simulate"] is True
+    assert game["simulation_mode"] == "moneyline_outcome_only"
+    assert game["moneyline_books"] == 1
+    assert result.status_code == 200
+    payload = result.json()
+    assert payload["simulation_type"] == "moneyline_outcome_only"
+    assert payload["trials"] == 10_000
+    assert payload["data_quality"]["model_source"] == "sportsbook_no_vig_consensus"
