@@ -399,7 +399,7 @@ def test_provider_refresh_rotates_to_next_key_after_quota_exhaustion(tmp_path, m
     monkeypatch.setattr(config, "THE_ODDS_API_KEY", "")
     monkeypatch.setattr(
         config, "THE_ODDS_API_KEYS",
-        "First-Case-Sensitive-Key,Second-Case-Sensitive-Key",
+        "account-a|First-Case-Sensitive-Key,account-b|Second-Case-Sensitive-Key",
         raising=False,
     )
     monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
@@ -443,7 +443,7 @@ def test_provider_refresh_fails_cleanly_when_every_key_is_exhausted(tmp_path, mo
 
     monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
     monkeypatch.setattr(config, "THE_ODDS_API_KEY", "")
-    monkeypatch.setattr(config, "THE_ODDS_API_KEYS", "QuotaKeyA,QuotaKeyB", raising=False)
+    monkeypatch.setattr(config, "THE_ODDS_API_KEYS", "account-a|QuotaKeyA,account-b|QuotaKeyB", raising=False)
     monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba", "icehockey_nhl"])
     monkeypatch.setattr("app.service.TheOddsAPIProvider", ExhaustedProvider)
 
