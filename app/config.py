@@ -19,6 +19,10 @@ THERUNDOWN_API_KEYS = os.getenv("THERUNDOWN_API_KEYS", "")
 THE_ODDS_API_KEYS = os.getenv("THE_ODDS_API_KEYS", "")
 SPORTSGAMEODDS_API_KEY = os.getenv("SPORTSGAMEODDS_API_KEY", "")
 SPORTSGAMEODDS_API_KEYS = os.getenv("SPORTSGAMEODDS_API_KEYS", "")
+# Oddize Developer tier includes one API key on the free plan.
+ODDIZE_API_KEY = os.getenv("ODDIZE_API_KEY", "")
+ODDIZE_PROPS_ENABLED = os.getenv("ODDIZE_PROPS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+ODDIZE_PROP_TYPES_PER_REFRESH = max(0, min(5, int(os.getenv("ODDIZE_PROP_TYPES_PER_REFRESH", "1"))))
 ODDS_REGIONS = os.getenv("ODDS_REGIONS", "us")
 # Optional explicit bookmaker keys; when set, this overrides region selection.
 ODDS_BOOKMAKERS = os.getenv("ODDS_BOOKMAKERS", "").strip()
@@ -49,6 +53,15 @@ PROVIDER_DEFAULT_ODDS_SPORTS = {
     # tournament-specific tennis keys, so it must not receive generic aliases.
     "therundown": BASE_DEFAULT_ODDS_SPORTS + ",tennis_atp,tennis_wta",
     "the_odds_api": BASE_DEFAULT_ODDS_SPORTS,
+    "sports_game_odds": (
+        "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,"
+        "basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_mls,"
+        "soccer_uefa_champs_league"
+    ),
+    "oddize": (
+        "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,"
+        "basketball_ncaab,icehockey_nhl,baseball_mlb"
+    ),
 }
 
 
