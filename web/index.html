@@ -357,7 +357,9 @@ async function runSelectedSimulation(){
   $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+((temperature!==null&&temperature!==undefined)||(totalTemperature!==null&&totalTemperature!==undefined)||(spreadTemperature!==null&&spreadTemperature!==undefined)?" · probabilities calibrated":"");
   $("simDistributionDetail").textContent=empiricallyFitted?"Fitted scoring residual distribution":"Broad family-level scoring assumptions";
   $("simResolution").textContent=Number(data.game_resolution.games_with_overtime_or_extra_innings||0).toLocaleString()+" games with OT / extras";
-  $("simRegulationTies").textContent=Number(data.game_resolution.regulation_ties||0).toLocaleString()+" regulation ties";
+  const overtimeAdjustment=Number(data.game_resolution.expected_overtime_total_adjustment||0);
+  const regulationAnchor=Number(data.game_resolution.regulation_total_anchor??data.total_market.consensus_line);
+  $("simRegulationTies").textContent=Number(data.game_resolution.regulation_ties||0).toLocaleString()+" regulation ties · "+overtimeAdjustment.toFixed(2)+" expected OT points budgeted · regulation anchor "+regulationAnchor.toFixed(2);
   $("simMethodology").textContent=data.methodology;$("simResults").classList.remove("hidden");
   $("simStatus").textContent="Completed exactly 10,000 trials for "+data.matchup+".";
  }catch(e){$("simStatus").textContent="Simulation unavailable: "+e.message;$("simResults").classList.add("hidden")}
