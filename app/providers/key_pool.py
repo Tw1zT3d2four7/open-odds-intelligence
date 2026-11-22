@@ -134,6 +134,7 @@ class ProviderKeyPool:
                 continue
             if isinstance(value, (str, int, float, bool)) or value is None:
                 safe[str(name)] = value
+        safe.setdefault("usage_observed_at", datetime.now(timezone.utc).isoformat())
         exhausted = False
         for name in (
             "requests_remaining", "credits_remaining", "monthly_objects_remaining",
@@ -147,29 +148,40 @@ class ProviderKeyPool:
                     pass
         if exhausted:
             delay = None
-            for name in ("resets_in_seconds", "retry_after_seconds"):
+            now_utc = datetime.now(timezone.utc)
+            for name in (
+                "period_resets_at", "monthly_reset", "daily_reset",
+                "datapoints_reset_at", "credits_reset_at", "reset_at",
+            ):
+                value = safe.get(name)
+                if not value:
+                    continue
                 try:
-                    if safe.get(name) is not None:
-                        delay = max(1.0, float(safe[name]))
-                        break
+                    reset = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                    if reset.tzinfo is None:
+                        reset = reset.replace(tzinfo=timezone.utc)
+                    delay = max(1.0, (reset.astimezone(timezone.utc) - now_utc).total_seconds())
+                    break
+                except (TypeError, ValueError):
+                    continue
+            if delay is None:
+                elapsed = 0.0
+                try:
+                    observed_at = datetime.fromisoformat(
+                        str(safe.get("usage_observed_at")).replace("Z", "+00:00")
+                    )
+                    if observed_at.tzinfo is None:
+                        observed_at = observed_at.replace(tzinfo=timezone.utc)
+                    elapsed = max(0.0, (now_utc - observed_at.astimezone(timezone.utc)).total_seconds())
                 except (TypeError, ValueError):
                     pass
-            if delay is None:
-                for name in (
-                    "period_resets_at", "monthly_reset", "daily_reset",
-                    "datapoints_reset_at", "credits_reset_at", "reset_at",
-                ):
-                    value = safe.get(name)
-                    if not value:
-                        continue
+                for name in ("resets_in_seconds", "retry_after_seconds"):
                     try:
-                        reset = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-                        if reset.tzinfo is None:
-                            reset = reset.replace(tzinfo=timezone.utc)
-                        delay = max(1.0, (reset.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds())
-                        break
+                        if safe.get(name) is not None:
+                            delay = max(1.0, float(safe[name]) - elapsed)
+                            break
                     except (TypeError, ValueError):
-                        continue
+                        pass
             if delay is None:
                 delay = 86400.0
 
