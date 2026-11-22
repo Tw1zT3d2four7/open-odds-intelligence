@@ -260,3 +260,69 @@ def test_prediction_scoring_requires_stable_scalar_event_ids_and_objects():
         score_prediction({**valid_prediction, "event_id": []}, valid_settlement)
     with pytest.raises(ValueError, match="stable event IDs"):
         score_prediction(valid_prediction, {**valid_settlement, "event_id": True})
+
+
+def test_spread_probability_scoring_handles_cover_and_push_results():
+    prediction = {
+        "event_id": "spread-1",
+        "sport": "basketball_nba",
+        "win_probabilities": {"home": 60, "away": 35, "tie": 5},
+        "projected_score": {"home": 105, "away": 100},
+        "total_market": {"consensus_line": 205, "over": 50, "under": 45, "push": 5},
+        "spread_market": {
+            "consensus_home_spread": -4.5,
+            "home_cover": 55,
+            "away_cover": 40,
+            "push": 5,
+        },
+    }
+    cover = score_prediction(prediction, {
+        "event_id": "spread-1", "sport_key": "basketball_nba",
+        "home_score": 106, "away_score": 100,
+    })
+    assert cover["actual_spread_result"] == "home_cover"
+    assert cover["spread_brier_score"] == pytest.approx((.55-1)**2 + .4**2 + .05**2)
+    assert cover["spread_log_loss"] == pytest.approx(-__import__("math").log(.55))
+
+    push_prediction = {
+        **prediction,
+        "spread_market": {**prediction["spread_market"], "consensus_home_spread": -4.0},
+    }
+    push = score_prediction(push_prediction, {
+        "event_id": "spread-1", "sport_key": "basketball_nba",
+        "home_score": 104, "away_score": 100,
+    })
+    assert push["actual_spread_result"] == "push"
+    assert push["spread_log_loss"] == pytest.approx(-__import__("math").log(.05))
+
+
+def test_evaluation_reports_spread_brier_and_log_loss_when_available():
+    rows = [{
+        "sport": "nba",
+        "actual_result": "home",
+        "predicted_home_probability": .6,
+        "predicted_away_probability": .35,
+        "predicted_tie_probability": .05,
+        "predicted_over_probability": .5,
+        "predicted_under_probability": .45,
+        "predicted_total_push_probability": .05,
+        "actual_total_result": "over",
+        "total_brier_score": .2,
+        "total_log_loss": .69,
+        "brier_score": .3,
+        "log_loss": .51,
+        "home_score_error": 1,
+        "away_score_error": 2,
+        "total_score_error": 3,
+        "margin_error": 1,
+        "actual_spread_result": "home_cover",
+        "predicted_home_cover_probability": .55,
+        "predicted_away_cover_probability": .4,
+        "predicted_spread_push_probability": .05,
+        "spread_brier_score": .205,
+        "spread_log_loss": .598,
+    }]
+    report = evaluate_predictions(rows)
+    assert report["overall"]["spread_sample_size"] == 1
+    assert report["overall"]["spread_brier_score"] == pytest.approx(.205)
+    assert report["overall"]["spread_log_loss"] == pytest.approx(.598)

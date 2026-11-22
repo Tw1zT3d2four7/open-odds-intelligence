@@ -288,7 +288,7 @@ def test_simulation_accepts_only_matching_empirical_league_parameters():
 
 @pytest.mark.parametrize("parameter", [
     "margin_sd", "total_sd", "margin_total_corr", "margin_bias",
-    "total_bias", "temperature", "total_temperature", "home_alpha", "away_alpha",
+    "total_bias", "temperature", "total_temperature", "spread_temperature", "home_alpha", "away_alpha", "shared_alpha",
 ])
 def test_simulation_rejects_boolean_fitted_model_parameters(parameter):
     event = sample_event()
@@ -442,3 +442,37 @@ def test_market_readiness_blocks_started_or_invalidly_scheduled_games():
     assert readiness["has_start_time"] is False
     assert readiness["can_simulate"] is False
     assert "before the game starts" in readiness["reason"]
+
+
+def test_simulation_reports_spread_cover_probabilities_from_final_trial_scores():
+    result = run_game_simulation(sample_event(), seed=20261122)
+    spread = result["spread_market"]
+    assert spread["consensus_home_spread"] == -4.75
+    assert 0 <= spread["home_cover"] <= 100
+    assert 0 <= spread["away_cover"] <= 100
+    assert 0 <= spread["push"] <= 100
+    assert abs(spread["home_cover"] + spread["away_cover"] + spread["push"] - 100) <= 0.02
+    assert spread["settlement_basis"] == "simulated_final_score"
+
+
+def test_simulation_spread_cover_probabilities_are_seed_reproducible():
+    event = sample_event()
+    first = run_game_simulation(event, seed=42)
+    second = run_game_simulation(event, seed=42)
+    assert first["spread_market"] == second["spread_market"]
+
+
+def test_calibration_only_model_is_not_mislabeled_as_empirical_training_fit():
+    event = sample_event()
+    params = {
+        "sport_key": "basketball_nba",
+        "family": "basketball",
+        "sample_size": 0,
+        "temperature": 1.2,
+        "total_temperature": 1.1,
+    }
+    result = run_game_simulation(event, seed=99, model_parameters=params)
+    assert result["data_quality"]["model_source"] == "broad_league_prior"
+    assert result["margin_market"]["model_source"] == "broad_league_prior"
+    assert result["margin_market"]["probability_temperature"] == 1.2
+    assert result["total_market"]["probability_temperature"] == 1.1

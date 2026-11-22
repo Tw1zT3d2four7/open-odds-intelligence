@@ -295,9 +295,9 @@ def _validated_model_parameters(parameters, family, sport_key):
     bounds = {"margin_sd": (0.1, 50.0), "total_sd": (0.1, 60.0),
               "margin_total_corr": (-0.95, 0.95), "margin_bias": (-50.0, 50.0),
               "total_bias": (-100.0, 100.0), "temperature": (0.5, 3.0),
-              "total_temperature": (0.5, 3.0),
+              "total_temperature": (0.5, 3.0), "spread_temperature": (0.5, 3.0),
               "home_alpha": (0.0, 2.0),
-              "away_alpha": (0.0, 2.0)}
+              "away_alpha": (0.0, 2.0), "shared_alpha": (0.0, 2.0)}
     for key, (low, high) in bounds.items():
         if key not in result:
             continue
@@ -397,6 +397,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
     rng = random.Random(seed)
     home_wins = away_wins = ties = over = under = pushes = 0
+    home_covers = away_covers = spread_pushes = 0
     regulation_ties = overtime_games = 0
     home_scores, away_scores = [], []
     for _ in range(TRIALS):
@@ -407,8 +408,15 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             away_mean = max(0.05, (expected_total + total_bias - expected_margin - margin_bias) / 2)
             home_alpha = fitted.get("home_alpha", 0.0) if fitted else 0.0
             away_alpha = fitted.get("away_alpha", 0.0) if fitted else 0.0
-            home_score = _negative_binomial(rng, home_mean, home_alpha)
-            away_score = _negative_binomial(rng, away_mean, away_alpha)
+            shared_alpha = fitted.get("shared_alpha", 0.0) if fitted else 0.0
+            # A shared Gamma game-environment factor captures positive
+            # home/away scoring covariance learned from prior league results.
+            shared_multiplier = (
+                rng.gammavariate(1.0 / shared_alpha, shared_alpha)
+                if shared_alpha > 1e-12 else 1.0
+            )
+            home_score = _negative_binomial(rng, home_mean * shared_multiplier, home_alpha)
+            away_score = _negative_binomial(rng, away_mean * shared_multiplier, away_alpha)
         else:
             z_margin = rng.gauss(0.0, 1.0)
             z_independent = rng.gauss(0.0, 1.0)
@@ -436,12 +444,31 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             away_wins += 1
         else:
             ties += 1
+        # The consensus home spread is the inverse of the home outcome point:
+        # a -4.5 home quote means the home team must win by more than 4.5.
+        if margin > expected_margin + 1e-9:
+            home_covers += 1
+        elif margin < expected_margin - 1e-9:
+            away_covers += 1
+        else:
+            spread_pushes += 1
         if total > expected_total:
             over += 1
         elif total < expected_total:
             under += 1
         else:
             pushes += 1
+
+    raw_spread_probabilities = [home_covers / TRIALS, away_covers / TRIALS, spread_pushes / TRIALS]
+    spread_temperature = fitted.get("spread_temperature") if fitted else None
+    if spread_temperature is not None:
+        weights = [max(1e-12, probability) ** (1.0 / spread_temperature)
+                   for probability in raw_spread_probabilities]
+        weight_total = sum(weights)
+        raw_spread_probabilities = [weight / weight_total for weight in weights]
+    home_cover_probability = round(raw_spread_probabilities[0] * 100, 2)
+    away_cover_probability = round(raw_spread_probabilities[1] * 100, 2)
+    spread_push_probability = round(100.0 - home_cover_probability - away_cover_probability, 2)
 
     raw_probabilities = [home_wins / TRIALS, away_wins / TRIALS, ties / TRIALS]
     temperature = fitted.get("temperature") if fitted else None
@@ -480,6 +507,14 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         "win_probabilities": {
             "home": home_probability, "away": away_probability, "tie": tie_probability,
         },
+        "spread_market": {
+            "consensus_home_spread": round(-expected_margin, 2),
+            "home_cover": home_cover_probability,
+            "away_cover": away_cover_probability,
+            "push": spread_push_probability,
+            "probability_temperature": spread_temperature,
+            "settlement_basis": "simulated_final_score",
+        },
         "game_resolution": {
             "regulation_ties": regulation_ties, "games_with_overtime_or_extra_innings": overtime_games,
             "rule": "league_specific_approximation",
@@ -503,14 +538,18 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "spread_books": spread_books,
             "total_books": total_books,
             "distribution": prior["distribution"],
-            "model_source": "empirical_training_fit" if fitted else "broad_league_prior",
+            "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
+            "shared_count_environment_alpha": (
+                fitted.get("shared_alpha", 0.0) if fitted and prior["distribution"] == "poisson" else None
+            ),
             "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
         "methodology": (
             "Empirically fitted per-league market-residual model: stored sportsbook spread "
             "and total anchor this game; earlier verified training events supply league-specific "
-            "residual bias, variance, correlation and count overdispersion. This is not a copy "
+            "residual bias, variance and correlation; count-based leagues use team-specific "
+            "overdispersion plus a shared positive scoring-environment factor. This is not a copy "
             "of any sportsbook model and does not ingest team/player efficiency, injuries, "
             "lineups or weather. It is not validated until evaluated on an adequate untouched "
             "chronological holdout."

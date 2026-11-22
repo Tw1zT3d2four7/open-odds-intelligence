@@ -57,6 +57,9 @@ def test_historical_backtest_uses_latest_pregame_snapshot_and_is_reproducible(tm
     assert first["status"] == "DESCRIPTIVE_ONLY"
     assert first["paired_uncertainty"]["sample_size"] == 1
     assert first["paired_uncertainty"]["metrics"]["brier_score"]["ci_95"] is None
+    assert first["overall"]["spread_sample_size"] == 1
+    assert first["overall"]["spread_brier_score"] is not None
+    assert "spread_brier_score" in first["paired_uncertainty"]["metrics"]
 
 
 def test_historical_backtest_skips_events_without_pregame_quotes(tmp_path):
@@ -203,3 +206,58 @@ def test_paired_bootstrap_reports_separate_league_intervals():
     assert set(result["per_sport"]) == {"basketball_nba", "icehockey_nhl"}
     assert result["per_sport"]["basketball_nba"]["sample_size"] == 2
     assert result["per_sport"]["icehockey_nhl"]["sample_size"] == 2
+
+
+def test_count_model_fits_shared_scoring_environment_for_low_scoring_leagues(tmp_path):
+    from app.simulation import run_game_simulation
+    from app.simulation_validation import fit_league_models
+
+    database = OddsDatabase(tmp_path / "baseball-training.sqlite3")
+    settlements = []
+    scores = ((8, 6), (10, 8), (7, 5), (9, 7))
+    for index, (home_score, away_score) in enumerate(scores):
+        event_id = f"mlb-train-{index}"
+        commence = f"2026-01-0{index + 2}T00:00:00Z"
+        event = {
+            "id": event_id,
+            "sport_key": "baseball_mlb",
+            "sport_title": "MLB",
+            "commence_time": commence,
+            "home_team": "Home Club",
+            "away_team": "Away Club",
+            "bookmakers": [{
+                "key": "book-a",
+                "title": "Book A",
+                "markets": [
+                    {"key": "spreads", "outcomes": [
+                        {"name": "Home Club", "point": -0.5, "price": -110},
+                        {"name": "Away Club", "point": 0.5, "price": -110},
+                    ]},
+                    {"key": "totals", "outcomes": [
+                        {"name": "Over", "point": 9.5, "price": -110},
+                        {"name": "Under", "point": 9.5, "price": -110},
+                    ]},
+                ],
+            }],
+        }
+        database.save_snapshot(
+            "baseball_mlb", [event], provider="fixture",
+            fetched_at=f"2026-01-0{index + 1}T12:00:00+00:00",
+        )
+        settlements.append({
+            "event_id": event_id, "sport_key": "baseball_mlb",
+            "commence_time": commence, "home_team": "Home Club",
+            "away_team": "Away Club", "home_score": home_score,
+            "away_score": away_score, "status": "final", "source": "fixture",
+        })
+
+    fit = fit_league_models(database, settlements, min_sample_size=4)
+    model = fit["models"]["baseball_mlb"]
+    assert 0 <= model["shared_alpha"] <= 2
+    assert 0 <= model["home_alpha"] <= 2
+    assert 0 <= model["away_alpha"] <= 2
+
+    result = run_game_simulation(
+        event, seed=17, model_parameters=model,
+    )
+    assert result["data_quality"]["shared_count_environment_alpha"] == model["shared_alpha"]

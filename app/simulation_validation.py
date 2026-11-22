@@ -138,6 +138,41 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
     total_actual = tuple(1.0 if actual_total_result == label else 0.0 for label in ("over", "under", "push"))
     total_brier = sum((p - y) ** 2 for p, y in zip(total_probs, total_actual))
     total_log_loss = -math.log(max(eps, total_probs[total_actual.index(1.0)]))
+    spread_scores = {}
+    spread_market = prediction.get("spread_market")
+    if spread_market is not None:
+        if not isinstance(spread_market, dict):
+            raise ValueError("Prediction spread market must be an object.")
+        home_spread = finite_number(
+            spread_market.get("consensus_home_spread", float("nan")), "Consensus home spread"
+        )
+        spread_probs = tuple(
+            finite_number(spread_market.get(key, -1), f"{key.title()} cover probability") / 100
+            for key in ("home_cover", "away_cover", "push")
+        )
+        if any(not 0 <= probability <= 1 for probability in spread_probs):
+            raise ValueError("Prediction contains invalid spread probabilities.")
+        if abs(sum(spread_probs) - 1) > 0.005:
+            raise ValueError("Spread probabilities must sum to 100%.")
+        adjusted_margin = hs - aws + home_spread
+        actual_spread_result = (
+            "home_cover" if adjusted_margin > 1e-9 else
+            "away_cover" if adjusted_margin < -1e-9 else "push"
+        )
+        spread_labels = ("home_cover", "away_cover", "push")
+        spread_actual = tuple(1.0 if actual_spread_result == label else 0.0
+                              for label in spread_labels)
+        spread_brier = sum((p - y) ** 2 for p, y in zip(spread_probs, spread_actual))
+        spread_log_loss = -math.log(max(eps, spread_probs[spread_labels.index(actual_spread_result)]))
+        spread_scores = {
+            "consensus_home_spread": home_spread,
+            "actual_spread_result": actual_spread_result,
+            "predicted_home_cover_probability": spread_probs[0],
+            "predicted_away_cover_probability": spread_probs[1],
+            "predicted_spread_push_probability": spread_probs[2],
+            "spread_brier_score": spread_brier,
+            "spread_log_loss": spread_log_loss,
+        }
     projected = prediction.get("projected_score")
     if not isinstance(projected, dict):
         raise ValueError("Prediction projected score must be an object.")
@@ -164,6 +199,7 @@ def score_prediction(prediction: dict, settlement: dict) -> dict:
         "away_score_error": abs(projected_away - aws),
         "total_score_error": abs(projected_home + projected_away - hs - aws),
         "margin_error": abs((projected_home - projected_away) - (hs - aws)),
+        **spread_scores,
     }
 
 
@@ -193,6 +229,9 @@ def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
             "away_score_mae": _mean([x["away_score_error"] for x in items]),
             "total_score_mae": _mean([x["total_score_error"] for x in items]),
             "margin_mae": _mean([x["margin_error"] for x in items]),
+            "spread_sample_size": sum("spread_brier_score" in x for x in items),
+            "spread_brier_score": _mean([x["spread_brier_score"] for x in items if "spread_brier_score" in x]),
+            "spread_log_loss": _mean([x["spread_log_loss"] for x in items if "spread_log_loss" in x]),
         }
 
     calibration = []
@@ -365,6 +404,10 @@ def paired_bootstrap_comparison(model_rows: list[dict], baseline_rows: list[dict
         "home_score_mae": "home_score_error", "away_score_mae": "away_score_error",
         "total_score_mae": "total_score_error", "margin_mae": "margin_error",
     }
+    if all("spread_brier_score" in row and "spread_log_loss" in row
+           for row in model_rows + baseline_rows):
+        metrics["spread_brier_score"] = "spread_brier_score"
+        metrics["spread_log_loss"] = "spread_log_loss"
     event_deltas = {
         label: [float(model_by_id[event_id][field]) - float(baseline_by_id[event_id][field])
                 for event_id in sorted(model_by_id)]
@@ -459,7 +502,8 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     if scored and baseline_scored:
         report["model_minus_baseline"] = {
             key: (report["overall"][key] - baseline_report["overall"][key])
-            for key in ("brier_score", "log_loss", "total_brier_score", "total_log_loss", "home_score_mae", "away_score_mae", "total_score_mae", "margin_mae")
+            for key in ("brier_score", "log_loss", "total_brier_score", "total_log_loss", "home_score_mae", "away_score_mae", "total_score_mae", "margin_mae", "spread_brier_score", "spread_log_loss")
+            if report["overall"].get(key) is not None and baseline_report["overall"].get(key) is not None
         }
         report["paired_uncertainty"] = paired_bootstrap_comparison(scored, baseline_scored)
     report["settlements_submitted"] = len(settlements)
@@ -508,11 +552,17 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
         away_mean = max(0.05, (market_total - market_margin) / 2)
         actual_home, actual_away = int(settlement["home_score"]), int(settlement["away_score"])
         bucket = buckets.setdefault(sport_key, {"family": family, "margin_residuals": [],
-            "total_residuals": [], "home_dispersion": [], "away_dispersion": []})
+            "total_residuals": [], "home_dispersion": [], "away_dispersion": [],
+            "score_residual_pairs": []})
         bucket["margin_residuals"].append((actual_home - actual_away) - market_margin)
         bucket["total_residuals"].append((actual_home + actual_away) - market_total)
-        bucket["home_dispersion"].append((actual_home - home_mean, home_mean))
-        bucket["away_dispersion"].append((actual_away - away_mean, away_mean))
+        home_residual = actual_home - home_mean
+        away_residual = actual_away - away_mean
+        bucket["home_dispersion"].append((home_residual, home_mean))
+        bucket["away_dispersion"].append((away_residual, away_mean))
+        bucket["score_residual_pairs"].append(
+            (home_residual, away_residual, home_mean, away_mean)
+        )
 
     models, insufficient = {}, {}
     for sport_key, bucket in sorted(buckets.items()):
@@ -549,6 +599,26 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
                 denominator = sum(mean ** 2 for _, mean in observations)
                 raw_alpha = numerator / denominator if denominator else 0.0
                 model[side + "_alpha"] = max(0.0, min(2.0, raw_alpha * n / (n + shrinkage_events)))
+            # A shared Gamma rate factor represents positive covariance between
+            # team scores; independent alpha terms retain team-specific excess variance.
+            home_bias = (total_bias + margin_bias) / 2
+            away_bias = (total_bias - margin_bias) / 2
+            pairs = bucket["score_residual_pairs"]
+            covariance_numerator = sum(
+                (home_residual - home_bias) * (away_residual - away_bias)
+                for home_residual, away_residual, _, _ in pairs
+            )
+            covariance_denominator = sum(home_mean * away_mean
+                                          for _, _, home_mean, away_mean in pairs)
+            raw_shared_alpha = (
+                covariance_numerator / covariance_denominator
+                if covariance_denominator else 0.0
+            )
+            shrinkage = n / (n + shrinkage_events)
+            shared_alpha = max(0.0, min(2.0, raw_shared_alpha * shrinkage))
+            model["shared_alpha"] = shared_alpha
+            for side in ("home", "away"):
+                model[side + "_alpha"] = max(0.0, model[side + "_alpha"] - shared_alpha)
         models[sport_key] = model
     return {"models": models, "insufficient": insufficient,
             "training_events_used": sum(len(x["margin_residuals"]) for x in buckets.values()),
@@ -604,6 +674,27 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
             loss = sum(losses) / len(losses)
             if loss < best_loss:
                 best_loss, best_temperature = loss, temperature
+        best_spread_temperature = None
+        spread_rows = [row for row in rows if all(key in row for key in (
+            "predicted_home_cover_probability", "predicted_away_cover_probability",
+            "predicted_spread_push_probability", "actual_spread_result",
+        ))]
+        if spread_rows:
+            best_spread_temperature, best_spread_loss = 1.0, float("inf")
+            for step in range(50, 301, 2):
+                temperature = step / 100.0
+                losses = []
+                for row in spread_rows:
+                    probs = [float(row["predicted_home_cover_probability"]),
+                             float(row["predicted_away_cover_probability"]),
+                             float(row["predicted_spread_push_probability"])]
+                    weights = [max(1e-12, p) ** (1.0 / temperature) for p in probs]
+                    denominator = sum(weights)
+                    index = {"home_cover": 0, "away_cover": 1, "push": 2}[row["actual_spread_result"]]
+                    losses.append(-math.log(max(1e-12, weights[index] / denominator)))
+                loss = sum(losses) / len(losses)
+                if loss < best_spread_loss:
+                    best_spread_loss, best_spread_temperature = loss, temperature
         best_total_temperature, best_total_loss = 1.0, float("inf")
         for step in range(50, 301, 2):
             temperature = step / 100.0
@@ -624,6 +715,8 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
             "calibration_log_loss": best_loss,
             "total_temperature": best_total_temperature,
             "total_calibration_log_loss": best_total_loss,
+            **({"spread_temperature": best_spread_temperature,
+                "spread_calibration_log_loss": best_spread_loss} if spread_rows else {}),
         }
     return {"temperatures": temperatures, "insufficient": insufficient,
             "minimum_sample_size": min_sample_size,

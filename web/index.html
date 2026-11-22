@@ -100,6 +100,8 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
    <div class="card"><small>OVER PROBABILITY</small><div class="value" id="simOver">—</div><small id="simTotalLine"></small></div>
    <div class="card"><small>UNDER PROBABILITY</small><div class="value" id="simUnder">—</div><small id="simTotalPush">Push —</small></div>
    <div class="card"><small>MARKET-IMPLIED HOME MARGIN</small><div class="value" id="simMargin">—</div></div>
+   <div class="card"><small>HOME SPREAD COVER</small><div class="value" id="simHomeCover">—</div><small id="simSpreadLine"></small></div>
+   <div class="card"><small>AWAY SPREAD COVER</small><div class="value" id="simAwayCover">—</div><small id="simSpreadPush">Push —</small></div>
    <div class="card"><small>SIMULATION METHOD</small><div class="value" id="simDistribution">—</div><small id="simDistributionDetail">Market-informed scoring distribution</small></div>
   </div>
   <div class="cards">
@@ -328,6 +330,10 @@ async function runSelectedSimulation(){
   $("simHomeTeam").textContent=data.home_team;$("simAwayTeam").textContent=data.away_team;
   $("simScore").textContent=data.projected_score.home.toFixed(1)+" – "+data.projected_score.away.toFixed(1);
   $("simTie").textContent="Tie / draw "+data.win_probabilities.tie.toFixed(2)+"%";
+  $("simHomeCover").textContent=data.spread_market.home_cover.toFixed(2)+"%";
+  $("simAwayCover").textContent=data.spread_market.away_cover.toFixed(2)+"%";
+  $("simSpreadLine").textContent="Consensus home spread "+(data.spread_market.consensus_home_spread>0?"+":"")+data.spread_market.consensus_home_spread.toFixed(1);
+  $("simSpreadPush").textContent="Push "+data.spread_market.push.toFixed(2)+"%";
   $("simTrials").textContent=data.trials.toLocaleString();$("simDataQuality").textContent=data.data_quality.spread_books+" spread books · "+data.data_quality.total_books+" total books";
   $("simOver").textContent=data.total_market.over.toFixed(2)+"%";$("simUnder").textContent=data.total_market.under.toFixed(2)+"%";
   $("simTotalLine").textContent="Consensus total "+data.total_market.consensus_line;$("simTotalPush").textContent="Push "+data.total_market.push.toFixed(2)+"%";
@@ -338,7 +344,8 @@ async function runSelectedSimulation(){
   const trainingCount=Number(data.data_quality.training_sample_size||0);
   const temperature=data.margin_market.probability_temperature;
   const totalTemperature=data.total_market.probability_temperature;
-  $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+((temperature!==null&&temperature!==undefined)||(totalTemperature!==null&&totalTemperature!==undefined)?" · probabilities calibrated":"");
+  const spreadTemperature=data.spread_market.probability_temperature;
+  $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+((temperature!==null&&temperature!==undefined)||(totalTemperature!==null&&totalTemperature!==undefined)||(spreadTemperature!==null&&spreadTemperature!==undefined)?" · probabilities calibrated":"");
   $("simDistributionDetail").textContent=empiricallyFitted?"Fitted scoring residual distribution":"Broad family-level scoring assumptions";
   $("simResolution").textContent=Number(data.game_resolution.games_with_overtime_or_extra_innings||0).toLocaleString()+" games with OT / extras";
   $("simRegulationTies").textContent=Number(data.game_resolution.regulation_ties||0).toLocaleString()+" regulation ties";
