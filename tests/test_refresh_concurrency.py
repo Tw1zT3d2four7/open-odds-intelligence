@@ -672,6 +672,7 @@ def test_oddize_is_manual_only_and_adds_credit_limited_player_props(tmp_path, mo
     monkeypatch.setattr(config, "ODDIZE_API_KEY", "Oddize-Free-Key", raising=False)
     monkeypatch.setattr(config, "ODDIZE_PROPS_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "ODDIZE_PROP_TYPES_PER_REFRESH", 1, raising=False)
+    monkeypatch.setattr(config, "ODDIZE_ALTS_ENABLED", False, raising=False)
     monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
     monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
     monkeypatch.setattr(config, "PLAYER_PROPS_ENABLED", False)
