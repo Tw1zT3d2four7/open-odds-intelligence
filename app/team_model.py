@@ -30,7 +30,7 @@ def fit_team_strength_models(
 
     leagues = defaultdict(lambda: {
         "home_scores": [], "away_scores": [], "teams": defaultdict(
-            lambda: {"display_name": "", "games": 0, "offense": [], "defense": []}
+            lambda: {"display_name": "", "games": 0, "home_scores": [], "away_scores": [], "allowed_at_home": [], "allowed_away": []}
         )
     })
     for row in settlements:
@@ -53,10 +53,10 @@ def fit_team_strength_models(
         a["display_name"] = away_name
         h["games"] += 1
         a["games"] += 1
-        h["offense_residuals"].append(hs - home_base)
-        h["defense_residuals"].append(away_base - aws)
-        a["offense_residuals"].append(aws - away_base)
-        a["defense_residuals"].append(home_base - hs)
+        h["home_scores"].append(hs)
+        h["allowed_at_home"].append(aws)
+        a["away_scores"].append(aws)
+        a["allowed_away"].append(hs)
 
     output, insufficient = {}, {}
     for sport, bucket in sorted(leagues.items()):
@@ -70,11 +70,17 @@ def fit_team_strength_models(
             games = stats["games"]
             if games < min_team_games:
                 continue
-            # Each rating is measured against the appropriate league scoring baseline.
-            off_residuals = stats.get("offense_residuals", [])
-            def_residuals = stats.get("defense_residuals", [])
-            raw_offense = sum(off_residuals) / len(off_residuals) if off_residuals else 0.0
-            raw_defense = sum(def_residuals) / len(def_residuals) if def_residuals else 0.0
+            # Venue-adjusted offense and defense residuals, computed after
+            # league baselines so results are independent of sportsbook prices.
+            home_n, away_n = len(stats["home_scores"]), len(stats["away_scores"])
+            raw_offense = (
+                sum(x - home_base for x in stats["home_scores"])
+                + sum(x - away_base for x in stats["away_scores"])
+            ) / games
+            raw_defense = (
+                sum(away_base - x for x in stats["allowed_at_home"])
+                + sum(home_base - x for x in stats["allowed_away"])
+            ) / games
             shrink = games / (games + float(shrinkage_games))
             teams[key] = {
                 "display_name": stats["display_name"],
