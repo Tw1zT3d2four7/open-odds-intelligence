@@ -321,17 +321,29 @@ class OddsService:
         ))
 
     def auto_refresh_provider_names(self):
-        # Quota-limited aggregators remain manual-only by default. The Odds API
-        # is scheduled only when its explicit interval is configured.
+        # This app currently runs one shared refresh loop. Include only
+        # providers whose configured interval matches that loop; slower
+        # quota-limited sources stay manual rather than being over-polled.
+        intervals = []
+        providers = self.active_provider_names()
+        if "therundown" in providers and self._provider_key_pools["therundown"].configured:
+            intervals.append(config.RUNDOWN_REFRESH_INTERVAL_SECONDS)
+        if ("the_odds_api" in providers
+                and self._provider_key_pools["the_odds_api"].configured
+                and config.ODDS_REFRESH_INTERVAL_SECONDS > 0):
+            intervals.append(config.ODDS_REFRESH_INTERVAL_SECONDS)
+        if not intervals:
+            return []
+        loop_interval = min(intervals)
         names = []
-        for name in self.active_provider_names():
-            if not self._provider_key_pools[name].configured:
-                continue
-            if name in ("sports_game_odds", "oddize", "oddslink"):
-                continue
-            if name == "the_odds_api" and config.ODDS_REFRESH_INTERVAL_SECONDS <= 0:
-                continue
-            names.append(name)
+        if ("therundown" in providers
+                and self._provider_key_pools["therundown"].configured
+                and config.RUNDOWN_REFRESH_INTERVAL_SECONDS == loop_interval):
+            names.append("therundown")
+        if ("the_odds_api" in providers
+                and self._provider_key_pools["the_odds_api"].configured
+                and config.ODDS_REFRESH_INTERVAL_SECONDS == loop_interval):
+            names.append("the_odds_api")
         return names
 
     @property
