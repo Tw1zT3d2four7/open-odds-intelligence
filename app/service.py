@@ -327,6 +327,7 @@ class OddsService:
         alert_status = self.db.alert_status()
         return {"provider": config.ODDS_PROVIDER,
                 "providers": self.active_provider_names(),
+                "auto_refresh_providers": self.auto_refresh_provider_names(),
                 "configured": self.configured,
                 "last_updated": self._updated_at or stored.get("last_updated"),
                 "last_error": self._last_error, "sports": config.ODDS_SPORTS,
