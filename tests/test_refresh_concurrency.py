@@ -758,3 +758,4 @@ def test_oddslink_is_manual_only_and_preserves_all_book_lines(tmp_path, monkeypa
     main_line = next(item for item in outcomes if item["main"])
     assert main_line["size"] == {"kind": "posted_limit", "amount": 25000}
     assert {item["source_provider"] for item in outcomes} == {"oddslink"}
+    assert service.limits_monitor.status()["observations"] == 1
