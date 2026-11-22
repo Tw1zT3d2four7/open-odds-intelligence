@@ -1028,7 +1028,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
         )
 
     independent_training_sample = (
-        independent_projection.get("home_team_games", 0) + independent_projection.get("away_team_games", 0)
+        fitted["independent_team_model"].get("training_games", 0)
         if independent_projection else (fitted.get("sample_size", 0) if fitted else 0)
     )
     overtime_total_adjustment = _estimate_overtime_total_adjustment(
