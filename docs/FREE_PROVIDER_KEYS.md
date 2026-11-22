@@ -6,11 +6,22 @@ the private `.env` file.
 
 ## Configuration
 
+Enable every currently integrated free source by listing the providers
+whose keys you have configured:
+
+```dotenv
+ODDS_PROVIDERS=therundown,the_odds_api,sports_game_odds,oddize,oddslink
+ODDS_SPORTS=americanfootball_nfl,americanfootball_ncaaf,basketball_nba,basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_epl,tennis_atp,tennis_wta
+```
+
 Keep the existing single-key settings working:
 
 ```dotenv
 THERUNDOWN_API_KEY=
 THE_ODDS_API_KEY=
+SPORTSGAMEODDS_API_KEY=
+ODDIZE_API_KEY=
+ODDSLINK_API_KEY=
 ```
 
 For additional keys, use comma-separated or newline-separated values:
