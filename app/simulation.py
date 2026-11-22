@@ -166,7 +166,7 @@ def _moneyline_inputs(event):
     away = _team_identity(event.get("away_team"))
     if not home or not away or home == away:
         return [], [], []
-    probability_rows, books, diagnostics = [], [], []
+    probability_rows, diagnostics = [], []
     seen_books = set()
     bookmakers = event.get("bookmakers", [])
     if not isinstance(bookmakers, list):
@@ -210,12 +210,28 @@ def _moneyline_inputs(event):
             diagnostics.append({"bookmaker": identity,
                                 "h2h": "requires one valid home and away outcome and, optionally, one draw"})
             continue
-        probability_rows.append(usable)
-        books.append(identity)
+        probability_rows.append((usable, identity))
     if not probability_rows:
-        return [], books, diagnostics
+        return [], [], diagnostics
+    # Never blend two-way and three-way markets: their draw settlement differs.
+    groups = {
+        count: [(row, identity) for row, identity in probability_rows
+                if (3 if row[2] > 0 else 2) == count]
+        for count in (2, 3)
+    }
+    selected_count = max((count for count in (2, 3) if groups[count]),
+                         key=lambda count: (len(groups[count]), count))
+    selected = groups[selected_count]
+    excluded = [identity for count in (2, 3) if count != selected_count
+                for _, identity in groups[count]]
+    if excluded:
+        diagnostics.append({
+            "bookmaker": ", ".join(excluded),
+            "h2h": "excluded because two-way and three-way moneyline settlement conventions are not mixed",
+        })
+    books = [identity for _, identity in selected]
     # Median each outcome, then renormalize to preserve a valid probability vector.
-    medians = [median([row[index] for row in probability_rows]) for index in range(3)]
+    medians = [median([row[index] for row, _ in selected]) for index in range(3)]
     total = sum(medians)
     probabilities = [value / total for value in medians] if total > 0 else []
     return probabilities, books, diagnostics
