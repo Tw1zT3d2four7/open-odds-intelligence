@@ -512,6 +512,8 @@ def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key
     assert result.status_code == 200
     assert result.json()["simulation_type"] == "independent_outcome_monte_carlo"
     assert result.json()["data_quality"]["model_source"] == "independent_historical_elo"
+    assert result.json()["market_edge_analysis"]["moneyline"]["book_count"] == 1
+    assert "home" in result.json()["market_edge_analysis"]["moneyline"]["sides"]
 
 
 @pytest.mark.parametrize("sport_key,total_line,spread_line", [
