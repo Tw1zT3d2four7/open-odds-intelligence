@@ -46,6 +46,7 @@ class SportsGameOddsProvider:
         if not api_key:
             raise ProviderError("SPORTSGAMEODDS_API_KEY is not configured")
         self.api_key = api_key
+        self.max_events = max(1, min(100, int(os.getenv("SPORTSGAMEODDS_MAX_EVENTS", "25"))))
         self.usage = {}
 
     @staticmethod
@@ -306,7 +307,7 @@ class SportsGameOddsProvider:
             "leagueID": league,
             "oddsAvailable": "true",
             "includeAltLines": "true",
-            "limit": str(min(100, monthly_remaining)),
+            "limit": str(min(self.max_events, monthly_remaining)),
         })
         payload = self._request(f"{self.base_url}/events/?{params}")
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
