@@ -436,3 +436,10 @@ def test_dashboard_exposes_overtime_total_adjustment_diagnostics():
     assert "expected_overtime_total_adjustment" in dashboard
     assert "regulation_total_anchor" in dashboard
     assert "expected OT points budgeted" in dashboard
+
+
+def test_dashboard_has_separate_draw_card_for_moneyline_only_simulations():
+    dashboard = main.WEB.read_text(encoding="utf-8")
+    assert 'id="simDrawCard"' in dashboard
+    assert 'id="simDrawProbability"' in dashboard
+    assert 'data.win_probabilities.tie<=0' in dashboard
