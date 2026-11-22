@@ -69,6 +69,7 @@ def merge_provider_events(provider_results):
             if not isinstance(raw_event, dict) or not raw_event.get("id"):
                 continue
             event = dict(raw_event)
+            raw_books = event.get("bookmakers") or []
             event_id = str(event["id"])
             target = by_id.get((event.get("sport_key"), event_id))
             if target is not None and not _same_event(target, event):
@@ -99,7 +100,7 @@ def merge_provider_events(provider_results):
                 by_id[(event.get("sport_key"), event_id)] = target
 
             book_map = {book.get("key"): book for book in target["bookmakers"]}
-            for raw_book in event.get("bookmakers") or []:
+            for raw_book in raw_books:
                 if not isinstance(raw_book, dict) or not raw_book.get("key"):
                     continue
                 book_key = str(raw_book["key"])
