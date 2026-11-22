@@ -777,13 +777,13 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
     market_inputs = _collect_market_inputs(event)
     has_complete_scoring_markets = bool(market_inputs["spread_margins"] and market_inputs["totals"])
     if family in ("tennis", "mma") or family is None or not has_complete_scoring_markets:
-        if require_independent_model:
-            raise ValueError(
-                "An independent historical tennis/combat-sport model is not available. "
-                "Sampling sportsbook moneyline probabilities is disabled for independent predictions."
-            )
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
             raise ValueError("Simulation seed must be an integer or None.")
+        if require_independent_model:
+            if family not in ("tennis", "mma"):
+                raise ValueError("No independent model is implemented for this sport.")
+            fitted_outcome = _validated_model_parameters(model_parameters, family, str(event.get("sport_key") or event.get("sport") or ""))
+            return _run_independent_outcome_simulation(event, seed, family, fitted_outcome)
         return _run_outcome_only_simulation(event, seed, family)
     market_margin, market_total, spread_books, total_books = _market_inputs(event)
     expected_margin, expected_total = market_margin, market_total
