@@ -453,7 +453,7 @@ class MarketLimitsMonitor:
     def _send_alerts(self, changes):
         if not config.DISCORD_WEBHOOK_URL:
             return
-        from urllib.request import Request, urlopen
+        from urllib.request import Request
         for change in changes:
             if change["direction"] != "increased" and not config.LIMITS_ALERT_DECREASES:
                 continue
