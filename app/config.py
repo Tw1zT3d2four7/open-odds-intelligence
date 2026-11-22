@@ -4,6 +4,12 @@ from dotenv import load_dotenv
 load_dotenv()
 APP_NAME = os.getenv("APP_NAME", "Open Odds Intelligence")
 ODDS_PROVIDER = os.getenv("ODDS_PROVIDER", "none").strip().lower()
+# Optional simultaneous providers; when omitted, retain the legacy single-provider setting.
+ODDS_PROVIDERS_EXPLICIT = bool(os.getenv("ODDS_PROVIDERS", "").strip())
+ODDS_PROVIDERS = [
+    item.strip().lower() for item in os.getenv("ODDS_PROVIDERS", "").split(",")
+    if item.strip()
+]
 # Do not normalize or change API key case: provider keys are case-sensitive.
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY", "")
 # TheRundown key is case-sensitive; preserve it exactly.
