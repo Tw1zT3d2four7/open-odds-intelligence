@@ -390,7 +390,13 @@ def _run_independent_outcome_simulation(event, seed, family, fitted):
     if not market_probabilities:
         raise ValueError("A complete sportsbook h2h market is required for comparison.")
     rng = random.Random(seed)
-    probabilities = (projection["home_probability"], projection["away_probability"], projection["draw_probability"])
+    probabilities = [projection["home_probability"], projection["away_probability"], projection["draw_probability"]]
+    temperature = fitted.get("temperature") if fitted else None
+    if temperature is not None:
+        weights = [max(1e-12, probability) ** (1.0 / float(temperature)) for probability in probabilities]
+        denominator = sum(weights)
+        probabilities = [weight / denominator for weight in weights]
+    probabilities = tuple(probabilities)
     counts = [0, 0, 0]
     for _ in range(TRIALS):
         draw = rng.random()
@@ -416,7 +422,7 @@ def _run_independent_outcome_simulation(event, seed, family, fitted):
         "commence_time": event.get("commence_time"),
         "home_team": event.get("home_team"), "away_team": event.get("away_team"),
         "win_probabilities": {"home": pct[0], "away": pct[1], "tie": pct[2]},
-        "model_projection": projection,
+        "model_projection": {**projection, "probability_temperature": temperature},
         "market_moneyline": {
             "home_probability": market_pct[0], "away_probability": market_pct[1],
             "draw_probability": market_pct[2],
