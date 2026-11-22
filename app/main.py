@@ -45,13 +45,7 @@ async def _simulation_results_loop():
 
 def _odds_refresh_interval_seconds():
     """Return the shortest enabled provider poll interval; alerts never poll odds."""
-    providers = service.active_provider_names()
-    intervals = []
-    if "therundown" in providers:
-        intervals.append(config.RUNDOWN_REFRESH_INTERVAL_SECONDS)
-    if "the_odds_api" in providers:
-        if config.ODDS_REFRESH_INTERVAL_SECONDS > 0:
-            intervals.append(config.ODDS_REFRESH_INTERVAL_SECONDS)
+    intervals = list(service.auto_refresh_schedule().values())
     return min(intervals) if intervals else 0
 
 
@@ -61,9 +55,16 @@ async def _automatic_refresh_loop():
         await asyncio.sleep(interval)
         # Keep provider I/O and SQLite work off the ASGI event loop.
         try:
-            await asyncio.to_thread(
-                service.refresh, providers=service.auto_refresh_provider_names()
-            )
+            due_providers = await asyncio.to_thread(service.providers_due_for_auto_refresh)
+            if due_providers:
+                result = await asyncio.to_thread(service.refresh, providers=due_providers)
+                succeeded = {
+                    name
+                    for sport_result in (result.get("provider_results") or {}).values()
+                    for name in sport_result.get("providers_succeeded", [])
+                }
+                if succeeded:
+                    await asyncio.to_thread(service.mark_auto_refresh, succeeded)
         except Exception as exc:
             # Keep the scheduler alive, but expose failures in /api/health.
             service._last_error = f"Unexpected scheduled odds refresh failure: {exc}"
