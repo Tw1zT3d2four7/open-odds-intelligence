@@ -137,8 +137,8 @@ class OddsLinkProvider:
                     continue
                 market_key = str(raw_market["key"])
                 period = raw_market.get("period")
-                if period:
-                    market_key = f"{market_key}_{period}"
+                if period and str(period).lower() not in ("full", "full_game", "full-game", "game"):
+                    market_key = f"{market_key}_{str(period).lower()}"
                 outcomes = []
                 for raw_outcome in raw_market.get("outcomes") or []:
                     if not isinstance(raw_outcome, dict):
