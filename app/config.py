@@ -22,7 +22,9 @@ SPORTSGAMEODDS_API_KEYS = os.getenv("SPORTSGAMEODDS_API_KEYS", "")
 # Oddize Developer tier includes one API key on the free plan.
 ODDIZE_API_KEY = os.getenv("ODDIZE_API_KEY", "")
 ODDIZE_PROPS_ENABLED = os.getenv("ODDIZE_PROPS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
-ODDIZE_PROP_TYPES_PER_REFRESH = max(0, min(5, int(os.getenv("ODDIZE_PROP_TYPES_PER_REFRESH", "1"))))
+ODDIZE_PROP_TYPES_PER_REFRESH = max(0, min(5, int(os.getenv("ODDIZE_PROP_TYPES_PER_REFRESH", "1")))
+ODDIZE_ALTS_ENABLED = os.getenv("ODDIZE_ALTS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+ODDIZE_ALT_EVENTS_PER_REFRESH = max(0, min(5, int(os.getenv("ODDIZE_ALT_EVENTS_PER_REFRESH", "1"))))
 ODDS_REGIONS = os.getenv("ODDS_REGIONS", "us")
 # Optional explicit bookmaker keys; when set, this overrides region selection.
 ODDS_BOOKMAKERS = os.getenv("ODDS_BOOKMAKERS", "").strip()
