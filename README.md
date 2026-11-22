@@ -28,6 +28,10 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 
 TheRundown ATP/WTA ingestion uses sport IDs 38 and 39 and the provider's pre-match moneyline, game-spread and total markets. Tennis competitors are normalized from the moneyline participant order into the shared matchup fields; those fields are neutral participant slots, not a claim that either player is a home competitor. The Odds API tennis coverage is tournament-specific: configure active `tennis_atp_*` and `tennis_wta_*` keys in `ODDS_SPORTS` rather than using generic aliases. Live simulation no longer treats sportsbook prices as model predictions: score-based leagues require historical team ratings, while tennis and MMA require independent Elo ratings. A matchup without adequate historical coverage is blocked rather than silently sampled from the market.
 
+### Offline simulator results import
+
+The simulator's independent models require verified historical final scores. To import them without provider polling, use the archived-event CSV template and dry-run-first workflow in [docs/simulation-results-import.md](docs/simulation-results-import.md). The importer is included in the Docker image; score synchronization remains disabled unless explicitly enabled by the operator.
+
 The EV calculation uses the median of other sportsbooks' no-vig probabilities for the same event, market, outcome and line. The default requires at least two other books (three books total). Results are estimates, not guarantees. Arbitrage candidates are mathematical price discrepancies only; verify both prices, limits, settlement rules and availability before acting.
 
 ## Access control and deployment security

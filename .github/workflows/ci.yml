@@ -34,6 +34,9 @@ jobs:
           grep -Fxq 'data/' .dockerignore
           grep -Fxq '*.sqlite3' .dockerignore
           rm .env
-      - name: Validate simulator backtest CLI
-        run: python -m scripts.backtest_simulator --help
+      - name: Validate simulator CLIs
+        run: |
+          python -m scripts.backtest_simulator --help
+          python -m scripts.import_simulation_results --help
+          grep -Fxq 'COPY scripts ./scripts' Dockerfile
       - run: python -m pytest -q
