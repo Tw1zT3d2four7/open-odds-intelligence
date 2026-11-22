@@ -13,7 +13,7 @@ This phase validates data quality, market calculations, alert delivery and opera
 - Optional OddsLink posted-limit snapshots, limit-change history and Discord increase alerts.
 - First-qualified-quote CLV tracking against a pregame consensus close.
 - Discord alerts for qualifying EV and arbitrage candidates.
-- Manual refresh and Discord-enabled scheduled refresh.
+- Manual provider refresh, independent provider polling, and Discord alert evaluation against locally stored quotes.
 
 Full historical strategy backtesting, injury/news context, subscriber billing and simultaneous multi-provider comparison are not yet part of this test scope. Optional HTTP Basic authentication is now included and must be validated before any remote deployment. Only one odds provider is active at a time. Player props are an optional, provider-quota-sensitive extension.
 
@@ -60,6 +60,8 @@ The target sportsbook must not be included in its own fair-probability estimate.
 - Confirm `alerts_enabled` is true in `GET /api/health`.
 - Click **Refresh odds** when the dashboard shows a qualifying candidate.
 - Verify the refresh result reports evaluated, qualified and sent counts.
+- With TheRundown configured for a four-hour poll and Discord alerts configured for five minutes, verify alert checks run every five minutes against stored quotes while provider requests remain on the four-hour schedule.
+- Verify the Discord alert loop does not call the odds provider, and that an alert check overlapping a refresh-triggered alert check is skipped rather than run concurrently.
 - Verify value and arbitrage notifications arrive as separate rich embeds, not long unformatted text.
 - For value alerts, verify matchup, sport/market, selection, sportsbook, American odds, fair probability, EV, consensus count and localized event time are readable.
 - For arbitrage alerts, verify each leg has its own clearly labelled sportsbook, selection, odds and suggested stake split.

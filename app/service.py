@@ -90,6 +90,7 @@ class OddsService:
     def __init__(self, database=None):
         self.db = database or OddsDatabase()
         self._refresh_lock = threading.Lock()
+        self._alert_lock = threading.Lock()
         self._cache = {}
         self._last_error = None
         self._updated_at = None
@@ -232,7 +233,7 @@ class OddsService:
                 "provider_usage": self._provider_usage,
                 "simulation_results": self._simulation_results_status,
                 "player_props": self._player_props_status,
-                "refresh_interval_seconds": config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown" else (config.ODDS_REFRESH_INTERVAL_SECONDS or (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0)),
+                "refresh_interval_seconds": config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown" else config.ODDS_REFRESH_INTERVAL_SECONDS,
                 "alert_refresh_interval_seconds": config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0,
                 "alerts_evaluated": self._alerts_evaluated,
                 "alerts_qualified": self._alerts_qualified,
@@ -469,7 +470,22 @@ class OddsService:
         finally:
             self._refresh_lock.release()
 
+    def evaluate_alerts(self):
+        """Evaluate current stored odds snapshots without refreshing a provider."""
+        if not config.DISCORD_WEBHOOK_URL:
+            return 0
+        return self._dispatch_alerts()
+
     def _dispatch_alerts(self):
+        """Serialize alert checks so scheduled and post-refresh checks cannot overlap."""
+        if not self._alert_lock.acquire(blocking=False):
+            return 0
+        try:
+            return self._dispatch_alerts_locked()
+        finally:
+            self._alert_lock.release()
+
+    def _dispatch_alerts_locked(self):
         """Send newly observed EV/arb candidates once; isolate failures per delivery."""
         self._last_alert_check = datetime.now(timezone.utc).isoformat()
         self._last_alert_evaluated = 0

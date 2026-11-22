@@ -43,12 +43,17 @@ async def _simulation_results_loop():
             logger.exception("Simulator final-score synchronization failed")
         await asyncio.sleep(config.SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS)
 
-async def _automatic_refresh_loop():
-    interval = (
+def _odds_refresh_interval_seconds():
+    """Return only the configured provider-polling interval; alert checks never poll odds."""
+    return (
         config.RUNDOWN_REFRESH_INTERVAL_SECONDS
         if config.ODDS_PROVIDER == "therundown"
-        else (config.ODDS_REFRESH_INTERVAL_SECONDS or (config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0))
+        else config.ODDS_REFRESH_INTERVAL_SECONDS
     )
+
+
+async def _automatic_refresh_loop():
+    interval = _odds_refresh_interval_seconds()
     while True:
         await asyncio.sleep(interval)
         # Keep provider I/O and SQLite work off the ASGI event loop.
@@ -61,15 +66,30 @@ async def _automatic_refresh_loop():
             continue
 
 
+async def _discord_alert_loop():
+    """Re-evaluate locally stored quotes without making provider requests."""
+    while True:
+        await asyncio.sleep(config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS)
+        try:
+            await asyncio.to_thread(service.evaluate_alerts)
+        except Exception as exc:
+            service._last_alert_error = f"Unexpected scheduled Discord alert check failure: {exc}"
+            service._alert_error = service._last_alert_error
+            logger.exception("Scheduled Discord alert evaluation failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = None
     limits_task = None
     results_task = None
+    alert_task = None
     if config.ODDSLINK_API_KEY:
         limits_task = asyncio.create_task(_limits_refresh_loop())
-    if (config.ODDS_PROVIDER == "therundown" or config.ODDS_REFRESH_INTERVAL_SECONDS > 0 or config.DISCORD_WEBHOOK_URL) and service.configured:
+    if service.configured and _odds_refresh_interval_seconds() > 0:
         task = asyncio.create_task(_automatic_refresh_loop())
+    if service.configured and config.DISCORD_WEBHOOK_URL:
+        alert_task = asyncio.create_task(_discord_alert_loop())
     if config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY:
         results_task = asyncio.create_task(_simulation_results_loop())
     try:
@@ -85,6 +105,12 @@ async def lifespan(app: FastAPI):
             task.cancel()
             try:
                 await task
+            except asyncio.CancelledError:
+                pass
+        if alert_task is not None:
+            alert_task.cancel()
+            try:
+                await alert_task
             except asyncio.CancelledError:
                 pass
         if results_task is not None:
