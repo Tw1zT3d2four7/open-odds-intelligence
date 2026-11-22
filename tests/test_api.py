@@ -429,3 +429,10 @@ def test_simulation_endpoint_blocks_started_game_even_with_current_snapshot(monk
         response = client.post("/api/simulation/run?sport=basketball_nba&event_id=started-game")
     assert response.status_code == 422
     assert "before the game starts" in response.json()["detail"]
+
+
+def test_dashboard_exposes_overtime_total_adjustment_diagnostics():
+    dashboard = main.WEB.read_text(encoding="utf-8")
+    assert "expected_overtime_total_adjustment" in dashboard
+    assert "regulation_total_anchor" in dashboard
+    assert "expected OT points budgeted" in dashboard
