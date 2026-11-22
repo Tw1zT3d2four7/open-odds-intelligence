@@ -323,20 +323,22 @@ class OddsService:
         ))
 
     def auto_refresh_schedule(self):
-        """Provider-specific intervals for sources safe to poll automatically."""
-        schedule = {}
-        providers = self.active_provider_names()
-        rundown_pool = self._provider_key_pools.get("therundown")
-        if ("therundown" in providers and rundown_pool and rundown_pool.configured
-                and config.RUNDOWN_REFRESH_INTERVAL_SECONDS > 0):
-            schedule["therundown"] = config.RUNDOWN_REFRESH_INTERVAL_SECONDS
-        odds_api_pool = self._provider_key_pools.get("the_odds_api")
-        if ("the_odds_api" in providers and odds_api_pool and odds_api_pool.configured
-                and config.ODDS_REFRESH_INTERVAL_SECONDS > 0):
-            schedule["the_odds_api"] = config.ODDS_REFRESH_INTERVAL_SECONDS
-        # SportsGameOdds, Oddize and OddsLink remain manual-only by default:
-        # their small free monthly object/credit/request budgets are protected.
-        return schedule
+        """Provider-specific intervals that stay within the free-tier budgets."""
+        configured_intervals = {
+            "therundown": config.RUNDOWN_REFRESH_INTERVAL_SECONDS,
+            "the_odds_api": config.ODDS_REFRESH_INTERVAL_SECONDS,
+            "sports_game_odds": config.SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS,
+            "oddize": config.ODDIZE_REFRESH_INTERVAL_SECONDS,
+            "oddslink": config.ODDSLINK_REFRESH_INTERVAL_SECONDS,
+        }
+        selected = set(self.active_provider_names())
+        return {
+            name: interval
+            for name, interval in configured_intervals.items()
+            if name in selected
+            and interval > 0
+            and self._provider_key_pools[name].configured
+        }
 
     def auto_refresh_provider_names(self):
         return list(self.auto_refresh_schedule())
