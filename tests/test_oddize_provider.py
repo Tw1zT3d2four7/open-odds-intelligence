@@ -143,3 +143,38 @@ def test_oddize_rotates_through_prop_types_and_attaches_player_lines(monkeypatch
     assert outcome["description"] == "Jayson Tatum"
     assert outcome["point"] == 28.5
     assert outcome["source_provider"] == "oddize"
+
+
+def test_oddize_fetches_and_normalizes_alternate_spreads_and_totals():
+    provider = OddizeProvider("Key")
+    credits = []
+    provider._require_credits = lambda amount: credits.append(amount)
+    def fake_request(path, params=None):
+        if "alt_s" in params.values():
+            return {"lines": [{
+                "line": -5.5,
+                "prices": [{
+                    "book": "dk", "book_name": "DraftKings", "team": "BOS",
+                    "line": -5.5, "american_odds": "-110",
+                    "timestamp": "2026-11-23T19:00:00Z",
+                }],
+            }]}
+        return {"lines": [{
+            "line": 224.5,
+            "prices": [{
+                "book": "fd", "book_name": "FanDuel", "team": "Over",
+                "line": 224.5, "american_odds": "-105",
+            }],
+        }]}
+    provider._request = fake_request
+    events = [{
+        "id": "nba-event", "bookmakers": [],
+    }]
+
+    result = provider.fetch_alternate_lines("basketball_nba", events, max_events=1)
+
+    assert result["alternate_quotes_added"] == 2
+    assert credits == [2, 2]
+    books = {book["key"]: book for book in events[0]["bookmakers"]}
+    assert books["draftkings"]["markets"][0]["key"] == "spreads"
+    assert books["fanduel"]["markets"][0]["key"] == "totals"
