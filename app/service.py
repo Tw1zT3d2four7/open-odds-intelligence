@@ -228,6 +228,11 @@ class OddsService:
             try:
                 events = self._fetch_odds_with_retry(provider, sport)
             except ProviderError as exc:
+                # Preserve quota headers from failed keys too; they are often
+                # the only authoritative signal that a free allowance is spent.
+                self._remember_provider_usage(
+                    getattr(provider, "usage", {}), provider_name, lease.fingerprint
+                )
                 disposition = pool.mark_failure(
                     lease,
                     status_code=getattr(exc, "status_code", None),
