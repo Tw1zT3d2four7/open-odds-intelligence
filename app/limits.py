@@ -163,6 +163,12 @@ class MarketLimitsMonitor:
                     state_key TEXT PRIMARY KEY,
                     state_value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS sent_alerts (
+                    fingerprint TEXT PRIMARY KEY,
+                    sent_at TEXT NOT NULL,
+                    alert_type TEXT NOT NULL,
+                    summary TEXT NOT NULL
+                );
             """)
 
     @staticmethod
