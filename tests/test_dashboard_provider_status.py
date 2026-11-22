@@ -8,4 +8,4 @@ def test_dashboard_exposes_provider_and_per_key_quota_status():
     assert "account_group" in html
     assert "credits_remaining" in html
     assert "monthly_objects_remaining" in html
-    assert "auto_refresh_providers" in html
+    assert "auto_refresh_schedule" in html
