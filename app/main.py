@@ -249,6 +249,8 @@ def _simulation_snapshot_freshness(sport: str):
 
 def _simulation_games_for_sport(sport: str):
     games = []
+    fitted_models = load_fitted_models(config.SIMULATION_MODEL_PATH)
+    league_model = fitted_models.get(sport)
     freshness = _simulation_snapshot_freshness(sport)
     freshness_state = (
         freshness.get("freshness", "unknown")
@@ -259,7 +261,9 @@ def _simulation_games_for_sport(sport: str):
         if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
             continue
         from .simulation import market_readiness
-        readiness = market_readiness(event)
+        readiness = market_readiness(
+            event, model_parameters=league_model, require_independent_model=True
+        )
         readiness["snapshot_freshness"] = freshness_state
         readiness["snapshot_age_seconds"] = freshness_age
         if freshness_state != "current":
@@ -326,13 +330,15 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
         detail = (
             f"Simulation blocked: {sport} odds snapshot is {state}"
             + (f" ({age} seconds old)" if isinstance(age, int) else "")
-            + ". Refresh this league and rerun using a current stored sportsbook spread and total."
+            + ". Refresh this league before simulating."
         )
         raise HTTPException(status_code=409, detail=detail)
     try:
         models = load_fitted_models(config.SIMULATION_MODEL_PATH)
-        result = run_game_simulation(event, SIMULATION_TRIALS, seed=seed,
-                                     model_parameters=models.get(sport))
+        result = run_game_simulation(
+            event, SIMULATION_TRIALS, seed=seed,
+            model_parameters=models.get(sport), require_independent_model=True,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return result

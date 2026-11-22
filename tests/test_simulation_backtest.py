@@ -261,3 +261,54 @@ def test_count_model_fits_shared_scoring_environment_for_low_scoring_leagues(tmp
         event, seed=17, model_parameters=model,
     )
     assert result["data_quality"]["shared_count_environment_alpha"] == model["shared_alpha"]
+
+
+
+def test_tennis_elo_holdout_is_scored_without_fabricated_score_markets(tmp_path):
+    from app.team_model import fit_independent_outcome_models
+
+    database = OddsDatabase(tmp_path / "tennis-history.sqlite3")
+    event = {
+        "id": "tennis-holdout-1", "sport_key": "tennis_atp",
+        "sport_title": "ATP", "commence_time": "2026-02-01T12:00:00Z",
+        "home_team": "Player Alpha", "away_team": "Player Beta",
+        "bookmakers": [{
+            "key": "book-a", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Player Alpha", "price": -130},
+                    {"name": "Player Beta", "price": 110},
+                ],
+            }],
+        }],
+    }
+    database.save_snapshot("tennis_atp", [event], provider="fixture",
+                           fetched_at="2026-02-01T10:00:00+00:00")
+    training = []
+    for index in range(8):
+        training.append({
+            "sport_key": "tennis_atp",
+            "commence_time": f"2026-01-{index + 1:02d}T12:00:00Z",
+            "home_team": "Player Alpha", "away_team": "Player Beta",
+            "home_score": 2, "away_score": 0,
+        })
+    fitted = fit_independent_outcome_models(training, min_team_matches=4)["models"]["tennis_atp"]
+    parameters = {
+        "sport_key": "tennis_atp", "family": "tennis", "sample_size": 8,
+        "independent_outcome_model": fitted,
+    }
+    settlement = {
+        "event_id": "tennis-holdout-1", "sport_key": "tennis_atp",
+        "commence_time": event["commence_time"],
+        "home_team": "Player Alpha", "away_team": "Player Beta",
+        "home_score": 2, "away_score": 0, "status": "final",
+        "source": "verified-test-fixture",
+    }
+    report = run_historical_backtest(
+        database, [settlement], model_parameters={"tennis_atp": parameters},
+        include_prediction_rows=True,
+    )
+    assert report["events_scored"] == 1
+    assert report["outcome_only_events_scored"] == 1
+    assert report["outcome_only_validation"]["sample_size"] == 1
+    assert report["outcome_only_validation"]["by_sport"]["tennis_atp"]["sample_size"] == 1
+    assert report["scored_outcome_predictions"][0]["actual_result"] == "home"

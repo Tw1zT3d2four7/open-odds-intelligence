@@ -714,6 +714,61 @@ def paired_bootstrap_comparison(model_rows: list[dict], baseline_rows: list[dict
     }
 
 
+
+def score_outcome_prediction(prediction: dict, settlement: dict) -> dict:
+    """Score an outcome-only tennis/MMA forecast without inventing score markets."""
+    if str(prediction.get("event_id")) != str(settlement.get("event_id")):
+        raise ValueError("Prediction and settlement event IDs do not match.")
+    if str(prediction.get("sport") or "") != str(settlement.get("sport_key") or ""):
+        raise ValueError("Prediction and settlement leagues do not match.")
+    probs = prediction.get("win_probabilities")
+    if not isinstance(probs, dict):
+        raise ValueError("Outcome-only prediction probabilities are missing.")
+    values = [float(probs.get(key, -1)) / 100 for key in ("home", "away", "tie")]
+    if any(not math.isfinite(x) or x < 0 or x > 1 for x in values) or abs(sum(values) - 1) > 0.005:
+        raise ValueError("Outcome-only prediction contains invalid probabilities.")
+    hs, aws = settlement.get("home_score"), settlement.get("away_score")
+    if (isinstance(hs, bool) or isinstance(aws, bool)
+            or not isinstance(hs, int) or not isinstance(aws, int)
+            or hs < 0 or aws < 0):
+        raise ValueError("Outcome-only settlement requires verified non-negative integer scores.")
+    actual = "home" if hs > aws else "away" if hs < aws else "tie"
+    actual_vector = (1.0, 0.0, 0.0) if actual == "home" else (0.0, 1.0, 0.0) if actual == "away" else (0.0, 0.0, 1.0)
+    brier = sum((p - y) ** 2 for p, y in zip(values, actual_vector))
+    index = {"home": 0, "away": 1, "tie": 2}[actual]
+    return {
+        "event_id": str(settlement["event_id"]),
+        "sport": str(settlement["sport_key"]),
+        "actual_result": actual,
+        "predicted_home_probability": values[0],
+        "predicted_away_probability": values[1],
+        "predicted_tie_probability": values[2],
+        "brier_score": brier,
+        "log_loss": -math.log(max(1e-12, values[index])),
+    }
+
+
+def evaluate_outcome_predictions(rows: list[dict]) -> dict:
+    """Summarize proper scoring rules for outcome-only leagues."""
+    by_sport = defaultdict(list)
+    for row in rows:
+        by_sport[row.get("sport") or "unknown"].append(row)
+    def mean(values):
+        return sum(values) / len(values) if values else None
+    def summary(items):
+        return {
+            "sample_size": len(items),
+            "status": "DESCRIPTIVE_ONLY" if len(items) < 200 else "EVALUATION_AVAILABLE",
+            "brier_score": mean([row["brier_score"] for row in items]),
+            "log_loss": mean([row["log_loss"] for row in items]),
+        }
+    return {
+        "sample_size": len(rows),
+        "status": "INSUFFICIENT_DATA" if not rows else ("DESCRIPTIVE_ONLY" if len(rows) < 200 else "EVALUATION_AVAILABLE"),
+        **summary(rows),
+        "by_sport": {sport: summary(items) for sport, items in sorted(by_sport.items())},
+    }
+
 def run_historical_backtest(database, settlements: list[dict], seed_salt: str = "ooi-sim-v1", model_parameters: dict | None = None, include_prediction_rows: bool = False) -> dict:
     """Replay the latest real pregame snapshot per settled event; never fetch odds."""
     import hashlib
@@ -722,6 +777,7 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     from .simulation_market_benchmark import score_archived_spread_total, _paired_report
 
     scored, baseline_scored, skipped, market_scored = [], [], [], []
+    outcome_scored, outcome_baseline_scored = [], []
     spread_model_rows, spread_market_rows = [], []
     total_model_rows, total_market_rows = [], []
     for settlement in settlements:
@@ -741,10 +797,14 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
                     market_row["book_count"] = market["book_count"]
                     market_scored.append(market_row)
             baseline_prediction = run_game_simulation(event, seed=seed)
-            baseline_row = score_prediction(baseline_prediction, settlement)
             prediction = run_game_simulation(
                 event, seed=seed, model_parameters=(model_parameters or {}).get(event["sport_key"])
             )
+            if prediction.get("simulation_type") == "independent_outcome_monte_carlo":
+                outcome_baseline_scored.append(score_outcome_prediction(baseline_prediction, settlement))
+                outcome_scored.append(score_outcome_prediction(prediction, settlement))
+                continue
+            baseline_row = score_prediction(baseline_prediction, settlement)
             model_row = score_prediction(prediction, settlement)
             market_lines = score_archived_spread_total(event, settlement, prediction)
             for market_type, model_rows, market_rows in (
@@ -803,16 +863,29 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
             if report["overall"].get(key) is not None and baseline_report["overall"].get(key) is not None
         }
         report["paired_uncertainty"] = paired_bootstrap_comparison(scored, baseline_scored)
+    if outcome_scored:
+        report["outcome_only_validation"] = evaluate_outcome_predictions(outcome_scored)
+        report["outcome_only_market_prior_baseline"] = evaluate_outcome_predictions(outcome_baseline_scored)
+        if outcome_scored and outcome_baseline_scored:
+            report["outcome_only_model_minus_market_prior"] = {
+                key: report["outcome_only_validation"][key] - report["outcome_only_market_prior_baseline"][key]
+                for key in ("brier_score", "log_loss")
+                if report["outcome_only_validation"].get(key) is not None
+                and report["outcome_only_market_prior_baseline"].get(key) is not None
+            }
     report["settlements_submitted"] = len(settlements)
-    report["events_scored"] = len(scored)
+    report["events_scored"] = len(scored) + len(outcome_scored)
+    report["outcome_only_events_scored"] = len(outcome_scored)
     report["events_skipped"] = len(skipped)
     report["skipped"] = skipped
     if include_prediction_rows:
         report["scored_predictions"] = scored
+        report["scored_outcome_predictions"] = outcome_scored
     report["data_policy"] = (
         "Uses only the latest archived sportsbook snapshot strictly before each event's "
         "commence_time. No provider requests, current odds, post-start quotes, or synthetic "
-        "historical prices are used. Events without a valid archived spread and total are skipped."
+        "historical prices are used. Score-based events require archived spread/total; tennis/MMA "
+        "require an archived h2h market. Other events are skipped with an explicit reason."
     )
     return report
 
@@ -824,6 +897,11 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
     parameters on a later, untouched chronological test set.
     """
     from .simulation import LEAGUE_PRIORS, _collect_market_inputs, _family
+    from .team_model import fit_team_strength_models, fit_independent_outcome_models
+
+    # Both model families train only from final scores; no archived odds required.
+    independent_fit = fit_team_strength_models(training_settlements)
+    outcome_fit = fit_independent_outcome_models(training_settlements)
 
     if not isinstance(min_sample_size, int) or isinstance(min_sample_size, bool) or min_sample_size < 2:
         raise ValueError("min_sample_size must be an integer of at least 2.")
@@ -917,7 +995,32 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
             for side in ("home", "away"):
                 model[side + "_alpha"] = max(0.0, model[side + "_alpha"] - shared_alpha)
         models[sport_key] = model
-    return {"models": models, "insufficient": insufficient,
+
+    # Attach independent team ratings even when archived market snapshots are
+    # unavailable; only the optional residual-variance fit above needs odds.
+    for sport_key, team_model in independent_fit["models"].items():
+        family = _family(sport_key)
+        if sport_key not in models:
+            models[sport_key] = {
+                "sport_key": sport_key, "family": family,
+                "sample_size": team_model["training_games"],
+            }
+        models[sport_key]["independent_team_model"] = team_model
+
+    for sport_key, outcome_model in outcome_fit["models"].items():
+        family = _family(sport_key)
+        if sport_key not in models:
+            models[sport_key] = {
+                "sport_key": sport_key, "family": family,
+                "sample_size": outcome_model["training_matches"],
+            }
+        models[sport_key]["independent_outcome_model"] = outcome_model
+
+    return {"models": models, "independent_team_model_coverage": independent_fit["league_coverage"],
+            "independent_outcome_model_coverage": outcome_fit["coverage"],
+            "independent_training_games": independent_fit["training_games"],
+            "independent_training_matches": outcome_fit["training_matches"],
+            "insufficient": insufficient,
             "training_events_used": sum(len(x["margin_residuals"]) for x in buckets.values()),
             "training_events_skipped": len(skipped), "skipped": skipped,
             "minimum_sample_size": min_sample_size,
@@ -945,7 +1048,7 @@ def validate_chronological_split(training_settlements: list[dict], test_settleme
 
 
 def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size: int = 100) -> dict:
-    """Fit per-league multiclass temperature scaling on a separate calibration set."""
+    """Fit per-league temperatures on separate chronological calibration data."""
     if not isinstance(min_sample_size, int) or isinstance(min_sample_size, bool) or min_sample_size < 2:
         raise ValueError("min_sample_size must be an integer of at least 2.")
     grouped = {}
@@ -953,14 +1056,18 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
         grouped.setdefault(row.get("sport") or "unknown", []).append(row)
     temperatures, insufficient = {}, {}
     for sport, rows in sorted(grouped.items()):
-        if len(rows) < min_sample_size:
-            insufficient[sport] = {"sample_size": len(rows), "required": min_sample_size}
+        outcome_rows = [row for row in rows if all(key in row for key in (
+            "predicted_home_probability", "predicted_away_probability",
+            "predicted_tie_probability", "actual_result",
+        ))]
+        if len(outcome_rows) < min_sample_size:
+            insufficient[sport] = {"sample_size": len(outcome_rows), "required": min_sample_size}
             continue
         best_temperature, best_loss = 1.0, float("inf")
         for step in range(50, 301, 2):
             temperature = step / 100.0
             losses = []
-            for row in rows:
+            for row in outcome_rows:
                 probs = [float(row["predicted_home_probability"]),
                          float(row["predicted_away_probability"]),
                          float(row["predicted_tie_probability"])]
@@ -971,12 +1078,17 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
             loss = sum(losses) / len(losses)
             if loss < best_loss:
                 best_loss, best_temperature = loss, temperature
-        best_spread_temperature = None
+        values = {
+            "temperature": best_temperature,
+            "sample_size": len(outcome_rows),
+            "calibration_log_loss": best_loss,
+        }
+
         spread_rows = [row for row in rows if all(key in row for key in (
             "predicted_home_cover_probability", "predicted_away_cover_probability",
             "predicted_spread_push_probability", "actual_spread_result",
         ))]
-        if spread_rows:
+        if len(spread_rows) >= min_sample_size:
             best_spread_temperature, best_spread_loss = 1.0, float("inf")
             for step in range(50, 301, 2):
                 temperature = step / 100.0
@@ -992,29 +1104,36 @@ def fit_probability_temperatures(scored_predictions: list[dict], min_sample_size
                 loss = sum(losses) / len(losses)
                 if loss < best_spread_loss:
                     best_spread_loss, best_spread_temperature = loss, temperature
-        best_total_temperature, best_total_loss = 1.0, float("inf")
-        for step in range(50, 301, 2):
-            temperature = step / 100.0
-            losses = []
-            for row in rows:
-                probs = [float(row["predicted_over_probability"]),
-                         float(row["predicted_under_probability"]),
-                         float(row["predicted_total_push_probability"])]
-                weights = [max(1e-12, p) ** (1.0 / temperature) for p in probs]
-                denominator = sum(weights)
-                index = {"over": 0, "under": 1, "push": 2}[row["actual_total_result"]]
-                losses.append(-math.log(max(1e-12, weights[index] / denominator)))
-            loss = sum(losses) / len(losses)
-            if loss < best_total_loss:
-                best_total_loss, best_total_temperature = loss, temperature
-        temperatures[sport] = {
-            "temperature": best_temperature, "sample_size": len(rows),
-            "calibration_log_loss": best_loss,
-            "total_temperature": best_total_temperature,
-            "total_calibration_log_loss": best_total_loss,
-            **({"spread_temperature": best_spread_temperature,
-                "spread_calibration_log_loss": best_spread_loss} if spread_rows else {}),
-        }
+            values.update({"spread_temperature": best_spread_temperature,
+                           "spread_calibration_log_loss": best_spread_loss})
+        elif spread_rows:
+            insufficient[sport + ":spread"] = {"sample_size": len(spread_rows), "required": min_sample_size}
+
+        total_rows = [row for row in rows if all(key in row for key in (
+            "predicted_over_probability", "predicted_under_probability",
+            "predicted_total_push_probability", "actual_total_result",
+        ))]
+        if len(total_rows) >= min_sample_size:
+            best_total_temperature, best_total_loss = 1.0, float("inf")
+            for step in range(50, 301, 2):
+                temperature = step / 100.0
+                losses = []
+                for row in total_rows:
+                    probs = [float(row["predicted_over_probability"]),
+                             float(row["predicted_under_probability"]),
+                             float(row["predicted_total_push_probability"])]
+                    weights = [max(1e-12, p) ** (1.0 / temperature) for p in probs]
+                    denominator = sum(weights)
+                    index = {"over": 0, "under": 1, "push": 2}[row["actual_total_result"]]
+                    losses.append(-math.log(max(1e-12, weights[index] / denominator)))
+                loss = sum(losses) / len(losses)
+                if loss < best_total_loss:
+                    best_total_loss, best_total_temperature = loss, temperature
+            values.update({"total_temperature": best_total_temperature,
+                           "total_calibration_log_loss": best_total_loss})
+        elif total_rows:
+            insufficient[sport + ":total"] = {"sample_size": len(total_rows), "required": min_sample_size}
+        temperatures[sport] = values
     return {"temperatures": temperatures, "insufficient": insufficient,
             "minimum_sample_size": min_sample_size,
             "warning": "Fit only on a separate chronological calibration set, after model fitting and before the final holdout."}

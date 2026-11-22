@@ -77,18 +77,22 @@ def main():
             database, calibration_rows, model_parameters=models, include_prediction_rows=True
         )
         calibration_fit = fit_probability_temperatures(
-            calibration_report["scored_predictions"], args.min_calibration_sample
+            calibration_report.get("scored_predictions", []) +
+            calibration_report.get("scored_outcome_predictions", []),
+            args.min_calibration_sample
         )
         for sport, values in calibration_fit["temperatures"].items():
             family = next((name for token, name in (("basketball", "basketball"),
                 ("football", "football"), ("baseball", "baseball"),
-                ("hockey", "hockey"), ("soccer", "soccer")) if token in sport), None)
+                ("hockey", "hockey"), ("soccer", "soccer"),
+                ("tennis", "tennis"), ("mma", "mma")) if token in sport), None)
             if family is not None:
                 if models is None:
                     models = {}
                 models.setdefault(sport, {"sport_key": sport, "family": family, "sample_size": 0})
                 models[sport]["temperature"] = values["temperature"]
-                models[sport]["total_temperature"] = values["total_temperature"]
+                if "total_temperature" in values:
+                    models[sport]["total_temperature"] = values["total_temperature"]
                 if "spread_temperature" in values:
                     models[sport]["spread_temperature"] = values["spread_temperature"]
 
@@ -104,7 +108,7 @@ def main():
         }
     if calibration_report is not None:
         report["calibration"] = {
-            "evaluation": {key: value for key, value in calibration_report.items() if key != "scored_predictions"},
+            "evaluation": {key: value for key, value in calibration_report.items() if key not in ("scored_predictions", "scored_outcome_predictions")},
             "fitted_temperatures": calibration_fit,
         }
     if args.model_output:

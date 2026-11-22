@@ -299,6 +299,154 @@ def _run_outcome_only_simulation(event, seed, family):
     }
 
 
+
+
+def _independent_moneyline_edge(event, model_probabilities, market_probabilities):
+    home = _team_identity(event.get("home_team"))
+    away = _team_identity(event.get("away_team"))
+    rows = []
+    best = {"home": None, "away": None, "draw": None}
+    seen = set()
+    for index, book in enumerate(event.get("bookmakers", []) if isinstance(event.get("bookmakers"), list) else []):
+        if not isinstance(book, dict):
+            continue
+        identity = _book_key(book, index)
+        if identity in seen:
+            continue
+        for market in _market_candidates(book, "h2h"):
+            outcomes = market.get("outcomes", [])
+            sides = {"home": [], "away": [], "draw": []}
+            for outcome in outcomes if isinstance(outcomes, list) else []:
+                if not isinstance(outcome, dict) or not _valid_price(outcome.get("price")):
+                    continue
+                side = _team_side(outcome.get("name"), home, away)
+                label = _team_identity(outcome.get("name"))
+                if side:
+                    sides[side].append(int(outcome["price"]))
+                elif label in ("draw", "tie", "x"):
+                    sides["draw"].append(int(outcome["price"]))
+            if len(sides["home"]) != 1 or len(sides["away"]) != 1 or len(sides["draw"]) > 1:
+                continue
+            count = 3 if sides["draw"] else 2
+            prices = [sides["home"][0], sides["away"][0]]
+            if count == 3:
+                prices.append(sides["draw"][0])
+            decimals = [_decimal(price) for price in prices]
+            implied = [1.0 / value for value in decimals]
+            total = sum(implied)
+            rows.append((count, [value / total for value in implied],
+                         dict(zip(("home", "away", "draw"), prices)), identity))
+            seen.add(identity)
+            break
+    if not rows:
+        return {"book_count": 0, "sides": {},
+                "reason": "No complete h2h prices were available for model-edge comparison."}
+    counts = {n: sum(row[0] == n for row in rows) for n in (2, 3)}
+    selected_count = max((n for n in (2, 3) if counts[n]), key=lambda n: (counts[n], n))
+    selected_rows = [row for row in rows if row[0] == selected_count]
+    selected = [row[1] for row in selected_rows]
+    labels = ("home", "away", "draw") if selected_count == 3 else ("home", "away")
+    best = {side: None for side in labels}
+    for _, _, prices_by_side, identity in selected_rows:
+        for side in labels:
+            price = prices_by_side[side]
+            decimal = _decimal(price)
+            if best[side] is None or decimal > best[side]["decimal_odds"]:
+                best[side] = {"bookmaker": identity, "american_odds": price,
+                              "decimal_odds": round(decimal, 5)}
+    consensus = [median([row[i] for row in selected]) for i in range(selected_count)]
+    sides = {}
+    for index, side in enumerate(labels):
+        model_probability = float(model_probabilities[side])
+        if selected_count == 2:
+            model_comparison = model_probability / max(1e-12, model_probabilities["home"] + model_probabilities["away"])
+            model_loss = float(model_probabilities["away" if side == "home" else "home"])
+            push_probability = float(model_probabilities.get("tie", 0.0))
+        else:
+            model_comparison = model_probability
+            model_loss = sum(float(model_probabilities[label]) for label in labels if label != side)
+            push_probability = 0.0
+        quote = best[side]
+        ev = None
+        if quote is not None:
+            ev = (model_probability * (quote["decimal_odds"] - 1.0) - model_loss) * 100.0
+        sides[side] = {
+            "model_probability": round(model_probability * 100, 2),
+            "market_no_vig_probability": round(consensus[index] * 100, 2),
+            "edge_percentage_points": round((model_comparison - consensus[index]) * 100, 2),
+            "best_available": quote,
+            "expected_value_percent": round(ev, 2) if ev is not None else None,
+            "push_probability": round(push_probability * 100, 2),
+        }
+    return {"book_count": len(selected_rows), "outcome_count": selected_count, "sides": sides}
+
+
+def _run_independent_outcome_simulation(event, seed, family, fitted):
+    from .team_model import project_outcome_matchup
+
+    model = fitted.get("independent_outcome_model") if fitted else None
+    projection = project_outcome_matchup(model, event.get("home_team"), event.get("away_team"))
+    market_probabilities, books, diagnostics = _moneyline_inputs(event)
+    if not market_probabilities:
+        raise ValueError("A complete sportsbook h2h market is required for comparison.")
+    rng = random.Random(seed)
+    probabilities = [projection["home_probability"], projection["away_probability"], projection["draw_probability"]]
+    temperature = fitted.get("temperature") if fitted else None
+    if temperature is not None:
+        weights = [max(1e-12, probability) ** (1.0 / float(temperature)) for probability in probabilities]
+        denominator = sum(weights)
+        probabilities = [weight / denominator for weight in weights]
+    probabilities = tuple(probabilities)
+    counts = [0, 0, 0]
+    for _ in range(TRIALS):
+        draw = rng.random()
+        if draw < probabilities[0]:
+            counts[0] += 1
+        elif draw < probabilities[0] + probabilities[1]:
+            counts[1] += 1
+        else:
+            counts[2] += 1
+    pct = [round(value / TRIALS * 100, 2) for value in counts]
+    market_pct = [round(value * 100, 2) for value in market_probabilities]
+    moneyline_edge = _independent_moneyline_edge(
+        event,
+        {"home": probabilities[0], "away": probabilities[1], "draw": probabilities[2]},
+        market_probabilities,
+    )
+    return {
+        "trials": TRIALS, "simulation_seed": seed,
+        "simulation_type": "independent_outcome_monte_carlo",
+        "sport": str(event.get("sport_key") or event.get("sport") or ""),
+        "event_id": event.get("id"),
+        "matchup": f'{event.get("away_team")} vs {event.get("home_team")}',
+        "commence_time": event.get("commence_time"),
+        "home_team": event.get("home_team"), "away_team": event.get("away_team"),
+        "win_probabilities": {"home": pct[0], "away": pct[1], "tie": pct[2]},
+        "model_projection": {**projection, "probability_temperature": temperature},
+        "market_moneyline": {
+            "home_probability": market_pct[0], "away_probability": market_pct[1],
+            "draw_probability": market_pct[2],
+            "outcome_count": 3 if market_probabilities[2] > 0 else 2,
+            "book_count": len(books), "bookmakers": books,
+        },
+        "model_vs_market": {
+            "home_probability_difference_pp": round(pct[0] - market_pct[0], 2),
+            "away_probability_difference_pp": round(pct[1] - market_pct[1], 2),
+            "draw_probability_difference_pp": round(pct[2] - market_pct[2], 2),
+        },
+        "market_edge_analysis": {"moneyline": moneyline_edge},
+        "data_quality": {
+            "model_source": "independent_historical_elo",
+            "training_sample_size": fitted.get("sample_size", 0),
+            "model_matches": model.get("training_matches", 0),
+            "market_moneyline_books": len(books),
+            "distribution": "elo_categorical_outcomes",
+            "market_diagnostics": diagnostics,
+        },
+        "methodology": "10,000 trials sampled from a chronological Elo model fitted only on earlier verified outcomes. Sportsbook moneyline prices are comparison benchmarks only; they do not set model probabilities. Not validated until tested on an untouched holdout.",
+    }
+
+
 def _collect_market_inputs(event):
     spread_margins, totals = [], []
     spread_books, total_books = [], []
@@ -375,7 +523,7 @@ def _validate_upcoming_event(event):
     return start
 
 
-def market_readiness(event):
+def market_readiness(event, model_parameters=None, require_independent_model=False):
     """Report whether stored quotes and schedule permit a pregame simulation."""
     inputs = _collect_market_inputs(event)
     family = _family(event.get("sport_key") or event.get("sport"))
@@ -384,6 +532,31 @@ def market_readiness(event):
     has_total = bool(inputs["totals"])
     if family in ("tennis", "mma") or family is None or not (has_spread and has_total):
         moneyline, books, diagnostics = _moneyline_inputs(event)
+        if require_independent_model:
+            projection = None
+            try:
+                _validate_upcoming_event(event)
+                from .team_model import project_outcome_matchup
+                projection = project_outcome_matchup(
+                    (model_parameters or {}).get("independent_outcome_model"),
+                    event.get("home_team"), event.get("away_team"),
+                )
+                independent_reason = None if moneyline else "A complete sportsbook h2h market is required for comparison."
+            except ValueError as exc:
+                has_start_time = "start time" not in str(exc).lower()
+                independent_reason = str(exc)
+            return {
+                "can_simulate": has_start_time and bool(moneyline) and projection is not None,
+                "simulation_mode": "independent_outcome_only" if projection is not None else "independent_model_unavailable",
+                "independent_model_available": projection is not None,
+                "has_start_time": has_start_time,
+                "has_h2h": bool(moneyline),
+                "has_spread": has_spread,
+                "has_total": has_total,
+                "moneyline_books": len(books),
+                "reason": independent_reason,
+                "market_diagnostics": diagnostics + inputs["diagnostics"],
+            }
         missing = []
         try:
             _validate_upcoming_event(event)
@@ -420,9 +593,23 @@ def market_readiness(event):
         missing.append("a complete, valid spread with matching home and away outcomes")
     if not has_total:
         missing.append("a complete, valid total with matching Over and Under outcomes")
+    independent_available = False
+    independent_reason = None
+    if require_independent_model:
+        try:
+            from .team_model import project_matchup
+            project_matchup(
+                (model_parameters or {}).get("independent_team_model"),
+                event.get("home_team"), event.get("away_team"),
+            )
+            independent_available = True
+        except (TypeError, ValueError) as exc:
+            independent_reason = str(exc)
+            missing.append(independent_reason)
     return {
-        "can_simulate": has_start_time and has_spread and has_total,
-        "simulation_mode": "score_based_monte_carlo",
+        "can_simulate": has_start_time and has_spread and has_total and (independent_available or not require_independent_model),
+        "simulation_mode": "independent_score_based_monte_carlo" if independent_available else "score_based_monte_carlo",
+        "independent_model_available": independent_available if require_independent_model else None,
         "sport_family": family,
         "has_start_time": has_start_time,
         "has_spread": has_spread,
@@ -510,6 +697,47 @@ def _validated_model_parameters(parameters, family, sport_key):
         if not math.isfinite(value) or not low <= value <= high:
             raise ValueError(f"Invalid fitted model parameter: {key}.")
         result[key] = value
+    outcome_model = result.get("independent_outcome_model")
+    if outcome_model is not None:
+        if (not isinstance(outcome_model, dict) or outcome_model.get("version") != 1
+                or not isinstance(outcome_model.get("teams"), dict)):
+            raise ValueError("Invalid independent outcome model structure.")
+        draw_rate = outcome_model.get("draw_rate", 0.0)
+        if isinstance(draw_rate, bool) or not isinstance(draw_rate, (int, float)) or not math.isfinite(draw_rate) or not 0 <= draw_rate <= 0.25:
+            raise ValueError("Invalid independent outcome model draw rate.")
+        for competitor, rating in outcome_model["teams"].items():
+            if not isinstance(competitor, str) or not competitor or not isinstance(rating, dict):
+                raise ValueError("Invalid independent competitor rating entry.")
+            matches, value = rating.get("matches"), rating.get("rating")
+            if isinstance(matches, bool) or not isinstance(matches, int) or matches < 0:
+                raise ValueError("Invalid independent competitor sample size.")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError("Invalid independent competitor Elo rating.")
+    independent = result.get("independent_team_model")
+    if independent is not None:
+        if (not isinstance(independent, dict) or independent.get("version") != 1
+                or not isinstance(independent.get("teams"), dict)):
+            raise ValueError("Invalid independent team model structure.")
+        for key in ("league_home_mean", "league_away_mean"):
+            try:
+                value = float(independent[key])
+            except (KeyError, TypeError, ValueError, OverflowError):
+                raise ValueError(f"Invalid independent team model field: {key}.") from None
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"Invalid independent team model field: {key}.")
+        for team_key, rating in independent["teams"].items():
+            if not isinstance(team_key, str) or not team_key or not isinstance(rating, dict):
+                raise ValueError("Invalid independent team rating entry.")
+            games = rating.get("games")
+            if isinstance(games, bool) or not isinstance(games, int) or games < 0:
+                raise ValueError("Invalid independent team rating sample size.")
+            for key in ("offense", "defense"):
+                try:
+                    value = float(rating[key])
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    raise ValueError(f"Invalid independent team rating field: {key}.") from None
+                if not math.isfinite(value):
+                    raise ValueError(f"Invalid independent team rating field: {key}.")
     return result
 
 
@@ -649,7 +877,102 @@ def _estimate_overtime_total_adjustment(sport_key, family, expected_margin, expe
     return adjustment
 
 
-def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
+
+def _independent_market_edge(event, market_key, consensus_line, model_probabilities):
+    """Compare independent probabilities with exact-line sportsbook prices."""
+    home = _team_identity(event.get("home_team"))
+    away = _team_identity(event.get("away_team"))
+    rows = []
+    seen_books = set()
+    best = {"home": None, "away": None} if market_key == "spreads" else {"over": None, "under": None}
+    for index, book in enumerate(event.get("bookmakers", []) if isinstance(event.get("bookmakers"), list) else []):
+        if not isinstance(book, dict):
+            continue
+        identity = _book_key(book, index)
+        if identity in seen_books:
+            continue
+        for market in _market_candidates(book, market_key):
+            outcomes = market.get("outcomes", [])
+            if not isinstance(outcomes, list):
+                continue
+            selected = {}
+            for outcome in outcomes:
+                if not isinstance(outcome, dict) or not _valid_price(outcome.get("price")):
+                    continue
+                if market_key == "spreads":
+                    side = _team_side(outcome.get("name"), home, away)
+                    point = _finite_point(outcome.get("point"))
+                    if side and point is not None:
+                        selected[side] = (point, int(outcome["price"]))
+                else:
+                    side = str(outcome.get("name") or "").strip().lower()
+                    point = _finite_point(outcome.get("point"))
+                    if side in ("over", "under") and point is not None:
+                        selected[side] = (point, int(outcome["price"]))
+            first, second = (("home", "away") if market_key == "spreads" else ("over", "under"))
+            if first not in selected or second not in selected:
+                continue
+            p1, price1 = selected[first]
+            p2, price2 = selected[second]
+            if market_key == "spreads":
+                if abs(p1 + p2) > POINT_TOLERANCE or abs((-p1) - consensus_line) > POINT_TOLERANCE:
+                    continue
+            else:
+                if p1 <= 0 or abs(p1 - p2) > POINT_TOLERANCE or abs(p1 - consensus_line) > POINT_TOLERANCE:
+                    continue
+            d1, d2 = _decimal(price1), _decimal(price2)
+            implied1, implied2 = 1.0 / d1, 1.0 / d2
+            denominator = implied1 + implied2
+            if denominator <= 0:
+                continue
+            rows.append((implied1 / denominator, implied2 / denominator))
+            seen_books.add(identity)
+            for side, price in ((first, price1), (second, price2)):
+                decimal = _decimal(price)
+                if best[side] is None or decimal > best[side]["decimal_odds"]:
+                    best[side] = {
+                        "bookmaker": identity, "american_odds": price,
+                        "decimal_odds": round(decimal, 5),
+                    }
+    if not rows:
+        return {
+            "line": -consensus_line if market_key == "spreads" else consensus_line, "book_count": 0,
+            "market_no_vig_probability": None, "sides": {},
+            "reason": "No complete sportsbook prices were available at the exact consensus line.",
+        }
+    consensus = [median([row[position] for row in rows]) for position in (0, 1)]
+    labels = (("home", "away") if market_key == "spreads" else ("over", "under"))
+    sides = {}
+    for index, side in enumerate(labels):
+        other = labels[1 - index]
+        model_win = float(model_probabilities[side])
+        model_loss = float(model_probabilities[other])
+        push = float(model_probabilities.get("push", 0.0))
+        conditional_model = model_win / max(1e-12, model_win + model_loss)
+        quote = best[side]
+        ev = None
+        if quote is not None:
+            ev = (model_win * (quote["decimal_odds"] - 1.0) - model_loss) * 100.0
+        sides[side] = {
+            "model_probability": round(model_win * 100, 2),
+            "model_probability_ex_push": round(conditional_model * 100, 2),
+            "market_no_vig_probability": round(consensus[index] * 100, 2),
+            "edge_percentage_points": round((conditional_model - consensus[index]) * 100, 2),
+            "best_available": quote,
+            "expected_value_percent": round(ev, 2) if ev is not None else None,
+            "push_probability": round(push * 100, 2),
+        }
+    return {
+        "line": -consensus_line if market_key == "spreads" else consensus_line, "book_count": len(rows),
+        "market_no_vig_probability": {
+            labels[0]: round(consensus[0] * 100, 2),
+            labels[1]: round(consensus[1] * 100, 2),
+        },
+        "sides": sides,
+        "note": "EV uses the independent model win/loss probabilities and best exact-line price; pushes return the stake.",
+    }
+
+def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, require_independent_model=False):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
     if not isinstance(event, dict):
@@ -660,8 +983,20 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     if family in ("tennis", "mma") or family is None or not has_complete_scoring_markets:
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
             raise ValueError("Simulation seed must be an integer or None.")
+        if family in ("tennis", "mma"):
+            fitted_outcome = _validated_model_parameters(
+                model_parameters, family,
+                str(event.get("sport_key") or event.get("sport") or ""),
+            )
+            if fitted_outcome and fitted_outcome.get("independent_outcome_model"):
+                return _run_independent_outcome_simulation(event, seed, family, fitted_outcome)
+            if require_independent_model:
+                raise ValueError("No independent historical Elo model is fitted for this league.")
+        elif require_independent_model:
+            raise ValueError("No independent model is implemented for this sport.")
         return _run_outcome_only_simulation(event, seed, family)
-    expected_margin, expected_total, spread_books, total_books = _market_inputs(event)
+    market_margin, market_total, spread_books, total_books = _market_inputs(event)
+    expected_margin, expected_total = market_margin, market_total
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
         raise ValueError("Simulation seed must be an integer or None.")
     prior = LEAGUE_PRIORS[family]
@@ -669,9 +1004,36 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     empirical_fit = bool(fitted and int(fitted.get("sample_size", 0)) > 0)
     if fitted:
         prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
+
+    independent_projection = None
+    scoring_fit = dict(fitted or {})
+    if fitted and fitted.get("independent_team_model"):
+        from .team_model import project_matchup
+        independent_projection = project_matchup(
+            fitted["independent_team_model"], event.get("home_team"), event.get("away_team")
+        )
+        # The sportsbook lines below are comparison thresholds only. They do
+        # not set the independent expected score or residual mean.
+        expected_margin = independent_projection["expected_margin"]
+        expected_total = independent_projection["expected_total"]
+        # Do not leak market-residual variance estimates into the independent
+        # forecast. Until score-only variance calibration is available, use
+        # the conservative family prior for spread/total dispersion.
+        prior = dict(LEAGUE_PRIORS[family])
+        scoring_fit = {}
+    elif require_independent_model:
+        raise ValueError(
+            "No independent historical team model is fitted for this league. "
+            "Build it from an earlier verified-results training period; market-only simulation is blocked."
+        )
+
+    independent_training_sample = (
+        fitted["independent_team_model"].get("training_games", 0)
+        if independent_projection else (fitted.get("sample_size", 0) if fitted else 0)
+    )
     overtime_total_adjustment = _estimate_overtime_total_adjustment(
         event.get("sport_key") or event.get("sport"), family,
-        expected_margin, expected_total, prior, fitted, seed,
+        expected_margin, expected_total, prior, scoring_fit, seed,
     )
     regulation_total_anchor = expected_total - overtime_total_adjustment
     rng = random.Random(seed)
@@ -681,7 +1043,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     home_scores, away_scores, margins, game_totals = [], [], [], []
     for _ in range(TRIALS):
         home_score, away_score = _draw_regulation_scores(
-            rng, family, expected_margin, regulation_total_anchor, prior, fitted
+            rng, family, expected_margin, regulation_total_anchor, prior, scoring_fit
         )
         if home_score == away_score:
             regulation_ties += 1
@@ -703,15 +1065,15 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             ties += 1
         # The consensus home spread is the inverse of the home outcome point:
         # a -4.5 home quote means the home team must win by more than 4.5.
-        if margin > expected_margin + 1e-9:
+        if margin > market_margin + 1e-9:
             home_covers += 1
-        elif margin < expected_margin - 1e-9:
+        elif margin < market_margin - 1e-9:
             away_covers += 1
         else:
             spread_pushes += 1
-        if total > expected_total:
+        if total > market_total:
             over += 1
-        elif total < expected_total:
+        elif total < market_total:
             under += 1
         else:
             pushes += 1
@@ -748,10 +1110,27 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     under_probability = round(raw_total_probabilities[1] * 100, 2)
     total_push_probability = round(100.0 - over_probability - under_probability, 2)
     pct = lambda n: round(n / TRIALS * 100, 2)
+    market_edge_analysis = None
+    if independent_projection:
+        market_edge_analysis = {
+            "spread": _independent_market_edge(
+                event, "spreads", market_margin,
+                {"home": home_cover_probability / 100,
+                 "away": away_cover_probability / 100,
+                 "push": spread_push_probability / 100},
+            ),
+            "total": _independent_market_edge(
+                event, "totals", market_total,
+                {"over": over_probability / 100,
+                 "under": under_probability / 100,
+                 "push": total_push_probability / 100},
+            ),
+            "warning": "Positive estimated EV is a model signal, not proof of a profitable edge. Require adequate chronological holdout performance, line/price freshness and sufficient sample size.",
+        }
     return {
         "trials": TRIALS,
         "simulation_seed": seed,
-        "simulation_type": "score_based_monte_carlo",
+        "simulation_type": "independent_score_based_monte_carlo" if independent_projection else "score_based_monte_carlo",
         "sport_family": family,
         "event_id": event.get("id"),
         "sport": event.get("sport_key"),
@@ -763,6 +1142,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "home": round(sum(home_scores) / TRIALS, 2),
             "away": round(sum(away_scores) / TRIALS, 2),
         },
+        "model_projection": independent_projection,
         "simulation_ranges": {
             "home_score": _distribution_summary(home_scores),
             "away_score": _distribution_summary(away_scores),
@@ -777,7 +1157,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "home": home_probability, "away": away_probability, "tie": tie_probability,
         },
         "spread_market": {
-            "consensus_home_spread": round(-expected_margin, 2),
+            "consensus_home_spread": round(-market_margin, 2),
+            "model_expected_margin": round(expected_margin, 2),
             "home_cover": home_cover_probability,
             "away_cover": away_cover_probability,
             "push": spread_push_probability,
@@ -791,25 +1172,28 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "rule": "league_specific_approximation",
         },
         "total_market": {
-            "consensus_line": round(expected_total, 2),
+            "consensus_line": round(market_total, 2),
+            "model_expected_total": round(expected_total, 2),
             "over": over_probability, "under": under_probability, "push": total_push_probability,
             "probability_temperature": total_temperature,
         },
+        "market_edge_analysis": market_edge_analysis,
         "margin_market": {
             "consensus_home_margin": round(expected_margin, 2),
             "home_margin_sd": prior["margin_sd"],
-            "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
-            "training_sample_size": fitted.get("sample_size") if fitted else 0,
-            "fitted_margin_bias": fitted.get("margin_bias") if empirical_fit else None,
-            "fitted_total_bias": fitted.get("total_bias") if empirical_fit else None,
-            "fitted_margin_total_correlation": fitted.get("margin_total_corr") if empirical_fit else None,
+            "model_source": "independent_historical_team_model" if independent_projection else ("empirical_training_fit" if empirical_fit else "broad_league_prior"),
+            "independent_projection": independent_projection,
+            "training_sample_size": independent_training_sample,
+            "fitted_margin_bias": fitted.get("margin_bias") if empirical_fit and not independent_projection else None,
+            "fitted_total_bias": fitted.get("total_bias") if empirical_fit and not independent_projection else None,
+            "fitted_margin_total_correlation": fitted.get("margin_total_corr") if empirical_fit and not independent_projection else None,
             "probability_temperature": temperature,
         },
         "data_quality": {
             "spread_books": spread_books,
             "total_books": total_books,
             "distribution": prior["distribution"],
-            "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
+            "model_source": "independent_historical_team_model" if independent_projection else ("empirical_training_fit" if empirical_fit else "broad_league_prior"),
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
             "shared_count_environment_alpha": (
                 fitted.get("shared_alpha", 0.0) if fitted and prior["distribution"] == "poisson" else None
@@ -817,6 +1201,13 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
         "methodology": (
+            "Independent team-specific projection: historical team offense and defense ratings, "
+            "venue-adjusted league scoring baselines, and shrinkage are fitted from earlier final "
+            "scores only. Current sportsbook spread and total are used solely as comparison lines; "
+            "they do not anchor the expected score. Outcome dispersion currently uses a "
+            "conservative sport-family prior; independent variance fitting and chronological "
+            "holdout validation are still required."
+            if independent_projection else
             "Empirically fitted per-league market-residual model: stored sportsbook spread "
             "and total anchor this game; earlier verified training events supply league-specific "
             "residual bias, variance and correlation; count-based leagues use team-specific "
