@@ -824,10 +824,11 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
     parameters on a later, untouched chronological test set.
     """
     from .simulation import LEAGUE_PRIORS, _collect_market_inputs, _family
-    from .team_model import fit_team_strength_models
+    from .team_model import fit_team_strength_models, fit_independent_outcome_models
 
-    # Score-only fit: no archived sportsbook quotes are required.
+    # Both model families train only from final scores; no archived odds required.
     independent_fit = fit_team_strength_models(training_settlements)
+    outcome_fit = fit_independent_outcome_models(training_settlements)
 
     if not isinstance(min_sample_size, int) or isinstance(min_sample_size, bool) or min_sample_size < 2:
         raise ValueError("min_sample_size must be an integer of at least 2.")
@@ -933,8 +934,19 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
             }
         models[sport_key]["independent_team_model"] = team_model
 
+    for sport_key, outcome_model in outcome_fit["models"].items():
+        family = _family(sport_key)
+        if sport_key not in models:
+            models[sport_key] = {
+                "sport_key": sport_key, "family": family,
+                "sample_size": outcome_model["training_matches"],
+            }
+        models[sport_key]["independent_outcome_model"] = outcome_model
+
     return {"models": models, "independent_team_model_coverage": independent_fit["league_coverage"],
+            "independent_outcome_model_coverage": outcome_fit["coverage"],
             "independent_training_games": independent_fit["training_games"],
+            "independent_training_matches": outcome_fit["training_matches"],
             "insufficient": insufficient,
             "training_events_used": sum(len(x["margin_residuals"]) for x in buckets.values()),
             "training_events_skipped": len(skipped), "skipped": skipped,
