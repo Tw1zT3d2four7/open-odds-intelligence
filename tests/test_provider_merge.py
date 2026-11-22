@@ -120,3 +120,27 @@ def test_merge_preserves_oddslink_posted_limit_when_newer_price_replaces_quote()
     assert outcome["size"] == {"kind": "posted_limit", "amount": 25000}
     assert outcome["size_source_provider"] == "oddslink"
     assert outcome["main"] is True
+
+
+def test_tennis_events_merge_when_providers_reverse_participant_order():
+    atp = {
+        "id": "oddslink-atp", "sport_key": "tennis_atp", "sport_title": "ATP",
+        "commence_time": "2026-11-23T12:00:00Z",
+        "home_team": "Player A", "away_team": "Player B",
+        "bookmakers": [_book("book-one", [{"name": "Player A", "price": -120}])],
+    }
+    odds_api = {
+        "id": "odds-api-atp", "sport_key": "tennis_atp", "sport_title": "ATP",
+        "commence_time": "2026-11-23T12:00:00Z",
+        "home_team": "Player B", "away_team": "Player A",
+        "bookmakers": [_book("book-two", [{"name": "Player A", "price": -115}])],
+    }
+
+    merged = merge_provider_events([("oddslink", [atp]), ("the_odds_api", [odds_api])])
+
+    assert len(merged) == 1
+    assert merged[0]["home_team"] == "Player A"
+    assert merged[0]["away_team"] == "Player B"
+    books = {book["key"]: book for book in merged[0]["bookmakers"]}
+    assert set(books) == {"book-one", "book-two"}
+    assert books["book-two"]["markets"][0]["outcomes"][0]["name"] == "Player A"
