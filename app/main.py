@@ -61,7 +61,9 @@ async def _automatic_refresh_loop():
         await asyncio.sleep(interval)
         # Keep provider I/O and SQLite work off the ASGI event loop.
         try:
-            await asyncio.to_thread(service.refresh)
+            await asyncio.to_thread(
+                service.refresh, providers=service.auto_refresh_provider_names()
+            )
         except Exception as exc:
             # Keep the scheduler alive, but expose failures in /api/health.
             service._last_error = f"Unexpected scheduled odds refresh failure: {exc}"
