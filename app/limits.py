@@ -47,11 +47,24 @@ class LimitsError(RuntimeError):
     pass
 
 
-def oddslink_api_key():
-    if config.ODDSLINK_API_KEY:
-        return config.ODDSLINK_API_KEY
+def oddslink_key_entries():
     entries = parse_api_key_entries(config.ODDSLINK_API_KEYS)
+    if config.ODDSLINK_API_KEY and not any(
+        key == config.ODDSLINK_API_KEY for _, key in entries
+    ):
+        entries.append(("default", config.ODDSLINK_API_KEY))
+    return entries
+
+
+def oddslink_api_key():
+    entries = oddslink_key_entries()
     return entries[0][1] if entries else ""
+
+
+def oddslink_keyset_fingerprint():
+    entries = oddslink_key_entries()
+    material = "\\0".join(f"{group}\\0{key}" for group, key in entries)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest() if material else ""
 
 
 class OddsLinkClient:
@@ -155,8 +168,7 @@ class MarketLimitsMonitor:
         self.last_updated = saved_success["state_value"] if saved_success else None
         self.last_error = saved_error["state_value"] if saved_error else None
         current_key_fingerprint = (
-            hashlib.sha256(oddslink_api_key().encode("utf-8")).hexdigest()
-            if oddslink_api_key() else ""
+            oddslink_keyset_fingerprint() or ""
         )
         if saved_usage and saved_usage_key and saved_usage_key["state_value"] == current_key_fingerprint:
             try:
@@ -432,7 +444,7 @@ class MarketLimitsMonitor:
             previous_key = state_db.execute(
                 "SELECT state_value FROM market_limit_state WHERE state_key='last_key_fingerprint'"
             ).fetchone()
-            current_key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+            current_key_fingerprint = oddslink_keyset_fingerprint()
             key_changed = bool(
                 previous_key and previous_key["state_value"] != current_key_fingerprint
             )
