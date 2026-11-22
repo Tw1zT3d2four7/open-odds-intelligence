@@ -4,6 +4,7 @@ from app.providers.key_pool import (
     NoAvailableKeys,
     ProviderKeyPool,
     parse_api_keys,
+    parse_api_key_entries,
 )
 
 
@@ -103,3 +104,9 @@ def test_monthly_credit_exhaustion_401_is_cooldown_not_invalid_key_disable():
     key = pool.status()["keys"][0]
     assert key["status"] == "quota_cooldown"
     assert key["retry_in_seconds"] >= 86400
+
+
+def test_group_parser_deduplicates_same_raw_key_across_labels():
+    assert parse_api_key_entries(
+        "primary|Same-Key,backup|Same-Key,backup|Other-Key"
+    ) == [("primary", "Same-Key"), ("backup", "Other-Key")]
