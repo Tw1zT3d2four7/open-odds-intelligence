@@ -552,11 +552,17 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
         away_mean = max(0.05, (market_total - market_margin) / 2)
         actual_home, actual_away = int(settlement["home_score"]), int(settlement["away_score"])
         bucket = buckets.setdefault(sport_key, {"family": family, "margin_residuals": [],
-            "total_residuals": [], "home_dispersion": [], "away_dispersion": []})
+            "total_residuals": [], "home_dispersion": [], "away_dispersion": [],
+            "score_residual_pairs": []})
         bucket["margin_residuals"].append((actual_home - actual_away) - market_margin)
         bucket["total_residuals"].append((actual_home + actual_away) - market_total)
-        bucket["home_dispersion"].append((actual_home - home_mean, home_mean))
-        bucket["away_dispersion"].append((actual_away - away_mean, away_mean))
+        home_residual = actual_home - home_mean
+        away_residual = actual_away - away_mean
+        bucket["home_dispersion"].append((home_residual, home_mean))
+        bucket["away_dispersion"].append((away_residual, away_mean))
+        bucket["score_residual_pairs"].append(
+            (home_residual, away_residual, home_mean, away_mean)
+        )
 
     models, insufficient = {}, {}
     for sport_key, bucket in sorted(buckets.items()):
@@ -593,6 +599,26 @@ def fit_league_models(database, training_settlements: list[dict], min_sample_siz
                 denominator = sum(mean ** 2 for _, mean in observations)
                 raw_alpha = numerator / denominator if denominator else 0.0
                 model[side + "_alpha"] = max(0.0, min(2.0, raw_alpha * n / (n + shrinkage_events)))
+            # A shared Gamma rate factor represents positive covariance between
+            # team scores; independent alpha terms retain team-specific excess variance.
+            home_bias = (total_bias + margin_bias) / 2
+            away_bias = (total_bias - margin_bias) / 2
+            pairs = bucket["score_residual_pairs"]
+            covariance_numerator = sum(
+                (home_residual - home_bias) * (away_residual - away_bias)
+                for home_residual, away_residual, _, _ in pairs
+            )
+            covariance_denominator = sum(home_mean * away_mean
+                                          for _, _, home_mean, away_mean in pairs)
+            raw_shared_alpha = (
+                covariance_numerator / covariance_denominator
+                if covariance_denominator else 0.0
+            )
+            shrinkage = n / (n + shrinkage_events)
+            shared_alpha = max(0.0, min(2.0, raw_shared_alpha * shrinkage))
+            model["shared_alpha"] = shared_alpha
+            for side in ("home", "away"):
+                model[side + "_alpha"] = max(0.0, model[side + "_alpha"] - shared_alpha)
         models[sport_key] = model
     return {"models": models, "insufficient": insufficient,
             "training_events_used": sum(len(x["margin_residuals"]) for x in buckets.values()),
