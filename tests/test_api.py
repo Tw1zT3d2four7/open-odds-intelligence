@@ -543,6 +543,7 @@ def test_score_based_simulator_runs_through_api_for_each_supported_family(
         }],
     }
     monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main, "load_fitted_models", lambda path: _api_independent_models(sport_key))
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": sport_key, "freshness": "current", "age_seconds": 30}]
     })
