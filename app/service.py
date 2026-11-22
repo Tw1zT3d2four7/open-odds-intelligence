@@ -97,6 +97,8 @@ def _discord_arbitrage_embed(row):
 class OddsService:
     def __init__(self, database=None):
         self.db = database or OddsDatabase()
+        from .limits import MarketLimitsMonitor
+        self.limits_monitor = MarketLimitsMonitor(path=self.db.path)
         self._refresh_lock = threading.Lock()
         self._alert_lock = threading.Lock()
         self._cache = {}
