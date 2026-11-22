@@ -17,6 +17,8 @@ THERUNDOWN_API_KEY = os.getenv("THERUNDOWN_API_KEY", "")
 # Optional comma/newline-separated key pools; legacy single-key values remain supported.
 THERUNDOWN_API_KEYS = os.getenv("THERUNDOWN_API_KEYS", "")
 THE_ODDS_API_KEYS = os.getenv("THE_ODDS_API_KEYS", "")
+SPORTSGAMEODDS_API_KEY = os.getenv("SPORTSGAMEODDS_API_KEY", "")
+SPORTSGAMEODDS_API_KEYS = os.getenv("SPORTSGAMEODDS_API_KEYS", "")
 ODDS_REGIONS = os.getenv("ODDS_REGIONS", "us")
 # Optional explicit bookmaker keys; when set, this overrides region selection.
 ODDS_BOOKMAKERS = os.getenv("ODDS_BOOKMAKERS", "").strip()
