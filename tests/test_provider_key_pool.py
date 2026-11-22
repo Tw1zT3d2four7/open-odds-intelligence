@@ -32,7 +32,7 @@ def test_round_robin_cycles_keys_without_exposing_credentials():
 
 def test_quota_failure_cools_only_the_affected_key_and_rotates():
     now = [100.0]
-    pool = ProviderKeyPool("sample", ["KeyA", "KeyB"], clock=lambda: now[0])
+    pool = ProviderKeyPool("sample", ["account-a|KeyA", "account-b|KeyB"], clock=lambda: now[0])
     first = pool.acquire()
     assert first.key == "KeyA"
 
@@ -50,7 +50,7 @@ def test_quota_failure_cools_only_the_affected_key_and_rotates():
 
 
 def test_authentication_failure_disables_only_bad_key():
-    pool = ProviderKeyPool("sample", ["BadKey", "GoodKey"])
+    pool = ProviderKeyPool("sample", ["account-a|BadKey", "account-b|GoodKey"])
     bad = pool.acquire()
     assert pool.mark_failure(
         bad, status_code=401, message="invalid credential"
@@ -78,3 +78,16 @@ def test_non_quota_server_error_does_not_disable_or_cooldown_key():
         lease, status_code=503, message="temporarily unavailable"
     ) == "unchanged"
     assert pool.acquire().key == "KeyA"
+
+
+def test_keys_from_same_account_share_quota_cooldown():
+    now = [100.0]
+    pool = ProviderKeyPool(
+        "sample", ["same-account|KeyA", "same-account|KeyB"],
+        clock=lambda: now[0],
+    )
+    first = pool.acquire()
+    pool.mark_failure(first, status_code=429, retry_after_seconds=120)
+    assert pool.status()["available_keys"] == 0
+    with pytest.raises(NoAvailableKeys):
+        pool.acquire()
