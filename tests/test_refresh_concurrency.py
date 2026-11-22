@@ -635,3 +635,55 @@ def test_sports_game_odds_is_manual_only_and_available_when_manually_refreshed(t
     key_status = service.status()["provider_keys"]["sports_game_odds"]
     assert key_status["keys"][0]["usage"]["monthly_objects_remaining"] == 2400
     assert len(database.latest_events("basketball_nba")) == 1
+
+
+def test_oddize_is_manual_only_and_adds_credit_limited_player_props(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeOddize:
+        name = "oddize"
+        usage = {"plan_id": "api_developer", "credits_remaining": 1480}
+        def __init__(self, api_key):
+            assert api_key == "Oddize-Free-Key"
+        def fetch_odds(self, sport):
+            return [{
+                "id": "oddize-event", "sport_key": sport, "sport_title": "NBA",
+                "commence_time": "2026-11-23T20:00:00Z",
+                "home_team": "BOS", "away_team": "NYK",
+                "bookmakers": [{
+                    "key": "bet365", "title": "Bet365",
+                    "markets": [{"key": "h2h", "outcomes": [
+                        {"name": "BOS", "price": -110, "source_provider": "oddize"}
+                    ]}],
+                }],
+            }]
+        def fetch_props(self, sport, events, *, max_prop_types, cursor):
+            calls.append((sport, max_prop_types, cursor, len(events)))
+            return {
+                "prop_types_requested": ["player_pts"],
+                "props_added": 2,
+                "next_cursor": 1,
+                "credits_remaining": 1478,
+            }
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "oddize")
+    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", True, raising=False)
+    monkeypatch.setattr(config, "ODDS_PROVIDERS", ["oddize"], raising=False)
+    monkeypatch.setattr(config, "ODDIZE_API_KEY", "Oddize-Free-Key", raising=False)
+    monkeypatch.setattr(config, "ODDIZE_PROPS_ENABLED", True, raising=False)
+    monkeypatch.setattr(config, "ODDIZE_PROP_TYPES_PER_REFRESH", 1, raising=False)
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(config, "PLAYER_PROPS_ENABLED", False)
+    monkeypatch.setattr("app.service.OddizeProvider", FakeOddize)
+
+    database = OddsDatabase(tmp_path / "oddize-manual.sqlite3")
+    service = OddsService(database)
+    assert service.auto_refresh_provider_names() == []
+
+    result = service.refresh()
+    assert result["ok"] is True
+    assert calls == [("basketball_nba", 1, 0, 1)]
+    assert result["provider_results"]["basketball_nba"]["oddize_props"]["props_added"] == 2
+    assert database.get_state("oddize_prop_cursor:basketball_nba") == "1"
+    assert len(database.latest_events("basketball_nba")) == 1
