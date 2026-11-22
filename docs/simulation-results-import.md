@@ -41,7 +41,11 @@ python -m scripts.import_simulation_results --input data/verified-results.csv
 ```
 
 The report shows accepted, duplicate, and rejected rows, including why an
-event did not match the archive. Only after reviewing that report, apply it:
+event did not match the archive. It also reports stored final-game coverage
+per league, the number of teams/competitors meeting the current eight-game
+rating minimum, and whether the fitted model artifact already exists. This is
+coverage reporting, not a claim that a league has passed calibration or
+holdout validation. Only after reviewing that report, apply it:
 
 ```bash
 python -m scripts.import_simulation_results --input data/verified-results.csv --apply
