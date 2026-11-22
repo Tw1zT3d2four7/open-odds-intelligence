@@ -51,6 +51,16 @@ def main():
         training_rows = stored_split["training"]
         calibration_rows = stored_split["calibration"]
         settlements = stored_split["holdout"]
+        misplaced_training_only = [
+            row.get("event_id") for row in calibration_rows + settlements
+            if row.get("training_only")
+        ]
+        if misplaced_training_only:
+            parser.error(
+                "Training-only historical results must all precede --training-cutoff; "
+                "move the cutoff later or remove the misplaced rows. Examples: "
+                + ", ".join(str(value) for value in misplaced_training_only[:5])
+            )
     else:
         if not args.settlements:
             parser.error("Provide --settlements or use --use-stored-results.")

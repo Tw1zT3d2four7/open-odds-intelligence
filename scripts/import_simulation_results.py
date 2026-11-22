@@ -4,10 +4,13 @@ Examples:
   python -m scripts.import_simulation_results --template data/results-template.csv
   python -m scripts.import_simulation_results --input data/verified-results.csv
   python -m scripts.import_simulation_results --input data/verified-results.csv --apply
+  python -m scripts.import_simulation_results --input data/historical-training.csv --training-only
+  python -m scripts.import_simulation_results --input data/historical-training.csv --training-only --apply
 
-Imports are dry-run by default. Every result must match an exact event ID,
-league, kickoff timestamp, and home/away identity already in the local odds
-archive. This script never contacts an odds or scores provider.
+Archived imports must match an exact event in the local odds archive. Training-only
+imports accept verified historical results without archived odds and are kept in
+a separate table that is prohibited from calibration and holdout use. All imports
+are dry-run by default. This script never contacts an odds or scores provider.
 """
 from __future__ import annotations
 
@@ -89,15 +92,20 @@ def _dry_run_database(database: OddsDatabase) -> tuple[OddsDatabase, str]:
         raise
 
 
-def import_results(database: OddsDatabase, content: str, apply: bool = False) -> dict:
-    """Validate every row against archived identities; write only with apply=True."""
+def import_results(
+    database: OddsDatabase, content: str, apply: bool = False, training_only: bool = False
+) -> dict:
+    """Validate verified results; historical training rows are stored separately."""
     records = parse_settlements_csv(content)
     target = database
     temporary_path = None
     if not apply:
         target, temporary_path = _dry_run_database(database)
     try:
-        result = target.save_simulation_settlements(records)
+        result = (
+            target.save_simulation_training_settlements(records)
+            if training_only else target.save_simulation_settlements(records)
+        )
         stored = target.simulation_settlements()
         team_fit = fit_team_strength_models(stored)
         outcome_fit = fit_independent_outcome_models(stored)
@@ -123,6 +131,7 @@ def import_results(database: OddsDatabase, content: str, apply: bool = False) ->
             Path(temporary_path + "-wal").unlink(missing_ok=True)
             Path(temporary_path + "-shm").unlink(missing_ok=True)
     result["mode"] = "applied" if apply else "dry_run"
+    result["dataset"] = "training_only" if training_only else "archived_event_results"
     result["rows_submitted"] = len(records)
     result["by_league"] = dict(sorted(Counter(row["sport_key"] for row in records).items()))
     return result
@@ -134,6 +143,7 @@ def main() -> None:
     parser.add_argument("--template", help="Export archived event IDs and identities to a blank CSV template")
     parser.add_argument("--input", help="Import a completed verified final-score CSV (dry-run by default)")
     parser.add_argument("--apply", action="store_true", help="Persist accepted results; without this flag, no live data is changed")
+    parser.add_argument("--training-only", action="store_true", help="Import historical results without odds-archive IDs; these rows are restricted to the training period")
     args = parser.parse_args()
     if bool(args.template) == bool(args.input):
         parser.error("Provide exactly one of --template or --input.")
@@ -144,7 +154,10 @@ def main() -> None:
         count = export_archived_event_template(database, args.template)
         print(json.dumps({"template": str(Path(args.template)), "archived_events": count}, indent=2))
         return
-    result = import_results(database, Path(args.input).read_text(encoding="utf-8-sig"), apply=args.apply)
+    result = import_results(
+        database, Path(args.input).read_text(encoding="utf-8-sig"),
+        apply=args.apply, training_only=args.training_only,
+    )
     print(json.dumps(result, indent=2, sort_keys=True))
     if result["rejected"]:
         raise SystemExit(2)

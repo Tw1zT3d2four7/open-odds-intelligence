@@ -19,6 +19,34 @@ league key, kickoff timestamp, and home/away labels. It does not invent
 historical games or fetch provider data. The archive can only accept scores
 for events it already knows about.
 
+### Historical training data that has no archived odds
+
+The archived-event template may not contain enough seasons of history to
+train every team or athlete. For that older history, prepare a separate CSV
+using the same required columns, but use a stable unique event ID from the
+historical data source. Set `status=final` and put the specific source name or
+URL in `source`. Then validate and apply it using the explicit training-only
+mode:
+
+```bash
+python -m scripts.import_simulation_results --input data/historical-training.csv --training-only
+python -m scripts.import_simulation_results --input data/historical-training.csv --training-only --apply
+```
+
+Training-only rows are stored separately from archived-event settlements.
+They can fit independent team/athlete ratings, but they cannot be used as
+calibration or holdout observations. The backtest CLI rejects them if their
+dates fall on or after the training cutoff. Keep these results strictly in
+the oldest training period, before calibration and holdout. The source field
+is an operator attestation; verify scores against authoritative league or
+tournament results before importing. Never fabricate event IDs or scores.
+
+For team sports, enter the final home and away scores. For ATP/WTA, the two
+participant fields are neutral competitor slots; use a consistent participant
+ordering and encode the winner as 1 and the loser as 0 in the score fields.
+That lets the Elo model learn outcomes without pretending tennis has home
+teams or conventional point totals.
+
 ### 2. Fill the final-score fields
 
 For each event you can independently verify, fill in:
@@ -51,9 +79,11 @@ holdout validation. Only after reviewing that report, apply it:
 python -m scripts.import_simulation_results --input data/verified-results.csv --apply
 ```
 
-The importer does not make network requests. Existing scores are not silently
-overwritten: a correction requires a newer, timezone-aware provider update
-timestamp, which this CSV workflow intentionally does not fabricate.
+The importer does not make network requests. Existing archived scores are
+not silently overwritten: a correction requires a newer, timezone-aware
+provider update timestamp, which this CSV workflow intentionally does not
+fabricate. Training-only rows are immutable duplicates; re-importing the same
+event ID is reported as a duplicate.
 
 ### 4. Fit and evaluate chronologically
 
