@@ -496,6 +496,7 @@ class OddsService:
             "sports_requested": len(sports),
             "provider_results": provider_results_summary,
             "provider_errors": provider_errors,
+            "error": "; ".join(provider_errors)[:2000] if provider_errors else None,
             "updated_at": self._updated_at,
             "alerts_sent": alerts_sent,
             "alerts_enabled": alert_status["alerts_enabled"],
