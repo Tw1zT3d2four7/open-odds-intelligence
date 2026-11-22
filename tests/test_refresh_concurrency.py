@@ -618,6 +618,7 @@ def test_sports_game_odds_is_manual_only_and_available_when_manually_refreshed(t
     monkeypatch.setattr(config, "ODDS_PROVIDERS", ["sports_game_odds"], raising=False)
     monkeypatch.setattr(config, "SPORTSGAMEODDS_API_KEY", "SGO-Key", raising=False)
     monkeypatch.setattr(config, "SPORTSGAMEODDS_API_KEYS", "", raising=False)
+    monkeypatch.setattr(config, "SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS", 0, raising=False)
     monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
     monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
     monkeypatch.setattr(config, "PLAYER_PROPS_ENABLED", False)
