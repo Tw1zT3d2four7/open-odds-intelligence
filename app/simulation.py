@@ -683,10 +683,16 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
     market_inputs = _collect_market_inputs(event)
     has_complete_scoring_markets = bool(market_inputs["spread_margins"] and market_inputs["totals"])
     if family in ("tennis", "mma") or family is None or not has_complete_scoring_markets:
+        if require_independent_model:
+            raise ValueError(
+                "An independent historical tennis/combat-sport model is not available. "
+                "Sampling sportsbook moneyline probabilities is disabled for independent predictions."
+            )
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
             raise ValueError("Simulation seed must be an integer or None.")
         return _run_outcome_only_simulation(event, seed, family)
-    expected_margin, expected_total, spread_books, total_books = _market_inputs(event)
+    market_margin, market_total, spread_books, total_books = _market_inputs(event)
+    expected_margin, expected_total = market_margin, market_total
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
         raise ValueError("Simulation seed must be an integer or None.")
     prior = LEAGUE_PRIORS[family]
@@ -748,15 +754,15 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
             ties += 1
         # The consensus home spread is the inverse of the home outcome point:
         # a -4.5 home quote means the home team must win by more than 4.5.
-        if margin > expected_margin + 1e-9:
+        if margin > market_margin + 1e-9:
             home_covers += 1
-        elif margin < expected_margin - 1e-9:
+        elif margin < market_margin - 1e-9:
             away_covers += 1
         else:
             spread_pushes += 1
-        if total > expected_total:
+        if total > market_total:
             over += 1
-        elif total < expected_total:
+        elif total < market_total:
             under += 1
         else:
             pushes += 1
@@ -822,7 +828,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
             "home": home_probability, "away": away_probability, "tie": tie_probability,
         },
         "spread_market": {
-            "consensus_home_spread": round(-expected_margin, 2),
+            "consensus_home_spread": round(-market_margin, 2),
+            "model_expected_margin": round(expected_margin, 2),
             "home_cover": home_cover_probability,
             "away_cover": away_cover_probability,
             "push": spread_push_probability,
@@ -836,7 +843,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
             "rule": "league_specific_approximation",
         },
         "total_market": {
-            "consensus_line": round(expected_total, 2),
+            "consensus_line": round(market_total, 2),
+            "model_expected_total": round(expected_total, 2),
             "over": over_probability, "under": under_probability, "push": total_push_probability,
             "probability_temperature": total_temperature,
         },
