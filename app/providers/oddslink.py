@@ -166,13 +166,27 @@ class OddsLinkProvider:
                     "title": str(raw_book.get("title") or raw_book["key"]),
                     "markets": markets,
                 })
+        participants = raw.get("participants") or raw.get("competitors") or []
+        participant_names = []
+        for participant in participants:
+            if isinstance(participant, dict):
+                name = (
+                    participant.get("name") or participant.get("full_name")
+                    or participant.get("competitor_name") or participant.get("title")
+                )
+            else:
+                name = participant
+            if name:
+                participant_names.append(str(name))
+        home_team = raw.get("home_team") or (participant_names[0] if participant_names else "")
+        away_team = raw.get("away_team") or (participant_names[1] if len(participant_names) > 1 else "")
         return {
             "id": str(raw.get("id") or ""),
             "sport_key": sport,
             "sport_title": str(raw.get("sport_title") or sport),
-            "commence_time": raw.get("commence_time"),
-            "home_team": str(raw.get("home_team") or ""),
-            "away_team": str(raw.get("away_team") or ""),
+            "commence_time": raw.get("commence_time") or raw.get("start_time"),
+            "home_team": str(home_team),
+            "away_team": str(away_team),
             "source": self.name,
             "retrieved_at": datetime.now(timezone.utc).isoformat(),
             "bookmakers": bookmakers,
@@ -234,9 +248,11 @@ class OddsLinkProvider:
             if not isinstance(raw, dict) or not raw.get("id"):
                 continue
             if "tournament_prefix" in filters:
-                tournament = raw.get("tournament") or {}
-                tournament_key = str(tournament.get("key") or "")
-                if not tournament_key.startswith(filters["tournament_prefix"]):
+                tournament = raw.get("tournament") or raw.get("competition") or {}
+                tournament_key = str(tournament.get("key") or "").lower()
+                prefix = filters["tournament_prefix"].lower()
+                alternate_prefix = prefix.replace("tennis_", "", 1)
+                if not tournament_key.startswith((prefix, alternate_prefix)):
                     continue
             events.append(self._normalize_event(raw, sport))
         return events
