@@ -26,6 +26,8 @@ SIMULATION_RESULTS_SYNC_ENABLED = os.getenv("SIMULATION_RESULTS_SYNC_ENABLED", "
 SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS = max(3600, int(os.getenv("SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS", "14400")))
 SIMULATION_RESULTS_RETRY_SECONDS = max(3600, int(os.getenv("SIMULATION_RESULTS_RETRY_SECONDS", "14400")))
 SIMULATION_RESULTS_LOOKBACK_DAYS = max(1, min(30, int(os.getenv("SIMULATION_RESULTS_LOOKBACK_DAYS", "7"))))
+# Optional rechecks for recently settled games; 0 preserves the lowest-quota behavior.
+SIMULATION_RESULTS_RECHECK_DAYS = max(0, min(7, int(os.getenv("SIMULATION_RESULTS_RECHECK_DAYS", "0"))))
 SIMULATION_RESULTS_MAX_GROUPS_PER_RUN = max(1, min(50, int(os.getenv("SIMULATION_RESULTS_MAX_GROUPS_PER_RUN", "10"))))
 BASE_DEFAULT_ODDS_SPORTS = (
     "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,basketball_ncaab,"
