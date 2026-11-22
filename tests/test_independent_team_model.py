@@ -74,6 +74,9 @@ def test_independent_projection_does_not_change_when_sportsbook_lines_change():
     assert first["spread_market"]["consensus_home_spread"] != second["spread_market"]["consensus_home_spread"]
     assert first["total_market"]["consensus_line"] != second["total_market"]["consensus_line"]
     assert first["data_quality"]["model_source"] == "independent_historical_team_model"
+    assert first["market_edge_analysis"]["spread"]["book_count"] == 1
+    assert first["market_edge_analysis"]["total"]["book_count"] == 1
+    assert first["market_edge_analysis"]["spread"]["sides"]["home"]["expected_value_percent"] is not None
 
 
 def test_live_simulation_fails_closed_without_independent_model():
