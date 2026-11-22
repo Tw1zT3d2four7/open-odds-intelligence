@@ -454,3 +454,128 @@ def test_provider_refresh_fails_cleanly_when_every_key_is_exhausted(tmp_path, mo
     assert len(calls) == 2
     assert "quota exceeded" in result["error"]
     assert service.status()["provider_keys"]["the_odds_api"]["available_keys"] == 0
+
+
+def test_simultaneous_providers_merge_books_and_markets(tmp_path, monkeypatch):
+    from app.service import OddsService
+    from app.database import OddsDatabase
+
+    event_time = "2026-11-23T20:00:00Z"
+    calls = []
+
+    class FakeRundown:
+        name = "therundown"
+        usage = {"datapoints_remaining": "1000"}
+        def __init__(self, api_key, **kwargs):
+            assert api_key == "Rundown-Key"
+        def fetch_odds(self, sport):
+            calls.append(("therundown", sport))
+            return [{
+                "id": "rundown-event", "sport_key": sport, "sport_title": "NFL",
+                "commence_time": event_time, "home_team": "Home", "away_team": "Away",
+                "bookmakers": [{
+                    "key": "draftkings", "title": "DraftKings",
+                    "markets": [{"key": "h2h", "outcomes": [
+                        {"name": "Home", "price": -110, "updated_at": event_time}
+                    ]}],
+                }],
+            }]
+
+    class FakeOddsAPI:
+        name = "the_odds_api"
+        usage = {"requests_remaining": "20"}
+        def __init__(self, api_key, *args, **kwargs):
+            assert api_key == "OddsAPI-Key"
+        def fetch_odds(self, sport):
+            calls.append(("the_odds_api", sport))
+            return [{
+                "id": "odds-api-event", "sport_key": sport, "sport_title": "NFL",
+                "commence_time": event_time, "home_team": "Home", "away_team": "Away",
+                "bookmakers": [{
+                    "key": "fanduel", "title": "FanDuel",
+                    "markets": [{"key": "h2h", "outcomes": [
+                        {"name": "Home", "price": -105, "updated_at": event_time}
+                    ]}],
+                }],
+            }]
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "therundown")
+    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", True, raising=False)
+    monkeypatch.setattr(config, "ODDS_PROVIDERS", ["therundown", "the_odds_api"], raising=False)
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEY", "Rundown-Key")
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEYS", "", raising=False)
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "OddsAPI-Key")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEYS", "", raising=False)
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["americanfootball_nfl"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(config, "PLAYER_PROPS_ENABLED", False)
+    monkeypatch.setattr("app.service.TheRundownProvider", FakeRundown)
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", FakeOddsAPI)
+
+    database = OddsDatabase(tmp_path / "multi-provider.sqlite3")
+    service = OddsService(database)
+    result = service.refresh()
+
+    assert result["ok"] is True
+    assert result["partial"] is False
+    assert calls == [
+        ("therundown", "americanfootball_nfl"),
+        ("the_odds_api", "americanfootball_nfl"),
+    ]
+    stored = database.latest_events("americanfootball_nfl")
+    assert len(stored) == 1
+    assert {book["key"] for book in stored[0]["bookmakers"]} == {
+        "draftkings", "fanduel"
+    }
+    assert stored[0]["id"] == "rundown-event"
+    assert service.status()["providers"] == ["therundown", "the_odds_api"]
+
+
+def test_multi_provider_refresh_keeps_successful_source_when_other_fails(tmp_path, monkeypatch):
+    from app.providers.the_odds_api import ProviderError
+
+    class GoodRundown:
+        name = "therundown"
+        usage = {}
+        def __init__(self, api_key, **kwargs):
+            pass
+        def fetch_odds(self, sport):
+            return [{
+                "id": "rundown-only", "sport_key": sport, "sport_title": "NFL",
+                "commence_time": "2026-11-23T20:00:00Z",
+                "home_team": "Home", "away_team": "Away",
+                "bookmakers": [],
+            }]
+
+    class DownOddsAPI:
+        name = "the_odds_api"
+        usage = {}
+        def __init__(self, api_key, *args, **kwargs):
+            pass
+        def fetch_odds(self, sport):
+            raise ProviderError("temporary outage", status_code=503, retryable=False)
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "therundown")
+    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", True, raising=False)
+    monkeypatch.setattr(config, "ODDS_PROVIDERS", ["therundown", "the_odds_api"], raising=False)
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEY", "Rundown-Key")
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEYS", "", raising=False)
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "OddsAPI-Key")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEYS", "", raising=False)
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["americanfootball_nfl"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(config, "PROVIDER_RETRY_ATTEMPTS", 0)
+    monkeypatch.setattr("app.service.TheRundownProvider", GoodRundown)
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", DownOddsAPI)
+
+    database = OddsDatabase(tmp_path / "multi-provider-partial.sqlite3")
+    service = OddsService(database)
+    result = service.refresh()
+
+    assert result["ok"] is True
+    assert result["partial"] is True
+    assert result["provider_results"]["americanfootball_nfl"]["providers_succeeded"] == [
+        "therundown"
+    ]
+    assert "the_odds_api" in result["provider_errors"][0]
+    assert len(database.latest_events("americanfootball_nfl")) == 0
