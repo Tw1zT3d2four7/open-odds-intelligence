@@ -18,6 +18,9 @@ For additional keys, use comma-separated or newline-separated values:
 ```dotenv
 THERUNDOWN_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
 THE_ODDS_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
+SPORTSGAMEODDS_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
+ODDSLINK_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
+ODDIZE_API_KEY=one-free-developer-key
 ```
 
 The parser trims surrounding whitespace, removes exact duplicates, and
@@ -50,12 +53,13 @@ errors are surfaced normally and do not automatically poison a key.
 The health response reports each key by a short one-way fingerprint, never by
 the raw credential. It includes available, quota-cooldown, and disabled states.
 
-Cooldown and disabled state currently live in process memory. Restarting the
-application clears those temporary states; durable quota-reset persistence and
-a full provider-management dashboard are follow-up work. A provider may apply
-quota limits across multiple keys or an account, so multiple keys do not imply
-that the provider grants multiplied free allowances. Follow the provider's
-terms and actual quota headers.
+Quota usage counters are persisted per masked key and displayed in the
+Provider Connections dashboard. Temporary disabled/cooldown state is held in
+process memory and is rebuilt from live usage checks after restart. The
+dashboard shows provider connection state, masked key fingerprints, account
+groups, remaining quota where reported, reset information and auto-refresh
+intervals. A provider may apply quota limits across multiple keys or an
+account, so multiple keys do not imply multiplied free allowances.
 
 ## SportsGameOdds free tier
 
@@ -77,14 +81,15 @@ requests per minute, one API key, 20 sportsbooks, and six leagues (MLB, NBA,
 NFL, NCAAB, NCAAF and NHL). Current odds cost one credit per league request;
 player-prop calls cost two credits per prop type. The adapter checks
 `/account/usage` before each metered request, records the reset time and
-remaining credits, and rotates through the league's prop types one per manual
-refresh by default. It is manual-refresh-only so a four-hour primary-provider
-schedule cannot burn through its monthly credits. The free Developer plan
-requires only an email address and no credit card. The adapter imports main markets, rotating player/team props, and alternate
-spreads/totals for a configurable number of upcoming events per league. By
-default it requests alternates for one event per supported league per manual
-refresh; each alternate market request costs two credits. Both the prop-type
-rotation and alternate-event cap can be reduced or disabled in `.env`.
+remaining credits, and rotates through one prop type per supported league per
+refresh by default. Its default schedule is daily: six leagues use about 42
+credits per day (one main-odds credit, one prop-type request at two credits,
+and two alternate-market requests at two credits each), approximately 1,260
+credits per month. The free Developer plan requires only an email address and
+no credit card. The adapter imports main markets, rotating player/team props,
+and alternate spreads/totals for one upcoming event per supported league by
+default. Both the prop-type rotation and alternate-event cap can be reduced or
+disabled in `.env`.
 
 ## OddsLink free tier
 
@@ -93,13 +98,13 @@ with 1,000 odds requests per month and a 2-requests/second limit. One odds call
 returns every available fixture, bookmaker and requested market for that
 sport; listing sports, books, fixtures and account usage is free. The Free plan
 is pre-match only and does not include player props, in-play prices or history.
-The adapter requests main markets, full-game alternate lines, team totals and
+The adapter requests main markets, alternate lines, team totals and
 available period markets in one request per sport, checks the account's
 monthly allowance before each priced request, and preserves the provider's
-main-line marker. It is manual-refresh-only so the existing TheRundown schedule cannot burn
-through the 1,000-request allowance. Player
-props are intentionally sourced from other free providers rather than a paid
-OddsLink tier.
+main-line marker and posted-limit size metadata. Its default schedule is
+daily (about 270 priced requests/month for nine sports), safely below the
+1,000-request allowance. Player props are intentionally sourced from other
+free providers rather than a paid OddsLink tier.
 
 OddsLink supports multiple API keys on an account, but the monthly allowance is
 account-wide. Keep all keys from the same account in one account group (the
@@ -110,8 +115,11 @@ default); the pool pauses the whole group when its quota is spent.
 The current foundation supports simultaneous TheRundown, The Odds API,
 SportsGameOdds, Oddize, and OddsLink ingestion, with strict event identity
 matching, team-abbreviation reconciliation, quote-level source attribution,
-alternate-line preservation, and partial-refresh reporting. Additional
-adapters and more granular provider-specific scheduling remain follow-up work.
+alternate-line and posted-limit preservation, independent provider schedules,
+quota-aware key rotation, and partial-refresh reporting. The TheRundown
+default is every four hours; The Odds API is manual by default and, when
+enabled, has a one-day minimum; SportsGameOdds defaults to every three days;
+Oddize and OddsLink default to daily.
 
 
 ## Provider plan references
