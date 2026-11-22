@@ -10,8 +10,13 @@ def test_scheduled_refresh_runs_when_enabled(monkeypatch):
     called = threading.Event()
     monkeypatch.setattr(main.config, "ODDS_PROVIDER", "the_odds_api")
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(main.service, "auto_refresh_schedule", lambda: {"the_odds_api": 0.01})
+    monkeypatch.setattr(main.service, "providers_due_for_auto_refresh", lambda: ["the_odds_api"])
+    monkeypatch.setattr(main.service, "mark_auto_refresh", lambda names: None)
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
-    monkeypatch.setattr(main.service, "refresh", lambda **kwargs: called.set() or {"ok": True})
+    monkeypatch.setattr(main.service, "refresh", lambda **kwargs: called.set() or {
+        "ok": True, "provider_results": {"nfl": {"providers_succeeded": ["the_odds_api"]}}
+    })
 
     with TestClient(main.app):
         assert called.wait(timeout=1)
@@ -20,8 +25,9 @@ def test_scheduled_refresh_runs_when_enabled(monkeypatch):
 def test_scheduled_refresh_stays_disabled_by_default(monkeypatch):
     called = threading.Event()
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(main.service, "auto_refresh_schedule", lambda: {})
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
-    monkeypatch.setattr(main.service, "refresh", lambda: called.set() or {"ok": True})
+    monkeypatch.setattr(main.service, "refresh", lambda **kwargs: called.set() or {"ok": True})
 
     with TestClient(main.app):
         time.sleep(0.05)
@@ -33,6 +39,7 @@ def test_discord_webhook_evaluates_stored_quotes_when_provider_polling_is_off(mo
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
     monkeypatch.setattr(main.config, "DISCORD_ALERT_REFRESH_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monkeypatch.setattr(main.service, "auto_refresh_schedule", lambda: {})
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
     monkeypatch.setattr(main.service, "evaluate_alerts", lambda: called.set() or 0)
     refresh_called = threading.Event()
@@ -48,6 +55,8 @@ def test_scheduled_refresh_failure_is_exposed_in_service_status(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_PROVIDER", "the_odds_api")
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(main.service, "auto_refresh_schedule", lambda: {"the_odds_api": 0.01})
+    monkeypatch.setattr(main.service, "providers_due_for_auto_refresh", lambda: ["the_odds_api"])
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
     monkeypatch.setattr(main.service, "_last_error", None)
 
@@ -84,3 +93,29 @@ def test_limits_scheduler_sleeps_only_until_persisted_cooldown_expires(monkeypat
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(main._limits_refresh_loop())
     assert sleeps == [7]
+
+
+def test_provider_refresh_intervals_are_tracked_independently(tmp_path, monkeypatch):
+    from app.database import OddsDatabase
+    from app.service import OddsService
+
+    monkeypatch.setattr(main.config, "ODDS_PROVIDER", "therundown")
+    monkeypatch.setattr(main.config, "ODDS_PROVIDERS_EXPLICIT", True, raising=False)
+    monkeypatch.setattr(main.config, "ODDS_PROVIDERS", ["therundown", "the_odds_api"], raising=False)
+    monkeypatch.setattr(main.config, "THERUNDOWN_API_KEY", "Rundown-Key")
+    monkeypatch.setattr(main.config, "THERUNDOWN_API_KEYS", "", raising=False)
+    monkeypatch.setattr(main.config, "THE_ODDS_API_KEY", "Odds-Key")
+    monkeypatch.setattr(main.config, "THE_ODDS_API_KEYS", "", raising=False)
+    monkeypatch.setattr(main.config, "RUNDOWN_REFRESH_INTERVAL_SECONDS", 3600)
+    monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 7200)
+
+    service = OddsService(OddsDatabase(tmp_path / "provider-intervals.sqlite3"))
+    assert service.auto_refresh_schedule() == {
+        "therundown": 3600,
+        "the_odds_api": 7200,
+    }
+    assert set(service.providers_due_for_auto_refresh()) == {
+        "therundown", "the_odds_api"
+    }
+    service.mark_auto_refresh(["the_odds_api"])
+    assert service.providers_due_for_auto_refresh() == ["therundown"]
