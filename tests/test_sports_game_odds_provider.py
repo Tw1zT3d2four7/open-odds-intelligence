@@ -34,7 +34,9 @@ def test_sgo_normalizes_main_markets_and_player_props():
             "points-home-game-sp-home": {
                 "betTypeID": "sp", "statEntityID": "home", "sideID": "home",
                 "byBookmaker": {
-                    "fanduel": {"odds": "-110", "spread": "-4.5", "available": True}
+                    "fanduel": {"odds": "-110", "spread": "-4.5", "available": True,
+                               "altLines": [{"odds": "-105", "spread": "-5.5",
+                                             "available": True}]}
                 },
             },
             "points-all-game-ou-over": {
@@ -58,6 +60,8 @@ def test_sgo_normalizes_main_markets_and_player_props():
     assert event["home_team"] == "Boston Celtics"
     assert event["away_team"] == "New York Knicks"
     assert books["draftkings"]["markets"][0]["key"] == "h2h"
+    spread = books["fanduel"]["markets"][0]["outcomes"]
+    assert {item["point"] for item in spread} == {-4.5, -5.5}
     props = next(
         market for market in books["draftkings"]["markets"]
         if market["key"] == "player_points"
