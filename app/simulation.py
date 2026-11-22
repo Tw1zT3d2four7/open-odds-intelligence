@@ -1027,6 +1027,10 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
             "Build it from an earlier verified-results training period; market-only simulation is blocked."
         )
 
+    independent_training_sample = (
+        independent_projection.get("home_team_games", 0) + independent_projection.get("away_team_games", 0)
+        if independent_projection else (fitted.get("sample_size", 0) if fitted else 0)
+    )
     overtime_total_adjustment = _estimate_overtime_total_adjustment(
         event.get("sport_key") or event.get("sport"), family,
         expected_margin, expected_total, prior, scoring_fit, seed,
@@ -1179,10 +1183,10 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
             "home_margin_sd": prior["margin_sd"],
             "model_source": "independent_historical_team_model" if independent_projection else ("empirical_training_fit" if empirical_fit else "broad_league_prior"),
             "independent_projection": independent_projection,
-            "training_sample_size": fitted.get("sample_size") if fitted else 0,
-            "fitted_margin_bias": fitted.get("margin_bias") if empirical_fit else None,
-            "fitted_total_bias": fitted.get("total_bias") if empirical_fit else None,
-            "fitted_margin_total_correlation": fitted.get("margin_total_corr") if empirical_fit else None,
+            "training_sample_size": independent_training_sample,
+            "fitted_margin_bias": fitted.get("margin_bias") if empirical_fit and not independent_projection else None,
+            "fitted_total_bias": fitted.get("total_bias") if empirical_fit and not independent_projection else None,
+            "fitted_margin_total_correlation": fitted.get("margin_total_corr") if empirical_fit and not independent_projection else None,
             "probability_temperature": temperature,
         },
         "data_quality": {
