@@ -9,6 +9,7 @@ import hashlib
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 
 def parse_api_keys(*values: str | None) -> list[str]:
@@ -133,8 +134,57 @@ class ProviderKeyPool:
                 continue
             if isinstance(value, (str, int, float, bool)) or value is None:
                 safe[str(name)] = value
+        exhausted = False
+        for name in (
+            "requests_remaining", "credits_remaining", "monthly_objects_remaining",
+            "datapoints_remaining", "remaining_requests", "remaining_credits",
+            "remaining_objects",
+        ):
+            if name in safe and safe[name] is not None:
+                try:
+                    exhausted = exhausted or float(safe[name]) <= 0
+                except (TypeError, ValueError):
+                    pass
+        if exhausted:
+            delay = None
+            for name in ("resets_in_seconds", "retry_after_seconds"):
+                try:
+                    if safe.get(name) is not None:
+                        delay = max(1.0, float(safe[name]))
+                        break
+                except (TypeError, ValueError):
+                    pass
+            if delay is None:
+                for name in (
+                    "period_resets_at", "monthly_reset", "daily_reset",
+                    "datapoints_reset_at", "credits_reset_at", "reset_at",
+                ):
+                    value = safe.get(name)
+                    if not value:
+                        continue
+                    try:
+                        reset = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                        if reset.tzinfo is None:
+                            reset = reset.replace(tzinfo=timezone.utc)
+                        delay = max(1.0, (reset.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds())
+                        break
+                    except (TypeError, ValueError):
+                        continue
+            if delay is None:
+                delay = 86400.0
+
         with self._lock:
             self._usage[lease.index] = safe
+            if exhausted:
+                blocked_until = self._clock() + delay
+                for index, group in enumerate(self._groups):
+                    if group == lease.account_group:
+                        self._blocked_until[index] = max(
+                            self._blocked_until.get(index, 0.0), blocked_until
+                        )
+                self._last_error[lease.index] = (
+                    "Provider quota exhausted; key group paused until its quota resets."
+                )
 
     def restore_usage(self, key_id: str, usage: dict | None) -> None:
         """Restore last known non-secret quota counters for a configured key."""
