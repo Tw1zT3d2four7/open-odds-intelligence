@@ -102,4 +102,4 @@ def test_monthly_credit_exhaustion_401_is_cooldown_not_invalid_key_disable():
     ) == "cooldown"
     key = pool.status()["keys"][0]
     assert key["status"] == "quota_cooldown"
-    assert key["cooldown_seconds"] >= 86400
+    assert key["retry_in_seconds"] >= 86400
