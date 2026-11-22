@@ -185,7 +185,7 @@ function renderProviderStatus(health){
    if(usage.period_resets_at)quota.push("Resets "+usage.period_resets_at);
    if(usage.monthly_reset)quota.push("Resets "+usage.monthly_reset);
    const status=key.status||"unknown",pill=status==="available"?"good":status==="disabled"?"bad":"warn";
-   return '<div class="provider-key"><span>Key '+escapeHtml(String(key.key_id||"").slice(0,8))+' · '+escapeHtml(key.account_group||"default")+'</span> <span class="pill '+pill+'">'+escapeHtml(status)+'</span><small>'+escapeHtml(quota.join(" · ")||"Quota not reported yet")+'</small>'+(key.cooldown_seconds>0?'<small>Retry in '+escapeHtml(key.cooldown_seconds)+'s</small>':"")+(key.last_error?'<small class="warn">'+escapeHtml(key.last_error)+'</small>':"")+'</div>';
+   return '<div class="provider-key"><span>Key '+escapeHtml(String(key.key_id||"").slice(0,8))+' · '+escapeHtml(key.account_group||"default")+'</span> <span class="pill '+pill+'">'+escapeHtml(status)+'</span><small>'+escapeHtml(quota.join(" · ")||"Quota not reported yet")+'</small>'+(key.retry_in_seconds>0?'<small>Retry in '+escapeHtml(key.retry_in_seconds)+'s</small>':"")+(key.last_error?'<small class="warn">'+escapeHtml(key.last_error)+'</small>':"")+'</div>';
   }).join("");
   const state=pool.configured?"Configured":"No API key";
   const covered=Object.entries(coverage).filter(([,sportData])=>(sportData.provider_coverage||{})[name]);
