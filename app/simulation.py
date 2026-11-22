@@ -397,6 +397,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
     rng = random.Random(seed)
     home_wins = away_wins = ties = over = under = pushes = 0
+    home_covers = away_covers = spread_pushes = 0
     regulation_ties = overtime_games = 0
     home_scores, away_scores = [], []
     for _ in range(TRIALS):
@@ -436,6 +437,14 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             away_wins += 1
         else:
             ties += 1
+        # The consensus home spread is the inverse of the home outcome point:
+        # a -4.5 home quote means the home team must win by more than 4.5.
+        if margin > expected_margin + 1e-9:
+            home_covers += 1
+        elif margin < expected_margin - 1e-9:
+            away_covers += 1
+        else:
+            spread_pushes += 1
         if total > expected_total:
             over += 1
         elif total < expected_total:
@@ -479,6 +488,14 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         },
         "win_probabilities": {
             "home": home_probability, "away": away_probability, "tie": tie_probability,
+        },
+        "spread_market": {
+            "consensus_home_spread": round(-expected_margin, 2),
+            "home_cover": round(home_covers / TRIALS * 100, 2),
+            "away_cover": round(away_covers / TRIALS * 100, 2),
+            "push": round(100.0 - round(home_covers / TRIALS * 100, 2)
+                          - round(away_covers / TRIALS * 100, 2), 2),
+            "settlement_basis": "simulated_final_score",
         },
         "game_resolution": {
             "regulation_ties": regulation_ties, "games_with_overtime_or_extra_innings": overtime_games,
