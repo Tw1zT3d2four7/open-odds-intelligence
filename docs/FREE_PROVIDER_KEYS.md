@@ -96,8 +96,8 @@ is pre-match only and does not include player props, in-play prices or history.
 The adapter requests main markets, full-game alternate lines, team totals and
 available period markets in one request per sport, checks the account's
 monthly allowance before each priced request, and preserves the provider's
-main-line marker. It is manual-refresh-only so the existing four-hour
-TheRundown schedule cannot burn through the 1,000-request allowance. Player
+main-line marker. It is manual-refresh-only so the existing TheRundown schedule cannot burn
+through the 1,000-request allowance. Player
 props are intentionally sourced from other free providers rather than a paid
 OddsLink tier.
 
