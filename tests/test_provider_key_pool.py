@@ -110,3 +110,30 @@ def test_group_parser_deduplicates_same_raw_key_across_labels():
     assert parse_api_key_entries(
         "primary|Same-Key,backup|Same-Key,backup|Other-Key"
     ) == [("primary", "Same-Key"), ("backup", "Other-Key")]
+
+
+def test_restored_zero_quota_blocks_same_account_group_but_not_backup():
+    pool = ProviderKeyPool(
+        "oddslink", ["primary|Key-One", "primary|Key-Two", "backup|Key-Three"]
+    )
+    first = pool.acquire()
+    key_id = first.fingerprint
+    pool.record_usage(first, {
+        "requests_remaining": 0,
+        "resets_in_seconds": 7200,
+    })
+    statuses = {item["account_group"]: item["status"] for item in pool.status()["keys"]}
+    assert statuses["primary"] == "quota_cooldown"
+    assert statuses["backup"] == "available"
+
+    restarted = ProviderKeyPool(
+        "oddslink", ["primary|Key-One", "primary|Key-Two", "backup|Key-Three"]
+    )
+    restarted.restore_usage(key_id, {
+        "requests_remaining": 0,
+        "resets_in_seconds": 7200,
+    })
+    restarted_statuses = restarted.status()["keys"]
+    assert restarted_statuses[0]["status"] == "quota_cooldown"
+    assert restarted_statuses[1]["status"] == "quota_cooldown"
+    assert restarted_statuses[2]["status"] == "available"
