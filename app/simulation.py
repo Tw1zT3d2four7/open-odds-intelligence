@@ -795,11 +795,17 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
     if family in ("tennis", "mma") or family is None or not has_complete_scoring_markets:
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
             raise ValueError("Simulation seed must be an integer or None.")
-        if require_independent_model:
-            if family not in ("tennis", "mma"):
-                raise ValueError("No independent model is implemented for this sport.")
-            fitted_outcome = _validated_model_parameters(model_parameters, family, str(event.get("sport_key") or event.get("sport") or ""))
-            return _run_independent_outcome_simulation(event, seed, family, fitted_outcome)
+        if family in ("tennis", "mma"):
+            fitted_outcome = _validated_model_parameters(
+                model_parameters, family,
+                str(event.get("sport_key") or event.get("sport") or ""),
+            )
+            if fitted_outcome and fitted_outcome.get("independent_outcome_model"):
+                return _run_independent_outcome_simulation(event, seed, family, fitted_outcome)
+            if require_independent_model:
+                raise ValueError("No independent historical Elo model is fitted for this league.")
+        elif require_independent_model:
+            raise ValueError("No independent model is implemented for this sport.")
         return _run_outcome_only_simulation(event, seed, family)
     market_margin, market_total, spread_books, total_books = _market_inputs(event)
     expected_margin, expected_total = market_margin, market_total
