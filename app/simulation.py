@@ -375,7 +375,7 @@ def _validate_upcoming_event(event):
     return start
 
 
-def market_readiness(event):
+def market_readiness(event, model_parameters=None, require_independent_model=False):
     """Report whether stored quotes and schedule permit a pregame simulation."""
     inputs = _collect_market_inputs(event)
     family = _family(event.get("sport_key") or event.get("sport"))
@@ -384,6 +384,17 @@ def market_readiness(event):
     has_total = bool(inputs["totals"])
     if family in ("tennis", "mma") or family is None or not (has_spread and has_total):
         moneyline, books, diagnostics = _moneyline_inputs(event)
+        if require_independent_model:
+            return {
+                "can_simulate": False,
+                "simulation_mode": "independent_model_unavailable",
+                "has_start_time": has_start_time,
+                "has_h2h": bool(moneyline),
+                "has_spread": has_spread,
+                "has_total": has_total,
+                "reason": "An independent historical tennis/combat-sport model is not available yet; sportsbook moneyline sampling is not an independent prediction.",
+                "market_diagnostics": diagnostics + inputs["diagnostics"],
+            }
         missing = []
         try:
             _validate_upcoming_event(event)
@@ -420,9 +431,23 @@ def market_readiness(event):
         missing.append("a complete, valid spread with matching home and away outcomes")
     if not has_total:
         missing.append("a complete, valid total with matching Over and Under outcomes")
+    independent_available = False
+    independent_reason = None
+    if require_independent_model:
+        try:
+            from .team_model import project_matchup
+            project_matchup(
+                (model_parameters or {}).get("independent_team_model"),
+                event.get("home_team"), event.get("away_team"),
+            )
+            independent_available = True
+        except (TypeError, ValueError) as exc:
+            independent_reason = str(exc)
+            missing.append(independent_reason)
     return {
-        "can_simulate": has_start_time and has_spread and has_total,
-        "simulation_mode": "score_based_monte_carlo",
+        "can_simulate": has_start_time and has_spread and has_total and (independent_available or not require_independent_model),
+        "simulation_mode": "independent_score_based_monte_carlo" if independent_available else "score_based_monte_carlo",
+        "independent_model_available": independent_available if require_independent_model else None,
         "sport_family": family,
         "has_start_time": has_start_time,
         "has_spread": has_spread,
@@ -649,7 +674,7 @@ def _estimate_overtime_total_adjustment(sport_key, family, expected_margin, expe
     return adjustment
 
 
-def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
+def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, require_independent_model=False):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
     if not isinstance(event, dict):
@@ -669,9 +694,29 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     empirical_fit = bool(fitted and int(fitted.get("sample_size", 0)) > 0)
     if fitted:
         prior = {**prior, **{key: fitted[key] for key in ("margin_sd", "total_sd") if key in fitted}}
+
+    independent_projection = None
+    scoring_fit = dict(fitted or {})
+    if fitted and fitted.get("independent_team_model"):
+        from .team_model import project_matchup
+        independent_projection = project_matchup(
+            fitted["independent_team_model"], event.get("home_team"), event.get("away_team")
+        )
+        # The sportsbook lines below are comparison thresholds only. They do
+        # not set the independent expected score or residual mean.
+        expected_margin = independent_projection["expected_margin"]
+        expected_total = independent_projection["expected_total"]
+        scoring_fit["margin_bias"] = 0.0
+        scoring_fit["total_bias"] = 0.0
+    elif require_independent_model:
+        raise ValueError(
+            "No independent historical team model is fitted for this league. "
+            "Build it from an earlier verified-results training period; market-only simulation is blocked."
+        )
+
     overtime_total_adjustment = _estimate_overtime_total_adjustment(
         event.get("sport_key") or event.get("sport"), family,
-        expected_margin, expected_total, prior, fitted, seed,
+        expected_margin, expected_total, prior, scoring_fit, seed,
     )
     regulation_total_anchor = expected_total - overtime_total_adjustment
     rng = random.Random(seed)
@@ -681,7 +726,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     home_scores, away_scores, margins, game_totals = [], [], [], []
     for _ in range(TRIALS):
         home_score, away_score = _draw_regulation_scores(
-            rng, family, expected_margin, regulation_total_anchor, prior, fitted
+            rng, family, expected_margin, regulation_total_anchor, prior, scoring_fit
         )
         if home_score == away_score:
             regulation_ties += 1
@@ -798,7 +843,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         "margin_market": {
             "consensus_home_margin": round(expected_margin, 2),
             "home_margin_sd": prior["margin_sd"],
-            "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
+            "model_source": "independent_historical_team_model" if independent_projection else ("empirical_training_fit" if empirical_fit else "broad_league_prior"),
+            "independent_projection": independent_projection,
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
             "fitted_margin_bias": fitted.get("margin_bias") if empirical_fit else None,
             "fitted_total_bias": fitted.get("total_bias") if empirical_fit else None,
@@ -817,6 +863,12 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
         "methodology": (
+            "Independent team-specific projection: historical team offense and defense ratings, "
+            "venue-adjusted league scoring baselines, and shrinkage are fitted from earlier final "
+            "scores only. Current sportsbook spread and total are used solely as comparison lines; "
+            "they do not anchor the expected score. Variance parameters are separately fitted and "
+            "must pass chronological holdout evaluation."
+            if independent_projection else
             "Empirically fitted per-league market-residual model: stored sportsbook spread "
             "and total anchor this game; earlier verified training events supply league-specific "
             "residual bias, variance and correlation; count-based leagues use team-specific "
