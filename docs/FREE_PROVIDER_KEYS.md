@@ -80,9 +80,11 @@ player-prop calls cost two credits per prop type. The adapter checks
 remaining credits, and rotates through the league's prop types one per manual
 refresh by default. It is manual-refresh-only so a four-hour primary-provider
 schedule cannot burn through its monthly credits. The free Developer plan
-requires only an email address and no credit card. The adapter currently
-imports main markets and rotating player/team props; separate alternate
-spread/total endpoint ingestion remains follow-up work.
+requires only an email address and no credit card. The adapter imports main markets, rotating player/team props, and alternate
+spreads/totals for a configurable number of upcoming events per league. By
+default it requests alternates for one event per supported league per manual
+refresh; each alternate market request costs two credits. Both the prop-type
+rotation and alternate-event cap can be reduced or disabled in `.env`.
 
 ## Scope
 
