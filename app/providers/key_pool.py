@@ -31,6 +31,32 @@ class KeyLease:
     index: int
     key: str
     fingerprint: str
+    account_group: str = "default"
+
+
+def parse_api_key_entries(*values: str | None) -> list[tuple[str, str]]:
+    """Parse optional group|key entries; ungrouped keys share one account quota."""
+    entries: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for value in values:
+        if not value:
+            continue
+        for candidate in str(value).replace("\\r", "\\n").replace(",", "\\n").splitlines():
+            item = candidate.strip()
+            if not item:
+                continue
+            if "|" in item:
+                group, key = item.split("|", 1)
+                group, key = group.strip(), key.strip()
+                if not group or not key:
+                    continue
+            else:
+                group, key = "default", item
+            entry = (group, key)
+            if entry not in seen:
+                seen.add(entry)
+                entries.append(entry)
+    return entries
 
 
 class NoAvailableKeys(RuntimeError):
@@ -53,7 +79,9 @@ class ProviderKeyPool:
 
     def __init__(self, provider: str, keys: list[str], *, clock=time.monotonic):
         self.provider = str(provider)
-        self._keys = parse_api_keys(*keys)
+        entries = parse_api_key_entries(*keys)
+        self._groups = [group for group, _ in entries]
+        self._keys = [key for _, key in entries]
         self._clock = clock
         self._lock = threading.Lock()
         self._cursor = 0
@@ -93,7 +121,7 @@ class ProviderKeyPool:
             index = available[0]
             self._cursor = (index + 1) % len(self._keys)
             key = self._keys[index]
-            return KeyLease(index, key, self._fingerprint(key))
+            return KeyLease(index, key, self._fingerprint(key), self._groups[index])
 
     def record_usage(self, lease: KeyLease, usage: dict | None) -> None:
         """Attach non-secret quota counters to the exact key that made the call."""
@@ -141,7 +169,12 @@ class ProviderKeyPool:
                     delay = max(1.0, float(retry_after_seconds))
                 except (TypeError, ValueError):
                     delay = max(1.0, float(default_cooldown_seconds))
-                self._blocked_until[lease.index] = self._clock() + delay
+                blocked_until = self._clock() + delay
+                # All keys assigned to the same account share that account's
+                # free-tier allowance; do not hop keys to bypass a quota.
+                for index, group in enumerate(self._groups):
+                    if group == lease.account_group:
+                        self._blocked_until[index] = blocked_until
                 return "cooldown"
             if status_code == 401:
                 self._disabled[lease.index] = "authentication rejected; check this key"
@@ -157,6 +190,7 @@ class ProviderKeyPool:
                 disabled = index in self._disabled
                 keys.append({
                     "key_id": self._fingerprint(key),
+                    "account_group": self._groups[index],
                     "status": "disabled" if disabled else (
                         "quota_cooldown" if blocked > now else "available"
                     ),
