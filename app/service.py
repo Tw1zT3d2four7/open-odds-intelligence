@@ -321,13 +321,18 @@ class OddsService:
         ))
 
     def auto_refresh_provider_names(self):
-        # SportsGameOdds' permanently free Amateur plan is object-metered.
-        # Keep it manual-only until its object budget can be scheduled safely.
-        return [
-            name for name in self.active_provider_names()
-            if name not in ("sports_game_odds", "oddize", "oddslink")
-            and self._provider_key_pools[name].configured
-        ]
+        # Quota-limited aggregators remain manual-only by default. The Odds API
+        # is scheduled only when its explicit interval is configured.
+        names = []
+        for name in self.active_provider_names():
+            if not self._provider_key_pools[name].configured:
+                continue
+            if name in ("sports_game_odds", "oddize", "oddslink"):
+                continue
+            if name == "the_odds_api" and config.ODDS_REFRESH_INTERVAL_SECONDS <= 0:
+                continue
+            names.append(name)
+        return names
 
     @property
     def configured(self):
