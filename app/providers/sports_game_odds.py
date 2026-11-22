@@ -133,6 +133,32 @@ class SportsGameOddsProvider:
                 f"SportsGameOdds request failed: {exc}", retryable=True
             ) from exc
 
+    def fetch_usage(self):
+        """Read authoritative tier and rolling 30-day object allowance (free endpoint)."""
+        payload = self._request(f"{self.base_url}/account/usage")
+        if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+            raise ProviderError("SportsGameOdds returned an unexpected account-usage response")
+        data = payload["data"]
+        limits = data.get("rateLimits") or {}
+        monthly = limits.get("per-month") or {}
+        try:
+            maximum = int(monthly.get("max-entities"))
+            used = int(monthly.get("current-entities", 0))
+        except (TypeError, ValueError, OverflowError):
+            raise ProviderError(
+                "SportsGameOdds did not return a usable monthly object allowance; "
+                "refresh blocked to protect the free-tier quota"
+            ) from None
+        remaining = max(0, maximum - used)
+        self.usage.update({
+            "tier": str(data.get("tier") or "unknown"),
+            "monthly_objects_limit": maximum,
+            "monthly_objects_used": used,
+            "monthly_objects_remaining": remaining,
+            "monthly_reset": monthly.get("resetsAt") or monthly.get("resetAt"),
+        })
+        return remaining
+
     def _normalize_event(self, raw, sport):
         teams = raw.get("teams") or {}
         home = self._team_name(teams.get("home"))
@@ -189,7 +215,8 @@ class SportsGameOddsProvider:
                 description = (
                     players.get(player_id)
                     or odd.get("playerName")
-                    or (odd.get("player") or {}).get("name", "")
+                    or ((odd.get("player") or {}).get("name", "")
+                        if isinstance(odd.get("player"), dict) else "")
                     or player_id
                 )
                 point_field = "overUnder" if bet_type == "ou" else None
@@ -250,12 +277,17 @@ class SportsGameOddsProvider:
             raise ProviderError(
                 f"SportsGameOdds Free does not include the configured league '{sport}'"
             )
+        monthly_remaining = self.fetch_usage()
+        if monthly_remaining <= 0:
+            raise ProviderError(
+                "SportsGameOdds rolling 30-day free object allowance is exhausted",
+                status_code=429, retry_after="86400", retryable=True,
+            )
         params = urlencode({
             "leagueID": league,
             "oddsAvailable": "true",
             "includeAltLines": "true",
-            "limit": "100",
-            "apiKey": self.api_key,
+            "limit": str(min(100, monthly_remaining)),
         })
         payload = self._request(f"{self.base_url}/events/?{params}")
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
