@@ -548,7 +548,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         "methodology": (
             "Empirically fitted per-league market-residual model: stored sportsbook spread "
             "and total anchor this game; earlier verified training events supply league-specific "
-            "residual bias, variance, correlation and count overdispersion. This is not a copy "
+            "residual bias, variance and correlation; count-based leagues use team-specific "
+            "overdispersion plus a shared positive scoring-environment factor. This is not a copy "
             "of any sportsbook model and does not ingest team/player efficiency, injuries, "
             "lineups or weather. It is not validated until evaluated on an adequate untouched "
             "chronological holdout."
