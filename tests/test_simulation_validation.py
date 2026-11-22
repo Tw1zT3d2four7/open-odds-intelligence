@@ -296,6 +296,85 @@ def test_spread_probability_scoring_handles_cover_and_push_results():
     assert push["spread_log_loss"] == pytest.approx(-__import__("math").log(.05))
 
 
+
+def test_moneyline_benchmark_builds_median_no_vig_probabilities_from_complete_books():
+    from app.simulation_validation import _moneyline_market_probabilities
+
+    event = {
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "book-a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -150}, {"name": "Away", "price": 130},
+            ]}]},
+            {"key": "book-b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Away", "price": 120}, {"name": "Home", "price": -140},
+            ]}]},
+        ],
+    }
+    result = _moneyline_market_probabilities(event)
+    assert result["outcome_count"] == 2
+    assert result["book_count"] == 2
+    assert result["probabilities"]["home"] > result["probabilities"]["away"]
+    assert result["probabilities"]["home"] + result["probabilities"]["away"] == pytest.approx(1.0)
+    assert result["probabilities"]["draw"] == 0
+
+
+def test_moneyline_benchmark_supports_three_way_draw_markets():
+    from app.simulation_validation import _moneyline_market_probabilities, _score_moneyline_probabilities
+
+    event = {
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [{"key": "book-a", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": 110}, {"name": "Draw", "price": 220},
+            {"name": "Away", "price": 250},
+        ]}]}],
+    }
+    market = _moneyline_market_probabilities(event)
+    assert market["outcome_count"] == 3
+    assert market["probabilities"]["draw"] > 0
+    scored = _score_moneyline_probabilities(market["probabilities"], 3, {
+        "event_id": "draw-1", "sport_key": "soccer_epl",
+        "home_score": 1, "away_score": 1,
+    })
+    assert scored["actual_result"] == "draw"
+    assert scored["brier_score"] >= 0
+
+
+def test_two_way_moneyline_benchmark_skips_tied_settlements():
+    from app.simulation_validation import _score_moneyline_probabilities
+
+    result = _score_moneyline_probabilities(
+        {"home": 0.6, "away": 0.4, "draw": 0}, 2,
+        {"event_id": "tie-1", "sport_key": "americanfootball_nfl",
+         "home_score": 20, "away_score": 20},
+    )
+    assert result is None
+
+
+def test_moneyline_benchmark_report_compares_paired_simulator_and_market_scores():
+    from app.simulation_validation import _moneyline_benchmark_report
+
+    model_rows = [
+        {"event_id": "g1", "sport": "basketball_nba", "actual_result": "home",
+         "predicted_home_probability": 0.7, "predicted_away_probability": 0.3,
+         "predicted_tie_probability": 0.0},
+        {"event_id": "g2", "sport": "basketball_nba", "actual_result": "away",
+         "predicted_home_probability": 0.4, "predicted_away_probability": 0.6,
+         "predicted_tie_probability": 0.0},
+    ]
+    market_rows = [
+        {"event_id": "g1", "sport": "basketball_nba", "actual_result": "home",
+         "outcome_count": 2, "brier_score": 0.5, "log_loss": 0.9, "book_count": 3},
+        {"event_id": "g2", "sport": "basketball_nba", "actual_result": "away",
+         "outcome_count": 2, "brier_score": 0.5, "log_loss": 0.9, "book_count": 2},
+    ]
+    report = _moneyline_benchmark_report(model_rows, market_rows)
+    assert report["sample_size"] == 2
+    assert report["simulator"]["brier_score"] < report["sportsbook_no_vig_consensus"]["brier_score"]
+    assert report["simulator_minus_market"]["brier_score"]["mean_delta"] < 0
+    assert report["by_sport"]["basketball_nba"]["sample_size"] == 2
+
+
 def test_evaluation_reports_spread_brier_and_log_loss_when_available():
     rows = [{
         "sport": "nba",
