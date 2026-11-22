@@ -79,11 +79,13 @@ The health response reports each key by a short one-way fingerprint, never by
 the raw credential. It includes available, quota-cooldown, and disabled states.
 
 Quota usage counters are persisted per masked key and displayed in the
-Provider Connections dashboard. Temporary disabled/cooldown state is held in
-process memory and is rebuilt from live usage checks after restart. The
-dashboard shows provider connection state, masked key fingerprints, account
-groups, remaining quota where reported, reset information and auto-refresh
-intervals. A provider may apply quota limits across multiple keys or an
+Provider Connections dashboard. When a saved counter shows zero remaining,
+the account group is placed back into cooldown after restart using the saved
+reset metadata (or a conservative 24-hour fallback). Invalid-key disabled
+state is temporary and can be cleared by correcting the key and restarting.
+The dashboard shows provider connection state, masked key fingerprints,
+account groups, remaining quota where reported, reset information and
+auto-refresh intervals. A provider may apply quota limits across multiple keys or an
 account, so multiple keys do not imply multiplied free allowances.
 
 ## SportsGameOdds free tier
