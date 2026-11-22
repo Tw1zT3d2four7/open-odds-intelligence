@@ -822,6 +822,10 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
         # not set the independent expected score or residual mean.
         expected_margin = independent_projection["expected_margin"]
         expected_total = independent_projection["expected_total"]
+        # Do not leak market-residual variance estimates into the independent
+        # forecast. Until score-only variance calibration is available, use
+        # the conservative family prior for spread/total dispersion.
+        prior = dict(LEAGUE_PRIORS[family])
         scoring_fit["margin_bias"] = 0.0
         scoring_fit["total_bias"] = 0.0
     elif require_independent_model:
@@ -985,8 +989,9 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
             "Independent team-specific projection: historical team offense and defense ratings, "
             "venue-adjusted league scoring baselines, and shrinkage are fitted from earlier final "
             "scores only. Current sportsbook spread and total are used solely as comparison lines; "
-            "they do not anchor the expected score. Variance parameters are separately fitted and "
-            "must pass chronological holdout evaluation."
+            "they do not anchor the expected score. Outcome dispersion currently uses a "
+            "conservative sport-family prior; independent variance fitting and chronological "
+            "holdout validation are still required."
             if independent_projection else
             "Empirically fitted per-league market-residual model: stored sportsbook spread "
             "and total anchor this game; earlier verified training events supply league-specific "
