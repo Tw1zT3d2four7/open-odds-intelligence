@@ -57,7 +57,7 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 ALERT_MIN_EV_PERCENT = float(os.getenv("ALERT_MIN_EV_PERCENT", "3.0"))
 ALERT_MIN_ARB_PERCENT = float(os.getenv("ALERT_MIN_ARB_PERCENT", "0.5"))
 
-# When Discord is enabled, keep checking markets even if general auto-refresh is off.
+# Re-evaluate locally stored quotes on this interval; this never triggers provider polling.
 DISCORD_ALERT_REFRESH_INTERVAL_SECONDS = max(60, int(os.getenv("DISCORD_ALERT_REFRESH_INTERVAL_SECONDS", "300")))
 
 # Optional OddsLink free-tier posted-market-limit feed. Keys are case-sensitive.
