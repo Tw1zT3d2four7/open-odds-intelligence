@@ -108,7 +108,7 @@ def main():
         }
     if calibration_report is not None:
         report["calibration"] = {
-            "evaluation": {key: value for key, value in calibration_report.items() if key != "scored_predictions"},
+            "evaluation": {key: value for key, value in calibration_report.items() if key not in ("scored_predictions", "scored_outcome_predictions")},
             "fitted_temperatures": calibration_fit,
         }
     if args.model_output:
