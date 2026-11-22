@@ -207,10 +207,11 @@ def refresh_limits():
         result = service.refresh(providers=["oddslink"])
         status = service.limits_monitor.status()
         return {
+            **status,
             "ok": result.get("ok", False),
             "source": "oddslink_all_book_odds_refresh",
+            "error": result.get("error"),
             "odds_refresh": result,
-            "limits": status,
         }
     return service.limits_monitor.refresh()
 
