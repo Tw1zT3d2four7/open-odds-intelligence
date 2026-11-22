@@ -605,3 +605,31 @@ def test_therundown_float_normalizer_rejects_integer_overflow():
 
     assert TheRundownProvider._as_float(10 ** 10000) is None
 
+
+
+def test_therundown_normalizes_mma_competitors_from_moneyline_participants():
+    from app.providers.therundown import TheRundownProvider
+
+    provider = TheRundownProvider("CaseSensitiveRundownKey")
+    event = provider._normalize_event({
+        "event_id": "mma-contest-1",
+        "event_date": "2099-11-20T18:00:00Z",
+        "markets": [{
+            "market_id": 1,
+            "participants": [
+                {"name": "Fighter Alpha", "lines": [{"prices": {
+                    "19": {"price": -150},
+                }}]},
+                {"name": "Fighter Beta", "lines": [{"prices": {
+                    "19": {"price": 130},
+                }}]},
+            ],
+        }],
+    }, "mma_mixed_martial_arts", "UFC/MMA")
+
+    assert event["home_team"] == "Fighter Alpha"
+    assert event["away_team"] == "Fighter Beta"
+    assert event["bookmakers"][0]["markets"][0]["key"] == "h2h"
+    assert {item["name"] for item in event["bookmakers"][0]["markets"][0]["outcomes"]} == {
+        "Fighter Alpha", "Fighter Beta"
+    }
