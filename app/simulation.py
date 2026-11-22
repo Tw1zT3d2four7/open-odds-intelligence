@@ -784,6 +784,97 @@ def _estimate_overtime_total_adjustment(sport_key, family, expected_margin, expe
     return adjustment
 
 
+
+def _independent_market_edge(event, market_key, consensus_line, model_probabilities):
+    """Compare independent probabilities with exact-line sportsbook prices."""
+    home = _team_identity(event.get("home_team"))
+    away = _team_identity(event.get("away_team"))
+    rows = []
+    best = {"home": None, "away": None} if market_key == "spreads" else {"over": None, "under": None}
+    for index, book in enumerate(event.get("bookmakers", []) if isinstance(event.get("bookmakers"), list) else []):
+        if not isinstance(book, dict):
+            continue
+        identity = _book_key(book, index)
+        for market in _market_candidates(book, market_key):
+            outcomes = market.get("outcomes", [])
+            if not isinstance(outcomes, list):
+                continue
+            selected = {}
+            for outcome in outcomes:
+                if not isinstance(outcome, dict) or not _valid_price(outcome.get("price")):
+                    continue
+                if market_key == "spreads":
+                    side = _team_side(outcome.get("name"), home, away)
+                    point = _finite_point(outcome.get("point"))
+                    if side and point is not None:
+                        selected[side] = (point, int(outcome["price"]))
+                else:
+                    side = str(outcome.get("name") or "").strip().lower()
+                    point = _finite_point(outcome.get("point"))
+                    if side in ("over", "under") and point is not None:
+                        selected[side] = (point, int(outcome["price"]))
+            first, second = (("home", "away") if market_key == "spreads" else ("over", "under"))
+            if first not in selected or second not in selected:
+                continue
+            p1, price1 = selected[first]
+            p2, price2 = selected[second]
+            if market_key == "spreads":
+                if abs(p1 + p2) > POINT_TOLERANCE or abs((-p1) - consensus_line) > POINT_TOLERANCE:
+                    continue
+            else:
+                if p1 <= 0 or abs(p1 - p2) > POINT_TOLERANCE or abs(p1 - consensus_line) > POINT_TOLERANCE:
+                    continue
+            d1, d2 = _decimal(price1), _decimal(price2)
+            implied1, implied2 = 1.0 / d1, 1.0 / d2
+            denominator = implied1 + implied2
+            if denominator <= 0:
+                continue
+            rows.append((implied1 / denominator, implied2 / denominator))
+            for side, price in ((first, price1), (second, price2)):
+                decimal = _decimal(price)
+                if best[side] is None or decimal > best[side]["decimal_odds"]:
+                    best[side] = {
+                        "bookmaker": identity, "american_odds": price,
+                        "decimal_odds": round(decimal, 5),
+                    }
+    if not rows:
+        return {
+            "line": consensus_line, "book_count": 0,
+            "market_no_vig_probability": None, "sides": {},
+            "reason": "No complete sportsbook prices were available at the exact consensus line.",
+        }
+    consensus = [median([row[position] for row in rows]) for position in (0, 1)]
+    labels = (("home", "away") if market_key == "spreads" else ("over", "under"))
+    sides = {}
+    for index, side in enumerate(labels):
+        other = labels[1 - index]
+        model_win = float(model_probabilities[side])
+        model_loss = float(model_probabilities[other])
+        push = float(model_probabilities.get("push", 0.0))
+        conditional_model = model_win / max(1e-12, model_win + model_loss)
+        quote = best[side]
+        ev = None
+        if quote is not None:
+            ev = (model_win * (quote["decimal_odds"] - 1.0) - model_loss) * 100.0
+        sides[side] = {
+            "model_probability": round(model_win * 100, 2),
+            "model_probability_ex_push": round(conditional_model * 100, 2),
+            "market_no_vig_probability": round(consensus[index] * 100, 2),
+            "edge_percentage_points": round((conditional_model - consensus[index]) * 100, 2),
+            "best_available": quote,
+            "expected_value_percent": round(ev, 2) if ev is not None else None,
+            "push_probability": round(push * 100, 2),
+        }
+    return {
+        "line": consensus_line, "book_count": len(rows),
+        "market_no_vig_probability": {
+            labels[0]: round(consensus[0] * 100, 2),
+            labels[1]: round(consensus[1] * 100, 2),
+        },
+        "sides": sides,
+        "note": "EV uses the independent model win/loss probabilities and best exact-line price; pushes return the stake.",
+    }
+
 def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, require_independent_model=False):
     if trials != TRIALS:
         raise ValueError("The simulation is fixed at exactly 10,000 trials.")
