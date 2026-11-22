@@ -604,6 +604,22 @@ def _validated_model_parameters(parameters, family, sport_key):
         if not math.isfinite(value) or not low <= value <= high:
             raise ValueError(f"Invalid fitted model parameter: {key}.")
         result[key] = value
+    outcome_model = result.get("independent_outcome_model")
+    if outcome_model is not None:
+        if (not isinstance(outcome_model, dict) or outcome_model.get("version") != 1
+                or not isinstance(outcome_model.get("teams"), dict)):
+            raise ValueError("Invalid independent outcome model structure.")
+        draw_rate = outcome_model.get("draw_rate", 0.0)
+        if isinstance(draw_rate, bool) or not isinstance(draw_rate, (int, float)) or not math.isfinite(draw_rate) or not 0 <= draw_rate <= 0.25:
+            raise ValueError("Invalid independent outcome model draw rate.")
+        for competitor, rating in outcome_model["teams"].items():
+            if not isinstance(competitor, str) or not competitor or not isinstance(rating, dict):
+                raise ValueError("Invalid independent competitor rating entry.")
+            matches, value = rating.get("matches"), rating.get("rating")
+            if isinstance(matches, bool) or not isinstance(matches, int) or matches < 0:
+                raise ValueError("Invalid independent competitor sample size.")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError("Invalid independent competitor Elo rating.")
     independent = result.get("independent_team_model")
     if independent is not None:
         if (not isinstance(independent, dict) or independent.get("version") != 1
