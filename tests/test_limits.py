@@ -233,13 +233,16 @@ def test_oddslink_client_rejects_unexpected_response_shapes(monkeypatch):
     import app.limits as module
     from app.limits import LimitsError
 
-    class FakeResponse:
-        headers = {}
-        def __enter__(self): return self
-        def __exit__(self, *args): return False
-        def read(self): return json.dumps({"events": "not-a-list"}).encode()
+    class FakeProvider:
+        usage = {}
+        def __init__(self, key):
+            assert key == "CaseSensitiveKey"
+        def fetch_usage(self):
+            return 10
+        def _request(self, path, params=None):
+            return {"events": "not-a-list"}
 
-    monkeypatch.setattr(module, "urlopen", lambda request, timeout: FakeResponse())
+    monkeypatch.setattr(module, "OddsLinkProvider", FakeProvider)
     with pytest.raises(LimitsError, match="unexpected events response"):
         OddsLinkClient("CaseSensitiveKey").fetch("nfl")
 
@@ -373,3 +376,61 @@ def test_market_limit_discord_alert_uses_readable_embed_and_deduplicates(tmp_pat
 
     monitor._send_alerts([change])
     assert len(sent) == 1
+
+
+def test_ingest_events_records_oddslink_posted_limits_without_api_call(tmp_path):
+    monitor = MarketLimitsMonitor(path=tmp_path / "ingest-limits.sqlite3")
+    result = monitor.ingest_events([{
+        "id": "oddslink-event",
+        "sport_key": "americanfootball_nfl",
+        "commence_time": "2026-11-23T20:00:00Z",
+        "home_team": "Kansas City Chiefs",
+        "away_team": "Las Vegas Raiders",
+        "bookmakers": [{
+            "key": "draftkings", "title": "DraftKings",
+            "markets": [{
+                "key": "spreads", "outcomes": [{
+                    "name": "Kansas City Chiefs", "point": -3.5, "price": -110,
+                    "size": {"kind": "posted_limit", "amount": 25000},
+                }],
+            }],
+        }],
+    }], observed_at="2026-11-23T18:00:00+00:00",
+       usage={"requests_remaining": 900})
+
+    assert result["ok"] is True
+    assert result["source"] == "stored_oddslink_snapshot"
+    assert result["observations"] == 1
+    assert result["usage"]["requests_remaining"] == 900
+    assert monitor.status()["last_updated"] == "2026-11-23T18:00:00+00:00"
+
+
+def test_standalone_limits_client_rotates_to_another_oddslink_account(monkeypatch):
+    import app.limits as module
+    from app.providers.the_odds_api import ProviderError
+
+    calls = []
+    class FakeProvider:
+        def __init__(self, key):
+            self.key = key
+            self.usage = {"period_resets_at": "2026-12-01T00:00:00Z"}
+            calls.append(("init", key))
+        def fetch_usage(self):
+            if self.key == "Key-One":
+                return 0
+            self.usage = {"requests_remaining": 50}
+            return 50
+        def _seconds_until(self, value):
+            return 86400
+        def _request(self, path, params=None):
+            calls.append(("request", self.key, path))
+            return []
+
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "")
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEYS", "primary|Key-One,backup|Key-Two")
+    monkeypatch.setattr(module, "OddsLinkProvider", FakeProvider)
+
+    client = module.OddsLinkClient()
+    assert client.fetch("nfl") == []
+    assert [item[1] for item in calls if item[0] == "init"] == ["Key-One", "Key-Two"]
+    assert client.usage["requests_remaining"] == 50

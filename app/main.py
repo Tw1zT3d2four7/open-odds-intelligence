@@ -9,8 +9,11 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 from . import config
 from .service import service
+
+# Reuse the monitor owned by the service so OddsLink odds refreshes and the
+# market-limits dashboard share one database-backed state object.
+limits_monitor = service.limits_monitor
 from .markets import market_board, analyze_markets
-from .limits import limits_monitor
 from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -44,26 +47,31 @@ async def _simulation_results_loop():
         await asyncio.sleep(config.SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS)
 
 def _odds_refresh_interval_seconds():
-    """Return only the configured provider-polling interval; alert checks never poll odds."""
-    return (
-        config.RUNDOWN_REFRESH_INTERVAL_SECONDS
-        if config.ODDS_PROVIDER == "therundown"
-        else config.ODDS_REFRESH_INTERVAL_SECONDS
-    )
+    """Return the shortest enabled provider poll interval; alerts never poll odds."""
+    intervals = list(service.auto_refresh_schedule().values())
+    return min(intervals) if intervals else 0
 
 
 async def _automatic_refresh_loop():
     interval = _odds_refresh_interval_seconds()
     while True:
-        await asyncio.sleep(interval)
+        # Refresh providers immediately when their independent schedule is due.
         # Keep provider I/O and SQLite work off the ASGI event loop.
         try:
-            await asyncio.to_thread(service.refresh)
+            due_providers = await asyncio.to_thread(service.providers_due_for_auto_refresh)
+            if due_providers:
+                result = await asyncio.to_thread(service.refresh, providers=due_providers)
+                succeeded = {
+                    name
+                    for sport_result in (result.get("provider_results") or {}).values()
+                    for name in sport_result.get("providers_succeeded", [])
+                }
+                if succeeded:
+                    await asyncio.to_thread(service.mark_auto_refresh, succeeded)
         except Exception as exc:
-            # Keep the scheduler alive, but expose failures in /api/health.
             service._last_error = f"Unexpected scheduled odds refresh failure: {exc}"
             logger.exception("Scheduled odds refresh failed")
-            continue
+        await asyncio.sleep(interval)
 
 
 async def _discord_alert_loop():
@@ -84,13 +92,19 @@ async def lifespan(app: FastAPI):
     limits_task = None
     results_task = None
     alert_task = None
-    if config.ODDSLINK_API_KEY:
+    oddslink_selected = (
+        "oddslink" in service.active_provider_names()
+        and service._provider_key_pools["oddslink"].configured
+    )
+    if (config.ODDSLINK_API_KEY or config.ODDSLINK_API_KEYS) and not oddslink_selected:
         limits_task = asyncio.create_task(_limits_refresh_loop())
     if service.configured and _odds_refresh_interval_seconds() > 0:
         task = asyncio.create_task(_automatic_refresh_loop())
     if service.configured and config.DISCORD_WEBHOOK_URL:
         alert_task = asyncio.create_task(_discord_alert_loop())
-    if config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY:
+    if (config.SIMULATION_RESULTS_SYNC_ENABLED
+            and "therundown" in service.active_provider_names()
+            and (config.THERUNDOWN_API_KEY or config.THERUNDOWN_API_KEYS)):
         results_task = asyncio.create_task(_simulation_results_loop())
     try:
         yield
@@ -185,7 +199,25 @@ def health():
 
 @app.post("/api/limits/refresh")
 def refresh_limits():
-    return limits_monitor.refresh()
+    oddslink_selected = (
+        "oddslink" in service.active_provider_names()
+        and service._provider_key_pools["oddslink"].configured
+    )
+    if oddslink_selected:
+        # The OddsLink all-book feed already includes posted-limit metadata.
+        # Reuse that single odds request rather than spending a second quota
+        # request for the Circa/Pinnacle-only limit poller.
+        result = service.refresh(providers=["oddslink"])
+        status = service.limits_monitor.status()
+        return {
+            **status,
+            "ok": result.get("ok", False),
+            "source": "oddslink_all_book_odds_refresh",
+            "error": result.get("error"),
+            "diagnostic": status.get("last_diagnostic") or {},
+            "odds_refresh": result,
+        }
+    return service.limits_monitor.refresh()
 
 
 @app.get("/api/limits")

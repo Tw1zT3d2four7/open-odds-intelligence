@@ -4,10 +4,43 @@ from dotenv import load_dotenv
 load_dotenv()
 APP_NAME = os.getenv("APP_NAME", "Open Odds Intelligence")
 ODDS_PROVIDER = os.getenv("ODDS_PROVIDER", "none").strip().lower()
+# Optional simultaneous providers; when omitted, retain the legacy single-provider setting.
+ODDS_PROVIDERS_EXPLICIT = bool(os.getenv("ODDS_PROVIDERS", "").strip())
+ODDS_PROVIDERS = [
+    item.strip().lower() for item in os.getenv("ODDS_PROVIDERS", "").split(",")
+    if item.strip()
+]
 # Do not normalize or change API key case: provider keys are case-sensitive.
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY", "")
 # TheRundown key is case-sensitive; preserve it exactly.
 THERUNDOWN_API_KEY = os.getenv("THERUNDOWN_API_KEY", "")
+# Optional comma/newline-separated key pools; legacy single-key values remain supported.
+THERUNDOWN_API_KEYS = os.getenv("THERUNDOWN_API_KEYS", "")
+THE_ODDS_API_KEYS = os.getenv("THE_ODDS_API_KEYS", "")
+SPORTSGAMEODDS_API_KEY = os.getenv("SPORTSGAMEODDS_API_KEY", "")
+SPORTSGAMEODDS_API_KEYS = os.getenv("SPORTSGAMEODDS_API_KEYS", "")
+SPORTSGAMEODDS_MAX_EVENTS = max(1, min(100, int(os.getenv("SPORTSGAMEODDS_MAX_EVENTS", "25"))))
+_sgo_refresh_interval = max(0, int(os.getenv("SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS", "259200")))
+SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS = (
+    max(259200, _sgo_refresh_interval) if _sgo_refresh_interval > 0 else 0
+)
+# Oddize Developer tier includes one API key on the free plan.
+ODDIZE_API_KEY = os.getenv("ODDIZE_API_KEY", "")
+ODDIZE_API_KEYS = os.getenv("ODDIZE_API_KEYS", "")
+ODDSLINK_API_KEY = os.getenv("ODDSLINK_API_KEY", "")
+ODDSLINK_API_KEYS = os.getenv("ODDSLINK_API_KEYS", "")
+_oddslink_refresh_interval = max(0, int(os.getenv("ODDSLINK_REFRESH_INTERVAL_SECONDS", "86400")))
+ODDSLINK_REFRESH_INTERVAL_SECONDS = (
+    max(86400, _oddslink_refresh_interval) if _oddslink_refresh_interval > 0 else 0
+)
+ODDIZE_PROPS_ENABLED = os.getenv("ODDIZE_PROPS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+ODDIZE_PROP_TYPES_PER_REFRESH = max(0, min(5, int(os.getenv("ODDIZE_PROP_TYPES_PER_REFRESH", "1"))))
+_oddize_refresh_interval = max(0, int(os.getenv("ODDIZE_REFRESH_INTERVAL_SECONDS", "86400")))
+ODDIZE_REFRESH_INTERVAL_SECONDS = (
+    max(86400, _oddize_refresh_interval) if _oddize_refresh_interval > 0 else 0
+)
+ODDIZE_ALTS_ENABLED = os.getenv("ODDIZE_ALTS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+ODDIZE_ALT_EVENTS_PER_REFRESH = max(0, min(5, int(os.getenv("ODDIZE_ALT_EVENTS_PER_REFRESH", "1"))))
 ODDS_REGIONS = os.getenv("ODDS_REGIONS", "us")
 # Optional explicit bookmaker keys; when set, this overrides region selection.
 ODDS_BOOKMAKERS = os.getenv("ODDS_BOOKMAKERS", "").strip()
@@ -38,6 +71,20 @@ PROVIDER_DEFAULT_ODDS_SPORTS = {
     # tournament-specific tennis keys, so it must not receive generic aliases.
     "therundown": BASE_DEFAULT_ODDS_SPORTS + ",tennis_atp,tennis_wta",
     "the_odds_api": BASE_DEFAULT_ODDS_SPORTS,
+    "sports_game_odds": (
+        "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,"
+        "basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_mls,"
+        "soccer_uefa_champs_league"
+    ),
+    "oddize": (
+        "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,"
+        "basketball_ncaab,icehockey_nhl,baseball_mlb"
+    ),
+    "oddslink": (
+        "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,"
+        "basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_epl,"
+        "tennis_atp,tennis_wta"
+    ),
 }
 
 
@@ -52,7 +99,11 @@ ODDS_SPORTS = [
 ]
 
 # Automatic refresh is opt-in; 0 keeps refreshes manual.
-ODDS_REFRESH_INTERVAL_SECONDS = max(0, int(os.getenv("ODDS_REFRESH_INTERVAL_SECONDS", "0")))
+_odds_api_refresh_interval = max(0, int(os.getenv("ODDS_REFRESH_INTERVAL_SECONDS", "0")))
+# Keep the 500-credit free tier from being drained by frequent background polling.
+ODDS_REFRESH_INTERVAL_SECONDS = (
+    max(86400, _odds_api_refresh_interval) if _odds_api_refresh_interval > 0 else 0
+)
 
 # Discord webhook alerts are disabled unless a URL is configured.
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
@@ -65,7 +116,7 @@ DISCORD_ALERT_REFRESH_INTERVAL_SECONDS = max(60, int(os.getenv("DISCORD_ALERT_RE
 # Optional OddsLink free-tier posted-market-limit feed. Keys are case-sensitive.
 ODDSLINK_API_KEY = os.getenv("ODDSLINK_API_KEY", "")
 # Five configured sports x six polls/day x 30 days = about 900 calls/month.
-LIMITS_REFRESH_INTERVAL_SECONDS = max(14400, int(os.getenv("LIMITS_REFRESH_INTERVAL_SECONDS", "14400")))
+LIMITS_REFRESH_INTERVAL_SECONDS = max(86400, int(os.getenv("LIMITS_REFRESH_INTERVAL_SECONDS", "86400")))
 LIMITS_SPORTS = [s.strip() for s in os.getenv("LIMITS_SPORTS", "").split(",") if s.strip()]
 LIMITS_ALERT_DECREASES = os.getenv("LIMITS_ALERT_DECREASES", "false").strip().lower() in ("1", "true", "yes", "on")
 

@@ -6,7 +6,9 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 
 - FastAPI backend and responsive dark dashboard.
 - Quota-free betting calculators: payout, multi-leg parlay, two-way no-vig, EV / fractional Kelly bankroll sizing, equal-outcome hedging, -1 run-line / puck-line settlement and a synthetic -1 line builder, with a dashboard-wide American / Decimal odds toggle.
-- Pluggable odds-provider interface with The Odds API and TheRundown V2 adapters.
+- Pluggable odds-provider interface with The Odds API, TheRundown V2, SportsGameOdds, Oddize and OddsLink adapters.
+- Optional simultaneous multi-provider refresh with strict matchup matching, quote-level source attribution, freshest-quote selection and partial-refresh reporting.
+- Multiple API keys per provider with masked status, per-key quota counters, round-robin use and account-group quota protection; keys sharing an account are paused together when that account exhausts its free allowance.
 - Configurable sports, regions and supported market keys. NFL, NCAAF, NBA, NCAAB, NHL, MLB and EPL are included in the base catalog. TheRundown deployments also default to ATP and WTA; its adapter additionally maps MMA, WNBA and MLS, which can be enabled by adding `mma_mixed_martial_arts`, `basketball_wnba` or `soccer_mls` to `ODDS_SPORTS`. Those leagues are not silently added to the defaults because each extra league increases provider usage. The Odds API uses tournament-specific tennis keys.
 - Normalized event, sportsbook, market and outcome quotes.
 - Best available price for each exact event / market / outcome / line.
@@ -21,12 +23,24 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Automatic first-qualified-quote capture and closing-line value (CLV) reports against the last pregame no-vig consensus from at least two other complete same-line books.
 - Dashboard views for EV opportunities, arbitrage candidates, the best-price board, an optional player-props comparison board and a selected-game 10,000-trial Monte Carlo simulator.
 - Sport filter, EV threshold and minimum independent-book consensus controls.
-- Opt-in scheduled refresh at a configurable interval (disabled by default).
+- Independent provider refresh schedules: TheRundown every four hours; SportsGameOdds every three days; Oddize and OddsLink daily; The Odds API manual by default and daily at most when explicitly scheduled. Each provider is refreshed only when its own interval is due.
 - Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.
 - Discord notifications use structured embeds for value, arbitrage and posted-market-limit changes, with separate fields, localized event times, clear alert types and no automatic user mentions.
 - Docker Compose deployment and GitHub Actions tests.
 
 TheRundown ATP/WTA ingestion uses sport IDs 38 and 39 and the provider's pre-match moneyline, game-spread and total markets. Tennis competitors are normalized from the moneyline participant order into the shared matchup fields; those fields are neutral participant slots, not a claim that either player is a home competitor. The Odds API tennis coverage is tournament-specific: configure active `tennis_atp_*` and `tennis_wta_*` keys in `ODDS_SPORTS` rather than using generic aliases. Live simulation no longer treats sportsbook prices as model predictions: score-based leagues require historical team ratings, while tennis and MMA require independent Elo ratings. A matchup without adequate historical coverage is blocked rather than silently sampled from the market.
+
+### Free-tier multi-provider ingestion
+
+Set `ODDS_PROVIDERS=therundown,the_odds_api,sports_game_odds` to enable multiple adapters at once; when this variable is blank, the legacy `ODDS_PROVIDER` setting remains in control. Every quote retains its provider attribution, while the event board merges only matching sport, ordered teams and kickoffs. A newer quote wins when the same book/market/selection/line is supplied by more than one provider. A failed source is reported as partial coverage rather than silently turning a partial refresh into a complete one.
+
+The optional `THERUNDOWN_API_KEYS` and `THE_ODDS_API_KEYS` accept comma- or newline-separated values and preserve case. Prefix an entry with an account group and a pipe (`account-label|API_KEY`) only for genuinely separate accounts with independent quotas and only where provider terms permit it. Ungrouped keys share the `default` group; a quota exhaustion pauses every key in that group, preventing key rotation from bypassing a shared free-tier allowance. The legacy single-key settings continue to work.
+
+SportsGameOdds is an optional additional source. Its published Amateur tier provides 2,500 objects per rolling 30 days and 10 requests per minute; it includes player props and alternate lines, but its signup flow requires a card that the provider says is not charged unless you upgrade. The adapter checks the free account-usage endpoint before each event request and caps each league to 25 events by default (configurable 1–100). It runs every three days by default, keeping the monthly object allowance within budget. It currently supports NFL, NCAAF, NBA, NCAAB, MLB, NHL, MLS and Champions League where configured; it skips leagues outside the free-tier coverage.
+
+Oddize is another no-card free source with 1,500 credits/month, 30 requests/minute, 20 sportsbooks and six leagues (MLB, NBA, NFL, NCAAB, NCAAF and NHL). Main odds cost one credit per league request; props cost two credits per prop type. Its adapter checks the account balance before metered calls, fetches main markets, rotates one prop type per supported sport, and retrieves alternate spreads/totals for one upcoming game per supported league. It runs daily by default, using about 1,260 of its 1,500 monthly credits at the default settings.
+
+OddsLink Free supplies all 47 books across supported sports for 1,000 odds requests/month at 2 requests/second. A single call returns all available books and markets for a sport, including main lines, alternate spread/total ladders, team totals and periods. Free is pre-match only and has no player props; those are supplied by the other free adapters. Its adapter checks the account-wide allowance and runs daily by default, using about 270 of its 1,000 monthly requests for nine sports. When selected for main odds, posted limits are ingested from the same all-book snapshot rather than making duplicate limit requests. See [docs/FREE_PROVIDER_KEYS.md](docs/FREE_PROVIDER_KEYS.md).
 
 ### Offline simulator results import
 

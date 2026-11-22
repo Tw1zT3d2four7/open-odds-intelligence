@@ -1,5 +1,7 @@
 import json
 import math
+import threading
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -19,6 +21,9 @@ class ProviderError(RuntimeError):
 class TheOddsAPIProvider(OddsProvider):
     name = "the_odds_api"
     base_url = "https://api.the-odds-api.com/v4"
+    _request_lock = threading.Lock()
+    _last_request_at = 0.0
+    MIN_REQUEST_INTERVAL_SECONDS = 0.11
 
     def __init__(self, api_key: str, regions="us", markets="h2h,spreads,totals", odds_format="american", bookmakers=""):
         if not api_key:
@@ -27,6 +32,14 @@ class TheOddsAPIProvider(OddsProvider):
         self.regions, self.markets, self.odds_format = regions, markets, odds_format
         self.bookmakers = bookmakers
         self.usage = {}
+
+    @classmethod
+    def _pace(cls):
+        with cls._request_lock:
+            wait = cls.MIN_REQUEST_INTERVAL_SECONDS - (time.monotonic() - cls._last_request_at)
+            if wait > 0:
+                time.sleep(wait)
+            cls._last_request_at = time.monotonic()
 
     def _normalize_price(self, value):
         """Validate provider prices before storing integer American odds."""
@@ -77,6 +90,7 @@ class TheOddsAPIProvider(OddsProvider):
                 headers={"User-Agent": "OpenOddsIntelligence/0.1"},
             )
             try:
+                self._pace()
                 with urlopen(req, timeout=20) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                     self.usage = {key: response.headers.get(header) for key, header in {

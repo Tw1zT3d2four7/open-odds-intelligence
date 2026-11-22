@@ -10,6 +10,14 @@ from . import config
 from .database import OddsDatabase
 from .providers.the_odds_api import TheOddsAPIProvider, ProviderError
 from .providers.therundown import TheRundownProvider
+from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
+from .providers.merge import merge_provider_events
+from .providers.sports_game_odds import SportsGameOddsProvider
+from .providers.oddize import OddizeProvider
+from .providers.oddslink import OddsLinkProvider
+SPORTSGAMEODDS_SUPPORTED_SPORTS = frozenset(SportsGameOddsProvider.SPORTS)
+ODDIZE_SUPPORTED_SPORTS = frozenset(OddizeProvider.SPORTS)
+ODDSLINK_SUPPORTED_SPORTS = frozenset(OddsLinkProvider.SPORTS)
 from .markets import analyze_markets
 
 
@@ -89,12 +97,44 @@ def _discord_arbitrage_embed(row):
 class OddsService:
     def __init__(self, database=None):
         self.db = database or OddsDatabase()
+        from .limits import MarketLimitsMonitor
+        self.limits_monitor = MarketLimitsMonitor(path=self.db.path)
         self._refresh_lock = threading.Lock()
         self._alert_lock = threading.Lock()
         self._cache = {}
         self._last_error = None
         self._updated_at = None
         self._provider_usage = {}
+        self._last_provider_results = {}
+        self._provider_key_pools = {
+            "the_odds_api": ProviderKeyPool(
+                "the_odds_api", parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
+            ),
+            "sports_game_odds": ProviderKeyPool(
+                "sports_game_odds", parse_api_keys(
+                    config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
+                )
+            ),
+            "oddize": ProviderKeyPool(
+                "oddize", parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
+            ),
+            "oddslink": ProviderKeyPool(
+                "oddslink", parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
+            ),
+            "therundown": ProviderKeyPool(
+                "therundown", parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
+            ),
+        }
+        for provider_name, pool in self._provider_key_pools.items():
+            for key_status in pool.status()["keys"]:
+                saved = self.db.get_state(
+                    f"provider_key_usage:{provider_name}:{key_status['key_id']}"
+                )
+                if saved:
+                    try:
+                        pool.restore_usage(key_status["key_id"], json.loads(saved))
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        continue
         self._simulation_results_status = {
             "enabled": bool(config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY),
             "provider": config.ODDS_PROVIDER,
@@ -106,8 +146,32 @@ class OddsService:
         }
         saved_usage_provider = self.db.get_state("provider_usage_provider")
         saved_usage_fingerprint = self.db.get_state("provider_usage_key_fingerprint")
+        configured_fingerprints = {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(
+                config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY
+            ) if config.ODDS_PROVIDER == "therundown"
+        } | {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(
+                config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY
+            ) if config.ODDS_PROVIDER == "the_odds_api"
+        } | {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(
+                config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
+            ) if config.ODDS_PROVIDER == "sports_game_odds"
+        } | {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
+            if config.ODDS_PROVIDER == "oddize"
+        } | {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
+            if config.ODDS_PROVIDER == "oddslink"
+        }
         if (saved_usage_provider == config.ODDS_PROVIDER and
-            saved_usage_fingerprint == self._current_provider_key_fingerprint()):
+            saved_usage_fingerprint in configured_fingerprints):
             try:
                 self._provider_usage = json.loads(self.db.get_state("provider_usage") or "{}")
             except (TypeError, ValueError):
@@ -125,7 +189,7 @@ class OddsService:
         except (TypeError, ValueError):
             self._player_props_last_attempt = None
         if config.PLAYER_PROPS_ENABLED:
-            if config.ODDS_PROVIDER != "the_odds_api":
+            if "the_odds_api" not in self.active_provider_names():
                 self._player_props_status = {
                     "enabled": True, "sport": config.PLAYER_PROPS_SPORT,
                     "error": "Player props currently require The Odds API event-odds endpoint; TheRundown supplies main markets only.",
@@ -159,30 +223,166 @@ class OddsService:
         self._last_alert_sent = 0
         self._last_alert_error = None
 
-    def _current_provider_key_fingerprint(self):
-        if config.ODDS_PROVIDER == "therundown":
-            key = config.THERUNDOWN_API_KEY
-        elif config.ODDS_PROVIDER == "the_odds_api":
-            key = config.THE_ODDS_API_KEY
-        else:
-            key = ""
-        return hashlib.sha256(key.encode("utf-8")).hexdigest() if key else ""
+    def _record_provider_key_usage(self, provider_name, pool, lease, usage):
+        pool.record_usage(lease, usage)
+        if usage:
+            self.db.set_state(
+                f"provider_key_usage:{provider_name}:{lease.fingerprint}",
+                json.dumps(usage),
+            )
 
-    def _remember_provider_usage(self, usage):
+    def _current_provider_key_fingerprint(self, provider_name=None):
+        provider_name = provider_name or config.ODDS_PROVIDER
+        if provider_name == "therundown":
+            keys = parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
+        elif provider_name == "the_odds_api":
+            keys = parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
+        elif provider_name == "sports_game_odds":
+            keys = parse_api_keys(config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY)
+        elif provider_name == "oddize":
+            keys = parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
+        elif provider_name == "oddslink":
+            keys = parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
+        else:
+            keys = []
+        material = "\\0".join(keys)
+        return hashlib.sha256(material.encode("utf-8")).hexdigest() if material else ""
+
+    def _remember_provider_usage(self, usage, provider_name=None, key_fingerprint=None):
         if not usage:
             return
+        provider_name = provider_name or config.ODDS_PROVIDER
         self._provider_usage = dict(usage)
         self.db.set_state("provider_usage", json.dumps(self._provider_usage))
-        self.db.set_state("provider_usage_provider", config.ODDS_PROVIDER)
-        self.db.set_state("provider_usage_key_fingerprint", self._current_provider_key_fingerprint())
+        self.db.set_state("provider_usage_provider", provider_name)
+        self.db.set_state(
+            "provider_usage_key_fingerprint",
+            key_fingerprint or self._current_provider_key_fingerprint(provider_name),
+        )
+
+    def _new_provider(self, provider_name, api_key):
+        if provider_name == "therundown":
+            return TheRundownProvider(
+                api_key, utc_offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES,
+            )
+        if provider_name == "the_odds_api":
+            return TheOddsAPIProvider(
+                api_key, config.ODDS_REGIONS, config.ODDS_MARKETS,
+                config.ODDS_FORMAT, config.ODDS_BOOKMAKERS,
+            )
+        if provider_name == "sports_game_odds":
+            return SportsGameOddsProvider(api_key)
+        if provider_name == "oddize":
+            return OddizeProvider(api_key)
+        if provider_name == "oddslink":
+            return OddsLinkProvider(api_key)
+        raise ProviderError(f"Unsupported odds provider: {provider_name}")
+
+    def _fetch_provider_odds_with_rotation(self, provider_name, sport):
+        pool = self._provider_key_pools.get(provider_name)
+        if pool is None or not pool.configured:
+            raise ProviderError(f"No API keys configured for provider: {provider_name}")
+        last_error = None
+        for _ in range(pool.status()["configured_keys"]):
+            try:
+                lease = pool.acquire()
+            except NoAvailableKeys as exc:
+                raise ProviderError(str(exc)) from exc
+            provider = self._new_provider(provider_name, lease.key)
+            try:
+                events = self._fetch_odds_with_retry(provider, sport)
+            except ProviderError as exc:
+                # Preserve quota headers from failed keys too; they are often
+                # the only authoritative signal that a free allowance is spent.
+                usage = getattr(provider, "usage", {})
+                self._record_provider_key_usage(provider_name, pool, lease, usage)
+                self._remember_provider_usage(usage, provider_name, lease.fingerprint)
+                disposition = pool.mark_failure(
+                    lease,
+                    status_code=getattr(exc, "status_code", None),
+                    message=str(exc),
+                    retry_after_seconds=getattr(exc, "retry_after", None),
+                )
+                last_error = exc
+                if disposition in ("disabled", "cooldown"):
+                    continue
+                raise
+            self._record_provider_key_usage(
+                provider_name, pool, lease, getattr(provider, "usage", {})
+            )
+            pool.mark_success(lease)
+            return events, provider, lease
+        if last_error is not None:
+            raise last_error
+        raise ProviderError(f"No usable API keys remain for provider: {provider_name}")
+
+    def active_provider_names(self):
+        if getattr(config, "ODDS_PROVIDERS_EXPLICIT", False):
+            selected = config.ODDS_PROVIDERS
+        else:
+            selected = [config.ODDS_PROVIDER] if config.ODDS_PROVIDER else []
+        return list(dict.fromkeys(
+            name for name in selected if name in self._provider_key_pools
+        ))
+
+    def auto_refresh_schedule(self):
+        """Provider-specific intervals that stay within the free-tier budgets."""
+        configured_intervals = {
+            "therundown": config.RUNDOWN_REFRESH_INTERVAL_SECONDS,
+            "the_odds_api": config.ODDS_REFRESH_INTERVAL_SECONDS,
+            "sports_game_odds": config.SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS,
+            "oddize": config.ODDIZE_REFRESH_INTERVAL_SECONDS,
+            "oddslink": config.ODDSLINK_REFRESH_INTERVAL_SECONDS,
+        }
+        selected = set(self.active_provider_names())
+        return {
+            name: interval
+            for name, interval in configured_intervals.items()
+            if name in selected
+            and interval > 0
+            and self._provider_key_pools[name].configured
+        }
+
+    def auto_refresh_provider_names(self):
+        return list(self.auto_refresh_schedule())
+
+    def providers_due_for_auto_refresh(self):
+        now = datetime.now(timezone.utc)
+        due = []
+        for provider_name, interval in self.auto_refresh_schedule().items():
+            key_states = self._provider_key_pools[provider_name].status()["keys"]
+            if key_states and all(item["status"] != "available" for item in key_states):
+                # Do not repeatedly wake a provider whose whole account pool is
+                # exhausted or disabled; the key pool itself tracks cooldowns.
+                continue
+            last = self.db.get_state(f"provider_auto_refresh_last:{provider_name}")
+            if not last:
+                due.append(provider_name)
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age = (now - parsed.astimezone(timezone.utc)).total_seconds()
+            except (TypeError, ValueError):
+                due.append(provider_name)
+                continue
+            if age >= interval:
+                due.append(provider_name)
+        return due
+
+    def mark_auto_refresh(self, providers):
+        stamp = datetime.now(timezone.utc).isoformat()
+        for provider_name in providers:
+            self.db.set_state(f"provider_auto_refresh_last:{provider_name}", stamp)
+        return stamp
 
     @property
     def configured(self):
-        if config.ODDS_PROVIDER == "the_odds_api":
-            return bool(config.THE_ODDS_API_KEY)
-        if config.ODDS_PROVIDER == "therundown":
-            return bool(config.THERUNDOWN_API_KEY)
-        return False
+        return any(
+            self._provider_key_pools[name].configured
+            for name in self.active_provider_names()
+        )
 
     def status(self):
         stored = self.db.snapshot_status()
@@ -220,7 +420,10 @@ class OddsService:
         else:
             data_freshness = "current"
         alert_status = self.db.alert_status()
-        return {"provider": config.ODDS_PROVIDER, "configured": self.configured,
+        return {"provider": config.ODDS_PROVIDER,
+                "providers": self.active_provider_names(),
+                "auto_refresh_providers": self.auto_refresh_provider_names(),
+                "configured": self.configured,
                 "last_updated": self._updated_at or stored.get("last_updated"),
                 "last_error": self._last_error, "sports": config.ODDS_SPORTS,
                 "odds_regions": config.ODDS_REGIONS,
@@ -231,9 +434,15 @@ class OddsService:
                 "sport_freshness": sport_freshness,
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
+                "provider_coverage": self._last_provider_results,
+                "provider_keys": {
+                    name: pool.status() for name, pool in self._provider_key_pools.items()
+                },
                 "simulation_results": self._simulation_results_status,
                 "player_props": self._player_props_status,
-                "refresh_interval_seconds": config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown" else config.ODDS_REFRESH_INTERVAL_SECONDS,
+                "auto_refresh_schedule": self.auto_refresh_schedule(),
+                "refresh_interval_seconds": min(self.auto_refresh_schedule().values())
+                if self.auto_refresh_schedule() else 0,
                 "alert_refresh_interval_seconds": config.DISCORD_ALERT_REFRESH_INTERVAL_SECONDS if config.DISCORD_WEBHOOK_URL else 0,
                 "alerts_evaluated": self._alerts_evaluated,
                 "alerts_qualified": self._alerts_qualified,
@@ -247,7 +456,7 @@ class OddsService:
                 "last_alert_at": alert_status["last_sent"],
                 "alert_error": self._alert_error}
 
-    def refresh(self, sport=None):
+    def refresh(self, sport=None, providers=None):
         # Prevent manual clicks and the background scheduler from overlapping
         # provider requests and consuming duplicate quota.
         if not self._refresh_lock.acquire(blocking=False):
@@ -255,7 +464,7 @@ class OddsService:
                     "error": "A refresh is already running; this request was skipped to protect provider quota.",
                     "events": 0}
         try:
-            return self._refresh_locked(sport)
+            return self._refresh_locked(sport, providers)
         finally:
             self._refresh_lock.release()
 
@@ -303,90 +512,254 @@ class OddsService:
                     raise
                 time.sleep(delay)
 
-    def _refresh_locked(self, sport=None):
-        if not self.configured:
-            self._last_error = "No live odds provider configured. Configure a supported provider and API key."
+    def _refresh_locked(self, sport=None, providers=None):
+        provider_names = self.active_provider_names()
+        if providers is not None:
+            requested_providers = set(providers)
+            provider_names = [name for name in provider_names if name in requested_providers]
+        configured_names = [
+            name for name in provider_names if self._provider_key_pools[name].configured
+        ]
+        if not configured_names:
+            self._last_error = "No configured API keys for the selected odds providers."
             return {"ok": False, "error": self._last_error, "events": 0}
-        provider = None
-        if config.ODDS_PROVIDER == "therundown":
-            provider = TheRundownProvider(
-                config.THERUNDOWN_API_KEY,
-                utc_offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES,
-            )
-        elif config.ODDS_PROVIDER == "the_odds_api":
-            provider = TheOddsAPIProvider(config.THE_ODDS_API_KEY, config.ODDS_REGIONS,
-                                          config.ODDS_MARKETS, config.ODDS_FORMAT,
-                                          config.ODDS_BOOKMAKERS)
-        else:
-            self._last_error = f"Unsupported odds provider: {config.ODDS_PROVIDER}"
-            return {"ok": False, "error": self._last_error, "events": 0}
+        sports = [sport] if sport else config.ODDS_SPORTS
         count = 0
-        try:
-            for key in ([sport] if sport else config.ODDS_SPORTS):
-                events = self._fetch_odds_with_retry(provider, key)
-                self._remember_provider_usage(provider.usage)
-                if config.PLAYER_PROPS_ENABLED and key == config.PLAYER_PROPS_SPORT:
-                    if config.ODDS_PROVIDER == "the_odds_api":
+        successful_sports = 0
+        provider_errors = []
+        provider_results_summary = {}
+        for sport_key in sports:
+            source_results = []
+            source_usages = {}
+            source_coverage = {}
+            successful_providers = []
+            skipped_providers = []
+            skipped_unconfigured = []
+            for provider_name in provider_names:
+                if (provider_name == "sports_game_odds"
+                        and sport_key not in SPORTSGAMEODDS_SUPPORTED_SPORTS):
+                    skipped_providers.append(provider_name)
+                    continue
+                if provider_name == "oddize" and sport_key not in ODDIZE_SUPPORTED_SPORTS:
+                    skipped_providers.append(provider_name)
+                    continue
+                if provider_name == "oddslink" and sport_key not in ODDSLINK_SUPPORTED_SPORTS:
+                    skipped_providers.append(provider_name)
+                    continue
+                pool = self._provider_key_pools.get(provider_name)
+                if pool is None or not pool.configured:
+                    skipped_unconfigured.append(provider_name)
+                    continue
+                try:
+                    events, provider, lease = self._fetch_provider_odds_with_rotation(
+                        provider_name, sport_key
+                    )
+                    source_usages[provider_name] = dict(getattr(provider, "usage", {}) or {})
+                    self._remember_provider_usage(
+                        provider.usage, provider_name, lease.fingerprint
+                    )
+                    oddize_quota_blocked = False
+                    oddize_props = None
+                    oddize_alts = None
+                    if provider_name == "oddize" and config.ODDIZE_PROPS_ENABLED:
+                        cursor_key = f"oddize_prop_cursor:{sport_key}"
+                        try:
+                            prop_cursor = int(self.db.get_state(cursor_key) or 0)
+                        except (TypeError, ValueError):
+                            prop_cursor = 0
+                        try:
+                            oddize_props = provider.fetch_props(
+                                sport_key, events,
+                                max_prop_types=config.ODDIZE_PROP_TYPES_PER_REFRESH,
+                                cursor=prop_cursor,
+                            )
+                            self.db.set_state(
+                                cursor_key, str(oddize_props.get("next_cursor", 0))
+                            )
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
+                            self._remember_provider_usage(
+                                provider.usage, provider_name, lease.fingerprint
+                            )
+                        except ProviderError as props_error:
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
+                            pool.mark_failure(
+                                lease,
+                                status_code=getattr(props_error, "status_code", None),
+                                message=str(props_error),
+                                retry_after_seconds=getattr(props_error, "retry_after", None),
+                            )
+                            oddize_quota_blocked = getattr(props_error, "status_code", None) in (402, 429)
+                            provider_errors.append(
+                                f"{sport_key} / {provider_name} props: {props_error}"
+                            )
+                            oddize_props = {
+                                "prop_types_requested": [], "props_added": 0,
+                                "reason": str(props_error),
+                            }
+                    if (provider_name == "oddize" and config.ODDIZE_ALTS_ENABLED
+                            and not oddize_quota_blocked):
+                        try:
+                            oddize_alts = provider.fetch_alternate_lines(
+                                sport_key, events,
+                                max_events=config.ODDIZE_ALT_EVENTS_PER_REFRESH,
+                            )
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
+                            self._remember_provider_usage(
+                                provider.usage, provider_name, lease.fingerprint
+                            )
+                        except ProviderError as alt_error:
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
+                            pool.mark_failure(
+                                lease,
+                                status_code=getattr(alt_error, "status_code", None),
+                                message=str(alt_error),
+                                retry_after_seconds=getattr(alt_error, "retry_after", None),
+                            )
+                            provider_errors.append(
+                                f"{sport_key} / {provider_name} alternate lines: {alt_error}"
+                            )
+                    if (config.PLAYER_PROPS_ENABLED
+                            and sport_key == config.PLAYER_PROPS_SPORT
+                            and provider_name == "the_odds_api"):
                         now = datetime.now(timezone.utc)
-                        due = (self._player_props_last_attempt is None or
-                               (now - self._player_props_last_attempt).total_seconds() >=
-                               config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS)
+                        due = (
+                            self._player_props_last_attempt is None
+                            or (now - self._player_props_last_attempt).total_seconds()
+                            >= config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
+                        )
                         if due:
                             self._player_props_last_attempt = now
                             self.db.set_state("player_props_last_attempt", now.isoformat())
                             self._player_props_status = provider.fetch_player_props(
-                                key, events, config.PLAYER_PROPS_MARKETS,
+                                sport_key, events, config.PLAYER_PROPS_MARKETS,
                                 config.PLAYER_PROPS_MAX_EVENTS,
                             )
                             self._player_props_status["last_updated"] = now.isoformat()
-                            self._player_props_status["refresh_interval_seconds"] = config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
-                            self._remember_provider_usage(provider.usage)
+                            self._player_props_status["refresh_interval_seconds"] = (
+                                config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
+                            )
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
+                            self._remember_provider_usage(
+                                provider.usage, provider_name, lease.fingerprint
+                            )
                         else:
                             remaining = max(
-                                0, int(config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS -
-                                       (now - self._player_props_last_attempt).total_seconds())
+                                0, int(
+                                    config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
+                                    - (now - self._player_props_last_attempt).total_seconds()
+                                )
                             )
                             self._player_props_status = {
-                                "enabled": True, "sport": key, "events_requested": 0,
-                                "events_with_props": 0,
+                                "enabled": True, "sport": sport_key,
+                                "events_requested": 0, "events_with_props": 0,
                                 "reason": "Waiting for the quota-safe player-props refresh interval.",
                                 "next_refresh_seconds": remaining,
                                 "refresh_interval_seconds": config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS,
                             }
-                    else:
-                        self._player_props_status = {
-                            "enabled": True, "sport": key, "events_requested": 0,
-                            "events_with_props": 0,
-                            "error": "Player props currently require The Odds API event-odds endpoint; TheRundown adapter supplies main markets only.",
-                        }
-                fetched_at = datetime.now(timezone.utc).isoformat()
-                self.db.save_snapshot(key, events, provider.name, fetched_at)
-                self._cache[key] = events
-                # Capture the first positive-EV quote for each exact selection.
-                # The entry is immutable so later refreshes cannot rewrite the
-                # price whose closing-line value is being measured.
-                clv_candidates = analyze_markets(
-                    events, min_ev=config.CLV_MIN_EV_PERCENT,
-                    min_consensus_books=2, best_only=False,
-                )["opportunities"]
-                self.db.record_clv_candidates(clv_candidates, fetched_at)
-                count += len(events)
-            self._updated_at = datetime.now(timezone.utc).isoformat()
-            self._last_error = None
-            alerts_sent = self._dispatch_alerts()
-            alert_status = self.status()
-            return {"ok": True, "events": count, "updated_at": self._updated_at,
-                    "alerts_sent": alerts_sent,
-                    "alerts_enabled": alert_status["alerts_enabled"],
-                    "alerts_evaluated": alert_status["last_alert_evaluated"],
-                    "alerts_qualified": alert_status["last_alert_qualified"],
-                    "alert_error": alert_status["last_alert_error"]}
-        except ProviderError as exc:
-            self._remember_provider_usage(getattr(provider, "usage", {}))
-            self._last_error = str(exc)
-            return {"ok": False, "error": self._last_error, "events": count}
+                    source_usages[provider_name] = dict(getattr(provider, "usage", {}) or {})
+                    books_seen, markets_seen = set(), set()
+                    quote_count = prop_quote_count = 0
+                    for source_event in events:
+                        for source_book in source_event.get("bookmakers") or []:
+                            books_seen.add(source_book.get("key"))
+                            for source_market in source_book.get("markets") or []:
+                                market_key = str(source_market.get("key") or "")
+                                markets_seen.add(market_key)
+                                outcomes = source_market.get("outcomes") or []
+                                quote_count += len(outcomes)
+                                if "player" in market_key.lower() or "prop" in market_key.lower():
+                                    prop_quote_count += len(outcomes)
+                    source_coverage[provider_name] = {
+                        "events": len(events),
+                        "books": sorted(book for book in books_seen if book),
+                        "book_count": len([book for book in books_seen if book]),
+                        "markets": sorted(markets_seen),
+                        "market_count": len(markets_seen),
+                        "quotes": quote_count,
+                        "prop_quotes": prop_quote_count,
+                    }
+                    source_results.append((provider_name, events))
+                    successful_providers.append(provider_name)
+                    if provider_name == "oddize":
+                        provider_results_summary.setdefault(sport_key, {}).update({
+                            "oddize_props": oddize_props,
+                            "oddize_alternate_lines": oddize_alts,
+                        })
+                except ProviderError as exc:
+                    provider_errors.append(f"{sport_key} / {provider_name}: {exc}")
+                    continue
 
+            if not source_results:
+                continue
 
+            events = merge_provider_events(source_results)
+            fetched_at = datetime.now(timezone.utc).isoformat()
+            snapshot_provider = "+".join(successful_providers)
+            self.db.save_snapshot(sport_key, events, snapshot_provider, fetched_at)
+            self._cache[sport_key] = events
+            if "oddslink" in successful_providers:
+                oddslink_events = next(
+                    (items for name, items in source_results if name == "oddslink"), []
+                )
+                try:
+                    from .limits import oddslink_keyset_fingerprint
+                    self.limits_monitor.ingest_events(
+                        oddslink_events,
+                        observed_at=fetched_at,
+                        usage=source_usages.get("oddslink"),
+                        key_fingerprint=oddslink_keyset_fingerprint(),
+                    )
+                except Exception as limits_error:
+                    provider_results_summary.setdefault(sport_key, {})[
+                        "limits_ingest_warning"
+                    ] = str(limits_error)
+            clv_candidates = analyze_markets(
+                events, min_ev=config.CLV_MIN_EV_PERCENT,
+                min_consensus_books=2, best_only=False,
+            )["opportunities"]
+            self.db.record_clv_candidates(clv_candidates, fetched_at)
+            count += len(events)
+            successful_sports += 1
+            provider_results_summary[sport_key] = {
+                **provider_results_summary.get(sport_key, {}),
+                "providers_succeeded": successful_providers,
+                "providers_skipped_for_league_coverage": skipped_providers,
+                "providers_skipped_unconfigured": skipped_unconfigured,
+                "provider_coverage": source_coverage,
+                "events": len(events),
+            }
+
+        self._updated_at = datetime.now(timezone.utc).isoformat()
+        complete = successful_sports == len(sports)
+        self._last_error = "; ".join(provider_errors)[:2000] if provider_errors else None
+        alerts_sent = self._dispatch_alerts() if successful_sports else 0
+        alert_status = self.status()
+        return {
+            "ok": complete and successful_sports > 0,
+            "partial": bool(provider_errors) or not complete,
+            "events": count,
+            "sports_refreshed": successful_sports,
+            "sports_requested": len(sports),
+            "provider_results": provider_results_summary,
+            "provider_errors": provider_errors,
+            "error": "; ".join(provider_errors)[:2000] if provider_errors else None,
+            "updated_at": self._updated_at,
+            "alerts_sent": alerts_sent,
+            "alerts_enabled": alert_status["alerts_enabled"],
+            "alerts_evaluated": alert_status["last_alert_evaluated"],
+            "alerts_qualified": alert_status["last_alert_qualified"],
+            "alert_error": alert_status["last_alert_error"],
+        }
 
 
     def sync_simulation_results(self):
