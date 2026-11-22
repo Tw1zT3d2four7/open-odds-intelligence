@@ -538,12 +538,16 @@ class OddsService:
                                 sport_key, events,
                                 max_events=config.ODDIZE_ALT_EVENTS_PER_REFRESH,
                             )
-                            pool.record_usage(lease, provider.usage)
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
                             self._remember_provider_usage(
                                 provider.usage, provider_name, lease.fingerprint
                             )
                         except ProviderError as alt_error:
-                            pool.record_usage(lease, provider.usage)
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
+                            )
                             pool.mark_failure(
                                 lease,
                                 status_code=getattr(alt_error, "status_code", None),
@@ -572,6 +576,9 @@ class OddsService:
                             self._player_props_status["last_updated"] = now.isoformat()
                             self._player_props_status["refresh_interval_seconds"] = (
                                 config.PLAYER_PROPS_REFRESH_INTERVAL_SECONDS
+                            )
+                            self._record_provider_key_usage(
+                                provider_name, pool, lease, provider.usage
                             )
                             self._remember_provider_usage(
                                 provider.usage, provider_name, lease.fingerprint
