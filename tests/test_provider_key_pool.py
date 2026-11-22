@@ -91,3 +91,15 @@ def test_keys_from_same_account_share_quota_cooldown():
     assert pool.status()["available_keys"] == 0
     with pytest.raises(NoAvailableKeys):
         pool.acquire()
+
+
+def test_monthly_credit_exhaustion_401_is_cooldown_not_invalid_key_disable():
+    now = [100.0]
+    pool = ProviderKeyPool("odds_api", ["KeyA"], clock=lambda: now[0])
+    lease = pool.acquire()
+    assert pool.mark_failure(
+        lease, status_code=401, message="OUT_OF_USAGE_CREDITS"
+    ) == "cooldown"
+    key = pool.status()["keys"][0]
+    assert key["status"] == "cooldown"
+    assert key["cooldown_seconds"] >= 86400
