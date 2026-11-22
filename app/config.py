@@ -20,12 +20,24 @@ THE_ODDS_API_KEYS = os.getenv("THE_ODDS_API_KEYS", "")
 SPORTSGAMEODDS_API_KEY = os.getenv("SPORTSGAMEODDS_API_KEY", "")
 SPORTSGAMEODDS_API_KEYS = os.getenv("SPORTSGAMEODDS_API_KEYS", "")
 SPORTSGAMEODDS_MAX_EVENTS = max(1, min(100, int(os.getenv("SPORTSGAMEODDS_MAX_EVENTS", "25"))))
+_sgo_refresh_interval = max(0, int(os.getenv("SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS", "259200")))
+SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS = (
+    max(259200, _sgo_refresh_interval) if _sgo_refresh_interval > 0 else 0
+))
 # Oddize Developer tier includes one API key on the free plan.
 ODDIZE_API_KEY = os.getenv("ODDIZE_API_KEY", "")
 ODDSLINK_API_KEY = os.getenv("ODDSLINK_API_KEY", "")
 ODDSLINK_API_KEYS = os.getenv("ODDSLINK_API_KEYS", "")
+_oddslink_refresh_interval = max(0, int(os.getenv("ODDSLINK_REFRESH_INTERVAL_SECONDS", "86400")))
+ODDSLINK_REFRESH_INTERVAL_SECONDS = (
+    max(86400, _oddslink_refresh_interval) if _oddslink_refresh_interval > 0 else 0
+)
 ODDIZE_PROPS_ENABLED = os.getenv("ODDIZE_PROPS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 ODDIZE_PROP_TYPES_PER_REFRESH = max(0, min(5, int(os.getenv("ODDIZE_PROP_TYPES_PER_REFRESH", "1"))))
+_oddize_refresh_interval = max(0, int(os.getenv("ODDIZE_REFRESH_INTERVAL_SECONDS", "86400")))
+ODDIZE_REFRESH_INTERVAL_SECONDS = (
+    max(86400, _oddize_refresh_interval) if _oddize_refresh_interval > 0 else 0
+)
 ODDIZE_ALTS_ENABLED = os.getenv("ODDIZE_ALTS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 ODDIZE_ALT_EVENTS_PER_REFRESH = max(0, min(5, int(os.getenv("ODDIZE_ALT_EVENTS_PER_REFRESH", "1"))))
 ODDS_REGIONS = os.getenv("ODDS_REGIONS", "us")
