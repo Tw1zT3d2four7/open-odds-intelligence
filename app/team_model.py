@@ -193,7 +193,7 @@ def fit_independent_outcome_models(
             "version": MODEL_VERSION,
             "training_matches": len(games),
             "minimum_team_matches": min_team_matches,
-            "draw_rate": (draws + 1.0) / (len(games) + 50.0),
+            "draw_rate": 0.0 if "tennis" in sport else (draws + 1.0) / (len(games) + 50.0),
             "teams": eligible,
         }
     return {
