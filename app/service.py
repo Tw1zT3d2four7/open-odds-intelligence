@@ -347,6 +347,11 @@ class OddsService:
         now = datetime.now(timezone.utc)
         due = []
         for provider_name, interval in self.auto_refresh_schedule().items():
+            key_states = self._provider_key_pools[provider_name].status()["keys"]
+            if key_states and all(item["status"] != "available" for item in key_states):
+                # Do not repeatedly wake a provider whose whole account pool is
+                # exhausted or disabled; the key pool itself tracks cooldowns.
+                continue
             last = self.db.get_state(f"provider_auto_refresh_last:{provider_name}")
             if not last:
                 due.append(provider_name)
