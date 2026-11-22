@@ -29,3 +29,21 @@ def test_temperature_calibration_requires_minimum_sample_and_fits_per_league():
     too_small = fit_probability_temperatures(rows[:99], min_sample_size=100)
     assert too_small["temperatures"] == {}
     assert too_small["insufficient"]["basketball_nba"]["sample_size"] == 99
+
+
+def test_outcome_only_elo_calibration_does_not_require_score_market_fields():
+    from app.simulation_validation import fit_probability_temperatures
+
+    rows = []
+    for index in range(100):
+        rows.append({
+            "sport": "tennis_atp",
+            "actual_result": "home" if index % 2 == 0 else "away",
+            "predicted_home_probability": 0.7,
+            "predicted_away_probability": 0.3,
+            "predicted_tie_probability": 0.0,
+        })
+    result = fit_probability_temperatures(rows, min_sample_size=100)
+    values = result["temperatures"]["tennis_atp"]
+    assert 0.5 <= values["temperature"] <= 3.0
+    assert "total_temperature" not in values
