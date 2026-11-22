@@ -37,7 +37,9 @@ def fit_team_strength_models(
         sport = str(row.get("sport_key") or "").strip()
         home_name, away_name = str(row.get("home_team") or "").strip(), str(row.get("away_team") or "").strip()
         home, away = normalize_team(home_name), normalize_team(away_name)
-        if not sport or not home or not away or home == away:
+        if (not sport or not any(token in sport.lower() for token in
+                ("basketball", "americanfootball", "baseball", "icehockey", "soccer"))
+                or not home or not away or home == away):
             continue
         hs, aws = row.get("home_score"), row.get("away_score")
         if (isinstance(hs, bool) or isinstance(aws, bool)
