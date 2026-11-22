@@ -59,7 +59,9 @@ class OddsLinkClient:
 
     def __init__(self, api_key=None):
         entries = parse_api_key_entries(config.ODDSLINK_API_KEYS)
-        if config.ODDSLINK_API_KEY:
+        if config.ODDSLINK_API_KEY and not any(
+            key == config.ODDSLINK_API_KEY for _, key in entries
+        ):
             entries.append(("default", config.ODDSLINK_API_KEY))
         if not entries and api_key:
             entries = [("default", api_key)]
@@ -72,16 +74,15 @@ class OddsLinkClient:
         if not unique:
             raise LimitsError("ODDSLINK_API_KEY or ODDSLINK_API_KEYS is not configured")
         self.pool = ProviderKeyPool(
-            "oddslink_limits",
-            [key for group, key in unique],
-            groups=[group for group, key in unique],
+            "oddslink_limits", [f"{group}|{key}" for group, key in unique]
         )
+        self.key_count = len(unique)
         self.usage = {}
         self.last_key_fingerprint = ""
 
     def fetch(self, sport):
         last_error = None
-        for _ in range(self.pool.key_count):
+        for _ in range(self.key_count):
             try:
                 lease = self.pool.acquire()
             except NoAvailableKeys as exc:
