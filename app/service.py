@@ -115,8 +115,19 @@ class OddsService:
         }
         saved_usage_provider = self.db.get_state("provider_usage_provider")
         saved_usage_fingerprint = self.db.get_state("provider_usage_key_fingerprint")
+        configured_fingerprints = {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(
+                config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY
+            ) if config.ODDS_PROVIDER == "therundown"
+        } | {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(
+                config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY
+            ) if config.ODDS_PROVIDER == "the_odds_api"
+        }
         if (saved_usage_provider == config.ODDS_PROVIDER and
-            saved_usage_fingerprint == self._current_provider_key_fingerprint()):
+            saved_usage_fingerprint in configured_fingerprints):
             try:
                 self._provider_usage = json.loads(self.db.get_state("provider_usage") or "{}")
             except (TypeError, ValueError):
