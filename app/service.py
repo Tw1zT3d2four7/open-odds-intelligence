@@ -531,7 +531,6 @@ class OddsService:
         for sport_key in sports:
             source_results = []
             source_usages = {}
-            source_key_fingerprints = {}
             source_coverage = {}
             successful_providers = []
             skipped_providers = []
@@ -556,7 +555,6 @@ class OddsService:
                         provider_name, sport_key
                     )
                     source_usages[provider_name] = dict(getattr(provider, "usage", {}) or {})
-                    source_key_fingerprints[provider_name] = lease.fingerprint
                     self._remember_provider_usage(
                         provider.usage, provider_name, lease.fingerprint
                     )
