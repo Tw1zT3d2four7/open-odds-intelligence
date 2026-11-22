@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from . import config
-from .providers.key_pool import parse_api_key_entries
+from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_key_entries
 from .providers.oddslink import OddsLinkProvider
 from .providers.the_odds_api import ProviderError
 
@@ -55,35 +55,77 @@ def oddslink_api_key():
 
 
 class OddsLinkClient:
-    """Quota-aware wrapper used by the separate Circa/Pinnacle limit poller."""
+    """Quota-aware, multi-key wrapper for the standalone market-limit poller."""
 
-    def __init__(self, api_key):
-        if not api_key:
-            raise LimitsError("ODDSLINK_API_KEY is not configured")
-        self.provider = OddsLinkProvider(api_key)
-        self.usage = self.provider.usage
+    def __init__(self, api_key=None):
+        entries = parse_api_key_entries(config.ODDSLINK_API_KEYS)
+        if config.ODDSLINK_API_KEY:
+            entries.append(("default", config.ODDSLINK_API_KEY))
+        if not entries and api_key:
+            entries = [("default", api_key)]
+        unique = []
+        seen = set()
+        for group, key in entries:
+            if key and (group, key) not in seen:
+                unique.append((group, key))
+                seen.add((group, key))
+        if not unique:
+            raise LimitsError("ODDSLINK_API_KEY or ODDSLINK_API_KEYS is not configured")
+        self.pool = ProviderKeyPool(
+            "oddslink_limits",
+            [key for group, key in unique],
+            groups=[group for group, key in unique],
+        )
+        self.usage = {}
+        self.last_key_fingerprint = ""
 
     def fetch(self, sport):
-        try:
-            remaining = self.provider.fetch_usage()
-            if remaining is not None and remaining <= 0:
-                raise LimitsError("OUT_OF_USAGE_CREDITS: OddsLink free monthly allowance is exhausted")
-            payload = self.provider._request(
-                f"/sports/{sport}/odds",
-                {"bookmakers": "circa,pinnacle", "markets": "h2h,spreads,totals"},
-            )
-            self.usage = dict(self.provider.usage)
-        except ProviderError as exc:
-            raise LimitsError(str(exc)) from exc
-        if isinstance(payload, dict) and payload.get("error"):
-            error = payload["error"]
-            message = error.get("message") or error.get("code") or str(error) if isinstance(error, dict) else str(error)
-            raise LimitsError(f"OddsLink API error: {message}")
-        if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict) and isinstance(payload.get("events"), list):
-            return payload["events"]
-        raise LimitsError("OddsLink returned an unexpected events response format")
+        last_error = None
+        for _ in range(self.pool.key_count):
+            try:
+                lease = self.pool.acquire()
+            except NoAvailableKeys as exc:
+                last_error = exc
+                break
+            provider = OddsLinkProvider(lease.key)
+            try:
+                remaining = provider.fetch_usage()
+                if remaining is not None and remaining <= 0:
+                    reset = provider._seconds_until(provider.usage.get("period_resets_at"))
+                    raise ProviderError(
+                        "OUT_OF_USAGE_CREDITS: OddsLink free monthly allowance is exhausted",
+                        status_code=429,
+                        retry_after=str(reset or 86400),
+                        retryable=False,
+                    )
+                payload = provider._request(
+                    f"/sports/{sport}/odds",
+                    {"bookmakers": "circa,pinnacle", "markets": "h2h,spreads,totals"},
+                )
+            except ProviderError as exc:
+                self.pool.mark_failure(
+                    lease,
+                    status_code=exc.status_code,
+                    message=str(exc),
+                    retry_after_seconds=exc.retry_after,
+                )
+                last_error = exc
+                continue
+            self.pool.mark_success(lease)
+            self.pool.record_usage(lease, provider.usage)
+            self.usage = dict(provider.usage)
+            self.last_key_fingerprint = lease.fingerprint
+            if isinstance(payload, dict) and payload.get("error"):
+                error = payload["error"]
+                message = (error.get("message") or error.get("code") or str(error)
+                           if isinstance(error, dict) else str(error))
+                raise LimitsError(f"OddsLink API error: {message}")
+            if isinstance(payload, list):
+                return payload
+            if isinstance(payload, dict) and isinstance(payload.get("events"), list):
+                return payload["events"]
+            raise LimitsError("OddsLink returned an unexpected events response format")
+        raise LimitsError(str(last_error or "No available OddsLink API keys"))
 
 
 class MarketLimitsMonitor:
