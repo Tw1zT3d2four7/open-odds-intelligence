@@ -32,5 +32,5 @@ def test_elo_projection_refuses_competitors_without_enough_history():
         "home_score": 1, "away_score": 0,
     }]
     model = fit_independent_outcome_models(rows, min_team_matches=2)["models"]["mma_mixed_martial_arts"]
-    with pytest.raises(ValueError, match="more historical matches"):
+    with pytest.raises(ValueError, match="No independent rating"):
         project_outcome_matchup(model, "Fighter A", "Fighter B")
