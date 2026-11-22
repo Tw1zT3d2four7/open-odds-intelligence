@@ -488,3 +488,63 @@ def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key
     assert payload["simulation_type"] == "moneyline_outcome_only"
     assert payload["trials"] == 10_000
     assert payload["data_quality"]["model_source"] == "sportsbook_no_vig_consensus"
+
+
+@pytest.mark.parametrize("sport_key,total_line,spread_line", [
+    ("basketball_nba", 220.5, 3.5),
+    ("americanfootball_nfl", 44.5, 3.0),
+    ("baseball_mlb", 8.5, 1.5),
+    ("icehockey_nhl", 5.5, 1.5),
+    ("soccer_epl", 2.5, 0.5),
+])
+def test_score_based_simulator_runs_through_api_for_each_supported_family(
+    monkeypatch, sport_key, total_line, spread_line
+):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", [sport_key])
+    event = {
+        "id": f"score-family-{sport_key}",
+        "sport_key": sport_key,
+        "commence_time": "2099-11-20T00:00:00Z",
+        "home_team": "Home",
+        "away_team": "Away",
+        "bookmakers": [{
+            "key": "book-a",
+            "markets": [
+                {"key": "spreads", "outcomes": [
+                    {"name": "Home", "point": -spread_line, "price": -110},
+                    {"name": "Away", "point": spread_line, "price": -110},
+                ]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "point": total_line, "price": -110},
+                    {"name": "Under", "point": total_line, "price": -110},
+                ]},
+            ],
+        }],
+    }
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [{"sport": sport_key, "freshness": "current", "age_seconds": 30}]
+    })
+    with TestClient(main.app) as client:
+        games = client.get(f"/api/simulation/games?sport={sport_key}")
+        result = client.post(
+            f"/api/simulation/run?sport={sport_key}&event_id={event['id']}&seed=123"
+        )
+
+    assert games.status_code == 200
+    game = games.json()["games"][0]
+    assert game["can_simulate"] is True
+    assert game["spread_books"] == 1
+    assert game["total_books"] == 1
+    assert result.status_code == 200
+    payload = result.json()
+    assert payload["event_id"] == event["id"]
+    assert payload["sport"] == sport_key
+    assert payload["trials"] == 10_000
+    assert set(payload["projected_score"]) == {"home", "away"}
+    assert set(payload["win_probabilities"]) == {"home", "away", "tie"}
+    assert set(payload["simulation_ranges"]) == {
+        "home_score", "away_score", "home_margin", "game_total", "interpretation"
+    }
+    assert payload["data_quality"]["spread_books"] == 1
+    assert payload["data_quality"]["total_books"] == 1
