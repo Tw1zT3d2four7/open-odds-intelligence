@@ -57,6 +57,9 @@ def test_historical_backtest_uses_latest_pregame_snapshot_and_is_reproducible(tm
     assert first["status"] == "DESCRIPTIVE_ONLY"
     assert first["paired_uncertainty"]["sample_size"] == 1
     assert first["paired_uncertainty"]["metrics"]["brier_score"]["ci_95"] is None
+    assert first["overall"]["spread_sample_size"] == 1
+    assert first["overall"]["spread_brier_score"] is not None
+    assert "spread_brier_score" in first["paired_uncertainty"]["metrics"]
 
 
 def test_historical_backtest_skips_events_without_pregame_quotes(tmp_path):
