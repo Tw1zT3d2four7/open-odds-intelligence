@@ -300,7 +300,83 @@ def _run_outcome_only_simulation(event, seed, family):
 
 
 
-def _run_independent_outcome_simulation(event, seed, family, fitted):
+
+def _independent_moneyline_edge(event, model_probabilities, market_probabilities):
+    home = _team_identity(event.get("home_team"))
+    away = _team_identity(event.get("away_team"))
+    rows = []
+    best = {"home": None, "away": None, "draw": None}
+    seen = set()
+    for index, book in enumerate(event.get("bookmakers", []) if isinstance(event.get("bookmakers"), list) else []):
+        if not isinstance(book, dict):
+            continue
+        identity = _book_key(book, index)
+        if identity in seen:
+            continue
+        for market in _market_candidates(book, "h2h"):
+            outcomes = market.get("outcomes", [])
+            sides = {"home": [], "away": [], "draw": []}
+            for outcome in outcomes if isinstance(outcomes, list) else []:
+                if not isinstance(outcome, dict) or not _valid_price(outcome.get("price")):
+                    continue
+                side = _team_side(outcome.get("name"), home, away)
+                label = _team_identity(outcome.get("name"))
+                if side:
+                    sides[side].append(int(outcome["price"]))
+                elif label in ("draw", "tie", "x"):
+                    sides["draw"].append(int(outcome["price"]))
+            if len(sides["home"]) != 1 or len(sides["away"]) != 1 or len(sides["draw"]) > 1:
+                continue
+            count = 3 if sides["draw"] else 2
+            prices = [sides["home"][0], sides["away"][0]]
+            if count == 3:
+                prices.append(sides["draw"][0])
+            decimals = [_decimal(price) for price in prices]
+            implied = [1.0 / value for value in decimals]
+            total = sum(implied)
+            rows.append((count, [value / total for value in implied]))
+            for side, price in zip(("home", "away", "draw"), prices):
+                decimal = _decimal(price)
+                if best[side] is None or decimal > best[side]["decimal_odds"]:
+                    best[side] = {"bookmaker": identity, "american_odds": price,
+                                  "decimal_odds": round(decimal, 5)}
+            seen.add(identity)
+            break
+    if not rows:
+        return {"book_count": 0, "sides": {},
+                "reason": "No complete h2h prices were available for model-edge comparison."}
+    counts = {n: sum(row[0] == n for row in rows) for n in (2, 3)}
+    selected_count = max((n for n in (2, 3) if counts[n]), key=lambda n: (counts[n], n))
+    selected = [probabilities for count, probabilities in rows if count == selected_count]
+    labels = ("home", "away", "draw") if selected_count == 3 else ("home", "away")
+    consensus = [median([row[i] for row in selected]) for i in range(selected_count)]
+    sides = {}
+    for index, side in enumerate(labels):
+        model_probability = float(model_probabilities[side])
+        if selected_count == 2:
+            model_comparison = model_probability / max(1e-12, model_probabilities["home"] + model_probabilities["away"])
+            model_loss = float(model_probabilities["away" if side == "home" else "home"])
+            push_probability = float(model_probabilities.get("tie", 0.0))
+        else:
+            model_comparison = model_probability
+            model_loss = sum(float(model_probabilities[label]) for label in labels if label != side)
+            push_probability = 0.0
+        quote = best[side]
+        ev = None
+        if quote is not None:
+            ev = (model_probability * (quote["decimal_odds"] - 1.0) - model_loss) * 100.0
+        sides[side] = {
+            "model_probability": round(model_probability * 100, 2),
+            "market_no_vig_probability": round(consensus[index] * 100, 2),
+            "edge_percentage_points": round((model_comparison - consensus[index]) * 100, 2),
+            "best_available": quote,
+            "expected_value_percent": round(ev, 2) if ev is not None else None,
+            "push_probability": round(push_probability * 100, 2),
+        }
+    return {"book_count": len(selected), "outcome_count": selected_count, "sides": sides}
+
+
+def _run_independent_outcome_simulation(event, seed, family, fitted):(event, seed, family, fitted):
     from .team_model import project_outcome_matchup
 
     model = fitted.get("independent_outcome_model") if fitted else None
