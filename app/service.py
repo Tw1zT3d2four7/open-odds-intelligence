@@ -14,8 +14,10 @@ from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
 from .providers.merge import merge_provider_events
 from .providers.sports_game_odds import SportsGameOddsProvider
 from .providers.oddize import OddizeProvider
+from .providers.oddslink import OddsLinkProvider
 SPORTSGAMEODDS_SUPPORTED_SPORTS = frozenset(SportsGameOddsProvider.SPORTS)
 ODDIZE_SUPPORTED_SPORTS = frozenset(OddizeProvider.SPORTS)
+ODDSLINK_SUPPORTED_SPORTS = frozenset(OddsLinkProvider.SPORTS)
 from .markets import analyze_markets
 
 
@@ -111,6 +113,9 @@ class OddsService:
                 )
             ),
             "oddize": ProviderKeyPool("oddize", [config.ODDIZE_API_KEY]),
+            "oddslink": ProviderKeyPool(
+                "oddslink", parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
+            ),
             "therundown": ProviderKeyPool(
                 "therundown", parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
             ),
@@ -155,6 +160,10 @@ class OddsService:
             hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
             for key in parse_api_keys(config.ODDIZE_API_KEY)
             if config.ODDS_PROVIDER == "oddize"
+        } | {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
+            if config.ODDS_PROVIDER == "oddslink"
         }
         if (saved_usage_provider == config.ODDS_PROVIDER and
             saved_usage_fingerprint in configured_fingerprints):
@@ -227,6 +236,8 @@ class OddsService:
             keys = parse_api_keys(config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY)
         elif provider_name == "oddize":
             keys = parse_api_keys(config.ODDIZE_API_KEY)
+        elif provider_name == "oddslink":
+            keys = parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
         else:
             keys = []
         material = "\\0".join(keys)
@@ -258,6 +269,8 @@ class OddsService:
             return SportsGameOddsProvider(api_key)
         if provider_name == "oddize":
             return OddizeProvider(api_key)
+        if provider_name == "oddslink":
+            return OddsLinkProvider(api_key)
         raise ProviderError(f"Unsupported odds provider: {provider_name}")
 
     def _fetch_provider_odds_with_rotation(self, provider_name, sport):
@@ -312,7 +325,7 @@ class OddsService:
         # Keep it manual-only until its object budget can be scheduled safely.
         return [
             name for name in self.active_provider_names()
-            if name not in ("sports_game_odds", "oddize")
+            if name not in ("sports_game_odds", "oddize", "oddslink")
             and self._provider_key_pools[name].configured
         ]
 
@@ -474,6 +487,9 @@ class OddsService:
                     skipped_providers.append(provider_name)
                     continue
                 if provider_name == "oddize" and sport_key not in ODDIZE_SUPPORTED_SPORTS:
+                    skipped_providers.append(provider_name)
+                    continue
+                if provider_name == "oddslink" and sport_key not in ODDSLINK_SUPPORTED_SPORTS:
                     skipped_providers.append(provider_name)
                     continue
                 pool = self._provider_key_pools.get(provider_name)
