@@ -184,9 +184,20 @@ def merge_provider_events(provider_results):
                             continue
                         existing = market["outcomes"][existing_index]
                         existing_provider = existing.get("source_provider", "")
+                        if "size" in candidate:
+                            candidate.setdefault("size_source_provider", provider_name)
+                        if "size" in existing:
+                            existing.setdefault("size_source_provider", existing_provider)
                         if _quote_rank(candidate, provider_rank.get(provider_name, 999)) > _quote_rank(
                             existing, provider_rank.get(existing_provider, 999)
                         ):
+                            for metadata in ("size", "size_source_provider", "main"):
+                                if metadata not in candidate and metadata in existing:
+                                    candidate[metadata] = existing[metadata]
                             market["outcomes"][existing_index] = candidate
+                        else:
+                            for metadata in ("size", "size_source_provider", "main"):
+                                if metadata not in existing and metadata in candidate:
+                                    existing[metadata] = candidate[metadata]
 
     return merged
