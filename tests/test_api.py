@@ -494,7 +494,7 @@ def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key
         }],
     }
     monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
-    monkeypatch.setattr(main, "load_fitted_models", lambda path: _api_independent_models(sport_key))
+    monkeypatch.setattr(main, "load_fitted_models", lambda path: _api_independent_models(sport_key, home, away))
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": sport_key, "freshness": "current", "age_seconds": 30}]
     })
