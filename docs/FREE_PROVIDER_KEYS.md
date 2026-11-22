@@ -86,10 +86,29 @@ default it requests alternates for one event per supported league per manual
 refresh; each alternate market request costs two credits. Both the prop-type
 rotation and alternate-event cap can be reduced or disabled in `.env`.
 
+## OddsLink free tier
+
+OddsLink's Free plan supplies all 47 listed books across its supported sports,
+with 1,000 odds requests per month and a 2-requests/second limit. One odds call
+returns every available fixture, bookmaker and requested market for that
+sport; listing sports, books, fixtures and account usage is free. The Free plan
+is pre-match only and does not include player props, in-play prices or history.
+The adapter requests main markets, full-game alternate lines, team totals and
+available period markets in one request per sport, checks the account's
+monthly allowance before each priced request, and preserves the provider's
+main-line marker. It is manual-refresh-only so the existing four-hour
+TheRundown schedule cannot burn through the 1,000-request allowance. Player
+props are intentionally sourced from other free providers rather than a paid
+OddsLink tier.
+
+OddsLink supports multiple API keys on an account, but the monthly allowance is
+account-wide. Keep all keys from the same account in one account group (the
+default); the pool pauses the whole group when its quota is spent.
+
 ## Scope
 
 The current foundation supports simultaneous TheRundown, The Odds API,
-SportsGameOdds, and Oddize ingestion, with strict event identity matching,
-team-abbreviation reconciliation, quote-level source attribution, and
-partial-refresh reporting. Additional adapters and more granular
-provider-specific scheduling remain follow-up work.
+SportsGameOdds, Oddize, and OddsLink ingestion, with strict event identity
+matching, team-abbreviation reconciliation, quote-level source attribution,
+alternate-line preservation, and partial-refresh reporting. Additional
+adapters and more granular provider-specific scheduling remain follow-up work.
