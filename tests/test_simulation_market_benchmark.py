@@ -3,7 +3,7 @@ import pytest
 from app.simulation_market_benchmark import score_archived_spread_total, _paired_report
 
 
-def _event(spread_home=-3.5, spread_away=3.5, total=44.5):
+def _event(spread_home=3.5, spread_away=-3.5, total=44.5):
     return {
         "home_team": "Home", "away_team": "Away",
         "bookmakers": [
@@ -52,8 +52,8 @@ def test_archived_spread_total_benchmark_scores_same_consensus_lines():
 
 def test_archived_spread_total_excludes_pushes_from_binary_market_benchmark():
     result = score_archived_spread_total(
-        _event(spread_home=-3, spread_away=3, total=41),
-        {"home_score": 20, "away_score": 17},
+        _event(spread_home=3, spread_away=-3, total=41),
+        {"home_score": 22, "away_score": 19},
         _prediction(spread=-3, total=41),
     )
     assert result == {"spread": None, "total": None}
@@ -61,7 +61,7 @@ def test_archived_spread_total_excludes_pushes_from_binary_market_benchmark():
 
 def test_archived_spread_total_does_not_mix_different_alt_lines():
     result = score_archived_spread_total(
-        _event(spread_home=-4.5, spread_away=4.5, total=45.5),
+        _event(spread_home=4.5, spread_away=-4.5, total=45.5),
         {"home_score": 24, "away_score": 17},
         _prediction(spread=-3.5, total=44.5),
     )
