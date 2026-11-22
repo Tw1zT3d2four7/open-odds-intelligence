@@ -29,6 +29,10 @@ class OddsLinkProvider:
     _request_lock = threading.Lock()
     _last_request_at = 0.0
     MIN_REQUEST_INTERVAL_SECONDS = 0.55  # 2 requests/second on the free tier.
+    _tennis_cache_lock = threading.Lock()
+    _tennis_cache_at = 0.0
+    _tennis_cache_payload = None
+    TENNIS_CACHE_SECONDS = 30.0
 
     def __init__(self, api_key: str):
         if not api_key:
@@ -178,14 +182,6 @@ class OddsLinkProvider:
         mapping = self.SPORTS.get(sport)
         if not mapping:
             raise ProviderError(f"OddsLink Free does not cover league '{sport}'")
-        remaining = self.fetch_usage()
-        if remaining is not None and remaining <= 0:
-            raise ProviderError(
-                "OddsLink free monthly request allowance is exhausted",
-                status_code=429,
-                retry_after=str(self._seconds_until(self.usage.get("period_resets_at")) or 86400),
-                retryable=False,
-            )
         api_sport, filters = mapping
         params = {
             "markets": self.MARKETS,
@@ -195,7 +191,42 @@ class OddsLinkProvider:
         }
         if "league" in filters:
             params["league"] = filters["league"]
-        payload = self._request(f"/sports/{api_sport}/odds", params)
+
+        if "tournament_prefix" in filters:
+            # The aggregate tennis endpoint returns ATP and WTA in one priced
+            # request. Cache briefly so the two app leagues share that call.
+            with self._tennis_cache_lock:
+                now = time.monotonic()
+                if (self._tennis_cache_payload is not None
+                        and now - self._tennis_cache_at <= self.TENNIS_CACHE_SECONDS):
+                    payload = self._tennis_cache_payload
+                else:
+                    remaining = self.fetch_usage()
+                    if remaining is not None and remaining <= 0:
+                        raise ProviderError(
+                            "OddsLink free monthly request allowance is exhausted",
+                            status_code=429,
+                            retry_after=str(
+                                self._seconds_until(self.usage.get("period_resets_at")) or 86400
+                            ),
+                            retryable=False,
+                        )
+                    payload = self._request(f"/sports/{api_sport}/odds", params)
+                    type(self)._tennis_cache_payload = payload
+                    type(self)._tennis_cache_at = time.monotonic()
+        else:
+            remaining = self.fetch_usage()
+            if remaining is not None and remaining <= 0:
+                raise ProviderError(
+                    "OddsLink free monthly request allowance is exhausted",
+                    status_code=429,
+                    retry_after=str(
+                        self._seconds_until(self.usage.get("period_resets_at")) or 86400
+                    ),
+                    retryable=False,
+                )
+            payload = self._request(f"/sports/{api_sport}/odds", params)
+
         if not isinstance(payload, list):
             raise ProviderError("OddsLink returned an unexpected fixture/odds response")
         events = []
