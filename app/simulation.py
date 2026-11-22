@@ -790,11 +790,14 @@ def _independent_market_edge(event, market_key, consensus_line, model_probabilit
     home = _team_identity(event.get("home_team"))
     away = _team_identity(event.get("away_team"))
     rows = []
+    seen_books = set()
     best = {"home": None, "away": None} if market_key == "spreads" else {"over": None, "under": None}
     for index, book in enumerate(event.get("bookmakers", []) if isinstance(event.get("bookmakers"), list) else []):
         if not isinstance(book, dict):
             continue
         identity = _book_key(book, index)
+        if identity in seen_books:
+            continue
         for market in _market_candidates(book, market_key):
             outcomes = market.get("outcomes", [])
             if not isinstance(outcomes, list):
@@ -830,6 +833,7 @@ def _independent_market_edge(event, market_key, consensus_line, model_probabilit
             if denominator <= 0:
                 continue
             rows.append((implied1 / denominator, implied2 / denominator))
+            seen_books.add(identity)
             for side, price in ((first, price1), (second, price2)):
                 decimal = _decimal(price)
                 if best[side] is None or decimal > best[side]["decimal_odds"]:
@@ -839,7 +843,7 @@ def _independent_market_edge(event, market_key, consensus_line, model_probabilit
                     }
     if not rows:
         return {
-            "line": consensus_line, "book_count": 0,
+            "line": -consensus_line if market_key == "spreads" else consensus_line, "book_count": 0,
             "market_no_vig_probability": None, "sides": {},
             "reason": "No complete sportsbook prices were available at the exact consensus line.",
         }
@@ -866,7 +870,7 @@ def _independent_market_edge(event, market_key, consensus_line, model_probabilit
             "push_probability": round(push * 100, 2),
         }
     return {
-        "line": consensus_line, "book_count": len(rows),
+        "line": -consensus_line if market_key == "spreads" else consensus_line, "book_count": len(rows),
         "market_no_vig_probability": {
             labels[0]: round(consensus[0] * 100, 2),
             labels[1]: round(consensus[1] * 100, 2),
