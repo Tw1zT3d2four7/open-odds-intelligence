@@ -10,7 +10,7 @@ def test_scheduled_refresh_runs_when_enabled(monkeypatch):
     called = threading.Event()
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
-    monkeypatch.setattr(main.service, "refresh", lambda: called.set() or {"ok": True})
+    monkeypatch.setattr(main.service, "refresh", lambda **kwargs: called.set() or {"ok": True})
 
     with TestClient(main.app):
         assert called.wait(timeout=1)
@@ -35,7 +35,7 @@ def test_discord_webhook_evaluates_stored_quotes_when_provider_polling_is_off(mo
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
     monkeypatch.setattr(main.service, "evaluate_alerts", lambda: called.set() or 0)
     refresh_called = threading.Event()
-    monkeypatch.setattr(main.service, "refresh", lambda: refresh_called.set() or {"ok": True})
+    monkeypatch.setattr(main.service, "refresh", lambda **kwargs: refresh_called.set() or {"ok": True})
 
     with TestClient(main.app):
         assert called.wait(timeout=1)
@@ -50,7 +50,7 @@ def test_scheduled_refresh_failure_is_exposed_in_service_status(monkeypatch):
     monkeypatch.setattr(type(main.service), "configured", property(lambda self: True))
     monkeypatch.setattr(main.service, "_last_error", None)
 
-    def failing_refresh():
+    def failing_refresh(**kwargs):
         called.set()
         raise RuntimeError("scheduled provider failure")
 
