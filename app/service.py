@@ -114,7 +114,9 @@ class OddsService:
                     config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
                 )
             ),
-            "oddize": ProviderKeyPool("oddize", [config.ODDIZE_API_KEY]),
+            "oddize": ProviderKeyPool(
+                "oddize", parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
+            ),
             "oddslink": ProviderKeyPool(
                 "oddslink", parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
             ),
@@ -160,7 +162,7 @@ class OddsService:
             ) if config.ODDS_PROVIDER == "sports_game_odds"
         } | {
             hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
-            for key in parse_api_keys(config.ODDIZE_API_KEY)
+            for key in parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
             if config.ODDS_PROVIDER == "oddize"
         } | {
             hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
@@ -237,7 +239,7 @@ class OddsService:
         elif provider_name == "sports_game_odds":
             keys = parse_api_keys(config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY)
         elif provider_name == "oddize":
-            keys = parse_api_keys(config.ODDIZE_API_KEY)
+            keys = parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
         elif provider_name == "oddslink":
             keys = parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
         else:
