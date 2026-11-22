@@ -288,7 +288,7 @@ def test_simulation_accepts_only_matching_empirical_league_parameters():
 
 @pytest.mark.parametrize("parameter", [
     "margin_sd", "total_sd", "margin_total_corr", "margin_bias",
-    "total_bias", "temperature", "total_temperature", "spread_temperature", "home_alpha", "away_alpha",
+    "total_bias", "temperature", "total_temperature", "spread_temperature", "home_alpha", "away_alpha", "shared_alpha",
 ])
 def test_simulation_rejects_boolean_fitted_model_parameters(parameter):
     event = sample_event()
