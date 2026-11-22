@@ -12,6 +12,7 @@ from .providers.the_odds_api import TheOddsAPIProvider, ProviderError
 from .providers.therundown import TheRundownProvider
 from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
 from .providers.merge import merge_provider_events
+from .providers.sports_game_odds import SportsGameOddsProvider
 from .markets import analyze_markets
 
 
@@ -101,6 +102,11 @@ class OddsService:
             "the_odds_api": ProviderKeyPool(
                 "the_odds_api", parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
             ),
+            "sports_game_odds": ProviderKeyPool(
+                "sports_game_odds", parse_api_keys(
+                    config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
+                )
+            ),
             "therundown": ProviderKeyPool(
                 "therundown", parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
             ),
@@ -126,6 +132,11 @@ class OddsService:
             for key in parse_api_keys(
                 config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY
             ) if config.ODDS_PROVIDER == "the_odds_api"
+        } | {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(
+                config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
+            ) if config.ODDS_PROVIDER == "sports_game_odds"
         }
         if (saved_usage_provider == config.ODDS_PROVIDER and
             saved_usage_fingerprint in configured_fingerprints):
@@ -186,6 +197,8 @@ class OddsService:
             keys = parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
         elif provider_name == "the_odds_api":
             keys = parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
+        elif provider_name == "sports_game_odds":
+            keys = parse_api_keys(config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY)
         else:
             keys = []
         material = "\\0".join(keys)
@@ -213,6 +226,8 @@ class OddsService:
                 api_key, config.ODDS_REGIONS, config.ODDS_MARKETS,
                 config.ODDS_FORMAT, config.ODDS_BOOKMAKERS,
             )
+        if provider_name == "sports_game_odds":
+            return SportsGameOddsProvider(api_key)
         raise ProviderError(f"Unsupported odds provider: {provider_name}")
 
     def _fetch_provider_odds_with_rotation(self, provider_name, sport):
@@ -258,6 +273,14 @@ class OddsService:
         return list(dict.fromkeys(
             name for name in selected if name in self._provider_key_pools
         ))
+
+    def auto_refresh_provider_names(self):
+        # SportsGameOdds' permanently free Amateur plan is object-metered.
+        # Keep it manual-only until its object budget can be scheduled safely.
+        return [
+            name for name in self.active_provider_names()
+            if name != "sports_game_odds" and self._provider_key_pools[name].configured
+        ]
 
     @property
     def configured(self):
@@ -334,7 +357,7 @@ class OddsService:
                 "last_alert_at": alert_status["last_sent"],
                 "alert_error": self._alert_error}
 
-    def refresh(self, sport=None):
+    def refresh(self, sport=None, providers=None):
         # Prevent manual clicks and the background scheduler from overlapping
         # provider requests and consuming duplicate quota.
         if not self._refresh_lock.acquire(blocking=False):
@@ -342,7 +365,7 @@ class OddsService:
                     "error": "A refresh is already running; this request was skipped to protect provider quota.",
                     "events": 0}
         try:
-            return self._refresh_locked(sport)
+            return self._refresh_locked(sport, providers)
         finally:
             self._refresh_lock.release()
 
@@ -390,8 +413,11 @@ class OddsService:
                     raise
                 time.sleep(delay)
 
-    def _refresh_locked(self, sport=None):
+    def _refresh_locked(self, sport=None, providers=None):
         provider_names = self.active_provider_names()
+        if providers is not None:
+            requested_providers = set(providers)
+            provider_names = [name for name in provider_names if name in requested_providers]
         configured_names = [
             name for name in provider_names if self._provider_key_pools[name].configured
         ]
