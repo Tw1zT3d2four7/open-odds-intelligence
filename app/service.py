@@ -434,7 +434,12 @@ class OddsService:
         for sport_key in sports:
             source_results = []
             successful_providers = []
+            skipped_providers = []
             for provider_name in provider_names:
+                if (provider_name == "sports_game_odds"
+                        and sport_key not in SportsGameOddsProvider.SPORTS):
+                    skipped_providers.append(provider_name)
+                    continue
                 pool = self._provider_key_pools.get(provider_name)
                 if pool is None or not pool.configured:
                     provider_errors.append(
@@ -508,6 +513,7 @@ class OddsService:
             successful_sports += 1
             provider_results_summary[sport_key] = {
                 "providers_succeeded": successful_providers,
+                "providers_skipped_for_league_coverage": skipped_providers,
                 "events": len(events),
             }
 
