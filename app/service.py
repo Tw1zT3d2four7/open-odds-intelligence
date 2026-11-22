@@ -105,6 +105,7 @@ class OddsService:
         self._last_error = None
         self._updated_at = None
         self._provider_usage = {}
+        self._last_provider_results = {}
         self._provider_key_pools = {
             "the_odds_api": ProviderKeyPool(
                 "the_odds_api", parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
