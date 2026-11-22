@@ -1,6 +1,8 @@
 """Oddize Developer-tier adapter with credit preflight and rotating prop coverage."""
 import json
 import math
+import threading
+import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -54,6 +56,10 @@ class OddizeProvider:
         "tt_pts": "team_points",
         "tt_goals": "team_goals",
     }
+    _request_lock = threading.Lock()
+    _last_request_at = 0.0
+    MIN_REQUEST_INTERVAL_SECONDS = 2.1  # 30 requests/minute on the free tier.
+
     OFFER_MARKETS = {
         "ml": "h2h", "s": "spreads", "t": "totals",
         "rl": "run_line", "tt": "team_totals",
@@ -99,7 +105,16 @@ class OddizeProvider:
         except (TypeError, ValueError, OverflowError):
             return value
 
+    @classmethod
+    def _pace(cls):
+        with cls._request_lock:
+            wait = cls.MIN_REQUEST_INTERVAL_SECONDS - (time.monotonic() - cls._last_request_at)
+            if wait > 0:
+                time.sleep(wait)
+            cls._last_request_at = time.monotonic()
+
     def _request(self, path, params=None):
+        self._pace()
         query = f"?{urlencode(params, doseq=True)}" if params else ""
         request = Request(
             f"{self.base_url}{path}{query}",
