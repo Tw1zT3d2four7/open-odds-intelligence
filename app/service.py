@@ -13,7 +13,9 @@ from .providers.therundown import TheRundownProvider
 from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
 from .providers.merge import merge_provider_events
 from .providers.sports_game_odds import SportsGameOddsProvider
+from .providers.oddize import OddizeProvider
 SPORTSGAMEODDS_SUPPORTED_SPORTS = frozenset(SportsGameOddsProvider.SPORTS)
+ODDIZE_SUPPORTED_SPORTS = frozenset(OddizeProvider.SPORTS)
 from .markets import analyze_markets
 
 
@@ -108,6 +110,7 @@ class OddsService:
                     config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
                 )
             ),
+            "oddize": ProviderKeyPool("oddize", [config.ODDIZE_API_KEY]),
             "therundown": ProviderKeyPool(
                 "therundown", parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
             ),
@@ -138,6 +141,10 @@ class OddsService:
             for key in parse_api_keys(
                 config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
             ) if config.ODDS_PROVIDER == "sports_game_odds"
+        } | {
+            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+            for key in parse_api_keys(config.ODDIZE_API_KEY)
+            if config.ODDS_PROVIDER == "oddize"
         }
         if (saved_usage_provider == config.ODDS_PROVIDER and
             saved_usage_fingerprint in configured_fingerprints):
@@ -200,6 +207,8 @@ class OddsService:
             keys = parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
         elif provider_name == "sports_game_odds":
             keys = parse_api_keys(config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY)
+        elif provider_name == "oddize":
+            keys = parse_api_keys(config.ODDIZE_API_KEY)
         else:
             keys = []
         material = "\\0".join(keys)
@@ -229,6 +238,8 @@ class OddsService:
             )
         if provider_name == "sports_game_odds":
             return SportsGameOddsProvider(api_key)
+        if provider_name == "oddize":
+            return OddizeProvider(api_key)
         raise ProviderError(f"Unsupported odds provider: {provider_name}")
 
     def _fetch_provider_odds_with_rotation(self, provider_name, sport):
@@ -281,7 +292,8 @@ class OddsService:
         # Keep it manual-only until its object budget can be scheduled safely.
         return [
             name for name in self.active_provider_names()
-            if name != "sports_game_odds" and self._provider_key_pools[name].configured
+            if name not in ("sports_game_odds", "oddize")
+            and self._provider_key_pools[name].configured
         ]
 
     @property
@@ -441,6 +453,9 @@ class OddsService:
                         and sport_key not in SPORTSGAMEODDS_SUPPORTED_SPORTS):
                     skipped_providers.append(provider_name)
                     continue
+                if provider_name == "oddize" and sport_key not in ODDIZE_SUPPORTED_SPORTS:
+                    skipped_providers.append(provider_name)
+                    continue
                 pool = self._provider_key_pools.get(provider_name)
                 if pool is None or not pool.configured:
                     provider_errors.append(
@@ -454,6 +469,42 @@ class OddsService:
                     self._remember_provider_usage(
                         provider.usage, provider_name, lease.fingerprint
                     )
+                    if provider_name == "oddize" and config.ODDIZE_PROPS_ENABLED:
+                        cursor_key = f"oddize_prop_cursor:{sport_key}"
+                        try:
+                            prop_cursor = int(self.db.get_state(cursor_key) or 0)
+                        except (TypeError, ValueError):
+                            prop_cursor = 0
+                        try:
+                            oddize_props = provider.fetch_props(
+                                sport_key, events,
+                                max_prop_types=config.ODDIZE_PROP_TYPES_PER_REFRESH,
+                                cursor=prop_cursor,
+                            )
+                            self.db.set_state(
+                                cursor_key, str(oddize_props.get("next_cursor", 0))
+                            )
+                            pool.record_usage(lease, provider.usage)
+                            self._remember_provider_usage(
+                                provider.usage, provider_name, lease.fingerprint
+                            )
+                        except ProviderError as props_error:
+                            pool.record_usage(lease, provider.usage)
+                            pool.mark_failure(
+                                lease,
+                                status_code=getattr(props_error, "status_code", None),
+                                message=str(props_error),
+                                retry_after_seconds=getattr(props_error, "retry_after", None),
+                            )
+                            provider_errors.append(
+                                f"{sport_key} / {provider_name} props: {props_error}"
+                            )
+                            oddize_props = {
+                                "prop_types_requested": [], "props_added": 0,
+                                "reason": str(props_error),
+                            }
+                    else:
+                        oddize_props = None
                     if (config.PLAYER_PROPS_ENABLED
                             and sport_key == config.PLAYER_PROPS_SPORT
                             and provider_name == "the_odds_api"):
@@ -493,6 +544,8 @@ class OddsService:
                             }
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
+                    if provider_name == "oddize":
+                        provider_results_summary.setdefault(sport_key, {})["oddize_props"] = oddize_props
                 except ProviderError as exc:
                     provider_errors.append(f"{sport_key} / {provider_name}: {exc}")
                     continue
