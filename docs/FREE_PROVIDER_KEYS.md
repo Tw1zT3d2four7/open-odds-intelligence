@@ -112,3 +112,19 @@ SportsGameOdds, Oddize, and OddsLink ingestion, with strict event identity
 matching, team-abbreviation reconciliation, quote-level source attribution,
 alternate-line preservation, and partial-refresh reporting. Additional
 adapters and more granular provider-specific scheduling remain follow-up work.
+
+
+## Provider plan references
+
+Plan limits and endpoint capabilities are reviewed against the providers' own
+documentation and pricing pages; free-tier limits can change, so the adapters
+also read live usage endpoints where available.
+
+- TheRundown: https://therundown.io/
+- The Odds API: https://the-odds-api.com/
+- SportsGameOdds: https://sportsgameodds.com/docs and https://sportsgameodds.com/pricing
+- Oddize: https://oddize.com/api/v1/docs and https://oddize.com/odds-api
+- OddsLink: https://oddslink.app/docs and https://oddslink.app/pricing
+
+No paid endpoint is required by these integrations. If a market or feature is
+available only on a paid plan, the adapter does not request it.
