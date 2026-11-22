@@ -55,7 +55,7 @@ def _odds_refresh_interval_seconds():
 async def _automatic_refresh_loop():
     interval = _odds_refresh_interval_seconds()
     while True:
-        await asyncio.sleep(interval)
+        # Refresh providers immediately when their independent schedule is due.
         # Keep provider I/O and SQLite work off the ASGI event loop.
         try:
             due_providers = await asyncio.to_thread(service.providers_due_for_auto_refresh)
@@ -69,10 +69,9 @@ async def _automatic_refresh_loop():
                 if succeeded:
                     await asyncio.to_thread(service.mark_auto_refresh, succeeded)
         except Exception as exc:
-            # Keep the scheduler alive, but expose failures in /api/health.
             service._last_error = f"Unexpected scheduled odds refresh failure: {exc}"
             logger.exception("Scheduled odds refresh failed")
-            continue
+        await asyncio.sleep(interval)
 
 
 async def _discord_alert_loop():
