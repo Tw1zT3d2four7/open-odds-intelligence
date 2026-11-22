@@ -24,6 +24,20 @@ The parser trims surrounding whitespace, removes exact duplicates, and
 **preserves key case**. The legacy single-key value is also included in the
 pool when supplied.
 
+Keys without a group label are assigned to the shared `default` account group.
+When a provider explicitly permits independently-quotaed accounts, separate
+accounts can be labelled using `account-label|API_KEY` entries, for example:
+
+```dotenv
+THE_ODDS_API_KEYS=account-one|first-key,account-two|second-key
+```
+
+A quota exhaustion blocks every key in that account group. The system will
+only fail over to a different labelled account group; it will not rotate keys
+from the same account to evade that account's free-tier limit. Use separate
+labels only for genuinely separate accounts with independently granted quotas,
+and only where the provider's terms allow it.
+
 ## Rotation and failure behavior
 
 The refresh service cycles through configured keys. A key that returns an
@@ -43,10 +57,22 @@ quota limits across multiple keys or an account, so multiple keys do not imply
 that the provider grants multiplied free allowances. Follow the provider's
 terms and actual quota headers.
 
+## SportsGameOdds free tier
+
+The SportsGameOdds adapter is also included. Its published Amateur tier has
+a rolling 30-day object allowance, a 10-requests-per-minute limit, and support
+for player props and alternate lines. The adapter checks the provider's
+free account-usage endpoint before fetching events, caps the result limit to
+the remaining object allowance, and is excluded from automatic polling to
+protect that allowance. It is available when manually refreshing.
+
+The free tier requires a payment card at signup according to the provider's
+setup guide, but the provider states the free tier is not charged unless the
+account owner upgrades. Do not upgrade for this integration.
+
 ## Scope
 
-This is key-pool support for the existing TheRundown and The Odds API adapters.
-It does not yet enable simultaneous multi-provider ingestion or add sportsbook
-coverage by itself. Those are separate stages so provider data can be merged
-and deduplicated safely at the event / bookmaker / market / outcome / line
-level before the application marks a refresh complete.
+The current foundation supports simultaneous TheRundown, The Odds API, and
+SportsGameOdds ingestion, with strict event identity matching, quote-level
+source attribution, and partial-refresh reporting. Additional adapters and
+more granular provider-specific scheduling remain follow-up work.
