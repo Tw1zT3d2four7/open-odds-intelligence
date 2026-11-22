@@ -13,6 +13,7 @@ from .providers.therundown import TheRundownProvider
 from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
 from .providers.merge import merge_provider_events
 from .providers.sports_game_odds import SportsGameOddsProvider
+SPORTSGAMEODDS_SUPPORTED_SPORTS = frozenset(SportsGameOddsProvider.SPORTS)
 from .markets import analyze_markets
 
 
@@ -437,7 +438,7 @@ class OddsService:
             skipped_providers = []
             for provider_name in provider_names:
                 if (provider_name == "sports_game_odds"
-                        and sport_key not in SportsGameOddsProvider.SPORTS):
+                        and sport_key not in SPORTSGAMEODDS_SUPPORTED_SPORTS):
                     skipped_providers.append(provider_name)
                     continue
                 pool = self._provider_key_pools.get(provider_name)
