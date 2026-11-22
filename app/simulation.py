@@ -542,6 +542,31 @@ def _validated_model_parameters(parameters, family, sport_key):
         if not math.isfinite(value) or not low <= value <= high:
             raise ValueError(f"Invalid fitted model parameter: {key}.")
         result[key] = value
+    independent = result.get("independent_team_model")
+    if independent is not None:
+        if (not isinstance(independent, dict) or independent.get("version") != 1
+                or not isinstance(independent.get("teams"), dict)):
+            raise ValueError("Invalid independent team model structure.")
+        for key in ("league_home_mean", "league_away_mean"):
+            try:
+                value = float(independent[key])
+            except (KeyError, TypeError, ValueError, OverflowError):
+                raise ValueError(f"Invalid independent team model field: {key}.") from None
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"Invalid independent team model field: {key}.")
+        for team_key, rating in independent["teams"].items():
+            if not isinstance(team_key, str) or not team_key or not isinstance(rating, dict):
+                raise ValueError("Invalid independent team rating entry.")
+            games = rating.get("games")
+            if isinstance(games, bool) or not isinstance(games, int) or games < 0:
+                raise ValueError("Invalid independent team rating sample size.")
+            for key in ("offense", "defense"):
+                try:
+                    value = float(rating[key])
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    raise ValueError(f"Invalid independent team rating field: {key}.") from None
+                if not math.isfinite(value):
+                    raise ValueError(f"Invalid independent team rating field: {key}.")
     return result
 
 
