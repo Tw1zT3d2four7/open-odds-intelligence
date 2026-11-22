@@ -460,3 +460,19 @@ def test_simulation_spread_cover_probabilities_are_seed_reproducible():
     first = run_game_simulation(event, seed=42)
     second = run_game_simulation(event, seed=42)
     assert first["spread_market"] == second["spread_market"]
+
+
+def test_calibration_only_model_is_not_mislabeled_as_empirical_training_fit():
+    event = sample_event()
+    params = {
+        "sport_key": "basketball_nba",
+        "family": "basketball",
+        "sample_size": 0,
+        "temperature": 1.2,
+        "total_temperature": 1.1,
+    }
+    result = run_game_simulation(event, seed=99, model_parameters=params)
+    assert result["data_quality"]["model_source"] == "broad_league_prior"
+    assert result["margin_market"]["model_source"] == "broad_league_prior"
+    assert result["margin_market"]["probability_temperature"] == 1.2
+    assert result["total_market"]["probability_temperature"] == 1.1
