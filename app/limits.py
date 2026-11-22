@@ -81,9 +81,9 @@ class OddsLinkClient:
         unique = []
         seen = set()
         for group, key in entries:
-            if key and (group, key) not in seen:
+            if key and key not in seen:
                 unique.append((group, key))
-                seen.add((group, key))
+                seen.add(key)
         if not unique:
             raise LimitsError("ODDSLINK_API_KEY or ODDSLINK_API_KEYS is not configured")
         self.pool = ProviderKeyPool(
