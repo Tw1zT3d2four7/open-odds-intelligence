@@ -60,6 +60,7 @@ class ProviderKeyPool:
         self._blocked_until: dict[int, float] = {}
         self._disabled: dict[int, str] = {}
         self._last_error: dict[int, str] = {}
+        self._usage: dict[int, dict] = {}
 
     @property
     def configured(self) -> bool:
@@ -93,6 +94,20 @@ class ProviderKeyPool:
             self._cursor = (index + 1) % len(self._keys)
             key = self._keys[index]
             return KeyLease(index, key, self._fingerprint(key))
+
+    def record_usage(self, lease: KeyLease, usage: dict | None) -> None:
+        """Attach non-secret quota counters to the exact key that made the call."""
+        if not isinstance(usage, dict):
+            return
+        safe = {}
+        for name, value in usage.items():
+            normalized = str(name).lower()
+            if any(secret in normalized for secret in ("key", "token", "secret", "email", "customer")):
+                continue
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                safe[str(name)] = value
+        with self._lock:
+            self._usage[lease.index] = safe
 
     def mark_success(self, lease: KeyLease) -> None:
         with self._lock:
@@ -147,6 +162,7 @@ class ProviderKeyPool:
                     ),
                     "retry_in_seconds": max(0, int(blocked - now)) if blocked > now else 0,
                     "last_error": self._last_error.get(index),
+                    "usage": self._usage.get(index, {}),
                 })
             return {
                 "provider": self.provider,
