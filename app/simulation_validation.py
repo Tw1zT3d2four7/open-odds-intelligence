@@ -207,12 +207,43 @@ def _mean(values):
     return sum(values) / len(values) if values else None
 
 
+
+def _class_calibration(rows: list[dict], probability_fields: dict, actual_field: str,
+                       labels: tuple[str, ...], calibration_bins: int) -> dict:
+    """Build one-vs-rest reliability buckets for a mutually exclusive outcome set."""
+    output = {}
+    for label in labels:
+        probability_key = probability_fields[label]
+        eligible = [row for row in rows
+                    if probability_key in row and actual_field in row]
+        class_bins = []
+        for index in range(calibration_bins):
+            low, high = index / calibration_bins, (index + 1) / calibration_bins
+            bucket = [row for row in eligible
+                      if low <= row[probability_key] < high
+                      or (index == calibration_bins - 1 and row[probability_key] == 1)]
+            if bucket:
+                predicted = _mean([row[probability_key] for row in bucket])
+                observed = sum(row[actual_field] == label for row in bucket) / len(bucket)
+                class_bins.append({
+                    "lower_bound": round(low, 3), "upper_bound": round(high, 3),
+                    "sample_size": len(bucket), "mean_predicted": predicted,
+                    "observed_rate": observed,
+                    "absolute_calibration_error": abs(predicted - observed),
+                })
+        output[label] = class_bins
+    return output
+
+
 def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
     """Aggregate proper scoring rules, score errors and probability calibration."""
     if not isinstance(calibration_bins, int) or isinstance(calibration_bins, bool) or not 2 <= calibration_bins <= 20:
         raise ValueError("calibration_bins must be an integer from 2 through 20.")
     if not rows:
-        return {"sample_size": 0, "status": "INSUFFICIENT_DATA", "by_sport": {}, "calibration": []}
+        return {"sample_size": 0, "status": "INSUFFICIENT_DATA", "by_sport": {},
+                "calibration": [], "calibration_by_sport": {},
+                "calibration_by_class": {}, "total_calibration_by_class": {},
+                "spread_calibration_by_class": {}}
     by_sport = defaultdict(list)
     for row in rows:
         by_sport[row.get("sport") or "unknown"].append(row)
@@ -248,42 +279,56 @@ def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
                 "observed_home_win_rate": observed,
                 "absolute_calibration_error": abs(predicted - observed),
             })
-    calibration_by_class = {}
-    for label in ("home", "away", "tie"):
-        probability_key = "predicted_" + label + "_probability"
-        class_bins = []
-        for index in range(calibration_bins):
-            low, high = index / calibration_bins, (index + 1) / calibration_bins
-            bucket = [x for x in rows if low <= x[probability_key] < high
-                      or (index == calibration_bins - 1 and x[probability_key] == 1)]
-            if bucket:
-                predicted = _mean([x[probability_key] for x in bucket])
-                observed = sum(x["actual_result"] == label for x in bucket) / len(bucket)
-                class_bins.append({
-                    "lower_bound": round(low, 3), "upper_bound": round(high, 3),
-                    "sample_size": len(bucket), "mean_predicted": predicted,
-                    "observed_rate": observed, "absolute_calibration_error": abs(predicted - observed),
-                })
-        calibration_by_class[label] = class_bins
-    total_calibration_by_class = {}
-    total_probability_keys = {"over": "predicted_over_probability",
-                              "under": "predicted_under_probability",
-                              "push": "predicted_total_push_probability"}
-    for label, probability_key in total_probability_keys.items():
-        class_bins = []
-        for index in range(calibration_bins):
-            low, high = index / calibration_bins, (index + 1) / calibration_bins
-            bucket = [x for x in rows if low <= x[probability_key] < high
-                      or (index == calibration_bins - 1 and x[probability_key] == 1)]
-            if bucket:
-                predicted = _mean([x[probability_key] for x in bucket])
-                observed = sum(x["actual_total_result"] == label for x in bucket) / len(bucket)
-                class_bins.append({
-                    "lower_bound": round(low, 3), "upper_bound": round(high, 3),
-                    "sample_size": len(bucket), "mean_predicted": predicted,
-                    "observed_rate": observed, "absolute_calibration_error": abs(predicted - observed),
-                })
-        total_calibration_by_class[label] = class_bins
+    calibration_by_class = _class_calibration(
+        rows,
+        {"home": "predicted_home_probability", "away": "predicted_away_probability",
+         "tie": "predicted_tie_probability"},
+        "actual_result", ("home", "away", "tie"), calibration_bins,
+    )
+    total_calibration_by_class = _class_calibration(
+        rows,
+        {"over": "predicted_over_probability", "under": "predicted_under_probability",
+         "push": "predicted_total_push_probability"},
+        "actual_total_result", ("over", "under", "push"), calibration_bins,
+    )
+    spread_rows = [row for row in rows if all(key in row for key in (
+        "predicted_home_cover_probability", "predicted_away_cover_probability",
+        "predicted_spread_push_probability", "actual_spread_result",
+    ))]
+    spread_calibration_by_class = _class_calibration(
+        spread_rows,
+        {"home_cover": "predicted_home_cover_probability",
+         "away_cover": "predicted_away_cover_probability",
+         "push": "predicted_spread_push_probability"},
+        "actual_spread_result", ("home_cover", "away_cover", "push"), calibration_bins,
+    )
+    calibration_by_sport = {}
+    for sport, sport_rows in sorted(by_sport.items()):
+        sport_spread_rows = [row for row in sport_rows if all(key in row for key in (
+            "predicted_home_cover_probability", "predicted_away_cover_probability",
+            "predicted_spread_push_probability", "actual_spread_result",
+        ))]
+        calibration_by_sport[sport] = {
+            "win": _class_calibration(
+                sport_rows,
+                {"home": "predicted_home_probability", "away": "predicted_away_probability",
+                 "tie": "predicted_tie_probability"},
+                "actual_result", ("home", "away", "tie"), calibration_bins,
+            ),
+            "total": _class_calibration(
+                sport_rows,
+                {"over": "predicted_over_probability", "under": "predicted_under_probability",
+                 "push": "predicted_total_push_probability"},
+                "actual_total_result", ("over", "under", "push"), calibration_bins,
+            ),
+            "spread": _class_calibration(
+                sport_spread_rows,
+                {"home_cover": "predicted_home_cover_probability",
+                 "away_cover": "predicted_away_cover_probability",
+                 "push": "predicted_spread_push_probability"},
+                "actual_spread_result", ("home_cover", "away_cover", "push"), calibration_bins,
+            ),
+        }
     return {
         "sample_size": len(rows),
         "status": (
@@ -296,6 +341,8 @@ def evaluate_predictions(rows: list[dict], calibration_bins: int = 10) -> dict:
         "calibration": calibration,
         "calibration_by_class": calibration_by_class,
         "total_calibration_by_class": total_calibration_by_class,
+        "spread_calibration_by_class": spread_calibration_by_class,
+        "calibration_by_sport": calibration_by_sport,
         "interpretation": (
             "Paper-only historical evaluation. Metrics describe this sample and do not prove "
             "future profitability. Use chronological holdouts; do not tune on the reported test set."

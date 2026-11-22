@@ -90,6 +90,46 @@ def test_evaluation_reports_sample_sizes_metrics_and_calibration():
     assert set(report["total_calibration_by_class"]) == {"over", "under", "push"}
 
 
+
+def test_evaluation_reports_per_league_spread_and_outcome_calibration():
+    rows = [
+        {
+            "sport": "basketball_nba", "actual_result": "home",
+            "predicted_home_probability": 0.7, "predicted_away_probability": 0.25,
+            "predicted_tie_probability": 0.05,
+            "actual_total_result": "over", "predicted_over_probability": 0.6,
+            "predicted_under_probability": 0.35, "predicted_total_push_probability": 0.05,
+            "actual_spread_result": "home_cover", "predicted_home_cover_probability": 0.7,
+            "predicted_away_cover_probability": 0.25, "predicted_spread_push_probability": 0.05,
+            "brier_score": 0.2, "log_loss": 0.4, "total_brier_score": 0.2,
+            "total_log_loss": 0.4, "home_score_error": 1, "away_score_error": 1,
+            "total_score_error": 2, "margin_error": 0, "spread_brier_score": 0.2,
+            "spread_log_loss": 0.4,
+        },
+        {
+            "sport": "icehockey_nhl", "actual_result": "away",
+            "predicted_home_probability": 0.3, "predicted_away_probability": 0.65,
+            "predicted_tie_probability": 0.05,
+            "actual_total_result": "under", "predicted_over_probability": 0.35,
+            "predicted_under_probability": 0.6, "predicted_total_push_probability": 0.05,
+            "actual_spread_result": "away_cover", "predicted_home_cover_probability": 0.3,
+            "predicted_away_cover_probability": 0.65, "predicted_spread_push_probability": 0.05,
+            "brier_score": 0.2, "log_loss": 0.4, "total_brier_score": 0.2,
+            "total_log_loss": 0.4, "home_score_error": 1, "away_score_error": 1,
+            "total_score_error": 2, "margin_error": 0, "spread_brier_score": 0.2,
+            "spread_log_loss": 0.4,
+        },
+    ]
+    report = evaluate_predictions(rows, calibration_bins=5)
+    assert set(report["calibration_by_sport"]) == {"basketball_nba", "icehockey_nhl"}
+    assert report["calibration_by_sport"]["basketball_nba"]["win"]["home"]
+    assert report["calibration_by_sport"]["icehockey_nhl"]["total"]["under"]
+    assert report["calibration_by_sport"]["basketball_nba"]["spread"]["home_cover"]
+    assert report["calibration_by_sport"]["icehockey_nhl"]["spread"]["away_cover"]
+    assert report["spread_calibration_by_class"]["home_cover"]
+    assert report["spread_calibration_by_class"]["away_cover"]
+
+
 def test_empty_evaluation_is_explicitly_insufficient():
     report = evaluate_predictions([])
     assert report["status"] == "INSUFFICIENT_DATA"

@@ -71,7 +71,7 @@ The command reads the existing DATABASE_PATH SQLite archive. It does not modify 
 ## Interpreting results
 
 - Brier score and log loss are proper scoring rules for simulated home/away/tie outcomes and over/under/push totals. Lower is better.
-- Calibration buckets compare predicted and observed rates separately for home/away/tie and over/under/push. Always inspect bucket sample sizes.
+- Calibration buckets compare predicted and observed rates separately for home/away/tie and over/under/push. Spread-cover calibration is also reported for home cover/away cover/push. The report now includes these class-specific reliability buckets overall and separately for every league, so a large league cannot hide poor calibration in a smaller one. Always inspect bucket sample sizes.
 - Score, total and margin MAE measure forecast error in points/goals/runs.
 - Reports are broken out by league and include the number of events scored and skipped. Each league receives its own sample-size readiness status; the combined report remains descriptive unless every included league reaches the 200-game threshold.
 - Paired bootstrap intervals are reported overall and separately by league when multiple leagues are present. This prevents a large league's sample from masking a thin league's uncertainty.
