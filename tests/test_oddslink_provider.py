@@ -129,3 +129,43 @@ def test_oddslink_filters_tennis_by_tournament_type():
     }
     assert provider._normalize_event(raw, "tennis_atp")["id"] == "tennis:one"
     assert OddsLinkProvider.SPORTS["tennis_wta"][1]["tournament_prefix"] == "tennis_wta_"
+
+
+def test_oddslink_aggregate_tennis_call_is_shared_by_atp_and_wta(monkeypatch):
+    calls = []
+    class FakeResponse:
+        headers = {"x-requests-remaining": "999"}
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return json.dumps(self.payload).encode()
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        if "/account/usage" in request.full_url:
+            return FakeResponse({
+                "plan": "free", "requests_allowance": 1000,
+                "requests_used_this_period": 0,
+                "period_resets_at": "2026-12-01T00:00:00.000Z",
+            })
+        return FakeResponse([
+            {"id": "atp-1", "commence_time": "2026-11-23T12:00:00Z",
+             "home_team": "Player A", "away_team": "Player B",
+             "tournament": {"key": "tennis_atp_beijing"}, "bookmakers": []},
+            {"id": "wta-1", "commence_time": "2026-11-23T13:00:00Z",
+             "home_team": "Player C", "away_team": "Player D",
+             "tournament": {"key": "tennis_wta_beijing"}, "bookmakers": []},
+        ])
+
+    monkeypatch.setattr(oddslink, "urlopen", fake_urlopen)
+    monkeypatch.setattr(OddsLinkProvider, "_pace", lambda self: None)
+    OddsLinkProvider._tennis_cache_payload = None
+    OddsLinkProvider._tennis_cache_at = 0.0
+
+    atp = OddsLinkProvider("Key").fetch_odds("tennis_atp")
+    wta = OddsLinkProvider("Key").fetch_odds("tennis_wta")
+
+    assert [event["id"] for event in atp] == ["atp-1"]
+    assert [event["id"] for event in wta] == ["wta-1"]
+    assert sum("/sports/tennis/odds" in url for url in calls) == 1
+    assert sum("/account/usage" in url for url in calls) == 1
