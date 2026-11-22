@@ -385,6 +385,13 @@ def market_readiness(event, model_parameters=None, require_independent_model=Fal
     if family in ("tennis", "mma") or family is None or not (has_spread and has_total):
         moneyline, books, diagnostics = _moneyline_inputs(event)
         if require_independent_model:
+            try:
+                _validate_upcoming_event(event)
+            except ValueError as exc:
+                has_start_time = False
+                independent_reason = str(exc)
+            else:
+                independent_reason = "An independent historical tennis/combat-sport model is not available yet; sportsbook moneyline sampling is not an independent prediction."
             return {
                 "can_simulate": False,
                 "simulation_mode": "independent_model_unavailable",
@@ -392,7 +399,7 @@ def market_readiness(event, model_parameters=None, require_independent_model=Fal
                 "has_h2h": bool(moneyline),
                 "has_spread": has_spread,
                 "has_total": has_total,
-                "reason": "An independent historical tennis/combat-sport model is not available yet; sportsbook moneyline sampling is not an independent prediction.",
+                "reason": independent_reason,
                 "market_diagnostics": diagnostics + inputs["diagnostics"],
             }
         missing = []
@@ -863,7 +870,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
             "spread_books": spread_books,
             "total_books": total_books,
             "distribution": prior["distribution"],
-            "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
+            "model_source": "independent_historical_team_model" if independent_projection else ("empirical_training_fit" if empirical_fit else "broad_league_prior"),
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
             "shared_count_environment_alpha": (
                 fitted.get("shared_alpha", 0.0) if fitted and prior["distribution"] == "poisson" else None
