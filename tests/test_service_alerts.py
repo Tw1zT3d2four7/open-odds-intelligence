@@ -50,7 +50,22 @@ def test_discord_alert_is_sent_and_deduplicated(tmp_path, monkeypatch):
     assert first_count >= 1
     assert len(sent) == first_count
     assert all(item[1] == 8 for item in sent)
-    assert all(b"EV" in item[0].data or b"Arbitrage" in item[0].data for item in sent)
+    import json
+    payloads = [json.loads(item[0].data.decode()) for item in sent]
+    assert all(payload.get("allowed_mentions") == {"parse": []} for payload in payloads)
+    assert all(len(payload.get("embeds", [])) == 1 for payload in payloads)
+    embeds = [payload["embeds"][0] for payload in payloads]
+    assert any("VALUE ALERT" in embed["title"] for embed in embeds)
+    assert any("ARBITRAGE ALERT" in embed["title"] for embed in embeds)
+    assert all(embed.get("description") for embed in embeds)
+    assert all(embed.get("footer", {}).get("text") for embed in embeds)
+    ev_embed = next(embed for embed in embeds if "VALUE ALERT" in embed["title"])
+    assert {"Selection", "Sportsbook", "American odds", "Fair probability", "Expected value", "Game time"} <= {
+        field["name"] for field in ev_embed["fields"]
+    }
+    arb_embed = next(embed for embed in embeds if "ARBITRAGE ALERT" in embed["title"])
+    assert any(field["name"].startswith("LEG 1") for field in arb_embed["fields"])
+    assert any("Suggested stake split" in field["value"] for field in arb_embed["fields"])
     assert service._dispatch_alerts() == 0
     assert len(sent) == first_count
     assert service.status()["alerts_sent"] == first_count
@@ -112,3 +127,12 @@ def test_one_failed_delivery_does_not_block_other_alerts_and_is_retryable(tmp_pa
     assert len(calls) == previous_calls + 1
     assert service.status()["last_alert_error"] is None
     assert service.status()["last_alert_sent"] == 1
+
+
+def test_discord_event_time_handles_missing_and_invalid_values():
+    from app.service import _discord_event_time
+
+    assert _discord_event_time(None) == "Not supplied"
+    assert _discord_event_time("not-a-date") == "Time unavailable"
+    rendered = _discord_event_time("2030-01-01T00:00:00Z")
+    assert "<t:" in rendered and ":F>" in rendered and ":R>" in rendered
