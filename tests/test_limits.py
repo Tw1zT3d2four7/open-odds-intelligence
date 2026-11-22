@@ -403,3 +403,34 @@ def test_ingest_events_records_oddslink_posted_limits_without_api_call(tmp_path)
     assert result["observations"] == 1
     assert result["usage"]["requests_remaining"] == 900
     assert monitor.status()["last_updated"] == "2026-11-23T18:00:00+00:00"
+
+
+def test_standalone_limits_client_rotates_to_another_oddslink_account(monkeypatch):
+    import app.limits as module
+    from app.providers.the_odds_api import ProviderError
+
+    calls = []
+    class FakeProvider:
+        def __init__(self, key):
+            self.key = key
+            self.usage = {"period_resets_at": "2026-12-01T00:00:00Z"}
+            calls.append(("init", key))
+        def fetch_usage(self):
+            if self.key == "Key-One":
+                return 0
+            self.usage = {"requests_remaining": 50}
+            return 50
+        def _seconds_until(self, value):
+            return 86400
+        def _request(self, path, params=None):
+            calls.append(("request", self.key, path))
+            return []
+
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "")
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEYS", "primary|Key-One,backup|Key-Two")
+    monkeypatch.setattr(module, "OddsLinkProvider", FakeProvider)
+
+    client = module.OddsLinkClient()
+    assert client.fetch("nfl") == []
+    assert [item[1] for item in calls if item[0] == "init"] == ["Key-One", "Key-Two"]
+    assert client.usage["requests_remaining"] == 50
