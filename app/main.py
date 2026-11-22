@@ -10,7 +10,6 @@ from fastapi.responses import HTMLResponse
 from . import config
 from .service import service
 from .markets import market_board, analyze_markets
-from .limits import limits_monitor
 from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -90,7 +89,11 @@ async def lifespan(app: FastAPI):
     limits_task = None
     results_task = None
     alert_task = None
-    if config.ODDSLINK_API_KEY:
+    oddslink_selected = (
+        "oddslink" in service.active_provider_names()
+        and service._provider_key_pools["oddslink"].configured
+    )
+    if (config.ODDSLINK_API_KEY or config.ODDSLINK_API_KEYS) and not oddslink_selected:
         limits_task = asyncio.create_task(_limits_refresh_loop())
     if service.configured and _odds_refresh_interval_seconds() > 0:
         task = asyncio.create_task(_automatic_refresh_loop())
@@ -193,7 +196,23 @@ def health():
 
 @app.post("/api/limits/refresh")
 def refresh_limits():
-    return limits_monitor.refresh()
+    oddslink_selected = (
+        "oddslink" in service.active_provider_names()
+        and service._provider_key_pools["oddslink"].configured
+    )
+    if oddslink_selected:
+        # The OddsLink all-book feed already includes posted-limit metadata.
+        # Reuse that single odds request rather than spending a second quota
+        # request for the Circa/Pinnacle-only limit poller.
+        result = service.refresh(providers=["oddslink"])
+        status = service.limits_monitor.status()
+        return {
+            "ok": result.get("ok", False),
+            "source": "oddslink_all_book_odds_refresh",
+            "odds_refresh": result,
+            "limits": status,
+        }
+    return service.limits_monitor.refresh()
 
 
 @app.get("/api/limits")
