@@ -7,7 +7,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - FastAPI backend and responsive dark dashboard.
 - Quota-free betting calculators: payout, multi-leg parlay, two-way no-vig, EV / fractional Kelly bankroll sizing, equal-outcome hedging, -1 run-line / puck-line settlement and a synthetic -1 line builder, with a dashboard-wide American / Decimal odds toggle.
 - Pluggable odds-provider interface with The Odds API and TheRundown V2 adapters.
-- Configurable sports, regions and supported market keys. NFL, NCAAF, NBA, NCAAB, NHL, MLB and EPL are included in the base catalog. TheRundown deployments also default to ATP and WTA; The Odds API uses tournament-specific tennis keys.
+- Configurable sports, regions and supported market keys. NFL, NCAAF, NBA, NCAAB, NHL, MLB and EPL are included in the base catalog. TheRundown deployments also default to ATP and WTA; its adapter additionally maps MMA, WNBA and MLS, which can be enabled by adding `mma_mixed_martial_arts`, `basketball_wnba` or `soccer_mls` to `ODDS_SPORTS`. Those leagues are not silently added to the defaults because each extra league increases provider usage. The Odds API uses tournament-specific tennis keys.
 - Normalized event, sportsbook, market and outcome quotes.
 - Best available price for each exact event / market / outcome / line.
 - American-odds conversion and no-vig probability calculations.
