@@ -262,6 +262,34 @@ def market_readiness(event):
     }
 
 
+def _distribution_summary(values):
+    """Summarize simulated outcomes with empirical percentiles, not confidence intervals."""
+    if not values:
+        raise ValueError("A simulation distribution cannot be empty.")
+    ordered = sorted(float(value) for value in values)
+    count = len(ordered)
+
+    def percentile(probability):
+        position = (count - 1) * probability
+        lower = int(math.floor(position))
+        upper = int(math.ceil(position))
+        if lower == upper:
+            return round(ordered[lower], 2)
+        fraction = position - lower
+        return round(ordered[lower] * (1 - fraction) + ordered[upper] * fraction, 2)
+
+    mean = sum(ordered) / count
+    variance = sum((value - mean) ** 2 for value in ordered) / count
+    return {
+        "mean": round(mean, 2),
+        "standard_deviation": round(math.sqrt(variance), 2),
+        "p10": percentile(0.10),
+        "median": percentile(0.50),
+        "p90": percentile(0.90),
+        "interval": "empirical_p10_p90",
+    }
+
+
 def _poisson(rng, mean):
     if mean <= 0:
         return 0
@@ -399,7 +427,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
     home_wins = away_wins = ties = over = under = pushes = 0
     home_covers = away_covers = spread_pushes = 0
     regulation_ties = overtime_games = 0
-    home_scores, away_scores = [], []
+    home_scores, away_scores, margins, game_totals = [], [], [], []
     for _ in range(TRIALS):
         if prior["distribution"] == "poisson":
             total_bias = fitted.get("total_bias", 0.0) if fitted else 0.0
@@ -438,6 +466,8 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         total = home_score + away_score
         home_scores.append(home_score)
         away_scores.append(away_score)
+        margins.append(margin)
+        game_totals.append(total)
         if margin > 0:
             home_wins += 1
         elif margin < 0:
@@ -503,6 +533,16 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
         "projected_score": {
             "home": round(sum(home_scores) / TRIALS, 2),
             "away": round(sum(away_scores) / TRIALS, 2),
+        },
+        "simulation_ranges": {
+            "home_score": _distribution_summary(home_scores),
+            "away_score": _distribution_summary(away_scores),
+            "home_margin": _distribution_summary(margins),
+            "game_total": _distribution_summary(game_totals),
+            "interpretation": (
+                "Empirical 10th-to-90th percentile range across simulated final scores; "
+                "this describes model outcome spread, not a confidence interval for the true score."
+            ),
         },
         "win_probabilities": {
             "home": home_probability, "away": away_probability, "tie": tie_probability,
