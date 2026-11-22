@@ -46,7 +46,7 @@ def test_sgo_normalizes_main_markets_and_player_props():
                 },
             },
             "points-J_TATUM-game-ou-over": {
-                "betTypeID": "ou", "statEntityID": "J_TATUM", "playerID": "J_TATUM",
+                "betTypeID": "ou", "statID": "points", "statEntityID": "J_TATUM", "playerID": "J_TATUM",
                 "sideID": "over",
                 "byBookmaker": {
                     "draftkings": {"odds": "+105", "overUnder": "28.5", "available": True}
