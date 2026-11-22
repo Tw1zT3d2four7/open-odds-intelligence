@@ -571,7 +571,7 @@ class MarketLimitsMonitor:
             )
             state_db.execute(
                 "INSERT OR REPLACE INTO market_limit_state(state_key,state_value) VALUES('last_usage_key_fingerprint',?)",
-                (hashlib.sha256(api_key.encode("utf-8")).hexdigest(),),
+                (current_key_fingerprint,),
             )
             if not errors or all_rows:
                 self.last_updated = observed_at
