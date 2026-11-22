@@ -726,6 +726,7 @@ def test_oddslink_is_manual_only_and_preserves_all_book_lines(tmp_path, monkeypa
                     "markets": [{"key": "spreads", "outcomes": [
                         {"name": "Kansas City Chiefs", "point": -3.5,
                          "price": -110, "main": True,
+                         "size": {"kind": "posted_limit", "amount": 25000},
                          "source_provider": "oddslink"},
                         {"name": "Kansas City Chiefs", "point": -4.5,
                          "price": 105, "main": False,
@@ -754,4 +755,6 @@ def test_oddslink_is_manual_only_and_preserves_all_book_lines(tmp_path, monkeypa
     outcomes = stored[0]["bookmakers"][0]["markets"][0]["outcomes"]
     assert {item["point"] for item in outcomes} == {-3.5, -4.5}
     assert {item["main"] for item in outcomes} == {True, False}
+    main_line = next(item for item in outcomes if item["main"])
+    assert main_line["size"] == {"kind": "posted_limit", "amount": 25000}
     assert {item["source_provider"] for item in outcomes} == {"oddslink"}
