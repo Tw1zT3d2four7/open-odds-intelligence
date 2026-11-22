@@ -369,3 +369,88 @@ def test_retry_after_longer_than_budget_defers_retry(tmp_path, monkeypatch):
     result = service.refresh()
     assert result["ok"] is False
     assert calls == ["basketball_nba"]
+
+
+
+def test_provider_refresh_rotates_to_next_key_after_quota_exhaustion(tmp_path, monkeypatch):
+    from app.providers.the_odds_api import ProviderError
+
+    calls = []
+
+    class MultiKeyProvider:
+        name = "the_odds_api"
+
+        def __init__(self, api_key, *args, **kwargs):
+            self.api_key = api_key
+            self.usage = {}
+
+        def fetch_odds(self, sport):
+            calls.append((self.api_key, sport))
+            if self.api_key == "First-Case-Sensitive-Key":
+                self.usage = {"requests_remaining": "0"}
+                raise ProviderError(
+                    "Odds provider HTTP 401: OUT_OF_USAGE_CREDITS",
+                    status_code=401,
+                )
+            self.usage = {"requests_remaining": "42"}
+            return []
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "")
+    monkeypatch.setattr(
+        config, "THE_ODDS_API_KEYS",
+        "First-Case-Sensitive-Key,Second-Case-Sensitive-Key",
+        raising=False,
+    )
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", MultiKeyProvider)
+
+    service = OddsService(OddsDatabase(tmp_path / "multi-key-rotation.sqlite3"))
+    result = service.refresh()
+
+    assert result["ok"] is True
+    assert calls == [
+        ("First-Case-Sensitive-Key", "basketball_nba"),
+        ("Second-Case-Sensitive-Key", "basketball_nba"),
+    ]
+    key_status = service.status()["provider_keys"]["the_odds_api"]
+    assert key_status["configured_keys"] == 2
+    assert key_status["available_keys"] == 1
+    assert [item["status"] for item in key_status["keys"]] == [
+        "quota_cooldown", "available"
+    ]
+
+
+def test_provider_refresh_fails_cleanly_when_every_key_is_exhausted(tmp_path, monkeypatch):
+    from app.providers.the_odds_api import ProviderError
+
+    calls = []
+
+    class ExhaustedProvider:
+        name = "the_odds_api"
+
+        def __init__(self, api_key, *args, **kwargs):
+            self.api_key = api_key
+            self.usage = {"requests_remaining": "0"}
+
+        def fetch_odds(self, sport):
+            calls.append(self.api_key)
+            raise ProviderError(
+                "quota exceeded", status_code=429, retry_after="600",
+                retryable=True,
+            )
+
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", "")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEYS", "QuotaKeyA,QuotaKeyB", raising=False)
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba", "icehockey_nhl"])
+    monkeypatch.setattr("app.service.TheOddsAPIProvider", ExhaustedProvider)
+
+    service = OddsService(OddsDatabase(tmp_path / "all-keys-exhausted.sqlite3"))
+    result = service.refresh()
+
+    assert result["ok"] is False
+    assert len(calls) == 2
+    assert "quota exceeded" in result["error"]
+    assert service.status()["provider_keys"]["the_odds_api"]["available_keys"] == 0
