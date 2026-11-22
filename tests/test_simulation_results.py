@@ -115,3 +115,50 @@ def test_pending_result_dates_use_archive_and_provider_offset(tmp_path):
     database.save_simulation_settlements([_result()])
     assert database.pending_simulation_result_dates(["soccer_epl"], now=now,
                                                     lookback_days=7, offset_minutes=120) == []
+
+def test_database_accepts_only_strictly_newer_timestamped_score_corrections(tmp_path):
+    database = OddsDatabase(tmp_path / "results-corrections.sqlite3")
+    database.save_snapshot("soccer_epl", [_odds_event()], provider="fixture",
+                           fetched_at="2026-01-02T12:00:00+00:00")
+    original = _result()
+    assert database.save_simulation_settlements([original])["inserted"] == 1
+
+    older = dict(original, home_score=3, source_updated_at="2026-01-03T00:59:59Z")
+    same_time = dict(original, home_score=4, source_updated_at="2026-01-03T01:00:00Z")
+    missing_time = dict(original, home_score=5, source_updated_at=None)
+    assert database.save_simulation_settlements([older, same_time, missing_time])["duplicates"] == 3
+    assert database.simulation_settlements()[0]["home_score"] == 0
+
+    corrected = dict(original, home_score=2, away_score=1,
+                     source_updated_at="2026-01-03T02:00:00Z")
+    result = database.save_simulation_settlements([corrected])
+    assert result["corrected"] == 1
+    saved = database.simulation_settlements()[0]
+    assert (saved["home_score"], saved["away_score"]) == (2, 1)
+    assert saved["source_updated_at"] == "2026-01-03T02:00:00Z"
+
+
+def test_database_rejects_correction_with_invalid_update_timestamp(tmp_path):
+    database = OddsDatabase(tmp_path / "results-invalid-correction.sqlite3")
+    database.save_snapshot("soccer_epl", [_odds_event()], provider="fixture",
+                           fetched_at="2026-01-02T12:00:00+00:00")
+    database.save_simulation_settlements([_result()])
+    invalid = dict(_result(), home_score=9, source_updated_at="not-a-date")
+    result = database.save_simulation_settlements([invalid])
+    assert result["corrected"] == 0
+    assert result["rejected"][0]["reason"].startswith("source update timestamp")
+    assert database.simulation_settlements()[0]["home_score"] == 0
+
+
+def test_pending_result_dates_include_recent_settlements_only_when_recheck_enabled(tmp_path):
+    database = OddsDatabase(tmp_path / "results-recheck.sqlite3")
+    database.save_snapshot("soccer_epl", [_odds_event()], provider="fixture",
+                           fetched_at="2026-01-02T12:00:00+00:00")
+    now = datetime(2026, 1, 5, tzinfo=timezone.utc)
+    database.save_simulation_settlements([_result()])
+    assert database.pending_simulation_result_dates(
+        ["soccer_epl"], now=now, lookback_days=7
+    ) == []
+    assert database.pending_simulation_result_dates(
+        ["soccer_epl"], now=now, lookback_days=7, recheck_days=3
+    ) == [{"sport": "soccer_epl", "event_date": "2026-01-02", "pending_events": 1}]

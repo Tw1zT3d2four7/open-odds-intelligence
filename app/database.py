@@ -119,7 +119,7 @@ class OddsDatabase:
 
     def save_simulation_settlements(self, results):
         """Persist only final results that exactly match an archived event identity."""
-        inserted = duplicates = 0
+        inserted = corrected = duplicates = 0
         rejected = []
         imported_at = datetime.now(timezone.utc).isoformat()
         for result in results:
@@ -165,20 +165,55 @@ class OddsDatabase:
                         or self._normalized_result_team(quote["away_team"]) != self._normalized_result_team(result.get("away_team"))):
                     rejected.append({"event_id": event_id, "reason": "result home/away teams do not match archived event"})
                     continue
-                cursor = db.execute(
-                    """INSERT OR IGNORE INTO simulation_settlements(
-                       event_id,sport_key,commence_time,home_team,away_team,home_score,away_score,
-                       status,source,source_record_id,source_updated_at,imported_at)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (event_id, sport, result["commence_time"], result["home_team"], result["away_team"],
-                     home_score, away_score, "final", str(result.get("source") or "unknown"),
-                     str(result.get("source_record_id") or event_id), result.get("source_updated_at"), imported_at),
-                )
-                if cursor.rowcount:
+                source_updated_at = result.get("source_updated_at")
+                incoming_updated = None
+                if source_updated_at:
+                    try:
+                        incoming_updated = datetime.fromisoformat(str(source_updated_at).replace("Z", "+00:00"))
+                        if incoming_updated.tzinfo is None:
+                            raise ValueError
+                    except (TypeError, ValueError):
+                        rejected.append({"event_id": event_id, "reason": "source update timestamp must be ISO-8601 with timezone"})
+                        continue
+                existing = db.execute(
+                    "SELECT home_score,away_score,source_updated_at FROM simulation_settlements WHERE event_id=?",
+                    (event_id,),
+                ).fetchone()
+                if existing is None:
+                    db.execute(
+                        """INSERT INTO simulation_settlements(
+                           event_id,sport_key,commence_time,home_team,away_team,home_score,away_score,
+                           status,source,source_record_id,source_updated_at,imported_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (event_id, sport, result["commence_time"], result["home_team"], result["away_team"],
+                         home_score, away_score, "final", str(result.get("source") or "unknown"),
+                         str(result.get("source_record_id") or event_id), source_updated_at, imported_at),
+                    )
                     inserted += 1
+                    continue
+                previous_updated = None
+                if existing["source_updated_at"]:
+                    try:
+                        previous_updated = datetime.fromisoformat(str(existing["source_updated_at"]).replace("Z", "+00:00"))
+                        if previous_updated.tzinfo is None:
+                            raise ValueError
+                    except (TypeError, ValueError):
+                        rejected.append({"event_id": event_id, "reason": "stored source update timestamp is invalid; correction not applied"})
+                        continue
+                # A correction is accepted only with a strictly newer, timezone-aware
+                # provider timestamp. Missing timestamps can never overwrite a result.
+                if incoming_updated is not None and (previous_updated is None or incoming_updated > previous_updated):
+                    db.execute(
+                        """UPDATE simulation_settlements SET home_score=?,away_score=?,source=?,
+                           source_record_id=?,source_updated_at=?,imported_at=?
+                           WHERE event_id=?""",
+                        (home_score, away_score, str(result.get("source") or "unknown"),
+                         str(result.get("source_record_id") or event_id), str(source_updated_at), imported_at, event_id),
+                    )
+                    corrected += 1
                 else:
                     duplicates += 1
-        return {"inserted": inserted, "duplicates": duplicates, "rejected": rejected}
+        return {"inserted": inserted, "corrected": corrected, "duplicates": duplicates, "rejected": rejected}
 
     def simulation_settlements(self, sport=None):
         sql = "SELECT * FROM simulation_settlements"
@@ -190,8 +225,8 @@ class OddsDatabase:
         with self.connect() as db:
             return [dict(row) for row in db.execute(sql, args).fetchall()]
 
-    def pending_simulation_result_dates(self, sports, lookback_days=7, now=None, offset_minutes=0):
-        """Return sport/date batches containing archived events without final results."""
+    def pending_simulation_result_dates(self, sports, lookback_days=7, now=None, offset_minutes=0, recheck_days=0):
+        """Return unscored dates and, optionally, dates with recently settled events."""
         if not sports:
             return []
         now = now or datetime.now(timezone.utc)
@@ -203,10 +238,15 @@ class OddsDatabase:
             "SELECT DISTINCT q.event_id,q.sport,q.commence_time FROM quotes q "
             "WHERE q.sport IN (" + placeholders + ") "
             "AND substr(q.commence_time,1,10)>=? AND substr(q.commence_time,1,10)<=? "
-            "AND NOT EXISTS (SELECT 1 FROM simulation_settlements r WHERE r.event_id=q.event_id)"
+            "AND (NOT EXISTS (SELECT 1 FROM simulation_settlements r WHERE r.event_id=q.event_id) "
+            "OR (? > 0 AND EXISTS (SELECT 1 FROM simulation_settlements r WHERE r.event_id=q.event_id "
+            "AND substr(r.commence_time,1,10)>=?)))"
         )
+        recheck_days = max(0, min(7, int(recheck_days)))
+        recheck_since = (now.astimezone(timezone.utc) - timedelta(days=recheck_days)).date().isoformat()
         with self.connect() as db:
-            rows = db.execute(sql, [*sports, since.date().isoformat(), now.date().isoformat()]).fetchall()
+            rows = db.execute(sql, [*sports, since.date().isoformat(), now.date().isoformat(),
+                                    recheck_days, recheck_since]).fetchall()
         grouped = {}
         for row in rows:
             try:

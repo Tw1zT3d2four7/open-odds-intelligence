@@ -406,13 +406,14 @@ class OddsService:
             config.THERUNDOWN_API_KEY, utc_offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES
         )
         now = datetime.now(timezone.utc)
-        inserted = duplicates = rejected = groups_checked = events_returned = 0
+        inserted = corrected = duplicates = rejected = groups_checked = events_returned = 0
         errors = []
         try:
             groups = self.db.pending_simulation_result_dates(
                 [sport for sport in config.ODDS_SPORTS if sport in provider.SPORTS],
                 lookback_days=config.SIMULATION_RESULTS_LOOKBACK_DAYS, now=now,
                 offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES,
+                recheck_days=config.SIMULATION_RESULTS_RECHECK_DAYS,
             )
             due_groups = []
             for group in groups:
@@ -434,6 +435,7 @@ class OddsService:
                     events_returned += len(results)
                     saved = self.db.save_simulation_settlements(results)
                     inserted += saved["inserted"]
+                    corrected += saved.get("corrected", 0)
                     duplicates += saved["duplicates"]
                     rejected += len(saved["rejected"])
                     groups_checked += 1
@@ -449,10 +451,12 @@ class OddsService:
                 "enabled": True, "provider": provider.name, "last_sync": last_sync,
                 "last_error": last_error, "groups_pending": len(groups),
                 "groups_checked": groups_checked, "events_returned": events_returned,
-                "inserted_last_run": inserted, "duplicates_last_run": duplicates,
+                "inserted_last_run": inserted, "corrected_last_run": corrected,
+                "duplicates_last_run": duplicates,
                 "rejected_last_run": rejected,
                 "settlements_stored": len(self.db.simulation_settlements()),
                 "lookback_days": config.SIMULATION_RESULTS_LOOKBACK_DAYS,
+                "recheck_days": config.SIMULATION_RESULTS_RECHECK_DAYS,
                 "refresh_interval_seconds": config.SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS,
                 "retry_interval_seconds": config.SIMULATION_RESULTS_RETRY_SECONDS,
                 "max_groups_per_run": config.SIMULATION_RESULTS_MAX_GROUPS_PER_RUN,
@@ -460,7 +464,8 @@ class OddsService:
             }
             return {"ok": not bool(errors), "groups_checked": groups_checked,
                     "events_returned": events_returned, "inserted": inserted,
-                    "duplicates": duplicates, "rejected": rejected, "error": last_error}
+                    "corrected": corrected, "duplicates": duplicates,
+                    "rejected": rejected, "error": last_error}
         except ProviderError as exc:
             self._remember_provider_usage(provider.usage)
             last_error = str(exc)

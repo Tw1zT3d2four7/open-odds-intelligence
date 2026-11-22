@@ -65,3 +65,53 @@ def test_service_score_sync_is_disabled_for_non_rundown_provider(tmp_path, monke
     result = service.sync_simulation_results()
     assert result["skipped"] is True
     assert service._simulation_results_status["enabled"] is False
+
+def test_service_reports_timestamped_score_corrections(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    commence = (now - timedelta(hours=2)).isoformat()
+    event = {
+        "id": "service-correction-1", "sport_title": "EPL", "commence_time": commence,
+        "home_team": "Home Club", "away_team": "Away Club",
+        "bookmakers": [{"key": "book", "title": "Book", "markets": [{
+            "key": "totals", "outcomes": [
+                {"name": "Over", "point": 2.5, "price": -110},
+                {"name": "Under", "point": 2.5, "price": -110},
+            ],
+        }]}],
+    }
+    first = {
+        "event_id": "service-correction-1", "sport_key": "soccer_epl",
+        "commence_time": commence, "home_team": "Home Club", "away_team": "Away Club",
+        "home_score": 1, "away_score": 0, "status": "final", "source": "therundown",
+        "source_record_id": "service-correction-1", "source_updated_at": "2026-11-22T12:00:00Z",
+    }
+    database = OddsDatabase(tmp_path / "service-correction.sqlite3")
+    database.save_snapshot("soccer_epl", [event], provider="therundown",
+                           fetched_at=(now - timedelta(hours=3)).isoformat())
+    database.save_simulation_settlements([first])
+    monkeypatch.setattr(config, "SIMULATION_RESULTS_SYNC_ENABLED", True)
+    monkeypatch.setattr(config, "SIMULATION_RESULTS_RECHECK_DAYS", 7)
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "therundown")
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEY", "test-key")
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["soccer_epl"])
+    monkeypatch.setattr(config, "RUNDOWN_UTC_OFFSET_MINUTES", 0)
+    monkeypatch.setattr(config, "SIMULATION_RESULTS_LOOKBACK_DAYS", 7)
+    monkeypatch.setattr(config, "SIMULATION_RESULTS_RETRY_SECONDS", 3600)
+    monkeypatch.setattr(config, "SIMULATION_RESULTS_MAX_GROUPS_PER_RUN", 10)
+    corrected = dict(first, home_score=2, source_updated_at="2026-11-22T13:00:00Z")
+    calls = []
+    class FakeProvider:
+        name = "therundown"
+        SPORTS = {"soccer_epl": (11, "EPL")}
+        usage = {"datapoints": 2}
+        def __init__(self, *args, **kwargs): pass
+        def fetch_scores(self, sport, dates):
+            calls.append((sport, dates))
+            return [corrected]
+    monkeypatch.setattr("app.service.TheRundownProvider", FakeProvider)
+    service = OddsService(database=database)
+    report = service.sync_simulation_results()
+    assert report["corrected"] == 1
+    assert service._simulation_results_status["corrected_last_run"] == 1
+    assert database.simulation_settlements()[0]["home_score"] == 2
+    assert len(calls) == 1
