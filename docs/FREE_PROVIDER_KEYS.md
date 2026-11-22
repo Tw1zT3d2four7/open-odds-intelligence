@@ -32,6 +32,7 @@ THE_ODDS_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
 SPORTSGAMEODDS_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
 ODDSLINK_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
 ODDIZE_API_KEY=one-free-developer-key
+ODDIZE_API_KEYS=another-free-account-key
 ```
 
 The parser trims surrounding whitespace, removes exact duplicates, and
