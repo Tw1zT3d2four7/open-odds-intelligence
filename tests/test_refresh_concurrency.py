@@ -528,6 +528,13 @@ def test_simultaneous_providers_merge_books_and_markets(tmp_path, monkeypatch):
         "draftkings", "fanduel"
     }
     assert stored[0]["id"] == "rundown-event"
+    sources = {
+        outcome.get("source_provider")
+        for book in stored[0]["bookmakers"]
+        for market in book["markets"]
+        for outcome in market["outcomes"]
+    }
+    assert sources == {"therundown", "the_odds_api"}
     assert service.status()["providers"] == ["therundown", "the_odds_api"]
 
 
@@ -544,7 +551,12 @@ def test_multi_provider_refresh_keeps_successful_source_when_other_fails(tmp_pat
                 "id": "rundown-only", "sport_key": sport, "sport_title": "NFL",
                 "commence_time": "2026-11-23T20:00:00Z",
                 "home_team": "Home", "away_team": "Away",
-                "bookmakers": [],
+                "bookmakers": [{
+                    "key": "draftkings", "title": "DraftKings",
+                    "markets": [{"key": "h2h", "outcomes": [
+                        {"name": "Home", "price": -110}
+                    ]}],
+                }],
             }]
 
     class DownOddsAPI:
