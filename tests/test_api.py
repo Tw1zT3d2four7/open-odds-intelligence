@@ -6,19 +6,26 @@ from app import main
 
 
 def _api_independent_models(sport_key, home="Home", away="Away"):
-    from app.team_model import fit_team_strength_models
+    from app.team_model import fit_team_strength_models, fit_independent_outcome_models
     from app.simulation import _family
     rows = []
     for index in range(8):
         rows.append({
             "sport_key": sport_key, "home_team": home, "away_team": away,
+            "commence_time": f"2026-01-{index + 1:02d}T00:00:00Z",
             "home_score": 100 + index + (5 if index % 2 == 0 else 0),
             "away_score": 90 + index,
         })
-    fitted = fit_team_strength_models(rows, min_team_games=4)["models"][sport_key]
+    family = _family(sport_key)
+    if family in ("tennis", "mma"):
+        fitted = fit_independent_outcome_models(rows, min_team_matches=4)["models"][sport_key]
+        key = "independent_outcome_model"
+    else:
+        fitted = fit_team_strength_models(rows, min_team_games=4)["models"][sport_key]
+        key = "independent_team_model"
     return {sport_key: {
-        "sport_key": sport_key, "family": _family(sport_key),
-        "sample_size": 8, "independent_team_model": fitted,
+        "sport_key": sport_key, "family": family,
+        "sample_size": 8, key: fitted,
     }}
 
 
@@ -499,11 +506,12 @@ def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key
 
     assert games.status_code == 200
     game = games.json()["games"][0]
-    assert game["can_simulate"] is False
-    assert game["simulation_mode"] == "independent_model_unavailable"
-    assert "not an independent prediction" in game["reason"]
-    assert result.status_code == 422
-    assert "independent historical tennis/combat-sport model" in result.json()["detail"]
+    assert game["can_simulate"] is True
+    assert game["simulation_mode"] == "independent_outcome_only"
+    assert game["independent_model_available"] is True
+    assert result.status_code == 200
+    assert result.json()["simulation_type"] == "independent_outcome_monte_carlo"
+    assert result.json()["data_quality"]["model_source"] == "independent_historical_elo"
 
 
 @pytest.mark.parametrize("sport_key,total_line,spread_line", [
