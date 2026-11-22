@@ -153,8 +153,8 @@ def test_oddslink_aggregate_tennis_call_is_shared_by_atp_and_wta(monkeypatch):
              "home_team": "Player A", "away_team": "Player B",
              "tournament": {"key": "tennis_atp_beijing"}, "bookmakers": []},
             {"id": "wta-1", "commence_time": "2026-11-23T13:00:00Z",
-             "home_team": "Player C", "away_team": "Player D",
-             "tournament": {"key": "tennis_wta_beijing"}, "bookmakers": []},
+             "participants": [{"name": "Player C"}, {"name": "Player D"}],
+             "tournament": {"key": "wta_beijing"}, "bookmakers": []},
         ])
 
     monkeypatch.setattr(oddslink, "urlopen", fake_urlopen)
@@ -167,5 +167,7 @@ def test_oddslink_aggregate_tennis_call_is_shared_by_atp_and_wta(monkeypatch):
 
     assert [event["id"] for event in atp] == ["atp-1"]
     assert [event["id"] for event in wta] == ["wta-1"]
+    assert wta[0]["home_team"] == "Player C"
+    assert wta[0]["away_team"] == "Player D"
     assert sum("/sports/tennis/odds" in url for url in calls) == 1
     assert sum("/account/usage" in url for url in calls) == 1
