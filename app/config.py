@@ -19,7 +19,7 @@ THERUNDOWN_API_KEYS = os.getenv("THERUNDOWN_API_KEYS", "")
 THE_ODDS_API_KEYS = os.getenv("THE_ODDS_API_KEYS", "")
 SPORTSGAMEODDS_API_KEY = os.getenv("SPORTSGAMEODDS_API_KEY", "")
 SPORTSGAMEODDS_API_KEYS = os.getenv("SPORTSGAMEODDS_API_KEYS", "")
-SPORTSGAMEODDS_MAX_EVENTS = max(1, min(100, int(os.getenv("SPORTSGAMEODDS_MAX_EVENTS", "25")))
+SPORTSGAMEODDS_MAX_EVENTS = max(1, min(100, int(os.getenv("SPORTSGAMEODDS_MAX_EVENTS", "25"))))
 # Oddize Developer tier includes one API key on the free plan.
 ODDIZE_API_KEY = os.getenv("ODDIZE_API_KEY", "")
 ODDSLINK_API_KEY = os.getenv("ODDSLINK_API_KEY", "")
