@@ -297,7 +297,7 @@ def _validated_model_parameters(parameters, family, sport_key):
               "total_bias": (-100.0, 100.0), "temperature": (0.5, 3.0),
               "total_temperature": (0.5, 3.0), "spread_temperature": (0.5, 3.0),
               "home_alpha": (0.0, 2.0),
-              "away_alpha": (0.0, 2.0)}
+              "away_alpha": (0.0, 2.0), "shared_alpha": (0.0, 2.0)}
     for key, (low, high) in bounds.items():
         if key not in result:
             continue
@@ -408,8 +408,15 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             away_mean = max(0.05, (expected_total + total_bias - expected_margin - margin_bias) / 2)
             home_alpha = fitted.get("home_alpha", 0.0) if fitted else 0.0
             away_alpha = fitted.get("away_alpha", 0.0) if fitted else 0.0
-            home_score = _negative_binomial(rng, home_mean, home_alpha)
-            away_score = _negative_binomial(rng, away_mean, away_alpha)
+            shared_alpha = fitted.get("shared_alpha", 0.0) if fitted else 0.0
+            # A shared Gamma game-environment factor captures positive
+            # home/away scoring covariance learned from prior league results.
+            shared_multiplier = (
+                rng.gammavariate(1.0 / shared_alpha, shared_alpha)
+                if shared_alpha > 1e-12 else 1.0
+            )
+            home_score = _negative_binomial(rng, home_mean * shared_multiplier, home_alpha)
+            away_score = _negative_binomial(rng, away_mean * shared_multiplier, away_alpha)
         else:
             z_margin = rng.gauss(0.0, 1.0)
             z_independent = rng.gauss(0.0, 1.0)
@@ -533,6 +540,9 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None):
             "distribution": prior["distribution"],
             "model_source": "empirical_training_fit" if empirical_fit else "broad_league_prior",
             "training_sample_size": fitted.get("sample_size") if fitted else 0,
+            "shared_count_environment_alpha": (
+                fitted.get("shared_alpha", 0.0) if fitted and prior["distribution"] == "poisson" else None
+            ),
             "market_diagnostics": _collect_market_inputs(event)["diagnostics"],
         },
         "methodology": (
