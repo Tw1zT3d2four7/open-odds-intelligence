@@ -12,6 +12,7 @@ def test_provider_poll_interval_is_independent_of_discord_interval(monkeypatch):
 
     monkeypatch.setattr(main.config, "ODDS_PROVIDER", "the_odds_api")
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(main.service, "auto_refresh_schedule", lambda: {})
     assert main._odds_refresh_interval_seconds() == 0
 
 
