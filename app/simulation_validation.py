@@ -797,8 +797,14 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
                     market_row["book_count"] = market["book_count"]
                     market_scored.append(market_row)
             baseline_prediction = run_game_simulation(event, seed=seed)
+            event_model = (model_parameters or {}).get(event["sport_key"])
+            independent_model_required = bool(
+                isinstance(event_model, dict)
+                and ("independent_team_model" in event_model or "independent_outcome_model" in event_model)
+            )
             prediction = run_game_simulation(
-                event, seed=seed, model_parameters=(model_parameters or {}).get(event["sport_key"])
+                event, seed=seed, model_parameters=event_model,
+                require_independent_model=independent_model_required,
             )
             if prediction.get("simulation_type") == "independent_outcome_monte_carlo":
                 outcome_baseline_scored.append(score_outcome_prediction(baseline_prediction, settlement))
