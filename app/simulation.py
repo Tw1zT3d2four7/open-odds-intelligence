@@ -826,8 +826,7 @@ def run_game_simulation(event, trials=TRIALS, seed=None, model_parameters=None, 
         # forecast. Until score-only variance calibration is available, use
         # the conservative family prior for spread/total dispersion.
         prior = dict(LEAGUE_PRIORS[family])
-        scoring_fit["margin_bias"] = 0.0
-        scoring_fit["total_bias"] = 0.0
+        scoring_fit = {}
     elif require_independent_model:
         raise ValueError(
             "No independent historical team model is fitted for this league. "
