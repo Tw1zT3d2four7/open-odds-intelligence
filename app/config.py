@@ -26,6 +26,7 @@ SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS = (
 )
 # Oddize Developer tier includes one API key on the free plan.
 ODDIZE_API_KEY = os.getenv("ODDIZE_API_KEY", "")
+ODDIZE_API_KEYS = os.getenv("ODDIZE_API_KEYS", "")
 ODDSLINK_API_KEY = os.getenv("ODDSLINK_API_KEY", "")
 ODDSLINK_API_KEYS = os.getenv("ODDSLINK_API_KEYS", "")
 _oddslink_refresh_interval = max(0, int(os.getenv("ODDSLINK_REFRESH_INTERVAL_SECONDS", "86400")))
