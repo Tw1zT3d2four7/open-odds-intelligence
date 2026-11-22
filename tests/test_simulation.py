@@ -523,3 +523,124 @@ def test_calibration_only_model_is_not_mislabeled_as_empirical_training_fit():
     assert result["margin_market"]["model_source"] == "broad_league_prior"
     assert result["margin_market"]["probability_temperature"] == 1.2
     assert result["total_market"]["probability_temperature"] == 1.1
+
+
+def _contest_event(sport_key="tennis_atp"):
+    return {
+        "id": "contest-1",
+        "sport_key": sport_key,
+        "commence_time": "2099-11-20T00:00:00Z",
+        "home_team": "Player A" if sport_key.startswith("tennis_") else "Fighter A",
+        "away_team": "Player B" if sport_key.startswith("tennis_") else "Fighter B",
+        "bookmakers": [
+            {"key": "book-a", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Player A" if sport_key.startswith("tennis_") else "Fighter A", "price": -150},
+                {"name": "Player B" if sport_key.startswith("tennis_") else "Fighter B", "price": 130},
+            ]}]},
+            {"key": "book-b", "markets": [{"key": "h2h", "outcomes": [
+                {"name": "Player B" if sport_key.startswith("tennis_") else "Fighter B", "price": 125},
+                {"name": "Player A" if sport_key.startswith("tennis_") else "Fighter A", "price": -145},
+            ]}]},
+        ],
+    }
+
+
+@pytest.mark.parametrize("sport_key", ["tennis_atp", "tennis_wta", "mma_mixed_martial_arts"])
+def test_outcome_only_sports_simulate_from_complete_h2h_without_spread_or_total(sport_key):
+    from app.simulation import market_readiness
+
+    event = _contest_event(sport_key)
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is True
+    assert readiness["simulation_mode"] == "moneyline_outcome_only"
+    assert readiness["has_h2h"] is True
+    assert readiness["has_spread"] is False
+    assert readiness["has_total"] is False
+    result = run_game_simulation(event, seed=42)
+    assert result["trials"] == 10_000
+    assert result["simulation_type"] == "moneyline_outcome_only"
+    assert result["data_quality"]["moneyline_books"] == 2
+    assert result["win_probabilities"]["home"] + result["win_probabilities"]["away"] == 100
+    assert result["win_probabilities"]["tie"] == 0
+    assert "not an independent prediction" in result["methodology"]
+    assert "projected_score" not in result
+
+
+def test_outcome_only_simulation_requires_both_valid_moneyline_sides():
+    from app.simulation import market_readiness
+
+    event = _contest_event("tennis_atp")
+    event["bookmakers"][0]["markets"][0]["outcomes"].pop()
+    event["bookmakers"][1]["markets"][0]["outcomes"][1]["price"] = 0
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is False
+    assert readiness["has_h2h"] is False
+    assert "moneyline" in readiness["reason"]
+
+
+def test_outcome_only_simulation_seed_is_reproducible():
+    event = _contest_event("mma_mixed_martial_arts")
+    first = run_game_simulation(event, seed=1234)
+    second = run_game_simulation(event, seed=1234)
+    assert first["win_probabilities"] == second["win_probabilities"]
+    assert first["market_moneyline"] == second["market_moneyline"]
+
+
+def test_tennis_and_mma_do_not_require_spread_or_total_quotes():
+    from app.simulation import _family
+
+    assert _family("tennis_atp") == "tennis"
+    assert _family("tennis_wta") == "tennis"
+    assert _family("mma_mixed_martial_arts") == "mma"
+
+
+def test_three_way_moneyline_fallback_includes_draw_probability_for_soccer():
+    from app.simulation import market_readiness
+
+    event = _contest_event("soccer_epl")
+    event["home_team"], event["away_team"] = "Home", "Away"
+    event["bookmakers"] = [{
+        "key": "book-3way",
+        "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": 110},
+            {"name": "Draw", "price": 220},
+            {"name": "Away", "price": 250},
+        ]}],
+    }]
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is True
+    assert readiness["simulation_mode"] == "moneyline_outcome_only"
+    result = run_game_simulation(event, seed=2026)
+    assert result["market_moneyline"]["outcome_count"] == 3
+    assert result["market_moneyline"]["draw_probability"] > 0
+    assert result["win_probabilities"]["tie"] > 0
+    assert sum(result["win_probabilities"].values()) == 100
+
+
+def test_score_based_league_falls_back_to_h2h_when_spread_or_total_is_missing():
+    from app.simulation import market_readiness
+
+    event = sample_event()
+    event["bookmakers"] = [{
+        "key": "book-a",
+        "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": -130}, {"name": "Away", "price": 110},
+        ]}],
+    }]
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is True
+    assert readiness["simulation_mode"] == "moneyline_outcome_only"
+    result = run_game_simulation(event, seed=7)
+    assert result["simulation_type"] == "moneyline_outcome_only"
+    assert result["market_moneyline"]["book_count"] == 1
+
+
+def test_unmapped_two_participant_league_can_use_two_way_h2h_fallback():
+    from app.simulation import market_readiness
+
+    event = _contest_event("boxing")
+    event["home_team"], event["away_team"] = "Fighter A", "Fighter B"
+    readiness = market_readiness(event)
+    assert readiness["can_simulate"] is True
+    result = run_game_simulation(event, seed=9)
+    assert result["win_probabilities"]["tie"] == 0
