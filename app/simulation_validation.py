@@ -884,7 +884,8 @@ def run_historical_backtest(database, settlements: list[dict], seed_salt: str = 
     report["data_policy"] = (
         "Uses only the latest archived sportsbook snapshot strictly before each event's "
         "commence_time. No provider requests, current odds, post-start quotes, or synthetic "
-        "historical prices are used. Events without a valid archived spread and total are skipped."
+        "historical prices are used. Score-based events require archived spread/total; tennis/MMA "
+        "require an archived h2h market. Other events are skipped with an explicit reason."
     )
     return report
 
