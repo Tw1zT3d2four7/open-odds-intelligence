@@ -10,6 +10,7 @@ from . import config
 from .database import OddsDatabase
 from .providers.the_odds_api import TheOddsAPIProvider, ProviderError
 from .providers.therundown import TheRundownProvider
+from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
 from .markets import analyze_markets
 
 
@@ -95,6 +96,14 @@ class OddsService:
         self._last_error = None
         self._updated_at = None
         self._provider_usage = {}
+        self._provider_key_pools = {
+            "the_odds_api": ProviderKeyPool(
+                "the_odds_api", parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
+            ),
+            "therundown": ProviderKeyPool(
+                "therundown", parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
+            ),
+        }
         self._simulation_results_status = {
             "enabled": bool(config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY),
             "provider": config.ODDS_PROVIDER,
@@ -159,30 +168,75 @@ class OddsService:
         self._last_alert_sent = 0
         self._last_alert_error = None
 
-    def _current_provider_key_fingerprint(self):
-        if config.ODDS_PROVIDER == "therundown":
-            key = config.THERUNDOWN_API_KEY
-        elif config.ODDS_PROVIDER == "the_odds_api":
-            key = config.THE_ODDS_API_KEY
+    def _current_provider_key_fingerprint(self, provider_name=None):
+        provider_name = provider_name or config.ODDS_PROVIDER
+        if provider_name == "therundown":
+            keys = parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
+        elif provider_name == "the_odds_api":
+            keys = parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
         else:
-            key = ""
-        return hashlib.sha256(key.encode("utf-8")).hexdigest() if key else ""
+            keys = []
+        material = "\\0".join(keys)
+        return hashlib.sha256(material.encode("utf-8")).hexdigest() if material else ""
 
-    def _remember_provider_usage(self, usage):
+    def _remember_provider_usage(self, usage, provider_name=None, key_fingerprint=None):
         if not usage:
             return
+        provider_name = provider_name or config.ODDS_PROVIDER
         self._provider_usage = dict(usage)
         self.db.set_state("provider_usage", json.dumps(self._provider_usage))
-        self.db.set_state("provider_usage_provider", config.ODDS_PROVIDER)
-        self.db.set_state("provider_usage_key_fingerprint", self._current_provider_key_fingerprint())
+        self.db.set_state("provider_usage_provider", provider_name)
+        self.db.set_state(
+            "provider_usage_key_fingerprint",
+            key_fingerprint or self._current_provider_key_fingerprint(provider_name),
+        )
+
+    def _new_provider(self, provider_name, api_key):
+        if provider_name == "therundown":
+            return TheRundownProvider(
+                api_key, utc_offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES,
+            )
+        if provider_name == "the_odds_api":
+            return TheOddsAPIProvider(
+                api_key, config.ODDS_REGIONS, config.ODDS_MARKETS,
+                config.ODDS_FORMAT, config.ODDS_BOOKMAKERS,
+            )
+        raise ProviderError(f"Unsupported odds provider: {provider_name}")
+
+    def _fetch_provider_odds_with_rotation(self, provider_name, sport):
+        pool = self._provider_key_pools.get(provider_name)
+        if pool is None or not pool.configured:
+            raise ProviderError(f"No API keys configured for provider: {provider_name}")
+        last_error = None
+        for _ in range(pool.status()["configured_keys"]):
+            try:
+                lease = pool.acquire()
+            except NoAvailableKeys as exc:
+                raise ProviderError(str(exc)) from exc
+            provider = self._new_provider(provider_name, lease.key)
+            try:
+                events = self._fetch_odds_with_retry(provider, sport)
+            except ProviderError as exc:
+                disposition = pool.mark_failure(
+                    lease,
+                    status_code=getattr(exc, "status_code", None),
+                    message=str(exc),
+                    retry_after_seconds=getattr(exc, "retry_after", None),
+                )
+                last_error = exc
+                if disposition in ("disabled", "cooldown"):
+                    continue
+                raise
+            pool.mark_success(lease)
+            return events, provider, lease
+        if last_error is not None:
+            raise last_error
+        raise ProviderError(f"No usable API keys remain for provider: {provider_name}")
 
     @property
     def configured(self):
-        if config.ODDS_PROVIDER == "the_odds_api":
-            return bool(config.THE_ODDS_API_KEY)
-        if config.ODDS_PROVIDER == "therundown":
-            return bool(config.THERUNDOWN_API_KEY)
-        return False
+        pool = self._provider_key_pools.get(config.ODDS_PROVIDER)
+        return bool(pool and pool.configured)
 
     def status(self):
         stored = self.db.snapshot_status()
@@ -231,6 +285,9 @@ class OddsService:
                 "sport_freshness": sport_freshness,
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
                 "provider_usage": self._provider_usage,
+                "provider_keys": {
+                    name: pool.status() for name, pool in self._provider_key_pools.items()
+                },
                 "simulation_results": self._simulation_results_status,
                 "player_props": self._player_props_status,
                 "refresh_interval_seconds": config.RUNDOWN_REFRESH_INTERVAL_SECONDS if config.ODDS_PROVIDER == "therundown" else config.ODDS_REFRESH_INTERVAL_SECONDS,
@@ -307,24 +364,20 @@ class OddsService:
         if not self.configured:
             self._last_error = "No live odds provider configured. Configure a supported provider and API key."
             return {"ok": False, "error": self._last_error, "events": 0}
-        provider = None
-        if config.ODDS_PROVIDER == "therundown":
-            provider = TheRundownProvider(
-                config.THERUNDOWN_API_KEY,
-                utc_offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES,
-            )
-        elif config.ODDS_PROVIDER == "the_odds_api":
-            provider = TheOddsAPIProvider(config.THE_ODDS_API_KEY, config.ODDS_REGIONS,
-                                          config.ODDS_MARKETS, config.ODDS_FORMAT,
-                                          config.ODDS_BOOKMAKERS)
-        else:
+        if config.ODDS_PROVIDER not in self._provider_key_pools:
             self._last_error = f"Unsupported odds provider: {config.ODDS_PROVIDER}"
             return {"ok": False, "error": self._last_error, "events": 0}
         count = 0
+        provider = None
+        lease = None
         try:
             for key in ([sport] if sport else config.ODDS_SPORTS):
-                events = self._fetch_odds_with_retry(provider, key)
-                self._remember_provider_usage(provider.usage)
+                events, provider, lease = self._fetch_provider_odds_with_rotation(
+                    config.ODDS_PROVIDER, key
+                )
+                self._remember_provider_usage(
+                    provider.usage, config.ODDS_PROVIDER, lease.fingerprint
+                )
                 if config.PLAYER_PROPS_ENABLED and key == config.PLAYER_PROPS_SPORT:
                     if config.ODDS_PROVIDER == "the_odds_api":
                         now = datetime.now(timezone.utc)
@@ -382,7 +435,11 @@ class OddsService:
                     "alerts_qualified": alert_status["last_alert_qualified"],
                     "alert_error": alert_status["last_alert_error"]}
         except ProviderError as exc:
-            self._remember_provider_usage(getattr(provider, "usage", {}))
+            self._remember_provider_usage(
+                getattr(provider, "usage", {}),
+                config.ODDS_PROVIDER,
+                getattr(lease, "fingerprint", None),
+            )
             self._last_error = str(exc)
             return {"ok": False, "error": self._last_error, "events": count}
 
