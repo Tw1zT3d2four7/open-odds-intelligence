@@ -70,9 +70,24 @@ The free tier requires a payment card at signup according to the provider's
 setup guide, but the provider states the free tier is not charged unless the
 account owner upgrades. Do not upgrade for this integration.
 
+## Oddize free Developer tier
+
+Oddize offers a no-card Developer API tier with 1,500 credits per month, 30
+requests per minute, one API key, 20 sportsbooks, and six leagues (MLB, NBA,
+NFL, NCAAB, NCAAF and NHL). Current odds cost one credit per league request;
+player-prop calls cost two credits per prop type. The adapter checks
+`/account/usage` before each metered request, records the reset time and
+remaining credits, and rotates through the league's prop types one per manual
+refresh by default. It is manual-refresh-only so a four-hour primary-provider
+schedule cannot burn through its monthly credits. The free Developer plan
+requires only an email address and no credit card. The adapter currently
+imports main markets and rotating player/team props; separate alternate
+spread/total endpoint ingestion remains follow-up work.
+
 ## Scope
 
-The current foundation supports simultaneous TheRundown, The Odds API, and
-SportsGameOdds ingestion, with strict event identity matching, quote-level
-source attribution, and partial-refresh reporting. Additional adapters and
-more granular provider-specific scheduling remain follow-up work.
+The current foundation supports simultaneous TheRundown, The Odds API,
+SportsGameOdds, and Oddize ingestion, with strict event identity matching,
+team-abbreviation reconciliation, quote-level source attribution, and
+partial-refresh reporting. Additional adapters and more granular
+provider-specific scheduling remain follow-up work.
