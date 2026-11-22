@@ -53,10 +53,10 @@ def fit_team_strength_models(
         a["display_name"] = away_name
         h["games"] += 1
         a["games"] += 1
-        h["offense"].append(hs)
-        h["defense"].append(aws)
-        a["offense"].append(aws)
-        a["defense"].append(hs)
+        h["offense_residuals"].append(hs - home_base)
+        h["defense_residuals"].append(away_base - aws)
+        a["offense_residuals"].append(aws - away_base)
+        a["defense_residuals"].append(home_base - hs)
 
     output, insufficient = {}, {}
     for sport, bucket in sorted(leagues.items()):
@@ -71,17 +71,9 @@ def fit_team_strength_models(
             if games < min_team_games:
                 continue
             # Each rating is measured against the appropriate league scoring baseline.
-            raw_offense = sum(
-                score - (home_base if index < 0 else away_base)
-                for index, score in enumerate(stats["offense"])
-            ) / games
-            # Home/away role mix is normalized using the team's observed venue mix.
-            # For each game, the offense list is in game order; retain role-aware
-            # residuals from the explicit fields assembled below when available.
             off_residuals = stats.get("offense_residuals", [])
             def_residuals = stats.get("defense_residuals", [])
-            if off_residuals:
-                raw_offense = sum(off_residuals) / len(off_residuals)
+            raw_offense = sum(off_residuals) / len(off_residuals) if off_residuals else 0.0
             raw_defense = sum(def_residuals) / len(def_residuals) if def_residuals else 0.0
             shrink = games / (games + float(shrinkage_games))
             teams[key] = {
