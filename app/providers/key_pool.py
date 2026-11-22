@@ -137,6 +137,17 @@ class ProviderKeyPool:
         with self._lock:
             self._usage[lease.index] = safe
 
+    def restore_usage(self, key_id: str, usage: dict | None) -> None:
+        """Restore last known non-secret quota counters for a configured key."""
+        with self._lock:
+            for index, key in enumerate(self._keys):
+                if self._fingerprint(key) == key_id:
+                    lease = KeyLease(index, key, key_id, self._groups[index])
+                    break
+            else:
+                return
+        self.record_usage(lease, usage)
+
     def mark_success(self, lease: KeyLease) -> None:
         with self._lock:
             self._blocked_until.pop(lease.index, None)
