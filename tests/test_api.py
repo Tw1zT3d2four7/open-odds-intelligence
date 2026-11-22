@@ -492,10 +492,15 @@ def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key
 
 @pytest.mark.parametrize("sport_key,total_line,spread_line", [
     ("basketball_nba", 220.5, 3.5),
+    ("basketball_ncaab", 145.5, 4.5),
+    ("basketball_wnba", 160.5, 3.5),
     ("americanfootball_nfl", 44.5, 3.0),
+    ("americanfootball_ncaaf", 52.5, 6.5),
     ("baseball_mlb", 8.5, 1.5),
     ("icehockey_nhl", 5.5, 1.5),
     ("soccer_epl", 2.5, 0.5),
+    ("soccer_mls", 2.5, 0.5),
+    ("soccer_usa_mls", 2.5, 0.5),
 ])
 def test_score_based_simulator_runs_through_api_for_each_supported_family(
     monkeypatch, sport_key, total_line, spread_line
