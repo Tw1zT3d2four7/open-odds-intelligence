@@ -379,7 +379,7 @@ class MarketLimitsMonitor:
         now = datetime.now(timezone.utc)
         observed_at = now.isoformat()
         # Persist the last attempt so container restarts cannot reset the
-        # free-tier four-hour polling guard. BEGIN IMMEDIATE also coordinates
+        # free-tier daily-default polling guard. BEGIN IMMEDIATE also coordinates
         # multiple application workers sharing the same SQLite database.
         with self._connect() as state_db:
             state_db.execute("BEGIN IMMEDIATE")
