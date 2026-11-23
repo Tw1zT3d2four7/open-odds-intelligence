@@ -52,6 +52,8 @@ class OddsDatabase:
                 CREATE INDEX IF NOT EXISTS idx_quotes_lookup
                     ON quotes(event_id, market_key, outcome_name, point, bookmaker_key);
                 CREATE INDEX IF NOT EXISTS idx_quotes_snapshot ON quotes(snapshot_id);
+                CREATE INDEX IF NOT EXISTS idx_quotes_snapshot_event_book_market
+                    ON quotes(snapshot_id, event_id, bookmaker_key, market_key, outcome_name);
                 CREATE TABLE IF NOT EXISTS sent_alerts (
                     fingerprint TEXT PRIMARY KEY, sent_at TEXT NOT NULL,
                     alert_type TEXT NOT NULL, summary TEXT NOT NULL
@@ -550,6 +552,12 @@ class OddsDatabase:
         return snapshot_id
 
     def latest_events(self, sport=None):
+        """Load the latest stored event snapshots with linear-time grouping.
+
+        Keep lookup maps while assembling each event. Rebuilding bookmaker and
+        market dictionaries for every quote made this hot public read quadratic
+        for large multi-book snapshots.
+        """
         with self.connect() as db:
             if sport:
                 snapshots = db.execute(
@@ -561,25 +569,55 @@ class OddsDatabase:
                     ORDER BY s.sport""").fetchall()
             events = []
             for snap in snapshots:
-                rows = db.execute("SELECT * FROM quotes WHERE snapshot_id=? ORDER BY event_id,bookmaker_key,market_key,outcome_name",
-                                  (snap["id"],)).fetchall()
+                rows = db.execute(
+                    """SELECT event_id,sport_title,commence_time,home_team,away_team,
+                              bookmaker_key,bookmaker_title,market_key,outcome_name,
+                              outcome_description,price,source_updated_at,source_provider,
+                              is_main,size_json,size_source_provider,point
+                       FROM quotes WHERE snapshot_id=?
+                       ORDER BY event_id,bookmaker_key,market_key,outcome_name""",
+                    (snap["id"],),
+                ).fetchall()
                 grouped = {}
+                bookmaker_maps = {}
+                market_maps = {}
                 for row in rows:
-                    event = grouped.setdefault(row["event_id"], {
-                        "id": row["event_id"], "sport_key": snap["sport"], "sport_title": row["sport_title"],
-                        "commence_time": row["commence_time"], "home_team": row["home_team"],
-                        "away_team": row["away_team"], "source": "stored",
-                        "retrieved_at": snap["fetched_at"], "bookmakers": []})
-                    books = {b["key"]: b for b in event["bookmakers"]}
+                    event_id = row["event_id"]
+                    event = grouped.get(event_id)
+                    if event is None:
+                        event = {
+                            "id": event_id, "sport_key": snap["sport"],
+                            "sport_title": row["sport_title"],
+                            "commence_time": row["commence_time"],
+                            "home_team": row["home_team"], "away_team": row["away_team"],
+                            "source": "stored", "retrieved_at": snap["fetched_at"],
+                            "bookmakers": [],
+                        }
+                        grouped[event_id] = event
+                        bookmaker_maps[event_id] = {}
+                        market_maps[event_id] = {}
+
+                    books = bookmaker_maps[event_id]
                     book = books.get(row["bookmaker_key"])
                     if book is None:
-                        book = {"key": row["bookmaker_key"], "title": row["bookmaker_title"], "markets": []}
+                        book = {
+                            "key": row["bookmaker_key"],
+                            "title": row["bookmaker_title"], "markets": [],
+                        }
+                        books[row["bookmaker_key"]] = book
                         event["bookmakers"].append(book)
-                    markets = {m["key"]: m for m in book["markets"]}
+
+                    book_id = (event_id, row["bookmaker_key"])
+                    markets = market_maps.get(book_id)
+                    if markets is None:
+                        markets = {}
+                        market_maps[book_id] = markets
                     market = markets.get(row["market_key"])
                     if market is None:
                         market = {"key": row["market_key"], "outcomes": []}
+                        markets[row["market_key"]] = market
                         book["markets"].append(market)
+
                     outcome = {"name": row["outcome_name"], "price": row["price"]}
                     if row["outcome_description"]:
                         outcome["description"] = row["outcome_description"]
