@@ -1,4 +1,4 @@
-from app.providers.merge import merge_provider_events
+from app.providers.merge import merge_provider_events, merge_provider_snapshot
 
 
 def _event(event_id, books, home="Home", away="Away", start="2026-11-23T20:00:00Z"):
@@ -144,3 +144,70 @@ def test_tennis_events_merge_when_providers_reverse_participant_order():
     books = {book["key"]: book for book in merged[0]["bookmakers"]}
     assert set(books) == {"book-one", "book-two"}
     assert books["book-two"]["markets"][0]["outcomes"][0]["name"] == "Player A"
+
+
+
+def test_incremental_refresh_preserves_other_provider_quotes_and_replaces_refreshed_quotes():
+    original_rundown = _event("rundown-id", [
+        _book("draftkings", [{"name": "Home", "price": -110}])
+    ])
+    original_oddize = _event("oddize-id", [
+        _book("bet365", [{"name": "Home", "price": -105}])
+    ])
+    existing = merge_provider_events([
+        ("therundown", [original_rundown]),
+        ("oddize", [original_oddize]),
+    ])
+
+    refreshed_rundown = _event("rundown-id", [
+        _book("draftkings", [{"name": "Home", "price": -120}]),
+        _book("fanduel", [{"name": "Home", "price": -115}]),
+    ])
+    merged, providers = merge_provider_snapshot(
+        existing,
+        ["therundown"],
+        [("therundown", [refreshed_rundown])],
+    )
+
+    assert providers == ["therundown", "oddize"]
+    assert len(merged) == 1
+    books = {book["key"]: book for book in merged[0]["bookmakers"]}
+    assert set(books) == {"draftkings", "fanduel", "bet365"}
+    prices = {
+        book_key: book["markets"][0]["outcomes"][0]["price"]
+        for book_key, book in books.items()
+    }
+    assert prices == {"draftkings": -120, "fanduel": -115, "bet365": -105}
+    sources = {
+        book_key: book["markets"][0]["outcomes"][0]["source_provider"]
+        for book_key, book in books.items()
+    }
+    assert sources == {
+        "draftkings": "therundown",
+        "fanduel": "therundown",
+        "bet365": "oddize",
+    }
+
+
+def test_successful_empty_provider_refresh_removes_only_that_providers_old_quotes():
+    rundown = _event("rundown-id", [
+        _book("draftkings", [{"name": "Home", "price": -110}])
+    ])
+    oddize = _event("oddize-id", [
+        _book("bet365", [{"name": "Home", "price": -105}])
+    ])
+    existing = merge_provider_events([
+        ("therundown", [rundown]),
+        ("oddize", [oddize]),
+    ])
+
+    merged, providers = merge_provider_snapshot(
+        existing,
+        ["therundown"],
+        [("therundown", [])],
+    )
+
+    assert providers == ["oddize", "therundown"]
+    assert len(merged) == 1
+    assert [book["key"] for book in merged[0]["bookmakers"]] == ["bet365"]
+    assert merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["source_provider"] == "oddize"
