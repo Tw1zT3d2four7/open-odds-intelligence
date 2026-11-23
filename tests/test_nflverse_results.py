@@ -40,10 +40,11 @@ class NflverseResultsTests(unittest.TestCase):
             "1999_01_WAS_DAL,1999,REG,1999-09-12,DAL,41,WAS,35,,, ,\n"
         )
         rows = parse_nflverse_games(content, min_season=1999, through_season=1999)
-        self.assertEqual(rows[0]["home_team"], "Dallas Cowboys")
-        self.assertEqual(rows[0]["away_team"], "Washington Commanders")
-        self.assertEqual(rows[1]["away_team"], "Las Vegas Raiders")
-        self.assertEqual(rows[2]["home_team"], "Los Angeles Chargers")
+        by_id = {row["event_id"]: row for row in rows}
+        self.assertEqual(by_id["1999_01_WAS_DAL"]["home_team"], "Dallas Cowboys")
+        self.assertEqual(by_id["1999_01_WAS_DAL"]["away_team"], "Washington Commanders")
+        self.assertEqual(by_id["1999_01_OAK_GB"]["away_team"], "Las Vegas Raiders")
+        self.assertEqual(by_id["1999_01_SD_CIN"]["home_team"], "Los Angeles Chargers")
 
     def test_rejects_unknown_franchise_instead_of_silently_dropping_it(self):
         content = HEADER + (
