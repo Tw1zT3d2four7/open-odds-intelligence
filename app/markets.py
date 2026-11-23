@@ -224,33 +224,27 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, i
                 quotes_by_identity[quote["identity"]].append(quote)
 
             for identity, identity_quotes in quotes_by_identity.items():
-                if len(identity_quotes) <= min_consensus_books:
+                peer_count = len(identity_quotes) - 1
+                if peer_count < min_consensus_books:
                     continue
+
+                # Sort once per exact selection. The prior implementation rebuilt
+                # a peer list and peer-book set for every quote (quadratic work).
+                ordered = sorted(
+                    identity_quotes,
+                    key=lambda item: item["probability"],
+                )
+                ordered_probabilities = [item["probability"] for item in ordered]
+                index_by_book = {
+                    item["book"].get("key"): index
+                    for index, item in enumerate(ordered)
+                }
+                lower_index = (peer_count - 1) // 2
+                upper_index = peer_count // 2
+
                 for quote in identity_quotes:
                     own_book = quote["book"].get("key")
-                    peers = [
-                        peer["probability"] for peer in identity_quotes
-                        if peer["book"].get("key") != own_book
-                    ]
-                    peer_books = {
-                        peer["book"].get("key") for peer in identity_quotes
-                        if peer["book"].get("key") != own_book
-                    }
-                    if len(peer_books) < min_consensus_books:
-                        continue
-                    # Compute the leave-one-book-out median in O(log n)
-                    # per quote rather than rebuilding/scanning peer arrays.
-                    # This matters when many sportsbooks quote the same outcome.
-                    ordered_probabilities = sorted(
-                        peer["probability"] for peer in identity_quotes
-                    )
-                    excluded_index = next(
-                        index for index, peer in enumerate(identity_quotes)
-                        if peer["book"].get("key") == own_book
-                    )
-                    peer_count = len(ordered_probabilities) - 1
-                    lower_index = (peer_count - 1) // 2
-                    upper_index = peer_count // 2
+                    excluded_index = index_by_book[own_book]
 
                     def remaining_value(index):
                         return ordered_probabilities[
