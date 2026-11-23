@@ -101,7 +101,7 @@ def _quote_rank(outcome, provider_rank):
     return (updated if updated is not None else float("-inf"), -provider_rank)
 
 
-def merge_provider_events(provider_results):
+def merge_provider_events(provider_results, preferred_provider_names=None):
     """Merge normalized event lists in explicit source-priority order.
 
     Event identity is strict: sport, ordered home/away identities, and kickoff
@@ -114,6 +114,9 @@ def merge_provider_events(provider_results):
     by_id = {}
     by_identity = {}
     provider_rank = {name: index for index, (name, _) in enumerate(provider_results)}
+    # A just-refreshed provider wins timestamp ties against retained snapshot data.
+    for name in preferred_provider_names or ():
+        provider_rank[name] = -1
 
     for provider_name, events in provider_results:
         for raw_event in events or []:
@@ -214,3 +217,66 @@ def merge_provider_events(provider_results):
                                     existing[metadata] = candidate[metadata]
 
     return merged
+
+
+
+def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provider_results):
+    """Replace refreshed providers while retaining other providers' latest quotes.
+
+    The database stores one current snapshot per sport. A provider-specific
+    refresh must therefore carry forward quotes from providers not refreshed
+    in this run, while removing the refreshed provider's old quotes before
+    adding its new response (including an empty successful response).
+    """
+    refreshed = set(refreshed_provider_names or ())
+    retained = {}
+
+    for raw_event in existing_events or []:
+        if not isinstance(raw_event, dict):
+            continue
+        by_provider = {}
+        for raw_book in raw_event.get("bookmakers") or []:
+            if not isinstance(raw_book, dict):
+                continue
+            for raw_market in raw_book.get("markets") or []:
+                if not isinstance(raw_market, dict):
+                    continue
+                for raw_outcome in raw_market.get("outcomes") or []:
+                    if not isinstance(raw_outcome, dict):
+                        continue
+                    provider = str(raw_outcome.get("source_provider") or "legacy")
+                    if provider in refreshed:
+                        continue
+                    book = by_provider.setdefault(provider, {}).setdefault(
+                        str(raw_book.get("key") or ""),
+                        {"key": str(raw_book.get("key") or ""),
+                         "title": raw_book.get("title") or raw_book.get("key") or "",
+                         "markets": {}},
+                    )
+                    market = book["markets"].setdefault(
+                        str(raw_market.get("key") or ""),
+                        {"key": str(raw_market.get("key") or ""), "outcomes": []},
+                    )
+                    market["outcomes"].append(dict(raw_outcome))
+
+        for provider, books in by_provider.items():
+            event = {key: value for key, value in raw_event.items()
+                     if key not in ("bookmakers", "sources", "source")}
+            event["bookmakers"] = []
+            for book in books.values():
+                book_copy = dict(book)
+                book_copy["markets"] = list(book["markets"].values())
+                event["bookmakers"].append(book_copy)
+            retained.setdefault(provider, []).append(event)
+
+    retained_results = [(name, events) for name, events in retained.items()]
+    new_results = list(new_provider_results or [])
+    merged = merge_provider_events(
+        retained_results + new_results,
+        preferred_provider_names=refreshed,
+    )
+    provider_names = list(dict.fromkeys(
+        [name for name, _ in retained_results] +
+        [name for name, _ in new_results]
+    ))
+    return merged, provider_names
