@@ -441,13 +441,13 @@ async function runSelectedSimulation(){
     $("simMargin").textContent=(data.margin_market.consensus_home_margin>0?"+":"")+data.margin_market.consensus_home_margin.toFixed(1);
     $("simDistribution").textContent=data.data_quality.distribution.toUpperCase();
     const empiricallyFitted=data.data_quality.model_source==="independent_historical_team_model";
-    $("simModelSource").textContent=empiricallyFitted?"INDEPENDENT TEAM MODEL":"LEGACY MARKET MODEL";
+    $("simModelSource").textContent=empiricallyFitted?"INDEPENDENT HISTORICAL MODEL":"MARKET-BASED SIMULATION";
     const trainingCount=Number(data.data_quality.training_sample_size||0);
     const temperature=data.margin_market.probability_temperature;
     const totalTemperature=data.total_market.probability_temperature;
     const spreadTemperature=data.spread_market.probability_temperature;
     $("simModelTraining").textContent=(empiricallyFitted?trainingCount+" training games":"No fitted training data")+((temperature!==null&&temperature!==undefined)||(totalTemperature!==null&&totalTemperature!==undefined)||(spreadTemperature!==null&&spreadTemperature!==undefined)?" · probabilities calibrated":"");
-    $("simDistributionDetail").textContent=empiricallyFitted?"Historical team offense/defense ratings; family-level variance prior":"Legacy market-informed scoring assumptions";
+    $("simDistributionDetail").textContent=empiricallyFitted?"Historical team offense/defense ratings; family-level variance prior":"Sportsbook consensus lines anchor expected scoring; league-level volatility priors are used. This is not an independent prediction.";
     $("simResolution").textContent=Number(data.game_resolution.games_with_overtime_or_extra_innings||0).toLocaleString()+" games with OT / extras";
     const overtimeAdjustment=Number(data.game_resolution.expected_overtime_total_adjustment||0);
     const regulationAnchor=Number(data.game_resolution.regulation_total_anchor??data.total_market.consensus_line);
