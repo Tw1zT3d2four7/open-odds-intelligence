@@ -127,7 +127,7 @@ def test_dashboard_renders_synthetic_minus_one_builder_inputs_and_outputs():
 
 def test_market_board_endpoint_applies_sport_filter(monkeypatch):
     received = {}
-    def fake_events(sport=None):
+    def fake_events(sport=None, **kwargs):
         received["sport"] = sport
         return []
     monkeypatch.setattr(main.service, "events", fake_events)
@@ -140,7 +140,7 @@ def test_market_board_endpoint_applies_sport_filter(monkeypatch):
 
 def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
     received = {}
-    def fake_events(sport=None):
+    def fake_events(sport=None, **kwargs):
         received["sport"] = sport
         return [{"id": "event"}]
     def fake_analysis(events, min_ev, min_consensus_books):
@@ -160,7 +160,7 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
 
 def test_arbitrage_endpoint_requests_arbitrage_analysis(monkeypatch):
     received = {}
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [{"id": sport}])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [{"id": sport}])
     def fake_analysis(events, min_ev):
         received.update(events=events, min_ev=min_ev)
         return {"opportunities": [], "arbitrage": [{"event_id": "event", "arb_percent": 1.2}]}
@@ -234,7 +234,7 @@ def test_player_props_endpoint_preserves_player_identity(monkeypatch):
             }],
         }],
     }
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [event])
     monkeypatch.setattr(main.service, "status", lambda: {"player_props": {"enabled": True}})
     with TestClient(main.app) as client:
         response = client.get("/api/player-props?sport=basketball_nba")
@@ -252,7 +252,7 @@ def test_simulation_game_list_is_scoped_to_selected_configured_league(monkeypatc
         "bookmakers": [{"markets": [{"key": "spreads"}, {"key": "totals"}]}],
     }
     received = {}
-    def fake_events(sport=None):
+    def fake_events(sport=None, **kwargs):
         received["sport"] = sport
         return [event]
     monkeypatch.setattr(main.service, "events", fake_events)
@@ -281,7 +281,7 @@ def test_simulation_game_list_disables_games_when_league_snapshot_is_stale(monke
             ]},
         ],
     }
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [event])
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": "basketball_nba", "freshness": "stale", "age_seconds": 21601}]
     })
@@ -309,7 +309,7 @@ def test_simulation_game_list_marks_unavailable_snapshot_not_ready(monkeypatch):
                 {"name": "Over", "point": 220.5}, {"name": "Under", "point": 220.5}]},
         ]}],
     }
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [event])
     monkeypatch.setattr(main.service, "status", lambda: {"sport_freshness": []})
     with TestClient(main.app) as client:
         response = client.get("/api/simulation/games?sport=basketball_nba")
@@ -334,7 +334,7 @@ def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
         ],
     }
     other = dict(selected, id="not-selected")
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [selected, other])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [selected, other])
     monkeypatch.setattr(main, "load_fitted_models", lambda path: _api_independent_models("basketball_nba"))
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": "basketball_nba", "freshness": "current", "age_seconds": 60}]
@@ -357,7 +357,7 @@ def test_simulation_endpoint_blocks_stale_league_snapshot(monkeypatch):
         "home_team": "Home", "away_team": "Away",
         "bookmakers": [],
     }
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [event])
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": "basketball_nba", "freshness": "stale", "age_seconds": 21601}]
     })
@@ -372,7 +372,7 @@ def test_simulation_endpoint_blocks_when_league_snapshot_is_unavailable(monkeypa
     monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
     event = {"id": "chosen-game", "sport_key": "basketball_nba",
              "commence_time": "2099-11-20T00:00:00Z"}
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [event])
     monkeypatch.setattr(main.service, "status", lambda: {"sport_freshness": []})
     with TestClient(main.app) as client:
         response = client.post("/api/simulation/run?sport=basketball_nba&event_id=chosen-game")
@@ -424,7 +424,7 @@ def test_authentication_fails_closed_when_only_one_credential_is_set(monkeypatch
 def test_manual_refresh_rejects_unconfigured_sport_without_provider_call(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
     called = []
-    monkeypatch.setattr(main.service, "refresh", lambda sport=None: called.append(sport))
+    monkeypatch.setattr(main.service, "refresh", lambda sport=None, **kwargs: called.append(sport))
     with TestClient(main.app) as client:
         response = client.post("/api/refresh?sport=americanfootball_nfl")
     assert response.status_code == 400
@@ -434,7 +434,7 @@ def test_manual_refresh_rejects_unconfigured_sport_without_provider_call(monkeyp
 
 def test_manual_refresh_without_sport_still_refreshes_all_configured_leagues(monkeypatch):
     called = []
-    monkeypatch.setattr(main.service, "refresh", lambda sport=None: called.append(sport) or {"ok": True})
+    monkeypatch.setattr(main.service, "refresh", lambda sport=None, **kwargs: called.append(sport) or {"ok": True})
     with TestClient(main.app) as client:
         response = client.post("/api/refresh")
     assert response.status_code == 200
@@ -448,7 +448,7 @@ def test_simulation_endpoint_blocks_started_game_even_with_current_snapshot(monk
         "commence_time": "2020-01-01T00:00:00Z",
         "home_team": "Home", "away_team": "Away",
     }
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [event])
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": "basketball_nba", "freshness": "current", "age_seconds": 30}]
     })
@@ -493,7 +493,7 @@ def test_moneyline_only_sports_run_through_simulation_api(monkeypatch, sport_key
             ]}],
         }],
     }
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [event])
     monkeypatch.setattr(main, "load_fitted_models", lambda path: _api_independent_models(sport_key, home, away))
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": sport_key, "freshness": "current", "age_seconds": 30}]
@@ -552,7 +552,7 @@ def test_score_based_simulator_runs_through_api_for_each_supported_family(
             ],
         }],
     }
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [event])
     monkeypatch.setattr(main, "load_fitted_models", lambda path: _api_independent_models(sport_key))
     monkeypatch.setattr(main.service, "status", lambda: {
         "sport_freshness": [{"sport": sport_key, "freshness": "current", "age_seconds": 30}]
@@ -595,7 +595,7 @@ def test_all_bookmaker_quotes_endpoint_returns_every_book_and_respects_sport_fil
             }]},
         ],
     }]
-    def fake_events(sport=None):
+    def fake_events(sport=None, **kwargs):
         received["sport"] = sport
         return events
     monkeypatch.setattr(main.service, "events", fake_events)
