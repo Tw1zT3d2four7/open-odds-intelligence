@@ -1,5 +1,7 @@
 # Open Odds Intelligence
 
+![Odds Intelligence logo](web/assets/odds-intelligence.svg)
+
 Open-source, self-hosted sports odds comparison and market-monitoring platform. Independent of OddsLogic and sportsbooks.
 
 ## Current working features
@@ -48,7 +50,15 @@ The EV calculation uses the median of other sportsbooks' no-vig probabilities fo
 
 ## Access control and deployment security
 
-The dashboard and API support optional HTTP Basic authentication. Set both `AUTH_USERNAME` and `AUTH_PASSWORD` in the private server-side `.env` file to protect the dashboard and all API routes. Leave both blank only for a trusted private development network. If exactly one is configured, all application routes other than `/api/health` fail closed with HTTP 503 rather than silently running without authentication. `/api/health` remains unauthenticated even during a credential-configuration error so Docker and orchestrators can report container health; restrict that endpoint at the network or reverse-proxy layer if its operational details should not be public. Usernames must not contain a colon (Basic authentication reserves it as the username/password separator). Basic authentication must be used over HTTPS when traffic crosses an untrusted network; place the application behind a TLS-terminating reverse proxy before enabling remote access. Do not put credentials in the repository, screenshots, issue reports, or chat.
+Subscriber-facing dashboard access can optionally be protected with HTTP Basic authentication by setting both `AUTH_USERNAME` and `AUTH_PASSWORD` in the private server-side `.env`. Administrator access is separate and always fails closed unless both `ADMIN_USERNAME` and `ADMIN_PASSWORD` are configured. The `/admin` page and `/api/admin/*` endpoints require those administrator credentials; subscriber-wide `AUTH_*` credentials are never accepted as an admin login. Usernames must not contain a colon. Use HTTPS through a TLS-terminating reverse proxy whenever credentials cross an untrusted network. Do not put credentials in the repository, screenshots, issue reports, or chat.
+
+### Administrator control center and quota protection
+
+Open `/admin` after configuring the separate admin credentials. Provider connections, API-key fingerprints, quota counters, reset times, provider errors, refresh schedules, provider coverage and request controls are displayed only in this private area. Raw API keys are never returned to the browser; configure or rotate them in the server-side `.env` file and recreate the container.
+
+The public dashboard is read-only with respect to provider requests. Manual odds refresh, posted-limit refresh and simulation-triggered odds refresh require administrator authentication. Manual odds refreshes must target one league and selected enabled providers. An atomic SQLite guard defaults to a 15-minute cooldown and three manual refresh actions per UTC day; administrators can adjust the cooldown (5 minutes to 24 hours), daily cap (1 to 12), and disable manual refreshes entirely. Administrators can also pause automatic provider polling without changing provider environment settings. These controls are additional safeguards: provider-specific quota accounting, account-group protection, rate-limit handling and free-tier pacing remain in force.
+
+The public `/api/health` endpoint exposes only application status and odds freshness for container health checks. Provider names, key fingerprints, quota usage and internal diagnostics are excluded from public health and subscriber odds responses.
 
 ## Not implemented yet
 
