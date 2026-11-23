@@ -1075,3 +1075,50 @@ def test_clv_candidate_ingestion_skips_malformed_metadata_and_nonfinite_values(t
     assert db.record_clv_candidates(None, now.isoformat()) == 0
     assert db.record_clv_candidates([base], "invalid-observed-time") == 0
     assert db.clv_report("basketball_nba")["summary"]["total"] == 2
+
+
+def test_latest_events_paginates_before_loading_quote_details(tmp_path):
+    db = OddsDatabase(tmp_path / "paged.sqlite3")
+    nba = []
+    for index in range(4):
+        event = fixture()[0]
+        event["id"] = f"nba-{index}"
+        event["commence_time"] = f"2026-11-18T0{index}:00:00Z"
+        nba.append(event)
+    ncaaf = []
+    for index in range(3):
+        event = fixture()[0]
+        event["id"] = f"ncaaf-{index}"
+        event["commence_time"] = f"2026-11-18T1{index}:00:00Z"
+        ncaaf.append(event)
+    db.save_snapshot("basketball_nba", nba, "test", "2026-11-17T12:00:00Z")
+    db.save_snapshot("americanfootball_ncaaf", ncaaf, "test", "2026-11-17T12:00:00Z")
+
+    first = db.latest_events(limit=3, offset=0)
+    second = db.latest_events(limit=3, offset=3)
+    all_ids = [event["id"] for event in first + second]
+
+    assert len(first) == 3
+    assert len(second) == 3
+    assert len(set(all_ids)) == 6
+    assert set(all_ids).issubset({
+        "nba-0", "nba-1", "nba-2", "nba-3",
+        "ncaaf-0", "ncaaf-1", "ncaaf-2",
+    })
+
+
+def test_latest_events_paginates_selected_sport(tmp_path):
+    db = OddsDatabase(tmp_path / "sport-paged.sqlite3")
+    events = []
+    for index in range(4):
+        event = fixture()[0]
+        event["id"] = f"nba-{index}"
+        event["commence_time"] = f"2026-11-18T0{index}:00:00Z"
+        events.append(event)
+    db.save_snapshot("basketball_nba", events, "test", "2026-11-17T12:00:00Z")
+
+    first = db.latest_events("basketball_nba", limit=2, offset=0)
+    second = db.latest_events("basketball_nba", limit=2, offset=2)
+
+    assert [event["id"] for event in first] == ["nba-0", "nba-1"]
+    assert [event["id"] for event in second] == ["nba-2", "nba-3"]
