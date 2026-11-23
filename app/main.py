@@ -26,9 +26,11 @@ async def _limits_refresh_loop():
     while True:
         delay = config.LIMITS_REFRESH_INTERVAL_SECONDS
         try:
-            await asyncio.to_thread(limits_monitor.refresh)
-            status = await asyncio.to_thread(limits_monitor.status)
-            delay = max(1, int(status.get("next_refresh_seconds") or delay))
+            settings = await asyncio.to_thread(_admin_settings)
+            if settings["automatic_refresh_enabled"]:
+                await asyncio.to_thread(limits_monitor.refresh)
+                status = await asyncio.to_thread(limits_monitor.status)
+                delay = max(1, int(status.get("next_refresh_seconds") or delay))
         except Exception as exc:
             limits_monitor.last_error = f"Unexpected scheduled market-limits refresh failure: {exc}"
             logger.exception("Scheduled market-limits refresh failed")
@@ -40,7 +42,9 @@ async def _limits_refresh_loop():
 async def _simulation_results_loop():
     while True:
         try:
-            await asyncio.to_thread(service.sync_simulation_results)
+            settings = await asyncio.to_thread(_admin_settings)
+            if settings["automatic_refresh_enabled"]:
+                await asyncio.to_thread(service.sync_simulation_results)
         except Exception as exc:
             service._simulation_results_status.update({
                 "last_error": "Unexpected score synchronization failure: " + str(exc),
