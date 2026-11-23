@@ -125,7 +125,7 @@ def market_board(events, best_only=True):
     ))
 
 
-def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
+def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, include_arbitrage=True):
     """Calculate leave-one-book-out EV and cross-book two-way arbitrage.
 
     Only complete, matching outcome sets are compared. Soccer h2h is a
@@ -259,48 +259,49 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
         if best_only:
             opportunities.extend(best.values())
 
-        # Arbitrage: only complete two-outcome markets, with distinct books.
-        for (market_key, line, _player_scope), quotes in line_sets.items():
-            if market_key.startswith("player_"):
-                continue
-            sides = defaultdict(list)
-            for quote in quotes:
-                sides[quote["identity"]].append(quote)
-            if len(sides) != 2:
-                continue
-            side_items = list(sides.values())
-            pairs = []
-            for first in side_items[0]:
-                for second in side_items[1]:
-                    first_book = first["book"].get("key")
-                    second_book = second["book"].get("key")
-                    if not first_book or not second_book or first_book == second_book:
-                        continue
-                    first_decimal = american_to_decimal(first["outcome"]["price"])
-                    second_decimal = american_to_decimal(second["outcome"]["price"])
-                    implied = 1 / first_decimal + 1 / second_decimal
-                    pairs.append((implied, first, second, first_decimal, second_decimal))
-            if not pairs:
-                continue
-            implied_sum, first, second, first_decimal, second_decimal = min(
-                pairs, key=lambda pair: pair[0]
-            )
-            if implied_sum >= 1:
-                continue
-            side_quotes = [first, second]
-            decimals = [first_decimal, second_decimal]
-            arbitrage.append({
-                "event_id": event_id, "sport": event.get("sport_title"),
-                "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
-                "commence_time": event.get("commence_time"), "market": market_key,
-                "line": line, "arb_percent": round((1 - implied_sum) * 100, 3),
-                "legs": [{
-                    "outcome": q["outcome"]["name"], "point": q["outcome"].get("point"),
-                    "bookmaker": q["book"].get("title", q["book"].get("key")),
-                    "bookmaker_key": q["book"].get("key"), "price": q["outcome"]["price"],
-                    "stake_percent": round((1 / decimal) / implied_sum * 100, 2),
-                } for q, decimal in zip(side_quotes, decimals)],
-            })
+        if include_arbitrage:
+            # Arbitrage: only complete two-outcome markets, with distinct books.
+            for (market_key, line, _player_scope), quotes in line_sets.items():
+                if market_key.startswith("player_"):
+                    continue
+                sides = defaultdict(list)
+                for quote in quotes:
+                    sides[quote["identity"]].append(quote)
+                if len(sides) != 2:
+                    continue
+                side_items = list(sides.values())
+                pairs = []
+                for first in side_items[0]:
+                    for second in side_items[1]:
+                        first_book = first["book"].get("key")
+                        second_book = second["book"].get("key")
+                        if not first_book or not second_book or first_book == second_book:
+                            continue
+                        first_decimal = american_to_decimal(first["outcome"]["price"])
+                        second_decimal = american_to_decimal(second["outcome"]["price"])
+                        implied = 1 / first_decimal + 1 / second_decimal
+                        pairs.append((implied, first, second, first_decimal, second_decimal))
+                if not pairs:
+                    continue
+                implied_sum, first, second, first_decimal, second_decimal = min(
+                    pairs, key=lambda pair: pair[0]
+                )
+                if implied_sum >= 1:
+                    continue
+                side_quotes = [first, second]
+                decimals = [first_decimal, second_decimal]
+                arbitrage.append({
+                    "event_id": event_id, "sport": event.get("sport_title"),
+                    "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
+                    "commence_time": event.get("commence_time"), "market": market_key,
+                    "line": line, "arb_percent": round((1 - implied_sum) * 100, 3),
+                    "legs": [{
+                        "outcome": q["outcome"]["name"], "point": q["outcome"].get("point"),
+                        "bookmaker": q["book"].get("title", q["book"].get("key")),
+                        "bookmaker_key": q["book"].get("key"), "price": q["outcome"]["price"],
+                        "stake_percent": round((1 / decimal) / implied_sum * 100, 2),
+                    } for q, decimal in zip(side_quotes, decimals)],
+                })
     opportunities.sort(key=lambda row: row["ev_percent"], reverse=True)
     arbitrage.sort(key=lambda row: row["arb_percent"], reverse=True)
     return {"opportunities": opportunities, "arbitrage": arbitrage}
