@@ -626,3 +626,46 @@ def test_odds_endpoint_returns_only_requested_event_page(monkeypatch):
     assert response.json()["limit"] == 25
     assert response.json()["offset"] == 50
     assert len(response.json()["events"]) == 25
+
+
+
+def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
+    events = [{"id": "event-1"}, {"id": "event-2"}]
+    generated = [{"row": index} for index in range(31)]
+    received = {}
+
+    def fake_events(sport=None, **kwargs):
+        received["sport"] = sport
+        received["kwargs"] = kwargs
+        return events
+
+    def fake_analysis(items, min_ev, min_consensus_books):
+        received["events"] = items
+        return {"opportunities": generated, "arbitrage": []}
+
+    monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main, "analyze_markets", fake_analysis)
+    with TestClient(main.app) as client:
+        response = client.get("/api/opportunities?limit=25&offset=25")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert len(payload["opportunities"]) == 6
+    assert payload["total"] == 31
+    assert payload["offset"] == 25
+    assert received["events"] == events
+    assert received["kwargs"] == {}
+
+
+def test_arbitrage_paginates_result_rows_not_source_events(monkeypatch):
+    generated = [{"row": index, "arb_percent": 1.0} for index in range(29)]
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [{"id": "event"}])
+    monkeypatch.setattr(main, "analyze_markets", lambda events, min_ev: {
+        "opportunities": [], "arbitrage": generated,
+    })
+    with TestClient(main.app) as client:
+        response = client.get("/api/arbitrage?limit=25&offset=25")
+    payload = response.json()
+    assert response.status_code == 200
+    assert len(payload["arbitrage"]) == 4
+    assert payload["total"] == 29
