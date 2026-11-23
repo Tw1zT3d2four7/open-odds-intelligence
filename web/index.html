@@ -157,7 +157,19 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
 <p class="foot">EV and arbitrage are estimates based on currently available provider quotes, not guarantees. Confirm both prices, limits, market rules and availability before acting. Alternate lines are kept separate.</p>
 </main>
 <script>
-const $=id=>document.getElementById(id), state={sport:"",minEv:1,consensus:2};
+const $=id=>document.getElementById(id);
+const SETTINGS_KEY="openOddsIntelligence.preferences.v1";
+function readPreferences(){try{const value=JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}");return value&&typeof value==="object"?value:{}}catch(_){return {}}}
+const savedPreferences=readPreferences();
+const state={
+ sport:typeof savedPreferences.sport==="string"?savedPreferences.sport:"",
+ minEv:Number.isFinite(Number(savedPreferences.minEv))?Math.max(-100,Math.min(100,Number(savedPreferences.minEv))):1,
+ consensus:Number.isInteger(Number(savedPreferences.consensus))&&Number(savedPreferences.consensus)>=1&&Number(savedPreferences.consensus)<=20?Number(savedPreferences.consensus):2,
+ activeTab:["ev","arb","board","allbooks","movement","limits","clv","props","calculators","simulation"].includes(savedPreferences.activeTab)?savedPreferences.activeTab:"ev"
+};
+function savePreferences(patch={}){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify({...savedPreferences,...state,...patch}))}catch(error){console.warn("Could not save dashboard preferences:",error)}}
+$("minEv").value=String(state.minEv);
+$("consensus").value=String(state.consensus);
 const fmtOdds=n=>Number(n)>0?"+"+n:String(n);
 const date=s=>s?new Date(s).toLocaleString():"—";
 const cell=(tr,value,cls="")=>{const td=document.createElement("td");td.textContent=value??"—";if(cls)td.className=cls;tr.appendChild(td)};
@@ -166,7 +178,13 @@ const empty=(body,cols,msg)=>body.innerHTML='<tr><td class="empty" colspan="'+co
 async function get(path){const r=await fetch(path);if(!r.ok)throw Error("API "+r.status+" for "+path);return r.json()}
 async function getSafe(path,fallback,failures){try{return await get(path)}catch(err){failures.push(err.message);return fallback}}
 function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
-function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","allbooks","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
+function setTab(tab){
+ const valid=["ev","arb","board","allbooks","movement","limits","clv","props","calculators","simulation"];
+ if(!valid.includes(tab))tab="ev";
+ document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
+ valid.forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab));
+ state.activeTab=tab;savePreferences({activeTab:tab});
+}
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))}
 function renderProviderStatus(health){
  const selected=health.providers||[],pools=health.provider_keys||{},schedule=health.auto_refresh_schedule||{},coverage=health.provider_coverage||{};
@@ -221,8 +239,6 @@ async function load(){
   const evRows=$("evRows");evRows.innerHTML="";(ev.opportunities||[]).forEach(x=>row(evRows,[x.matchup,x.market,(x.outcome_description?x.outcome_description+" · ":"")+(x.point===null||x.point===undefined?x.outcome:x.outcome+" ("+x.point+")"),x.bookmaker,fmtOdds(x.price),(x.fair_probability*100).toFixed(1)+"%",[Number(x.ev_percent).toFixed(2)+"%","good"],(x.consensus_books||0)+" books",date(x.commence_time)]));if(!evRows.children.length)empty(evRows,9,"No qualifying EV opportunities. More independent books may be required for consensus.");
   const arbRows=$("arbRows");arbRows.innerHTML="";(arb.arbitrage||[]).forEach(x=>{const a=x.legs||[];row(arbRows,[x.matchup,x.market,x.line??"—",[x.arb_percent.toFixed(3)+"%","good"],a[0]?.outcome||"—",a[0]?fmtOdds(a[0].price):"—",a[0]?a[0].stake_percent+"%":"—",a[1]?.outcome||"—",a[1]?fmtOdds(a[1].price):"—",a[1]?a[1].stake_percent+"%":"—",date(x.commence_time)]);});if(!arbRows.children.length)empty(arbRows,11,"No mathematical two-outcome arbitrage found in current quotes.");
   const boardRows=$("boardRows");boardRows.innerHTML="";(board.quotes||[]).forEach(x=>{const tr=document.createElement("tr");[x.matchup,x.market,x.outcome,x.point??"—",x.bookmaker,fmtOdds(x.price),date(x.commence_time)].forEach(v=>cell(tr,v));tr.title="Click to view saved price history";tr.style.cursor="pointer";tr.addEventListener("click",()=>showHistory(x));boardRows.appendChild(tr)});if(!boardRows.children.length)empty(boardRows,7,"No market quotes loaded.");
-  const allBookRows=$("allBookRows");allBookRows.innerHTML="";(allBooks.quotes||[]).forEach(x=>row(allBookRows,[x.matchup,x.market,(x.outcome_description?x.outcome_description+" · ":"")+x.outcome,x.point??"—",x.bookmaker,fmtOdds(x.price),date(x.commence_time)]));if(!allBookRows.children.length)empty(allBookRows,7,"No sportsbook quotes loaded for this sport.");
-  const movementRows=$("movementRows");movementRows.innerHTML="";(movement.movements||[]).forEach(x=>{const delta=Number(x.implied_probability_change_from_open||0),tr=document.createElement("tr"),values=[x.matchup,x.market,x.outcome,x.bookmaker,x.opening_point??"—",x.point??"—",fmtOdds(x.opening_price),fmtOdds(x.price),[(delta>0?"+":"")+delta+" pp",delta>0?"good":delta<0?"warn":""],(x.price_changes??0)+" price / "+(x.line_changes??0)+" line",x.observations??"—",date(x.source_updated_at||x.updated_at)],labels=["Matchup","Market","Selection","Sportsbook","Opening line","Latest line","Opening odds","Latest odds","Implied probability Δ","Price / line moves","Observations",x.timestamp_basis==="sportsbook"?"Sportsbook updated":"Last retrieved"];values.forEach((v,i)=>{const td=document.createElement("td"),value=Array.isArray(v)?v[0]:v;td.textContent=value??"—";td.dataset.label=labels[i];if(Array.isArray(v)&&v[1])td.className=v[1];tr.appendChild(td)});tr.title="Click to inspect the complete line and price timeline";tr.style.cursor="pointer";tr.addEventListener("click",()=>showMovementHistory(x));movementRows.appendChild(tr)});if(!movementRows.children.length)empty(movementRows,12,"No meaningful movement recorded yet. Save multiple odds snapshots over time to build a movement timeline.");
   const changeRows=$("limitChangesRows");changeRows.innerHTML="";(limitChanges.changes||[]).forEach(x=>{const selection=x.outcome_name+(x.point===null||x.point===undefined?"":" ("+x.point+")");const delta=(x.change_amount>0?"+":"")+Number(x.change_amount).toLocaleString()+" "+x.currency+" · "+(x.change_percent>0?"+":"")+x.change_percent+"%";const tr=document.createElement("tr");[date(x.observed_at),x.bookmaker_title||x.bookmaker_key,x.matchup,x.market_key+" · "+selection,x.point??"—",Number(x.previous_limit).toLocaleString()+" → "+Number(x.limit_amount).toLocaleString()+" "+x.currency,delta].forEach((v,i)=>{const td=document.createElement("td");td.textContent=v??"—";td.dataset.label=["Observed","Sportsbook","Matchup","Market / selection","Line","Previous → Current","Change"][i];if(i===6)td.className=x.direction==="increased"?"good":"warn";tr.appendChild(td)});tr.title="Click to inspect the full posted-limit history for this selection";tr.style.cursor="pointer";tr.addEventListener("click",()=>showLimitHistory(x));changeRows.appendChild(tr)});if(!changeRows.children.length)empty(changeRows,7,"No "+(($("limitsDirection")?.value||"increased")==="all"?"limit changes":($("limitsDirection")?.value||"increased")+" detected")+". The feed needs at least two different snapshots for the same selection.");
   const limitRows=$("limitsRows");limitRows.innerHTML="";(limits.limits||[]).forEach(x=>row(limitRows,[x.away_team+" @ "+x.home_team,x.bookmaker_title,x.market_key,x.outcome_name,x.point??"—",Number(x.limit_amount).toLocaleString()+" "+x.currency, x.price===null?"—":fmtOdds(x.price),date(x.commence_time),date(x.observed_at)]));if(!limitRows.children.length){const d=limits.status?.diagnostic||{},err=limits.status?.last_error;let msg=!limits.status?.enabled?"Feed disabled: add ODDSLINK_API_KEY to the container .env and recreate the container.":err?"Feed error: "+err:d.events_returned===0?"Feed connected but returned zero upcoming fixtures for the configured sports.":d.posted_limit_outcomes===0?"Received "+d.events_returned+" fixtures from OddsLink, but no outcomes included posted_limit size fields. Books returned: "+((d.bookmakers_returned||[]).join(", ")||"none")+". Size types: "+JSON.stringify(d.size_kinds_returned||{}):"Posted-limit records were returned but not stored; check the application logs.";empty(limitRows,9,msg)}
   const ls=limits.status||{},cooldown=Number(ls.next_refresh_seconds||0),waitText=cooldown>0?" · Next quota-safe poll in "+Math.floor(cooldown/3600)+"h "+Math.ceil((cooldown%3600)/60)+"m":"";
@@ -325,9 +341,19 @@ async function showHistory(q){
 }
 function sellist(sel,sports,current){sel.innerHTML="";const all=document.createElement("option");all.value="";all.textContent="All configured sports";sel.appendChild(all);sports.forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s;sel.appendChild(o)});sel.value=current}
 async function refresh(){const btn=$("refresh");btn.disabled=true;btn.textContent="Refreshing…";$("notice").textContent="Requesting a provider refresh…";try{const r=await fetch("/api/refresh"+query(),{method:"POST"}).then(x=>x.json());$("notice").textContent=r.ok?"Refresh complete: "+r.events+" events · Discord "+(r.alerts_enabled?"enabled":"disabled")+" · "+r.alerts_evaluated+" evaluated · "+r.alerts_qualified+" qualified · "+r.alerts_sent+" sent"+(r.alert_error?" · ALERT ERROR: "+r.alert_error:""):"Refresh failed: "+(r.error||"unknown error");}catch(e){$("notice").textContent="Refresh request failed: "+e.message}finally{btn.disabled=false;btn.textContent="Refresh odds";await load()}}
-$("sport").addEventListener("change",e=>{state.sport=e.target.value;load().then(()=>{const active=document.querySelector('nav[aria-label="Market views"] .tab.active')?.dataset.tab;if(active==="allbooks")loadAllBooks();if(active==="movement")loadMovement()})});
-$("refresh").addEventListener("click",refresh);$("reload").addEventListener("click",load);
-$("limitsDirection").addEventListener("change",load);$("refreshClv").addEventListener("click",load);$("closeLimitHistory").addEventListener("click",()=>$("limitHistoryPanel").classList.add("hidden"));
+$("sport").addEventListener("change",e=>{
+ state.sport=e.target.value;savePreferences({sport:state.sport});$("allBookRows").dataset.loadedSport="";
+ load().then(()=>{if(state.activeTab==="allbooks")loadAllBooks();if(state.activeTab==="movement")loadMovement()});
+});
+$("refresh").addEventListener("click",refresh);
+$("reload").addEventListener("click",async()=>{
+ const button=$("reload");button.disabled=true;button.textContent="Reloading…";
+ try{await load();if(state.activeTab==="allbooks"){$("allBookRows").dataset.loadedSport="";await loadAllBooks()}if(state.activeTab==="movement")await loadMovement()}
+ finally{button.disabled=false;button.textContent="Reload view"}
+});
+$("limitsDirection").value=["increased","all","decreased"].includes(savedPreferences.limitsDirection)?savedPreferences.limitsDirection:"increased";
+$("limitsDirection").addEventListener("change",()=>{savePreferences({limitsDirection:$("limitsDirection").value});load()});
+$("refreshClv").addEventListener("click",async()=>{const b=$("refreshClv");b.disabled=true;b.textContent="Refreshing…";try{await load()}finally{b.disabled=false;b.textContent="Refresh CLV"}});$("closeLimitHistory").addEventListener("click",()=>$("limitHistoryPanel").classList.add("hidden"));
 $("refreshLimits").addEventListener("click",async()=>{const b=$("refreshLimits");b.disabled=true;b.textContent="Checking…";try{const r=await fetch("/api/limits/refresh",{method:"POST"}).then(x=>x.json());$("limitsStatus").textContent=(r.ok?"Limits refreshed":"Limits refresh failed") +" · "+r.observations+" posted-limit observations · "+(r.diagnostic?.events_returned||0)+" fixtures · "+(r.diagnostic?.posted_limit_outcomes||0)+" posted-limit outcomes"+(r.error?" · "+r.error:"");}catch(e){$("limitsStatus").textContent="Limits refresh failed: "+e.message}finally{b.disabled=false;b.textContent="Refresh limits";await load()}});
 async function applyEvFilters(){
  const button=$("apply"),status=$("evFilterStatus");
@@ -343,6 +369,7 @@ async function applyEvFilters(){
   if(!body.children.length)empty(body,9,"No opportunities match these filters. Lower the minimum EV or other-books requirement.");
   $("edges").textContent=(data.opportunities||[]).length;
   status.textContent="Applied · "+(data.opportunities||[]).length+" qualifying quotes.";
+  savePreferences({minEv:state.minEv,consensus:state.consensus});
  }catch(error){
   status.textContent="Filter request failed: "+error.message;
  }finally{
@@ -351,12 +378,14 @@ async function applyEvFilters(){
 }
 $("apply").addEventListener("click",applyEvFilters);
 $("minEv").addEventListener("keydown",e=>{if(e.key==="Enter")applyEvFilters()});
-document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>{setTab(b.dataset.tab);if(b.dataset.tab==="movement")loadMovement();if(b.dataset.tab==="allbooks")loadAllBooks()}));
+document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",async()=>{setTab(b.dataset.tab);if(b.dataset.tab==="movement")await loadMovement();if(b.dataset.tab==="allbooks")await loadAllBooks()}));
+setTab(state.activeTab);
 
 /* Quota-free betting calculators. All odds are converted to decimal internally. */
 (()=>{
  const el=id=>document.getElementById(id), money=n=>Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}), pct=n=>(n*100).toFixed(2)+"%";
- let format="american",legCount=0;
+ let format=["american","decimal"].includes(savedPreferences.calcOddsFormat)?savedPreferences.calcOddsFormat:"american",legCount=0;
+ el("calcOddsFormat").value=format;
  const finiteResult=(v,label)=>{if(!Number.isFinite(v))throw Error(label+" exceeds the supported numeric range.");return v;};
  const decimal=v=>{v=Number(v);if(!Number.isFinite(v)||v===0)throw Error("Enter valid non-zero odds.");if(format==="decimal"){if(v<=1)throw Error("Decimal odds must be greater than 1.00.");return v;}if(!Number.isInteger(v))throw Error("American odds must be a whole number.");if(v>-100&&v<100)throw Error("American odds must be +100 or greater, or -100 or lower.");return 1+(v>0?v/100:100/Math.abs(v));};
  const american=d=>{if(!Number.isFinite(d)||d<=1)throw Error("Odds must be greater than 1.00.");const raw=d>=2?(d-1)*100:-100/(d-1);if(!Number.isFinite(raw))throw Error("American odds exceed the supported numeric range.");return Math.round(raw);};
@@ -376,7 +405,7 @@ document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.ad
  document.querySelectorAll(".calc-tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".calc-tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".calc-panel").forEach(x=>x.classList.toggle("hidden",x.id!=="calc-"+b.dataset.calc));}));
  el("addParlayLeg").addEventListener("click",()=>addLeg());
  el("evFraction").addEventListener("change",evCalc);
- el("calcOddsFormat").addEventListener("change",e=>{const next=e.target.value;if(next===format)return;document.querySelectorAll("[data-odds]").forEach(input=>{const v=Number(input.value);if(!Number.isFinite(v)||v===0)return;try{const d=decimal(v);input.value=next==="decimal"?d.toFixed(3):american(d);}catch(_){}});format=next;recalcAll();});
+ el("calcOddsFormat").addEventListener("change",e=>{const next=e.target.value;if(next===format)return;savePreferences({calcOddsFormat:next});document.querySelectorAll("[data-odds]").forEach(input=>{const v=Number(input.value);if(!Number.isFinite(v)||v===0)return;try{const d=decimal(v);input.value=next==="decimal"?d.toFixed(3):american(d);}catch(_){}});format=next;recalcAll();});
  document.querySelectorAll("#view-calculators input").forEach(input=>input.addEventListener("input",recalcAll));
  addLeg(-110);addLeg(100);recalcAll();
 })();
