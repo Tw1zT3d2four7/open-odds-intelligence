@@ -150,7 +150,6 @@ class OddsService:
                 config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY
             ) if config.ODDS_PROVIDER == "the_odds_api"
         } | {
-        } | {
             hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
             for key in parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
             if config.ODDS_PROVIDER == "oddize"
