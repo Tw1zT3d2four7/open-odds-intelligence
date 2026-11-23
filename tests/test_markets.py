@@ -336,3 +336,33 @@ def test_all_books_board_returns_each_sportsbook_quote_while_best_board_stays_co
     assert len(every) == 4
     assert {row["bookmaker_key"] for row in every} == {"book-a", "book-b"}
     assert {row["bookmaker_key"] for row in best} <= {"book-a", "book-b"}
+
+
+def test_ev_only_analysis_skips_arbitrage_but_preserves_ev_results():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "ev-only", "sport_key": "americanfootball_nfl",
+        "sport_title": "NFL", "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-24T00:00:00Z",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 120},
+                    {"name": "Away", "price": -140},
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -140},
+                    {"name": "Away", "price": 120},
+                ]}]},
+        ],
+    }]
+
+    result = analyze_markets(
+        events, min_ev=-100, min_consensus_books=1,
+        include_arbitrage=False,
+    )
+
+    assert result["opportunities"]
+    assert result["arbitrage"] == []
