@@ -41,8 +41,8 @@ class NflverseResultsTests(unittest.TestCase):
         )
         rows = parse_nflverse_games(content, min_season=1999, through_season=1999)
         by_id = {row["event_id"]: row for row in rows}
-        self.assertEqual(by_id["1999_01_WAS_DAL"]["home_team"], "Dallas Cowboys")
-        self.assertEqual(by_id["1999_01_WAS_DAL"]["away_team"], "Washington Commanders")
+        self.assertEqual(by_id["1999_01_WAS_DAL"]["home_team"], "Washington Commanders")
+        self.assertEqual(by_id["1999_01_WAS_DAL"]["away_team"], "Dallas Cowboys")
         self.assertEqual(by_id["1999_01_OAK_GB"]["away_team"], "Las Vegas Raiders")
         self.assertEqual(by_id["1999_01_SD_CIN"]["home_team"], "Los Angeles Chargers")
 
