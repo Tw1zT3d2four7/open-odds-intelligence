@@ -399,17 +399,27 @@ def admin_refresh(
     sport: str = Query(...),
     providers: list[str] | None = Query(None),
 ):
-    if sport not in config.ODDS_SPORTS:
-        raise HTTPException(status_code=400, detail="Select exactly one configured league per manual refresh.")
+    # "all" is an explicit administrator-only action. The service refreshes
+    # only configured leagues and retains provider-specific league coverage.
+    all_leagues = sport == "all"
+    if not all_leagues and sport not in config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="Select a configured league or All leagues.")
+    if all_leagues and not config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="No leagues are configured for refresh.")
     active = service.active_provider_names()
     selected = providers if providers is not None else active
     if not selected or len(set(selected)) != len(selected) or any(name not in active for name in selected):
         raise HTTPException(status_code=400, detail="Choose one or more currently enabled providers.")
     reservation = _reserve_manual_refresh_slot()
-    result = service.refresh(sport, providers=selected)
+    try:
+        result = service.refresh(None if all_leagues else sport, providers=selected)
+    except Exception as exc:
+        logger.exception("Administrator-triggered odds refresh failed for %s", sport)
+        raise HTTPException(status_code=502, detail=f"Provider refresh failed: {exc}") from None
     return {
         **result,
-        "sport": sport,
+        "sport": "all" if all_leagues else sport,
+        "sports_requested": len(config.ODDS_SPORTS) if all_leagues else 1,
         "providers_requested": selected,
         "manual_refresh_usage": {
             "used_today": reservation["used_today"],
