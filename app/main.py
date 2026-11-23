@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+from datetime import datetime, timezone
 import base64
 import binascii
 import logging
@@ -6,7 +8,7 @@ import asyncio
 import secrets
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from . import config
 from .service import service
 
@@ -24,9 +26,12 @@ async def _limits_refresh_loop():
     while True:
         delay = config.LIMITS_REFRESH_INTERVAL_SECONDS
         try:
-            await asyncio.to_thread(limits_monitor.refresh)
-            status = await asyncio.to_thread(limits_monitor.status)
-            delay = max(1, int(status.get("next_refresh_seconds") or delay))
+            settings = await asyncio.to_thread(_admin_settings)
+            if (settings["automatic_refresh_enabled"]
+                    and settings["provider_auto_refresh_enabled"].get("oddslink", True)):
+                await asyncio.to_thread(limits_monitor.refresh)
+                status = await asyncio.to_thread(limits_monitor.status)
+                delay = max(1, int(status.get("next_refresh_seconds") or delay))
         except Exception as exc:
             limits_monitor.last_error = f"Unexpected scheduled market-limits refresh failure: {exc}"
             logger.exception("Scheduled market-limits refresh failed")
@@ -38,7 +43,10 @@ async def _limits_refresh_loop():
 async def _simulation_results_loop():
     while True:
         try:
-            await asyncio.to_thread(service.sync_simulation_results)
+            settings = await asyncio.to_thread(_admin_settings)
+            if (settings["automatic_refresh_enabled"]
+                    and settings["provider_auto_refresh_enabled"].get("therundown", True)):
+                await asyncio.to_thread(service.sync_simulation_results)
         except Exception as exc:
             service._simulation_results_status.update({
                 "last_error": "Unexpected score synchronization failure: " + str(exc),
@@ -55,19 +63,22 @@ def _odds_refresh_interval_seconds():
 async def _automatic_refresh_loop():
     interval = _odds_refresh_interval_seconds()
     while True:
-        # Refresh providers immediately when their independent schedule is due.
-        # Keep provider I/O and SQLite work off the ASGI event loop.
+        # The admin kill switch pauses provider polling without changing the
+        # configured per-provider free-tier schedules.
         try:
-            due_providers = await asyncio.to_thread(service.providers_due_for_auto_refresh)
-            if due_providers:
-                result = await asyncio.to_thread(service.refresh, providers=due_providers)
-                succeeded = {
-                    name
-                    for sport_result in (result.get("provider_results") or {}).values()
-                    for name in sport_result.get("providers_succeeded", [])
-                }
-                if succeeded:
-                    await asyncio.to_thread(service.mark_auto_refresh, succeeded)
+            settings = await asyncio.to_thread(_admin_settings)
+            if settings["automatic_refresh_enabled"]:
+                due_providers = await asyncio.to_thread(service.providers_due_for_auto_refresh)
+                due_providers = [name for name in due_providers if settings["provider_auto_refresh_enabled"].get(name, True)]
+                if due_providers:
+                    result = await asyncio.to_thread(service.refresh, providers=due_providers)
+                    succeeded = {
+                        name
+                        for sport_result in (result.get("provider_results") or {}).values()
+                        for name in sport_result.get("providers_succeeded", [])
+                    }
+                    if succeeded:
+                        await asyncio.to_thread(service.mark_auto_refresh, succeeded)
         except Exception as exc:
             service._last_error = f"Unexpected scheduled odds refresh failure: {exc}"
             logger.exception("Scheduled odds refresh failed")
@@ -139,44 +150,147 @@ app = FastAPI(title=config.APP_NAME, version="0.4.0",
               description="Self-hosted open-source odds comparison and market intelligence.",
               lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
+ADMIN_WEB = Path(__file__).resolve().parent.parent / "web" / "admin.html"
+
+ADMIN_DEFAULTS = {
+    "automatic_refresh_enabled": True,
+    "manual_refresh_enabled": True,
+    "manual_refresh_cooldown_seconds": 900,
+    "manual_refresh_daily_limit": 3,
+    "provider_auto_refresh_enabled": {
+        "therundown": True, "the_odds_api": True, "oddize": True, "oddslink": True,
+    },
+}
+
+
+def _admin_settings():
+    try:
+        saved = service.db.get_state("admin_control_settings")
+        values = json.loads(saved) if saved else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        values = {}
+    merged = {**ADMIN_DEFAULTS, **{key: value for key, value in values.items() if key in ADMIN_DEFAULTS}}
+    provider_switches = values.get("provider_auto_refresh_enabled", {})
+    if not isinstance(provider_switches, dict):
+        provider_switches = {}
+    merged["provider_auto_refresh_enabled"] = {
+        **ADMIN_DEFAULTS["provider_auto_refresh_enabled"],
+        **{name: enabled for name, enabled in provider_switches.items()
+           if name in ADMIN_DEFAULTS["provider_auto_refresh_enabled"] and isinstance(enabled, bool)},
+    }
+    return merged
+
+
+def _manual_refresh_usage():
+    today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        used = int(service.db.get_state(f"admin_manual_refresh_day:{today}") or 0)
+    except (TypeError, ValueError):
+        used = 0
+    settings = _admin_settings()
+    return {
+        "used_today": used,
+        "remaining_today": max(0, settings["manual_refresh_daily_limit"] - used),
+        "daily_limit": settings["manual_refresh_daily_limit"],
+        "last_refresh_at": service.db.get_state("admin_manual_refresh_last_at"),
+    }
+
+
+def _reserve_manual_refresh_slot():
+    settings = _admin_settings()
+    if not settings["manual_refresh_enabled"]:
+        raise HTTPException(status_code=403, detail="Manual provider refreshes are disabled by the administrator.")
+    result = service.db.consume_admin_refresh_slot(
+        settings["manual_refresh_cooldown_seconds"],
+        settings["manual_refresh_daily_limit"],
+    )
+    if not result["allowed"]:
+        if result["reason"] == "cooldown":
+            raise HTTPException(
+                status_code=429,
+                detail=f"Manual refresh cooldown is active. Try again in {result['retry_after_seconds']} seconds.",
+                headers={"Retry-After": str(result["retry_after_seconds"])},
+            )
+        raise HTTPException(
+            status_code=429,
+            detail="The administrator-configured daily manual refresh limit has been reached.",
+        )
+    return result
+
+
+def _basic_credentials(request: Request):
+    header = request.headers.get("authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "basic" or not token:
+        return "", ""
+    try:
+        decoded = base64.b64decode(token, validate=True).decode("utf-8")
+        username, separator, password = decoded.partition(":")
+        return (username, password) if separator else ("", "")
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return "", ""
+
+
+def _credentials_match(request: Request, username: str, password: str) -> bool:
+    supplied_user, supplied_password = _basic_credentials(request)
+    return (
+        secrets.compare_digest(supplied_user.encode(), username.encode())
+        and secrets.compare_digest(supplied_password.encode(), password.encode())
+    )
+
+
+def _admin_path(path: str) -> bool:
+    return (
+        path == "/admin"
+        or path.startswith("/api/admin/")
+        or path in {
+            "/api/refresh", "/api/limits/refresh",
+            "/api/simulation/games/refresh",
+        }
+    )
 
 
 @app.middleware("http")
 async def optional_basic_auth(request: Request, call_next):
-    """Protect the dashboard and API when an operator configures credentials.
+    """Enforce separate administrator credentials for private controls.
 
-    /api/health remains public for Docker health checks and orchestrators.
-    Credentials are compared in constant time and are never logged.
+    The public health probe is deliberately reduced to non-sensitive status.
+    Admin routes use ADMIN_USERNAME/ADMIN_PASSWORD and never fall back to
+    subscriber-wide AUTH credentials.
     """
-    username = config.AUTH_USERNAME
-    password = config.AUTH_PASSWORD
-    # Keep the orchestrator health probe available even when operator auth is
-    # misconfigured; every application/data route still fails closed below.
-    if request.url.path == "/api/health":
+    path = request.url.path
+    if path in {"/api/health", "/assets/odds-intelligence.svg"}:
         return await call_next(request)
+
+    if _admin_path(path):
+        username, password = config.ADMIN_USERNAME, config.ADMIN_PASSWORD
+        if not username or not password:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Admin access is not configured. Set both ADMIN_USERNAME and ADMIN_PASSWORD in the private .env file."},
+            )
+        if (config.AUTH_USERNAME and config.AUTH_PASSWORD
+                and secrets.compare_digest(username.encode(), config.AUTH_USERNAME.encode())
+                and secrets.compare_digest(password.encode(), config.AUTH_PASSWORD.encode())):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Administrator credentials must be different from subscriber-wide AUTH credentials."},
+            )
+        if not _credentials_match(request, username, password):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Administrator authentication required."},
+                headers={"WWW-Authenticate": 'Basic realm="Open Odds Intelligence Admin", charset="UTF-8"'},
+            )
+        return await call_next(request)
+
+    username, password = config.AUTH_USERNAME, config.AUTH_PASSWORD
     if bool(username) != bool(password):
         return JSONResponse(
             status_code=503,
             content={"detail": "Authentication is misconfigured; set both AUTH_USERNAME and AUTH_PASSWORD."},
         )
-    if not username:
-        return await call_next(request)
-
-    header = request.headers.get("authorization", "")
-    supplied_user = supplied_password = ""
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() == "basic" and token:
-        try:
-            decoded = base64.b64decode(token, validate=True).decode("utf-8")
-            supplied_user, separator, supplied_password = decoded.partition(":")
-            if not separator:
-                supplied_user = supplied_password = ""
-        except (binascii.Error, UnicodeDecodeError, ValueError):
-            supplied_user = supplied_password = ""
-
-    valid_user = secrets.compare_digest(supplied_user.encode(), username.encode())
-    valid_password = secrets.compare_digest(supplied_password.encode(), password.encode())
-    if not (valid_user and valid_password):
+    if username and not _credentials_match(request, username, password):
         return JSONResponse(
             status_code=401,
             content={"detail": "Authentication required."},
@@ -190,15 +304,124 @@ def dashboard():
     return WEB.read_text(encoding="utf-8")
 
 
+@app.get("/admin", response_class=HTMLResponse)
+def admin_dashboard():
+    return ADMIN_WEB.read_text(encoding="utf-8")
+
+
+@app.get("/assets/odds-intelligence.svg")
+def brand_logo():
+    return FileResponse(WEB.parent / "assets" / "odds-intelligence.svg", media_type="image/svg+xml")
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": config.APP_NAME, **service.status(),
-            "market_limits": limits_monitor.status()}
+    """Public, deliberately non-sensitive status for dashboard and container checks."""
+    status = service.status()
+    return {
+        "status": "ok",
+        "app": config.APP_NAME,
+        "last_updated": status.get("last_updated"),
+        "sports": status.get("sports", config.ODDS_SPORTS),
+        "data_freshness": status.get("data_freshness", "unavailable"),
+        "sport_freshness": status.get("sport_freshness", []),
+        "live_data_available": bool(status.get("live_data_available")),
+    }
+
+
+@app.get("/api/admin/control")
+def admin_control():
+    status = service.status()
+    return {
+        "app": config.APP_NAME,
+        "providers": status.get("providers", []),
+        "provider": status.get("provider"),
+        "provider_keys": status.get("provider_keys", {}),
+        "provider_usage": status.get("provider_usage", {}),
+        "provider_coverage": status.get("provider_coverage", {}),
+        "auto_refresh_schedule": status.get("auto_refresh_schedule", {}),
+        "auto_refresh_providers": status.get("auto_refresh_providers", []),
+        "last_updated": status.get("last_updated"),
+        "last_error": status.get("last_error"),
+        "sports": status.get("sports", config.ODDS_SPORTS),
+        "odds_regions": status.get("odds_regions"),
+        "odds_bookmakers": status.get("odds_bookmakers"),
+        "odds_markets": config.ODDS_MARKETS,
+        "odds_format": config.ODDS_FORMAT,
+        "player_props": status.get("player_props", {}),
+        "simulation_results": status.get("simulation_results", {}),
+        "market_limits": limits_monitor.status(),
+        "settings": _admin_settings(),
+        "manual_refresh_usage": _manual_refresh_usage(),
+    }
+
+
+@app.post("/api/admin/settings")
+async def update_admin_settings(request: Request):
+    try:
+        payload = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="A JSON settings object is required.") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="A JSON settings object is required.")
+    current = _admin_settings()
+    updated = dict(current)
+    if "provider_auto_refresh_enabled" in payload:
+        switches = payload["provider_auto_refresh_enabled"]
+        if not isinstance(switches, dict):
+            raise HTTPException(status_code=422, detail="provider_auto_refresh_enabled must be an object of provider booleans.")
+        allowed = set(ADMIN_DEFAULTS["provider_auto_refresh_enabled"])
+        if any(name not in allowed or not isinstance(enabled, bool) for name, enabled in switches.items()):
+            raise HTTPException(status_code=422, detail="Provider auto-refresh switches must use supported provider names and boolean values.")
+        updated["provider_auto_refresh_enabled"] = {
+            **current["provider_auto_refresh_enabled"], **switches,
+        }
+    for key in ("automatic_refresh_enabled", "manual_refresh_enabled"):
+        if key in payload:
+            if not isinstance(payload[key], bool):
+                raise HTTPException(status_code=422, detail=f"{key} must be true or false.")
+            updated[key] = payload[key]
+    for key, low, high in (
+        ("manual_refresh_cooldown_seconds", 300, 86400),
+        ("manual_refresh_daily_limit", 1, 12),
+    ):
+        if key in payload:
+            value = payload[key]
+            if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+                raise HTTPException(status_code=422, detail=f"{key} must be an integer from {low} to {high}.")
+            updated[key] = value
+    service.db.set_state("admin_control_settings", json.dumps(updated, sort_keys=True))
+    return {"settings": updated, "manual_refresh_usage": _manual_refresh_usage()}
+
+
+@app.post("/api/admin/refresh")
+def admin_refresh(
+    sport: str = Query(...),
+    providers: list[str] | None = Query(None),
+):
+    if sport not in config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="Select exactly one configured league per manual refresh.")
+    active = service.active_provider_names()
+    selected = providers if providers is not None else active
+    if not selected or len(set(selected)) != len(selected) or any(name not in active for name in selected):
+        raise HTTPException(status_code=400, detail="Choose one or more currently enabled providers.")
+    reservation = _reserve_manual_refresh_slot()
+    result = service.refresh(sport, providers=selected)
+    return {
+        **result,
+        "sport": sport,
+        "providers_requested": selected,
+        "manual_refresh_usage": {
+            "used_today": reservation["used_today"],
+            "remaining_today": reservation["remaining_today"],
+        },
+    }
 
 
 
 @app.post("/api/limits/refresh")
 def refresh_limits():
+    _reserve_manual_refresh_slot()
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
         and service._provider_key_pools["oddslink"].configured
@@ -224,7 +447,6 @@ def refresh_limits():
 def market_limits(sport: str | None = None,
                   limit: int = Query(500, ge=1, le=2000)):
     return {"limits": limits_monitor.current(sport, limit),
-            "status": limits_monitor.status(),
             "note": "Only provider-reported posted market limits are shown. Missing values are not inferred; limits are not account-specific betting caps."}
 
 
@@ -244,27 +466,50 @@ def market_limits_history(event_id: str, bookmaker: str, market: str,
         event_id, bookmaker, market, outcome, point, limit
     )}
 
+def _public_events(sport=None):
+    """Return subscriber-safe event data without internal provider attribution."""
+    def strip_private_fields(value):
+        if isinstance(value, dict):
+            return {
+                key: strip_private_fields(item)
+                for key, item in value.items()
+                if str(key).lower() not in {
+                    "source_provider", "size_source_provider",
+                    "provider", "provider_name",
+                }
+            }
+        if isinstance(value, list):
+            return [strip_private_fields(item) for item in value]
+        return value
+    return strip_private_fields(service.events(sport))
+
+
 @app.get("/api/odds")
 def odds(sport: str | None = None):
-    return {"events": service.events(sport), "status": service.status()}
+    # Odds and bookmaker prices are subscriber-facing data; provider diagnostics
+    # and account-level quota information stay behind /api/admin/control.
+    return {"events": _public_events(sport)}
 
 
 @app.post("/api/refresh")
 def refresh(sport: str | None = None):
-    if sport is not None and sport not in config.ODDS_SPORTS:
-        raise HTTPException(status_code=400, detail="Select a configured league or omit sport to refresh all configured leagues.")
+    if sport is None:
+        raise HTTPException(status_code=400, detail="Manual refresh must target one configured league to protect free-tier quotas.")
+    if sport not in config.ODDS_SPORTS:
+        raise HTTPException(status_code=400, detail="Select a configured league.")
+    _reserve_manual_refresh_slot()
     return service.refresh(sport)
 
 
 @app.get("/api/market-board")
 def market_board_api(sport: str | None = None):
-    return {"quotes": market_board(service.events(sport))}
+    return {"quotes": market_board(_public_events(sport))}
 
 
 @app.get("/api/bookmaker-board")
 def bookmaker_board_api(sport: str | None = None):
     """Return every valid quote from every sportsbook in the merged snapshot."""
-    return {"quotes": market_board(service.events(sport), best_only=False)}
+    return {"quotes": market_board(_public_events(sport), best_only=False)}
 
 
 @app.get("/api/simulation/leagues")
@@ -295,7 +540,7 @@ def _simulation_games_for_sport(sport: str):
         if isinstance(freshness, dict) else "unavailable"
     )
     freshness_age = freshness.get("age_seconds") if isinstance(freshness, dict) else None
-    for event in service.events(sport):
+    for event in _public_events(sport):
         if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
             continue
         from .simulation import market_readiness
@@ -337,6 +582,7 @@ def simulation_games(sport: str):
 def refresh_simulation_games(sport: str):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
+    _reserve_manual_refresh_slot()
     result = service.refresh(sport)
     if not result.get("ok"):
         detail = result.get("error") or "The selected league could not be refreshed."
@@ -353,7 +599,7 @@ def refresh_simulation_games(sport: str):
 def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
-    event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
+    event = next((item for item in _public_events(sport) if str(item.get("id")) == event_id), None)
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
     from .simulation import _validate_upcoming_event
@@ -384,7 +630,7 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
 
 @app.get("/api/player-props")
 def player_props(sport: str | None = None):
-    events = service.events(sport)
+    events = _public_events(sport)
     quotes = []
     for event in events:
         for book in event.get("bookmakers", []):
@@ -407,8 +653,8 @@ def player_props(sport: str | None = None):
                     })
     quotes.sort(key=lambda row: (row["commence_time"] or "", row["matchup"],
                                  row["player"], row["market"], str(row["point"])))
-    return {"quotes": quotes, "status": service.status()["player_props"],
-            "note": "Player props are fetched only when explicitly enabled and only from supported provider event-odds endpoints. Each event-level request can consume provider quota."}
+    return {"quotes": quotes, "status": {"enabled": bool(config.PLAYER_PROPS_ENABLED)},
+            "note": "Player prop quotes shown here come from the latest locally stored snapshot."}
 
 
 @app.get("/api/clv")
@@ -448,13 +694,13 @@ def history(event_id: str, market: str, outcome: str,
 def opportunities(sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20)):
-    result = analyze_markets(service.events(sport), min_ev, min_consensus_books)
+    result = analyze_markets(_public_events(sport), min_ev, min_consensus_books)
     return {"opportunities": result["opportunities"],
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
 
 @app.get("/api/arbitrage")
 def arbitrage(sport: str | None = None):
-    result = analyze_markets(service.events(sport), min_ev=101)
+    result = analyze_markets(_public_events(sport), min_ev=101)
     return {"arbitrage": result["arbitrage"],
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}

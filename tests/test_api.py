@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from fastapi.testclient import TestClient
@@ -29,54 +30,52 @@ def _api_independent_models(sport_key, home="Home", away="Away"):
     }}
 
 
-def test_manual_refresh_endpoint_passes_sport_and_returns_alert_diagnostics(monkeypatch):
-    monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "")
+def test_manual_refresh_endpoint_requires_admin_and_returns_result(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "CaseSensitive-Admin")
+    monkeypatch.setattr(main, "_reserve_manual_refresh_slot", lambda: {"allowed": True})
     received = {}
 
     def fake_refresh(sport=None):
         received["sport"] = sport
-        return {
-            "ok": True,
-            "events": 12,
-            "alerts_enabled": True,
-            "alerts_evaluated": 8,
-            "alerts_qualified": 3,
-            "alerts_sent": 2,
-            "alert_error": None,
-        }
+        return {"ok": True, "events": 12}
 
     monkeypatch.setattr(main.service, "refresh", fake_refresh)
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:CaseSensitive-Admin").decode()}
     with TestClient(main.app) as client:
-        response = client.post("/api/refresh?sport=basketball_nba")
+        denied = client.post("/api/refresh?sport=basketball_nba")
+        response = client.post("/api/refresh?sport=basketball_nba", headers=headers)
 
+    assert denied.status_code == 401
     assert response.status_code == 200
     assert received["sport"] == "basketball_nba"
-    assert response.json()["alerts_sent"] == 2
-    assert response.json()["alerts_qualified"] == 3
+    assert response.json()["events"] == 12
 
 
-def test_health_endpoint_exposes_alert_delivery_diagnostics(monkeypatch):
-    monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "")
+def test_public_health_endpoint_does_not_expose_provider_or_api_diagnostics(monkeypatch):
     monkeypatch.setattr(main.service, "status", lambda: {
-        "alerts_enabled": True,
-        "alerts_sent": 5,
-        "last_alert_evaluated": 11,
-        "last_alert_qualified": 4,
-        "last_alert_sent": 3,
-        "last_alert_error": "temporary failure",
+        "provider": "therundown",
+        "providers": ["therundown", "oddize"],
+        "provider_keys": {"therundown": {"keys": [{"key_id": "secret-fingerprint"}]}},
+        "provider_usage": {"datapoints_remaining": 12},
+        "auto_refresh_schedule": {"therundown": 14400},
+        "last_updated": "2026-11-22T12:00:00Z",
+        "sports": ["basketball_nba"],
+        "data_freshness": "current",
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current"}],
+        "live_data_available": True,
     })
-
     with TestClient(main.app) as client:
         response = client.get("/api/health")
-
     assert response.status_code == 200
     payload = response.json()
-    assert payload["last_alert_evaluated"] == 11
-    assert payload["last_alert_qualified"] == 4
-    assert payload["last_alert_sent"] == 3
-    assert payload["last_alert_error"] == "temporary failure"
+    assert payload["sports"] == ["basketball_nba"]
+    assert payload["data_freshness"] == "current"
+    assert "providers" not in payload
+    assert "provider_keys" not in payload
+    assert "provider_usage" not in payload
+    assert "auto_refresh_schedule" not in payload
 
 
 def test_movement_history_endpoint_returns_all_observed_lines(monkeypatch):
@@ -392,22 +391,25 @@ def test_simulation_freshness_lookup_is_league_specific(monkeypatch):
 
 
 
-def test_optional_basic_auth_protects_dashboard_and_api_but_allows_health(monkeypatch):
+def test_optional_basic_auth_protects_dashboard_and_admin_controls_separately(monkeypatch):
     import base64
-
-    monkeypatch.setattr(main.config, "AUTH_USERNAME", "operator")
-    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "CaseSensitive-Secret")
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "subscriber")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "Subscriber-Secret")
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "CaseSensitive-Admin")
+    subscriber = {"Authorization": "Basic " + base64.b64encode(b"subscriber:Subscriber-Secret").decode()}
+    admin = {"Authorization": "Basic " + base64.b64encode(b"admin:CaseSensitive-Admin").decode()}
     with TestClient(main.app) as client:
         assert client.get("/").status_code == 401
         assert client.get("/api/odds").status_code == 401
-        assert client.post("/api/refresh").status_code == 401
         assert client.get("/api/health").status_code == 200
-        token = base64.b64encode(b"operator:CaseSensitive-Secret").decode()
-        headers = {"Authorization": f"Basic {token}"}
-        assert client.get("/", headers=headers).status_code == 200
-        assert client.get("/api/odds", headers=headers).status_code == 200
-        wrong = base64.b64encode(b"operator:casesensitive-secret").decode()
-        assert client.get("/", headers={"Authorization": f"Basic {wrong}"}).status_code == 401
+        assert client.get("/", headers=subscriber).status_code == 200
+        assert client.get("/api/odds", headers=subscriber).status_code == 200
+        assert client.get("/admin", headers=subscriber).status_code == 401
+        assert client.get("/api/admin/control", headers=subscriber).status_code == 401
+        assert client.post("/api/refresh?sport=basketball_nba", headers=subscriber).status_code == 401
+        assert client.get("/admin", headers=admin).status_code == 200
+        assert client.get("/api/admin/control", headers=admin).status_code == 200
 
 
 def test_authentication_fails_closed_when_only_one_credential_is_set(monkeypatch):
@@ -422,23 +424,32 @@ def test_authentication_fails_closed_when_only_one_credential_is_set(monkeypatch
 
 
 def test_manual_refresh_rejects_unconfigured_sport_without_provider_call(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "secret")
     monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
     called = []
     monkeypatch.setattr(main.service, "refresh", lambda sport=None: called.append(sport))
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:secret").decode()}
     with TestClient(main.app) as client:
-        response = client.post("/api/refresh?sport=americanfootball_nfl")
+        response = client.post("/api/refresh?sport=americanfootball_nfl", headers=headers)
     assert response.status_code == 400
     assert "configured league" in response.json()["detail"]
     assert called == []
 
 
-def test_manual_refresh_without_sport_still_refreshes_all_configured_leagues(monkeypatch):
+def test_manual_refresh_without_sport_is_rejected_to_protect_provider_quotas(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "secret")
     called = []
     monkeypatch.setattr(main.service, "refresh", lambda sport=None: called.append(sport) or {"ok": True})
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:secret").decode()}
     with TestClient(main.app) as client:
-        response = client.post("/api/refresh")
-    assert response.status_code == 200
-    assert called == [None]
+        response = client.post("/api/refresh", headers=headers)
+    assert response.status_code == 400
+    assert "one configured league" in response.json()["detail"]
+    assert called == []
 
 
 def test_simulation_endpoint_blocks_started_game_even_with_current_snapshot(monkeypatch):
@@ -606,3 +617,106 @@ def test_all_bookmaker_quotes_endpoint_returns_every_book_and_respects_sport_fil
     quotes = response.json()["quotes"]
     assert len(quotes) == 4
     assert {quote["bookmaker_key"] for quote in quotes} == {"book-a", "book-b"}
+
+
+def test_admin_refresh_endpoint_limits_provider_selection_and_targets_one_league(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "secret")
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    monkeypatch.setattr(main.service, "active_provider_names", lambda: ["therundown", "oddize"])
+    monkeypatch.setattr(main, "_reserve_manual_refresh_slot", lambda: {"allowed": True, "used_today": 1, "remaining_today": 2})
+    received = {}
+    def fake_refresh(sport=None, providers=None):
+        received.update(sport=sport, providers=providers)
+        return {"ok": True, "events": 3}
+    monkeypatch.setattr(main.service, "refresh", fake_refresh)
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:secret").decode()}
+    with TestClient(main.app) as client:
+        bad = client.post("/api/admin/refresh?sport=basketball_nba&providers=unknown", headers=headers)
+        good = client.post("/api/admin/refresh?sport=basketball_nba&providers=therundown&providers=oddize", headers=headers)
+    assert bad.status_code == 400
+    assert good.status_code == 200
+    assert received == {"sport": "basketball_nba", "providers": ["therundown", "oddize"]}
+
+
+def test_admin_settings_are_validated_and_persisted(monkeypatch):
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "secret")
+    stored = {}
+    monkeypatch.setattr(main.service.db, "get_state", lambda key: stored.get(key))
+    monkeypatch.setattr(main.service.db, "set_state", lambda key, value: stored.__setitem__(key, value))
+    import base64
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:secret").decode()}
+    with TestClient(main.app) as client:
+        response = client.post("/api/admin/settings", headers=headers, json={
+            "automatic_refresh_enabled": False,
+            "manual_refresh_enabled": True,
+            "manual_refresh_cooldown_seconds": 1800,
+            "manual_refresh_daily_limit": 2,
+            "provider_auto_refresh_enabled": {"therundown": False},
+        })
+        invalid = client.post("/api/admin/settings", headers=headers, json={
+            "manual_refresh_daily_limit": 1000,
+        })
+    assert response.status_code == 200
+    assert response.json()["settings"]["automatic_refresh_enabled"] is False
+    assert json.loads(stored["admin_control_settings"])["manual_refresh_daily_limit"] == 2
+    assert json.loads(stored["admin_control_settings"])["provider_auto_refresh_enabled"]["therundown"] is False
+    assert invalid.status_code == 422
+
+
+def test_admin_routes_fail_closed_when_admin_credentials_are_missing(monkeypatch):
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "")
+    with TestClient(main.app) as client:
+        assert client.get("/admin").status_code == 503
+        assert client.get("/api/admin/control").status_code == 503
+        assert client.post("/api/refresh?sport=basketball_nba").status_code == 503
+        assert client.post("/api/limits/refresh").status_code == 503
+        assert client.post("/api/simulation/games/refresh?sport=basketball_nba").status_code == 503
+
+
+def test_public_odds_endpoint_returns_quotes_without_provider_status(monkeypatch):
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [{"id": "event", "bookmakers": [{"key": "book", "markets": [{"key": "h2h", "outcomes": [{"name": "Home", "price": -110, "source_provider": "private-provider", "size_source_provider": "private-provider"}]}]}]}])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "providers": ["therundown"],
+        "provider_keys": {"therundown": {"keys": [{"key_id": "private"}]}},
+        "provider_usage": {"datapoints_remaining": 99},
+    })
+    with TestClient(main.app) as client:
+        response = client.get("/api/odds")
+    assert response.status_code == 200
+    assert response.json()["events"][0]["id"] == "event"
+    outcome = response.json()["events"][0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert "source_provider" not in outcome
+    assert "size_source_provider" not in outcome
+
+
+def test_admin_page_and_brand_logo_are_served(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "secret")
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:secret").decode()}
+    with TestClient(main.app) as client:
+        page = client.get("/admin", headers=headers)
+        logo = client.get("/assets/odds-intelligence.svg")
+        public_page = client.get("/")
+    assert page.status_code == 200
+    assert "Administrator control center" in page.text
+    assert logo.status_code == 200
+    assert "<svg" in logo.text
+    assert "odds-intelligence.svg" in public_page.text
+
+
+def test_admin_credentials_must_differ_from_subscriber_credentials(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "shared")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "shared-secret")
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "shared")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "shared-secret")
+    headers = {"Authorization": "Basic " + base64.b64encode(b"shared:shared-secret").decode()}
+    with TestClient(main.app) as client:
+        response = client.get("/admin", headers=headers)
+    assert response.status_code == 503
+    assert "different" in response.json()["detail"]
