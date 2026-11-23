@@ -1075,3 +1075,28 @@ def test_clv_candidate_ingestion_skips_malformed_metadata_and_nonfinite_values(t
     assert db.record_clv_candidates(None, now.isoformat()) == 0
     assert db.record_clv_candidates([base], "invalid-observed-time") == 0
     assert db.clv_report("basketball_nba")["summary"]["total"] == 2
+
+
+def test_admin_manual_refresh_guard_enforces_cooldown_and_utc_daily_limit(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "admin-refresh.sqlite3")
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
+    first = db.consume_admin_refresh_slot(900, 2, now)
+    assert first == {
+        "allowed": True, "used_today": 1, "remaining_today": 1,
+        "retry_after_seconds": 0,
+    }
+    blocked = db.consume_admin_refresh_slot(900, 2, now + timedelta(seconds=30))
+    assert blocked["allowed"] is False
+    assert blocked["reason"] == "cooldown"
+    assert blocked["retry_after_seconds"] == 870
+    second = db.consume_admin_refresh_slot(900, 2, now + timedelta(seconds=901))
+    assert second["allowed"] is True
+    assert second["used_today"] == 2
+    daily_block = db.consume_admin_refresh_slot(900, 2, now + timedelta(seconds=1802))
+    assert daily_block["allowed"] is False
+    assert daily_block["reason"] == "daily_limit"
+    next_day = db.consume_admin_refresh_slot(900, 2, now + timedelta(days=1))
+    assert next_day["allowed"] is True
+    assert next_day["used_today"] == 1
