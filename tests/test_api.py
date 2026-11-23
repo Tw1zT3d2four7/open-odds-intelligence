@@ -772,3 +772,12 @@ def test_admin_page_exposes_all_leagues_and_provider_refresh_errors():
     assert 'value="all">All leagues' in page
     assert 'r.provider_errors' in page
     assert 'r.sports_refreshed' in page
+
+
+def test_brand_logo_is_embedded_in_both_dashboard_pages():
+    public_page = main.WEB.read_text(encoding="utf-8")
+    admin_page = main.ADMIN_WEB.read_text(encoding="utf-8")
+    assert 'src="data:image/svg+xml,' in public_page
+    assert 'href="data:image/svg+xml,' in public_page
+    assert 'src="data:image/svg+xml,' in admin_page
+    assert 'href="data:image/svg+xml,' in admin_page
