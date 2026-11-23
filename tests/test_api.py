@@ -195,6 +195,24 @@ def test_clv_endpoint_rejects_out_of_range_limit():
     assert response.status_code == 422
 
 
+
+def test_movement_endpoint_paginates_result_rows(monkeypatch):
+    rows = [{"row": index} for index in range(31)]
+    received = {}
+    def fake_movement(sport, limit):
+        received.update(sport=sport, limit=limit)
+        return rows
+    monkeypatch.setattr(main.service, "movement", fake_movement)
+    with TestClient(main.app) as client:
+        response = client.get("/api/movement?sport=americanfootball_nfl&limit=25&offset=25")
+    payload = response.json()
+    assert response.status_code == 200
+    assert received == {"sport": "americanfootball_nfl", "limit": 1000}
+    assert payload["total"] == 31
+    assert payload["offset"] == 25
+    assert payload["movements"] == rows[25:]
+
+
 def test_limits_endpoints_expose_observations_and_changes(monkeypatch):
     monkeypatch.setattr(main.limits_monitor, "current", lambda sport, limit: [{"sport": sport, "limit": limit}])
     monkeypatch.setattr(main.limits_monitor, "status", lambda: {"enabled": True})
