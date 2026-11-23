@@ -87,5 +87,61 @@ class NflverseResultsTests(unittest.TestCase):
             self.assertEqual(database.simulation_settlements(), [])
 
 
+    def test_walk_forward_model_uses_prior_seasons_and_keeps_holdout_separate(self):
+        from scripts.sync_nflverse_results import build_nfl_historical_model
+
+        rows = []
+        strengths = {"Alpha": 18, "Bravo": 10, "Charlie": 2, "Delta": -8}
+        pairs = [
+            ("Alpha", "Bravo"), ("Alpha", "Charlie"), ("Alpha", "Delta"),
+            ("Bravo", "Charlie"), ("Bravo", "Delta"), ("Charlie", "Delta"),
+        ]
+        for season in range(2000, 2014):
+            for index, (home, away) in enumerate(pairs):
+                home_score = 24 + strengths[home] - strengths[away] // 3 + (index % 3)
+                away_score = 20 + strengths[away] - strengths[home] // 3 - (index % 2)
+                rows.append({
+                    "season": season,
+                    "event_id": f"{season}-{index}",
+                    "sport_key": "americanfootball_nfl",
+                    "commence_time": f"{season}-10-{10 + index:02d}T12:00:00Z",
+                    "home_team": home,
+                    "away_team": away,
+                    "home_score": max(0, home_score),
+                    "away_score": max(0, away_score),
+                    "status": "final",
+                    "source": "fixture",
+                })
+        report, artifact = build_nfl_historical_model(
+            rows,
+            training_end_season=2007,
+            calibration_end_season=2010,
+            through_season=2013,
+            min_calibration_games=1,
+            min_holdout_games=1,
+            min_team_games=2,
+            trials=10_000,
+        )
+        self.assertEqual(report["walk_forward"]["training_games"], 48)
+        self.assertEqual(report["walk_forward"]["calibration_games"], 18)
+        self.assertEqual(report["walk_forward"]["holdout_games"], 18)
+        self.assertEqual(report["calibration"]["sample_size"], 18)
+        self.assertEqual(report["source"]["betting_fields_used"], [])
+        if artifact is not None:
+            self.assertEqual(artifact["validation"]["status"], "PASS")
+            self.assertIn("independent_team_model", artifact["models"]["americanfootball_nfl"])
+
+    def test_model_artifact_writer_refuses_failed_validation(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from scripts.sync_nflverse_results import write_model_artifact
+
+        with TemporaryDirectory() as temp:
+            target = Path(temp) / "models.json"
+            with self.assertRaisesRegex(ValueError, "passing holdout validation"):
+                write_model_artifact(target, {"validation": {"status": "BACKTEST FAILED - PICKS DISABLED"}})
+            self.assertFalse(target.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

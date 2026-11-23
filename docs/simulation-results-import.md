@@ -153,3 +153,38 @@ be used to match an odds quote.
 
 Attribution: nflverse schedules, CC BY 4.0.
 Source: https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv
+
+
+### Walk-forward NFL model build and validation
+
+The same importer can run a dedicated NFL model-validation pipeline. It
+predicts each season using only results from seasons before it, fits a
+probability temperature on the separate calibration seasons, and evaluates
+the later holdout seasons against a simple historical baseline. The live
+simulator's 10,000-trial score-draw engine is used for the validation
+probabilities. No sportsbook prices are read.
+
+Dry-run validation (does not write a model file):
+
+```bash
+python -m scripts.sync_nflverse_results --build-model
+```
+
+Only a passing untouched holdout can produce a model artifact. To explicitly
+write it to the configured simulator model path:
+
+```bash
+python -m scripts.sync_nflverse_results --build-model --apply
+```
+
+The default chronological periods are training through 2018, calibration
+2019-2021, and holdout 2022 through the last completed season. At least 100
+calibration predictions and 1,000 holdout predictions are required by
+default. The model is written only if holdout margin MAE, moneyline Brier
+score, and moneyline log loss all beat the training-only baseline. A failed
+validation exits non-zero and does not write an artifact.
+
+This validation covers independent score projections and moneyline
+probabilities. It does not establish that spread/total betting edges are
+profitable; those outputs remain signals requiring separate historical
+market-line validation.
