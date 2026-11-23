@@ -363,6 +363,62 @@ class OddsDatabase:
                 (key, str(value)),
             )
 
+    def consume_admin_refresh_slot(self, cooldown_seconds, daily_limit, now=None):
+        """Atomically reserve one admin-triggered provider refresh slot (UTC day)."""
+        now = now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            raise ValueError("now must be timezone-aware")
+        now = now.astimezone(timezone.utc)
+        day = now.date().isoformat()
+        now_text = now.isoformat()
+        daily_key = f"admin_manual_refresh_day:{day}"
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            previous = db.execute(
+                "SELECT state_value FROM app_state WHERE state_key='admin_manual_refresh_last_at'"
+            ).fetchone()
+            used_row = db.execute(
+                "SELECT state_value FROM app_state WHERE state_key=?", (daily_key,)
+            ).fetchone()
+            used = int(used_row["state_value"]) if used_row else 0
+            if used >= int(daily_limit):
+                return {
+                    "allowed": False, "reason": "daily_limit",
+                    "used_today": used, "remaining_today": 0,
+                    "retry_after_seconds": 0,
+                }
+            retry_after = 0
+            if previous:
+                try:
+                    last = datetime.fromisoformat(previous["state_value"])
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    retry_after = max(
+                        0, int(float(cooldown_seconds) -
+                               (now - last.astimezone(timezone.utc)).total_seconds())
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    retry_after = 0
+            if retry_after > 0:
+                return {
+                    "allowed": False, "reason": "cooldown",
+                    "used_today": used, "remaining_today": max(0, int(daily_limit) - used),
+                    "retry_after_seconds": retry_after,
+                }
+            db.execute(
+                "INSERT OR REPLACE INTO app_state(state_key,state_value) VALUES(?,?)",
+                ("admin_manual_refresh_last_at", now_text),
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO app_state(state_key,state_value) VALUES(?,?)",
+                (daily_key, str(used + 1)),
+            )
+            return {
+                "allowed": True, "used_today": used + 1,
+                "remaining_today": max(0, int(daily_limit) - used - 1),
+                "retry_after_seconds": 0,
+            }
+
     def save_snapshot(self, sport, events, provider="unknown", fetched_at=None):
         fetched_at = fetched_at or datetime.now(timezone.utc).isoformat()
         if not isinstance(events, list):
