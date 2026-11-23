@@ -1079,4 +1079,10 @@ class OddsDatabase:
             ).fetchall()
             result = dict(row)
             result["sports"] = [dict(item) for item in latest]
+            result["bookmakers"] = db.execute(
+                """SELECT COUNT(DISTINCT q.bookmaker_key)
+                   FROM quotes q
+                   JOIN (SELECT MAX(id) id FROM snapshots GROUP BY sport) latest
+                     ON latest.id=q.snapshot_id"""
+            ).fetchone()[0]
             return result
