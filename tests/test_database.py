@@ -1100,3 +1100,39 @@ def test_admin_manual_refresh_guard_enforces_cooldown_and_utc_daily_limit(tmp_pa
     next_day = db.consume_admin_refresh_slot(900, 2, now + timedelta(days=1))
     assert next_day["allowed"] is True
     assert next_day["used_today"] == 1
+
+def test_latest_events_groups_large_multi_book_snapshot_without_losing_quote_metadata(tmp_path):
+    db = OddsDatabase(tmp_path / "grouping.sqlite3")
+    event = fixture()[0]
+    event["bookmakers"].append({
+        "key": "book-b", "title": "Book B",
+        "markets": [{"key": "totals", "outcomes": [
+            {"name": "Over", "price": -105, "point": 2.5,
+             "updated_at": "2026-11-19T12:00:00Z", "main": True,
+             "size": {"value": 100, "currency": "USD"}},
+            {"name": "Under", "price": -115, "point": 2.5},
+        ]}],
+    })
+    db.save_snapshot("basketball_nba", [event], "test", "2026-11-19T12:00:00Z")
+
+    loaded = db.latest_events("basketball_nba")
+    assert len(loaded) == 1
+    books = {book["key"]: book for book in loaded[0]["bookmakers"]}
+    assert set(books) == {"book-a", "book-b"}
+    markets = {market["key"]: market for market in books["book-b"]["markets"]}
+    assert set(markets) == {"totals"}
+    over = next(item for item in markets["totals"]["outcomes"] if item["name"] == "Over")
+    assert over["point"] == 2.5
+    assert over["main"] is True
+    assert over["size"] == {"value": 100, "currency": "USD"}
+    assert over["updated_at"] == "2026-11-19T12:00:00Z"
+
+
+def test_latest_events_snapshot_lookup_index_exists(tmp_path):
+    db = OddsDatabase(tmp_path / "index.sqlite3")
+    with db.connect() as conn:
+        indexes = {
+            row["name"] for row in conn.execute("PRAGMA index_list(quotes)").fetchall()
+        }
+    assert "idx_quotes_snapshot_event_book_market" in indexes
+
