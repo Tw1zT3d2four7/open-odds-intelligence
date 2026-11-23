@@ -101,9 +101,6 @@ def market_board(events, best_only=True):
                     description = _outcome_description(outcome)
                     if market_key.startswith("player_") and not description.strip():
                         continue
-                    # A spread side is identified by its outcome and
-                    # handicap magnitude; providers may sign that handicap
-                    # differently while still referring to the same side.
                     key = (event_id, market_key, name, line, description)
                     grouped[key].append({
                         "event_id": event_id, "sport": event.get("sport_title"),
@@ -128,10 +125,9 @@ def market_board(events, best_only=True):
 def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
     """Calculate leave-one-book-out EV and cross-book two-way arbitrage.
 
-    Only complete, matching outcome sets are compared. Soccer h2h is a
-    three-way market (home/draw/away); other supported markets are treated
-    as two-way. When books disagree on the outcome set, only the unique
-    most-common complete set is eligible for comparison.
+    Peer probabilities are grouped by exact outcome before calculating EV.
+    This keeps work proportional to the number of quotes instead of scanning
+    every quote in a market-line group for every quote (quadratic behavior).
     """
     opportunities, arbitrage = [], []
     for event in _records(events):
@@ -201,7 +197,6 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                             "book": book, "outcome": outcome,
                             "identity": identity, "probability": probability,
                         })
-                    # One canonical complete set per book / market / line.
                     candidate_sets[(market_key, line, player_scope)][signature][book_key] = quotes
 
         # Exclude incomplete or mismatched sets. A tied modal signature is
@@ -218,46 +213,57 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
             for book_quotes in selected.values():
                 line_sets[market_line].extend(book_quotes)
 
-        # EV: median of other books' no-vig probabilities for the same outcome/line.
+        # EV: only compare books quoting the same exact outcome and line.
+        # The previous implementation scanned the entire market-line quote
+        # list for every quote. With hundreds of selections per game this
+        # repeatedly traversed unrelated outcomes and dominated request time.
         best = {}
         for (market_key, line, _player_scope), quotes in line_sets.items():
+            quotes_by_identity = defaultdict(list)
             for quote in quotes:
-                peers = [q["probability"] for q in quotes
-                         if q["book"].get("key") != quote["book"].get("key")
-                         and q["identity"] == quote["identity"]]
-                peer_books = {q["book"].get("key") for q in quotes
-                              if q["book"].get("key") != quote["book"].get("key")
-                              and q["identity"] == quote["identity"]}
-                if len(peer_books) < min_consensus_books:
+                quotes_by_identity[quote["identity"]].append(quote)
+
+            for identity, identity_quotes in quotes_by_identity.items():
+                if len(identity_quotes) <= min_consensus_books:
                     continue
-                fair = median(peers)
-                price = quote["outcome"]["price"]
-                ev = (fair * american_to_decimal(price) - 1) * 100
-                if ev < min_ev:
-                    continue
-                identity = (market_key, line, quote["identity"])
-                row = {
-                    "event_id": event_id, "sport": event.get("sport_title"),
-                    "sport_key": event.get("sport_key") or event.get("sport"),
-                    "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
-                    "commence_time": event.get("commence_time"), "market": market_key,
-                    "outcome": quote["outcome"]["name"],
-                    "outcome_description": _outcome_description(quote["outcome"]),
-                    "point": quote["outcome"].get("point"),
-                    "bookmaker": quote["book"].get("title", quote["book"].get("key")),
-                    "bookmaker_key": quote["book"].get("key"), "price": price,
-                    "fair_probability": round(fair, 6), "consensus_books": len(peer_books),
-                    "ev_percent": round(ev, 2),
-                }
-                if best_only:
-                    if identity not in best or american_to_decimal(price) > american_to_decimal(best[identity]["price"]):
-                        best[identity] = row
-                else:
-                    # CLV needs each qualifying sportsbook's first quote,
-                    # not only the best price selected for the public board.
-                    opportunities.append(row)
-        if best_only:
-            opportunities.extend(best.values())
+                for quote in identity_quotes:
+                    own_book = quote["book"].get("key")
+                    peers = [
+                        peer["probability"] for peer in identity_quotes
+                        if peer["book"].get("key") != own_book
+                    ]
+                    peer_books = {
+                        peer["book"].get("key") for peer in identity_quotes
+                        if peer["book"].get("key") != own_book
+                    }
+                    if len(peer_books) < min_consensus_books:
+                        continue
+                    fair = median(peers)
+                    price = quote["outcome"]["price"]
+                    ev = (fair * american_to_decimal(price) - 1) * 100
+                    if ev < min_ev:
+                        continue
+                    row = {
+                        "event_id": event_id, "sport": event.get("sport_title"),
+                        "sport_key": event.get("sport_key") or event.get("sport"),
+                        "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
+                        "commence_time": event.get("commence_time"), "market": market_key,
+                        "outcome": quote["outcome"]["name"],
+                        "outcome_description": _outcome_description(quote["outcome"]),
+                        "point": quote["outcome"].get("point"),
+                        "bookmaker": quote["book"].get("title", quote["book"].get("key")),
+                        "bookmaker_key": own_book, "price": price,
+                        "fair_probability": round(fair, 6), "consensus_books": len(peer_books),
+                        "ev_percent": round(ev, 2),
+                    }
+                    if best_only:
+                        if identity not in best or american_to_decimal(price) > american_to_decimal(best[identity]["price"]):
+                            best[identity] = row
+                    else:
+                        opportunities.append(row)
+            if best_only:
+                opportunities.extend(best.values())
+                best = {}
 
         # Arbitrage: only complete two-outcome markets, with distinct books.
         for (market_key, line, _player_scope), quotes in line_sets.items():
