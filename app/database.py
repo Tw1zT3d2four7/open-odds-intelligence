@@ -511,22 +511,43 @@ class OddsDatabase:
                 snapshots = db.execute("""SELECT s.id,s.sport,s.fetched_at FROM snapshots s
                     JOIN (SELECT sport,MAX(id) id FROM snapshots GROUP BY sport) x ON x.id=s.id
                     ORDER BY s.sport""").fetchall()
+            page_ids_by_snapshot = {}
+            if limit is not None and not sport:
+                selected = db.execute(
+                    """SELECT q.snapshot_id,q.event_id
+                       FROM quotes q
+                       JOIN (SELECT MAX(id) id FROM snapshots GROUP BY sport) latest
+                         ON latest.id=q.snapshot_id
+                       GROUP BY q.snapshot_id,q.event_id
+                       ORDER BY MIN(q.commence_time),q.event_id
+                       LIMIT ? OFFSET ?""",
+                    (max(1, min(int(limit), 100)), max(0, int(offset))),
+                ).fetchall()
+                for item in selected:
+                    page_ids_by_snapshot.setdefault(item["snapshot_id"], []).append(item["event_id"])
             events = []
             for snap in snapshots:
                 page_clause = ""
                 page_args = [snap["id"]]
                 if limit is not None:
-                    page_clause = """ AND event_id IN (
-                        SELECT event_id FROM quotes WHERE snapshot_id=?
-                        GROUP BY event_id ORDER BY MIN(commence_time),event_id
-                        LIMIT ? OFFSET ?
-                    )"""
-                    page_args.extend([snap["id"], max(1, min(int(limit), 100)), max(0, int(offset))])
+                    if sport:
+                        page_clause = """ AND event_id IN (
+                            SELECT event_id FROM quotes WHERE snapshot_id=?
+                            GROUP BY event_id ORDER BY MIN(commence_time),event_id
+                            LIMIT ? OFFSET ?
+                        )"""
+                        page_args.extend([snap["id"], max(1, min(int(limit), 100)), max(0, int(offset))])
+                    else:
+                        selected_ids = page_ids_by_snapshot.get(snap["id"], [])
+                        if not selected_ids:
+                            continue
+                        page_clause = " AND event_id IN (" + ",".join("?" for _ in selected_ids) + ")"
+                        page_args.extend(selected_ids)
                 rows = db.execute(
                     """SELECT event_id,sport_title,commence_time,home_team,away_team,
-                              bookmaker_key,bookmaker_title,market_key,outcome_name,
-                              outcome_description,price,source_updated_at,source_provider,
-                              is_main,size_json,size_source_provider,point
+                              bookmaker_key,market_key,outcome_name,outcome_description,price,
+                              source_updated_at,source_provider,is_main,size_json,
+                              size_source_provider,point
                        FROM quotes WHERE snapshot_id=?""" + page_clause + """
                        ORDER BY commence_time,event_id,bookmaker_key,market_key,outcome_name""",
                     page_args,
