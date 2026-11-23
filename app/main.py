@@ -726,13 +726,18 @@ def history(event_id: str, market: str, outcome: str,
 def opportunities(sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20)):
-    result = analyze_markets(_public_events(sport), min_ev, min_consensus_books)
+    result = analyze_markets(
+        _public_events(sport), min_ev, min_consensus_books,
+        include_arbitrage=False,
+    )
     return {"opportunities": result["opportunities"],
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
 
 @app.get("/api/arbitrage")
 def arbitrage(sport: str | None = None):
-    result = analyze_markets(_public_events(sport), min_ev=101)
+    result = analyze_markets(
+        _public_events(sport), min_ev=101, include_arbitrage=True,
+    )
     return {"arbitrage": result["arbitrage"],
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
