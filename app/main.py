@@ -466,13 +466,13 @@ def refresh(sport: str | None = None):
 
 @app.get("/api/market-board")
 def market_board_api(sport: str | None = None):
-    return {"quotes": market_board(service.events(sport))}
+    return {"quotes": market_board(_public_events(sport))}
 
 
 @app.get("/api/bookmaker-board")
 def bookmaker_board_api(sport: str | None = None):
     """Return every valid quote from every sportsbook in the merged snapshot."""
-    return {"quotes": market_board(service.events(sport), best_only=False)}
+    return {"quotes": market_board(_public_events(sport), best_only=False)}
 
 
 @app.get("/api/simulation/leagues")
@@ -503,7 +503,7 @@ def _simulation_games_for_sport(sport: str):
         if isinstance(freshness, dict) else "unavailable"
     )
     freshness_age = freshness.get("age_seconds") if isinstance(freshness, dict) else None
-    for event in service.events(sport):
+    for event in _public_events(sport):
         if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
             continue
         from .simulation import market_readiness
@@ -562,7 +562,7 @@ def refresh_simulation_games(sport: str):
 def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
-    event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
+    event = next((item for item in _public_events(sport) if str(item.get("id")) == event_id), None)
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
     from .simulation import _validate_upcoming_event
@@ -593,7 +593,7 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
 
 @app.get("/api/player-props")
 def player_props(sport: str | None = None):
-    events = service.events(sport)
+    events = _public_events(sport)
     quotes = []
     for event in events:
         for book in event.get("bookmakers", []):
@@ -657,13 +657,13 @@ def history(event_id: str, market: str, outcome: str,
 def opportunities(sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20)):
-    result = analyze_markets(service.events(sport), min_ev, min_consensus_books)
+    result = analyze_markets(_public_events(sport), min_ev, min_consensus_books)
     return {"opportunities": result["opportunities"],
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
 
 @app.get("/api/arbitrage")
 def arbitrage(sport: str | None = None):
-    result = analyze_markets(service.events(sport), min_ev=101)
+    result = analyze_markets(_public_events(sport), min_ev=101)
     return {"arbitrage": result["arbitrage"],
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
