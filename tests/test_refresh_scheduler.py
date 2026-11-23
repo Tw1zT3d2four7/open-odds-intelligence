@@ -178,7 +178,7 @@ def test_admin_can_pause_one_provider_without_pausing_other_scheduled_sources(mo
     async def fake_to_thread(fn, *args, **kwargs):
         return fn(*args, **kwargs)
     monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
-    async def fake_refresh(**kwargs):
+    def fake_refresh(**kwargs):
         called.append(kwargs["providers"])
         return {"ok": True, "provider_results": {"nba": {"providers_succeeded": ["oddize"]}}}
     monkeypatch.setattr(main.service, "refresh", fake_refresh)
