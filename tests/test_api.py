@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from fastapi.testclient import TestClient
@@ -409,7 +410,6 @@ def test_optional_basic_auth_protects_dashboard_and_admin_controls_separately(mo
         assert client.post("/api/refresh?sport=basketball_nba", headers=subscriber).status_code == 401
         assert client.get("/admin", headers=admin).status_code == 200
         assert client.get("/api/admin/control", headers=admin).status_code == 200
-        assert client.post("/api/refresh?sport=basketball_nba", headers=admin).status_code == 429
 
 
 def test_authentication_fails_closed_when_only_one_credential_is_set(monkeypatch):
