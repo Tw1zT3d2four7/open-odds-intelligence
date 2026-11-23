@@ -420,6 +420,7 @@ class OddsService:
                 "data_stale_after_seconds": config.ODDS_DATA_STALE_AFTER_SECONDS,
                 "sport_freshness": sport_freshness,
                 "stored_snapshots": stored["snapshots"], "stored_events": stored["events"],
+                "stored_bookmakers": stored.get("bookmakers", 0),
                 "provider_usage": self._provider_usage,
                 "provider_coverage": self._last_provider_results,
                 "provider_keys": {
