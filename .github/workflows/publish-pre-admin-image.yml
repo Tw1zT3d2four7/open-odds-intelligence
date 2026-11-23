@@ -1,0 +1,54 @@
+name: Publish pre-admin test image
+
+on:
+  push:
+    branches:
+      - recovery/pre-admin-with-logo
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "requirements.txt"
+      - "app/**"
+      - "scripts/**"
+      - "web/**"
+      - ".github/workflows/publish-pre-admin-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: pre-admin-ghcr-image
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out recovery branch
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish recovery image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/tw1zt3d2four7/open-odds-intelligence:pre-admin-test
+            ghcr.io/tw1zt3d2four7/open-odds-intelligence:pre-admin-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.title=Open Odds Intelligence
+            org.opencontainers.image.description=Pre-admin recovery test image with logo
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/Tw1zT3d2four7/open-odds-intelligence
