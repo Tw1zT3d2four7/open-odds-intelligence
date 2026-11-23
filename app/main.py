@@ -448,7 +448,7 @@ def history(event_id: str, market: str, outcome: str,
 def opportunities(sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20)):
-    result = analyze_markets(service.events(sport), min_ev, min_consensus_books)
+    result = analyze_markets(service.events(sport), min_ev, min_consensus_books, best_only=False)
     return {"opportunities": result["opportunities"],
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
