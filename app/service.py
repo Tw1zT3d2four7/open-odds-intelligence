@@ -100,6 +100,8 @@ class OddsService:
         self._refresh_lock = threading.Lock()
         self._alert_lock = threading.Lock()
         self._cache = {}
+        self._movement_cache = {}
+        self._movement_cache_lock = threading.Lock()
         self._last_error = None
         self._updated_at = None
         self._provider_usage = {}
@@ -686,6 +688,8 @@ class OddsService:
             snapshot_provider = "+".join(successful_providers)
             self.db.save_snapshot(sport_key, events, snapshot_provider, fetched_at)
             self._cache[sport_key] = events
+            with self._movement_cache_lock:
+                self._movement_cache.clear()
             if "oddslink" in successful_providers:
                 oddslink_events = next(
                     (items for name, items in source_results if name == "oddslink"), []
@@ -937,7 +941,21 @@ class OddsService:
         return self.db.clv_report(sport, limit)
 
     def movement(self, sport=None, limit=200):
-        return self.db.movement(sport, limit)
+        """Serve the expensive historical movement aggregation from a short-lived cache.
+
+        New odds snapshots invalidate the cache, so displayed movement stays current
+        while repeated tab visits and dashboard requests avoid rescanning the archive.
+        """
+        cache_key = (sport, max(1, min(int(limit), 1000)))
+        now = time.monotonic()
+        with self._movement_cache_lock:
+            cached = self._movement_cache.get(cache_key)
+            if cached and now - cached[0] < 120:
+                return cached[1]
+        result = self.db.movement(sport, cache_key[1])
+        with self._movement_cache_lock:
+            self._movement_cache[cache_key] = (time.monotonic(), result)
+        return result
 
     def movement_history(self, event_id, market_key, outcome_name,
                          bookmaker_key, limit=500, outcome_description=None):
