@@ -273,6 +273,10 @@ class OddsService:
             try:
                 lease = pool.acquire()
             except NoAvailableKeys as exc:
+                # Preserve the original HTTP 429/quota error after the pool
+                # has cooled down every key in the account group.
+                if last_error is not None:
+                    raise last_error
                 raise ProviderError(str(exc)) from exc
             provider = self._new_provider(provider_name, lease.key)
             try:
@@ -513,6 +517,29 @@ class OddsService:
         successful_sports = 0
         provider_errors = []
         provider_results_summary = {}
+        # A provider that has no available keys is paused for this entire
+        # refresh pass. This prevents one 429 from generating a warning and
+        # another attempted request for every remaining league.
+        blocked_providers = set()
+        for provider_name in configured_names:
+            key_status = self._provider_key_pools[provider_name].status()
+            keys = key_status.get("keys") or []
+            if keys and not key_status.get("available_keys"):
+                blocked_providers.add(provider_name)
+                retry_values = [
+                    int(item.get("retry_in_seconds") or 0)
+                    for item in keys if item.get("status") == "quota_cooldown"
+                ]
+                if retry_values:
+                    provider_errors.append(
+                        f"{provider_name}: paused for this refresh because all configured keys "
+                        f"are cooling down after a provider rate/quota response; "
+                        f"retry in approximately {max(retry_values)} seconds"
+                    )
+                else:
+                    provider_errors.append(
+                        f"{provider_name}: paused for this refresh because no configured keys are available"
+                    )
         for sport_key in sports:
             source_results = []
             source_usages = {}
@@ -521,6 +548,8 @@ class OddsService:
             skipped_providers = []
             skipped_unconfigured = []
             for provider_name in provider_names:
+                if provider_name in blocked_providers:
+                    continue
                 if provider_name == "oddize" and sport_key not in ODDIZE_SUPPORTED_SPORTS:
                     skipped_providers.append(provider_name)
                     continue
@@ -678,6 +707,11 @@ class OddsService:
                         })
                 except ProviderError as exc:
                     provider_errors.append(f"{sport_key} / {provider_name}: {exc}")
+                    if getattr(exc, "status_code", None) == 429:
+                        # Stop querying this provider for the remaining leagues
+                        # in the current refresh. The key pool has already
+                        # recorded the provider's Retry-After cooldown.
+                        blocked_providers.add(provider_name)
                     continue
 
             if not source_results:
