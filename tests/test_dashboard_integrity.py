@@ -38,7 +38,7 @@ def test_dashboard_preferences_persist_filters_sport_and_active_tab():
 
 def test_every_standalone_dashboard_button_has_an_action():
     html = DASHBOARD.read_text(encoding="utf-8")
-    button_ids = re.findall(r'<button\\b[^>]*\\bid="([^"]+)"', html)
+    button_ids = re.findall(r'<button\b[^>]*\bid="([^"]+)"', html)
     for button_id in button_ids:
         # The parlay button is wired through the calculator's local element helper.
         if button_id == "addParlayLeg":
