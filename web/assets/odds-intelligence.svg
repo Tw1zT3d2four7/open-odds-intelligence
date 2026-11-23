@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 190" role="img" aria-labelledby="title desc">
+<title id="title">Odds Intelligence</title><desc id="desc">Radar and rising odds analytics mark with Odds Intelligence wordmark.</desc>
+<defs><style>.navy{fill:#10213a}.teal{fill:#22d3c5}.white{fill:#f4f8ff}.word{font-family:Inter,Arial,sans-serif;font-weight:800;letter-spacing:5px}</style></defs>
+<g transform="translate(12 8)">
+<circle cx="86" cy="86" r="78" fill="#10213a" stroke="#22d3c5" stroke-width="7"/>
+<path d="M86 21 A65 65 0 0 1 145 58 M151 92 A65 65 0 0 1 48 139 M40 48 A65 65 0 0 1 65 25" fill="none" stroke="#f4f8ff" stroke-width="5" stroke-linecap="round"/>
+<path d="M86 25v38 M25 86h38" stroke="#f4f8ff" stroke-width="4" stroke-linecap="round"/>
+<circle cx="58" cy="56" r="6" class="teal"/>
+<path d="M43 126V105h14v21 M66 126V88h14v38 M89 126V73h14v53 M112 126V57h14v69" fill="#f4f8ff"/>
+<path d="M40 112 74 81 88 91 121 54" fill="none" stroke="#22d3c5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="m111 54 17-5-4 18" fill="none" stroke="#22d3c5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<path d="M195 25v140" stroke="#29405d" stroke-width="2"/>
+<text x="230" y="91" class="navy word" font-size="66">ODDS</text>
+<text x="232" y="145" class="teal word" font-size="36">INTELLIGENCE</text>
+</svg>
