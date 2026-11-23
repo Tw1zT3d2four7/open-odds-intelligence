@@ -6,6 +6,7 @@ import binascii
 import logging
 import asyncio
 import secrets
+import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, FileResponse
@@ -476,22 +477,43 @@ def market_limits_history(event_id: str, bookmaker: str, market: str,
         event_id, bookmaker, market, outcome, point, limit
     )}
 
+_PUBLIC_EVENTS_CACHE_LOCK = threading.Lock()
+_PUBLIC_EVENTS_CACHE = {}
+
+
 def _public_events(sport=None):
-    """Return subscriber-safe event data without internal provider attribution."""
-    def strip_private_fields(value):
-        if isinstance(value, dict):
-            return {
-                key: strip_private_fields(item)
-                for key, item in value.items()
-                if str(key).lower() not in {
-                    "source_provider", "size_source_provider",
-                    "provider", "provider_name",
+    """Return one shared subscriber-safe copy per immutable service snapshot.
+
+    The dashboard fans out several read-only endpoints. Sanitizing the same
+    hundreds-of-thousands-quote snapshot independently in every route caused
+    repeated full-tree allocations. OddsService returns the same list object
+    until a new snapshot invalidates its cache, so object identity is a safe
+    generation key here; retaining the source object also prevents id reuse.
+    """
+    source = service.events(sport)
+    cache_key = sport or "__all__"
+    with _PUBLIC_EVENTS_CACHE_LOCK:
+        cached = _PUBLIC_EVENTS_CACHE.get(cache_key)
+        if cached is not None and cached[0] is source:
+            return cached[1]
+
+        def strip_private_fields(value):
+            if isinstance(value, dict):
+                return {
+                    key: strip_private_fields(item)
+                    for key, item in value.items()
+                    if str(key).lower() not in {
+                        "source_provider", "size_source_provider",
+                        "provider", "provider_name",
+                    }
                 }
-            }
-        if isinstance(value, list):
-            return [strip_private_fields(item) for item in value]
-        return value
-    return strip_private_fields(service.events(sport))
+            if isinstance(value, list):
+                return [strip_private_fields(item) for item in value]
+            return value
+
+        sanitized = strip_private_fields(source)
+        _PUBLIC_EVENTS_CACHE[cache_key] = (source, sanitized)
+        return sanitized
 
 
 @app.get("/api/odds")
