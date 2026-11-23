@@ -570,5 +570,8 @@ $("simGame").addEventListener("change",()=>{
 });
 $("runSimulation").addEventListener("click",runSelectedSimulation);
 
-load();
+load().then(()=>{
+ if(state.activeTab==="allbooks")loadAllBooks();
+ if(state.activeTab==="movement")loadMovement();
+});
 </script></body></html>
