@@ -238,7 +238,28 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, i
                     }
                     if len(peer_books) < min_consensus_books:
                         continue
-                    fair = median(peers)
+                    # Compute the leave-one-book-out median in O(log n)
+                    # per quote rather than rebuilding/scanning peer arrays.
+                    # This matters when many sportsbooks quote the same outcome.
+                    ordered_probabilities = sorted(
+                        peer["probability"] for peer in identity_quotes
+                    )
+                    excluded_index = next(
+                        index for index, peer in enumerate(identity_quotes)
+                        if peer["book"].get("key") == own_book
+                    )
+                    peer_count = len(ordered_probabilities) - 1
+                    lower_index = (peer_count - 1) // 2
+                    upper_index = peer_count // 2
+
+                    def remaining_value(index):
+                        return ordered_probabilities[
+                            index if index < excluded_index else index + 1
+                        ]
+
+                    fair = (
+                        remaining_value(lower_index) + remaining_value(upper_index)
+                    ) / 2
                     price = quote["outcome"]["price"]
                     ev = (fair * american_to_decimal(price) - 1) * 100
                     if ev < min_ev:
