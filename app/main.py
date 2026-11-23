@@ -263,6 +263,13 @@ async def optional_basic_auth(request: Request, call_next):
                 status_code=503,
                 content={"detail": "Admin access is not configured. Set both ADMIN_USERNAME and ADMIN_PASSWORD in the private .env file."},
             )
+        if (config.AUTH_USERNAME and config.AUTH_PASSWORD
+                and secrets.compare_digest(username.encode(), config.AUTH_USERNAME.encode())
+                and secrets.compare_digest(password.encode(), config.AUTH_PASSWORD.encode())):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Administrator credentials must be different from subscriber-wide AUTH credentials."},
+            )
         if not _credentials_match(request, username, password):
             return JSONResponse(
                 status_code=401,
