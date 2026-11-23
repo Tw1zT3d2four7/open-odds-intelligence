@@ -336,3 +336,44 @@ def test_all_books_board_returns_each_sportsbook_quote_while_best_board_stays_co
     assert len(every) == 4
     assert {row["bookmaker_key"] for row in every} == {"book-a", "book-b"}
     assert {row["bookmaker_key"] for row in best} <= {"book-a", "book-b"}
+
+
+
+def test_arbitrage_only_skips_player_props_and_ev_analysis():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "focused-arbitrage",
+        "sport_key": "americanfootball_nfl",
+        "sport_title": "NFL",
+        "home_team": "Home",
+        "away_team": "Away",
+        "commence_time": "2026-11-20T00:00:00Z",
+        "bookmakers": [
+            {"key": "home-book", "title": "Home Book", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 120}, {"name": "Away", "price": -140}
+                ]},
+                {"key": "player_points", "outcomes": [
+                    {"name": "Over", "description": "Player One", "point": 20.5, "price": 120},
+                    {"name": "Under", "description": "Player One", "point": 20.5, "price": -140},
+                ]},
+            ]},
+            {"key": "away-book", "title": "Away Book", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -140}, {"name": "Away", "price": 120}
+                ]},
+                {"key": "player_points", "outcomes": [
+                    {"name": "Over", "description": "Player One", "point": 20.5, "price": -140},
+                    {"name": "Under", "description": "Player One", "point": 20.5, "price": 120},
+                ]},
+            ]},
+        ],
+    }]
+
+    complete = analyze_markets(events, min_ev=-100, min_consensus_books=1)
+    focused = analyze_markets(events, min_ev=101, arbitrage_only=True)
+
+    assert focused["opportunities"] == []
+    assert focused["arbitrage"] == complete["arbitrage"]
+    assert len(focused["arbitrage"]) == 1

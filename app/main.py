@@ -490,7 +490,7 @@ def opportunities(sport: str | None = None,
 
 @app.get("/api/arbitrage")
 def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport), min_ev=101)
+    result = analyze_markets(service.events(sport), min_ev=101, arbitrage_only=True)
     page = _page_results(result["arbitrage"], limit, offset)
     return {"arbitrage": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
