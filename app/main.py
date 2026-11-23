@@ -63,6 +63,7 @@ async def _automatic_refresh_loop():
             settings = await asyncio.to_thread(_admin_settings)
             if settings["automatic_refresh_enabled"]:
                 due_providers = await asyncio.to_thread(service.providers_due_for_auto_refresh)
+                due_providers = [name for name in due_providers if settings["provider_auto_refresh_enabled"].get(name, True)]
                 if due_providers:
                     result = await asyncio.to_thread(service.refresh, providers=due_providers)
                     succeeded = {
@@ -150,6 +151,9 @@ ADMIN_DEFAULTS = {
     "manual_refresh_enabled": True,
     "manual_refresh_cooldown_seconds": 900,
     "manual_refresh_daily_limit": 3,
+    "provider_auto_refresh_enabled": {
+        "therundown": True, "the_odds_api": True, "oddize": True, "oddslink": True,
+    },
 }
 
 
@@ -159,7 +163,16 @@ def _admin_settings():
         values = json.loads(saved) if saved else {}
     except (TypeError, ValueError, json.JSONDecodeError):
         values = {}
-    return {**ADMIN_DEFAULTS, **{key: value for key, value in values.items() if key in ADMIN_DEFAULTS}}
+    merged = {**ADMIN_DEFAULTS, **{key: value for key, value in values.items() if key in ADMIN_DEFAULTS}}
+    provider_switches = values.get("provider_auto_refresh_enabled", {})
+    if not isinstance(provider_switches, dict):
+        provider_switches = {}
+    merged["provider_auto_refresh_enabled"] = {
+        **ADMIN_DEFAULTS["provider_auto_refresh_enabled"],
+        **{name: enabled for name, enabled in provider_switches.items()
+           if name in ADMIN_DEFAULTS["provider_auto_refresh_enabled"] and isinstance(enabled, bool)},
+    }
+    return merged
 
 
 def _manual_refresh_usage():
@@ -340,6 +353,16 @@ async def update_admin_settings(request: Request):
         raise HTTPException(status_code=400, detail="A JSON settings object is required.")
     current = _admin_settings()
     updated = dict(current)
+    if "provider_auto_refresh_enabled" in payload:
+        switches = payload["provider_auto_refresh_enabled"]
+        if not isinstance(switches, dict):
+            raise HTTPException(status_code=422, detail="provider_auto_refresh_enabled must be an object of provider booleans.")
+        allowed = set(ADMIN_DEFAULTS["provider_auto_refresh_enabled"])
+        if any(name not in allowed or not isinstance(enabled, bool) for name, enabled in switches.items()):
+            raise HTTPException(status_code=422, detail="Provider auto-refresh switches must use supported provider names and boolean values.")
+        updated["provider_auto_refresh_enabled"] = {
+            **current["provider_auto_refresh_enabled"], **switches,
+        }
     for key in ("automatic_refresh_enabled", "manual_refresh_enabled"):
         if key in payload:
             if not isinstance(payload[key], bool):
