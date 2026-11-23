@@ -528,12 +528,47 @@ def main() -> None:
     parser.add_argument("--min-season", type=int, default=1999)
     parser.add_argument("--through-season", type=int, default=datetime.now(timezone.utc).year - 1)
     parser.add_argument("--input", help="Use a previously downloaded CSV instead of downloading.")
+    parser.add_argument("--build-model", action="store_true",
+                        help="Run walk-forward model validation; dry-run unless --apply is also supplied.")
     parser.add_argument("--apply", action="store_true",
-                        help="Persist results. Without this flag, the live database is unchanged.")
+                        help="Persist imported results and, when validation passes, the model artifact.")
     args = parser.parse_args()
     content = Path(args.input).read_text(encoding="utf-8-sig") if args.input else download_schedules()
+    database = OddsDatabase(args.database)
+
+    if args.build_model:
+        records = parse_nflverse_games(
+            content, min_season=args.min_season, through_season=args.through_season
+        )
+        report, artifact = build_nfl_historical_model(
+            records, through_season=args.through_season
+        )
+        result = {
+            "mode": "applied" if args.apply and artifact is not None else "dry_run",
+            "model_validation": report,
+            "model_artifact_path": config.SIMULATION_MODEL_PATH,
+            "model_artifact_written": False,
+            "training_only_rows": len(records),
+            "season_range": {
+                "first": min(row["season"] for row in records),
+                "last": max(row["season"] for row in records),
+            },
+        }
+        # Never alter the live database or create an artifact unless the
+        # untouched holdout passes every validation gate.
+        if args.apply and artifact is not None:
+            imported = sync_nflverse_results(
+                database, content, min_season=args.min_season,
+                through_season=args.through_season, apply=True,
+            )
+            write_model_artifact(config.SIMULATION_MODEL_PATH, artifact)
+            result["training_results_import"] = imported
+            result["model_artifact_written"] = True
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
     result = sync_nflverse_results(
-        OddsDatabase(args.database), content,
+        database, content,
         min_season=args.min_season, through_season=args.through_season,
         apply=args.apply,
     )
