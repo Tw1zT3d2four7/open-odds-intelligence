@@ -340,7 +340,21 @@ async function showHistory(q){
  }catch(e){$("historyMeta").textContent="Could not load price history: "+e.message}
 }
 function sellist(sel,sports,current){sel.innerHTML="";const all=document.createElement("option");all.value="";all.textContent="All configured sports";sel.appendChild(all);sports.forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s;sel.appendChild(o)});sel.value=current}
-async function refresh(){const btn=$("refresh");btn.disabled=true;btn.textContent="Refreshing…";$("notice").textContent="Requesting a provider refresh…";try{const r=await fetch("/api/refresh"+query(),{method:"POST"}).then(x=>x.json());$("notice").textContent=r.ok?"Refresh complete: "+r.events+" events · Discord "+(r.alerts_enabled?"enabled":"disabled")+" · "+r.alerts_evaluated+" evaluated · "+r.alerts_qualified+" qualified · "+r.alerts_sent+" sent"+(r.alert_error?" · ALERT ERROR: "+r.alert_error:""):"Refresh failed: "+(r.error||"unknown error");}catch(e){$("notice").textContent="Refresh request failed: "+e.message}finally{btn.disabled=false;btn.textContent="Refresh odds";await load()}}
+async function refresh(){
+ const btn=$("refresh");btn.disabled=true;btn.textContent="Refreshing…";$("notice").textContent="Requesting a provider refresh…";
+ try{
+  const response=await fetch("/api/refresh"+query(),{method:"POST"}),r=await response.json();
+  if(!response.ok)throw Error(r.detail||r.error||"Refresh failed with HTTP "+response.status);
+  $("notice").textContent=r.ok?"Refresh complete: "+r.events+" events · Discord "+(r.alerts_enabled?"enabled":"disabled")+" · "+r.alerts_evaluated+" evaluated · "+r.alerts_qualified+" qualified · "+r.alerts_sent+" sent"+(r.alert_error?" · ALERT ERROR: "+r.alert_error:""):"Refresh failed: "+(r.error||"unknown error");
+ }catch(e){$("notice").textContent="Refresh request failed: "+e.message}
+ finally{
+  btn.disabled=false;btn.textContent="Refresh odds";
+  $("allBookRows").dataset.loadedSport="";
+  await load();
+  if(state.activeTab==="allbooks")await loadAllBooks();
+  if(state.activeTab==="movement")await loadMovement();
+ }
+}
 $("sport").addEventListener("change",e=>{
  state.sport=e.target.value;savePreferences({sport:state.sport});$("allBookRows").dataset.loadedSport="";
  load().then(()=>{if(state.activeTab==="allbooks")loadAllBooks();if(state.activeTab==="movement")loadMovement()});
@@ -360,10 +374,10 @@ async function applyEvFilters(){
  const parsedEv=Number($("minEv").value),parsedBooks=Number($("consensus").value);
  if(!Number.isFinite(parsedEv)||parsedEv < -100||parsedEv > 100){status.textContent="Enter a minimum EV between -100 and 100.";return}
  if(!Number.isInteger(parsedBooks)||parsedBooks<1||parsedBooks>20){status.textContent="Choose a valid other-books threshold.";return}
- state.minEv=parsedEv;state.consensus=parsedBooks;
  button.disabled=true;button.textContent="Applying…";status.textContent="Loading filtered opportunities…";
  try{
-  const data=await get("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}));
+  const data=await get("/api/opportunities"+query({min_ev:parsedEv,min_consensus_books:parsedBooks}));
+  state.minEv=parsedEv;state.consensus=parsedBooks;
   const body=$("evRows");body.innerHTML="";
   (data.opportunities||[]).forEach(x=>row(body,[x.matchup,x.market,(x.outcome_description?x.outcome_description+" · ":"")+(x.point===null||x.point===undefined?x.outcome:x.outcome+" ("+x.point+")"),x.bookmaker,fmtOdds(x.price),(Number(x.fair_probability)*100).toFixed(1)+"%",[Number(x.ev_percent).toFixed(2)+"%","good"],(x.consensus_books||0)+" books",date(x.commence_time)]));
   if(!body.children.length)empty(body,9,"No opportunities match these filters. Lower the minimum EV or other-books requirement.");
