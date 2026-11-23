@@ -366,3 +366,57 @@ def test_ev_only_analysis_skips_arbitrage_but_preserves_ev_results():
 
     assert result["opportunities"]
     assert result["arbitrage"] == []
+
+
+def test_ev_leave_one_book_out_median_matches_reference_for_many_books():
+    from statistics import median
+    from app.markets import analyze_markets
+    from app.math import no_vig_probabilities
+
+    prices = [
+        (-150, 130),
+        (-125, 105),
+        (-110, -110),
+        (105, -125),
+        (130, -150),
+    ]
+    bookmakers = []
+    expected = {}
+    for index, (home_price, away_price) in enumerate(prices):
+        key = f"book-{index}"
+        probabilities = no_vig_probabilities([home_price, away_price])
+        expected[key] = probabilities
+        bookmakers.append({
+            "key": key,
+            "title": key,
+            "markets": [{
+                "key": "h2h",
+                "outcomes": [
+                    {"name": "Home", "price": home_price},
+                    {"name": "Away", "price": away_price},
+                ],
+            }],
+        })
+
+    result = analyze_markets(
+        [{
+            "id": "many-books",
+            "sport_key": "americanfootball_nfl",
+            "sport_title": "NFL",
+            "home_team": "Home",
+            "away_team": "Away",
+            "bookmakers": bookmakers,
+        }],
+        min_ev=-100,
+        min_consensus_books=2,
+    )
+
+    for row in result["opportunities"]:
+        outcome_index = 0 if row["outcome"] == "Home" else 1
+        peer_probabilities = [
+            values[outcome_index]
+            for key, values in expected.items()
+            if key != row["bookmaker_key"]
+        ]
+        assert row["fair_probability"] == round(median(peer_probabilities), 6)
+        assert row["consensus_books"] == len(prices) - 1
