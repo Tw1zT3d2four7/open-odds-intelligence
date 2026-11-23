@@ -204,8 +204,8 @@ function renderProviderStatus(health){
 async function load(){
  const apiFailures=[];
  try{
-  const [health,odds,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
-   getSafe("/api/health",{},apiFailures),getSafe("/api/odds"+query(),{events:[]},apiFailures),getSafe("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]},apiFailures),getSafe("/api/arbitrage"+query(),{arbitrage:[]},apiFailures),getSafe("/api/market-board"+query(),{quotes:[]},apiFailures),getSafe("/api/bookmaker-board"+query(),{quotes:[]},apiFailures),getSafe("/api/movement"+query(),{movements:[]},apiFailures),getSafe("/api/limits"+query(),{limits:[],status:{}},apiFailures),getSafe("/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]},apiFailures),getSafe("/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."},apiFailures),getSafe("/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}},apiFailures)
+  const [health,odds,ev,arb,board,allBooks,limits,limitChanges,clv,playerProps]=await Promise.all([
+   getSafe("/api/health",{},apiFailures),getSafe("/api/odds"+query(),{events:[]},apiFailures),getSafe("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]},apiFailures),getSafe("/api/arbitrage"+query(),{arbitrage:[]},apiFailures),getSafe("/api/market-board"+query(),{quotes:[]},apiFailures),getSafe("/api/bookmaker-board"+query(),{quotes:[]},apiFailures),getSafe("/api/limits"+query(),{limits:[],status:{}},apiFailures),getSafe("/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]},apiFailures),getSafe("/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."},apiFailures),getSafe("/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}},apiFailures)
   ]);
   renderProviderStatus(health);
   const events=odds.events||[],books=new Set();events.forEach(e=>(e.bookmakers||[]).forEach(b=>books.add(b.key)));
@@ -236,6 +236,25 @@ async function load(){
 
  }catch(err){$("notice").textContent="Dashboard could not load API data: "+err.message}
 }
+async function loadMovement(){
+ const rows=$("movementRows");
+ if(rows.dataset.loading==="true")return;
+ rows.dataset.loading="true";
+ rows.innerHTML='<tr><td class="empty" colspan="12">Loading line movement…</td></tr>';
+ try{
+  const response=await get("/api/movement"+query());
+  renderMovementRows(response.movements||[]);
+ }catch(error){
+  rows.innerHTML="";
+  empty(rows,12,"Could not load line movement: "+error.message);
+ }finally{rows.dataset.loading="false"}
+}
+function renderMovementRows(movements){
+ const movementRows=$("movementRows");movementRows.innerHTML="";
+ (movements||[]).forEach(x=>{const delta=Number(x.implied_probability_change_from_open||0),tr=document.createElement("tr"),values=[x.matchup,x.market,x.outcome,x.bookmaker,x.opening_point??"—",x.point??"—",fmtOdds(x.opening_price),fmtOdds(x.price),[(delta>0?"+":"")+delta+" pp",delta>0?"good":delta<0?"warn":""],(x.price_changes??0)+" price / "+(x.line_changes??0)+" line",x.observations??"—",date(x.source_updated_at||x.updated_at)],labels=["Matchup","Market","Selection","Sportsbook","Opening line","Latest line","Opening odds","Latest odds","Implied probability Δ","Price / line moves","Observations",x.timestamp_basis==="sportsbook"?"Sportsbook updated":"Last retrieved"];values.forEach((v,i)=>{const td=document.createElement("td"),value=Array.isArray(v)?v[0]:v;td.textContent=value??"—";td.dataset.label=labels[i];if(Array.isArray(v)&&v[1])td.className=v[1];tr.appendChild(td)});tr.title="Click to inspect the complete line and price timeline";tr.style.cursor="pointer";tr.addEventListener("click",()=>showMovementHistory(x));movementRows.appendChild(tr)});
+ if(!movementRows.children.length)empty(movementRows,12,"No meaningful movement recorded yet. Save multiple odds snapshots over time to build a movement timeline.");
+}
+
 async function showLimitHistory(q){
  const panel=$("limitHistoryPanel"),chart=$("limitHistoryChart"),body=$("limitHistoryRows");
  panel.classList.remove("hidden");body.innerHTML="";chart.textContent="";
@@ -316,7 +335,7 @@ async function applyEvFilters(){
 }
 $("apply").addEventListener("click",applyEvFilters);
 $("minEv").addEventListener("keydown",e=>{if(e.key==="Enter")applyEvFilters()});
-document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
+document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>{setTab(b.dataset.tab);if(b.dataset.tab==="movement")loadMovement()}));
 
 /* Quota-free betting calculators. All odds are converted to decimal internally. */
 (()=>{
