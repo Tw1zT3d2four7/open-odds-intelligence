@@ -27,7 +27,8 @@ async def _limits_refresh_loop():
         delay = config.LIMITS_REFRESH_INTERVAL_SECONDS
         try:
             settings = await asyncio.to_thread(_admin_settings)
-            if settings["automatic_refresh_enabled"]:
+            if (settings["automatic_refresh_enabled"]
+                    and settings["provider_auto_refresh_enabled"].get("oddslink", True)):
                 await asyncio.to_thread(limits_monitor.refresh)
                 status = await asyncio.to_thread(limits_monitor.status)
                 delay = max(1, int(status.get("next_refresh_seconds") or delay))
@@ -43,7 +44,8 @@ async def _simulation_results_loop():
     while True:
         try:
             settings = await asyncio.to_thread(_admin_settings)
-            if settings["automatic_refresh_enabled"]:
+            if (settings["automatic_refresh_enabled"]
+                    and settings["provider_auto_refresh_enabled"].get("therundown", True)):
                 await asyncio.to_thread(service.sync_simulation_results)
         except Exception as exc:
             service._simulation_results_status.update({
