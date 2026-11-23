@@ -188,3 +188,27 @@ def test_admin_can_pause_one_provider_without_pausing_other_scheduled_sources(mo
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(main._automatic_refresh_loop())
     assert called == [["oddize"]]
+
+
+def test_admin_automatic_refresh_switch_pauses_standalone_market_limits_poller(monkeypatch):
+    import asyncio
+
+    called = []
+    monkeypatch.setattr(main, "_admin_settings", lambda: {
+        "automatic_refresh_enabled": False,
+        "manual_refresh_enabled": True,
+        "manual_refresh_cooldown_seconds": 900,
+        "manual_refresh_daily_limit": 3,
+        "provider_auto_refresh_enabled": {},
+    })
+    monkeypatch.setattr(main.config, "LIMITS_REFRESH_INTERVAL_SECONDS", 10)
+    monkeypatch.setattr(main.limits_monitor, "refresh", lambda: called.append("refresh"))
+    async def fake_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+    monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
+    async def stop_after_one_sleep(delay):
+        raise asyncio.CancelledError
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_one_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main._limits_refresh_loop())
+    assert called == []
