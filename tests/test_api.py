@@ -654,6 +654,7 @@ def test_admin_settings_are_validated_and_persisted(monkeypatch):
             "manual_refresh_enabled": True,
             "manual_refresh_cooldown_seconds": 1800,
             "manual_refresh_daily_limit": 2,
+            "provider_auto_refresh_enabled": {"therundown": False},
         })
         invalid = client.post("/api/admin/settings", headers=headers, json={
             "manual_refresh_daily_limit": 1000,
@@ -661,6 +662,7 @@ def test_admin_settings_are_validated_and_persisted(monkeypatch):
     assert response.status_code == 200
     assert response.json()["settings"]["automatic_refresh_enabled"] is False
     assert json.loads(stored["admin_control_settings"])["manual_refresh_daily_limit"] == 2
+    assert json.loads(stored["admin_control_settings"])["provider_auto_refresh_enabled"]["therundown"] is False
     assert invalid.status_code == 422
 
 
