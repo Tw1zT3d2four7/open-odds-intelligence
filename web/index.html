@@ -71,7 +71,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
 <div class="card"><small>EV OPPORTUNITIES</small><div class="value" id="edges">—</div></div>
 <div class="card"><small>ARBITRAGE FLAGS</small><div class="value" id="arbs">—</div></div>
 </section>
-<div class="filters"><label class="muted" for="minEv">Minimum EV %</label><input id="minEv" type="number" min="-100" max="100" step=".25" value="1"><label class="muted" for="consensus">Other books</label><select id="consensus"><option value="1">1+</option><option value="2" selected>2+</option><option value="3">3+</option><option value="4">4+</option></select><button id="apply">Apply filters</button></div>
+<div class="filters"><label class="muted" for="minEv">Minimum EV %</label><input id="minEv" type="number" min="-100" max="100" step=".25" value="1"><label class="muted" for="consensus">Other books</label><select id="consensus"><option value="1">1+</option><option value="2" selected>2+</option><option value="3">3+</option><option value="4">4+</option></select><button id="apply" type="button">Apply filters</button><small id="evFilterStatus" class="muted" role="status" aria-live="polite"></small></div>
 <nav class="tabs" aria-label="Market views">
 <button class="tab active" data-tab="ev">EV opportunities</button><button class="tab" data-tab="arb">Arbitrage</button><button class="tab" data-tab="board">Best-price board</button><button class="tab" data-tab="allbooks">All sportsbook quotes</button><button class="tab" data-tab="movement">Line movement</button><button class="tab" data-tab="limits">Market limits</button><button class="tab" data-tab="clv">Closing-line value</button><button class="tab" data-tab="props">Player props</button><button class="tab" data-tab="calculators">Betting calculators</button><button class="tab" data-tab="simulation">10,000 Game Sim</button>
 </nav>
@@ -294,7 +294,28 @@ $("sport").addEventListener("change",e=>{state.sport=e.target.value;load()});
 $("refresh").addEventListener("click",refresh);$("reload").addEventListener("click",load);
 $("limitsDirection").addEventListener("change",load);$("refreshClv").addEventListener("click",load);$("closeLimitHistory").addEventListener("click",()=>$("limitHistoryPanel").classList.add("hidden"));
 $("refreshLimits").addEventListener("click",async()=>{const b=$("refreshLimits");b.disabled=true;b.textContent="Checking…";try{const r=await fetch("/api/limits/refresh",{method:"POST"}).then(x=>x.json());$("limitsStatus").textContent=(r.ok?"Limits refreshed":"Limits refresh failed") +" · "+r.observations+" posted-limit observations · "+(r.diagnostic?.events_returned||0)+" fixtures · "+(r.diagnostic?.posted_limit_outcomes||0)+" posted-limit outcomes"+(r.error?" · "+r.error:"");}catch(e){$("limitsStatus").textContent="Limits refresh failed: "+e.message}finally{b.disabled=false;b.textContent="Refresh limits";await load()}});
-$("apply").addEventListener("click",()=>{state.minEv=Math.max(-100,Math.min(100,Number($("minEv").value)||0));state.consensus=Number($("consensus").value)||2;load()});
+async function applyEvFilters(){
+ const button=$("apply"),status=$("evFilterStatus");
+ const parsedEv=Number($("minEv").value),parsedBooks=Number($("consensus").value);
+ if(!Number.isFinite(parsedEv)||parsedEv < -100||parsedEv > 100){status.textContent="Enter a minimum EV between -100 and 100.";return}
+ if(!Number.isInteger(parsedBooks)||parsedBooks<1||parsedBooks>20){status.textContent="Choose a valid other-books threshold.";return}
+ state.minEv=parsedEv;state.consensus=parsedBooks;
+ button.disabled=true;button.textContent="Applying…";status.textContent="Loading filtered opportunities…";
+ try{
+  const data=await get("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}));
+  const body=$("evRows");body.innerHTML="";
+  (data.opportunities||[]).forEach(x=>row(body,[x.matchup,x.market,(x.outcome_description?x.outcome_description+" · ":"")+(x.point===null||x.point===undefined?x.outcome:x.outcome+" ("+x.point+")"),x.bookmaker,fmtOdds(x.price),(Number(x.fair_probability)*100).toFixed(1)+"%",[Number(x.ev_percent).toFixed(2)+"%","good"],(x.consensus_books||0)+" books",date(x.commence_time)]));
+  if(!body.children.length)empty(body,9,"No opportunities match these filters. Lower the minimum EV or other-books requirement.");
+  $("edges").textContent=(data.opportunities||[]).length;
+  status.textContent="Applied · "+(data.opportunities||[]).length+" qualifying quotes.";
+ }catch(error){
+  status.textContent="Filter request failed: "+error.message;
+ }finally{
+  button.disabled=false;button.textContent="Apply filters";
+ }
+}
+$("apply").addEventListener("click",applyEvFilters);
+$("minEv").addEventListener("keydown",e=>{if(e.key==="Enter")applyEvFilters()});
 document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
 
 /* Quota-free betting calculators. All odds are converted to decimal internally. */
