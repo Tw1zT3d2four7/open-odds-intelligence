@@ -38,5 +38,6 @@ jobs:
         run: |
           python -m scripts.backtest_simulator --help
           python -m scripts.import_simulation_results --help
+          python -m scripts.sync_nflverse_results --help | grep -F -- '--build-model'
           grep -Fxq 'COPY scripts ./scripts' Dockerfile
       - run: python -m pytest -q
