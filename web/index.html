@@ -155,7 +155,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
  <p class="muted">Calculations are estimates before taxes, fees, limits, void rules or sportsbook-specific settlement conditions. The no-vig tool is for two-outcome markets only. The parlay calculator assumes independent legs.</p>
 </section>
 <p class="foot">EV and arbitrage are estimates based on currently available provider quotes, not guarantees. Confirm both prices, limits, market rules and availability before acting. Alternate lines are kept separate.</p>
-<div class="filters" id="paginationBottom" style="justify-content:flex-end;margin-top:8px">
+<div class="filters hidden" id="paginationBottom" style="justify-content:flex-end;margin-top:8px" aria-label="Result pages">
  <button id="pagePrev" disabled>Previous 25</button>
  <span class="muted" id="pageLabel">Page 1</span>
  <button id="pageNext" disabled>Next 25</button>
@@ -172,7 +172,7 @@ async function get(path){const r=await fetch(path);if(!r.ok)throw Error("API "+r
 async function getSafe(path,fallback,failures){try{return await get(path)}catch(err){failures.push(err.message);return fallback}}
 function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
 function pageQuery(extra={}){return query({limit:state.pageSize,offset:state.page*state.pageSize,...extra})}
-function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","allbooks","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab));const paged=["ev","arb","board","allbooks","movement","clv","props"].includes(tab);$("paginationBottom").classList.toggle("hidden",!paged);$("limitChangesPagination").classList.toggle("hidden",tab!=="limits");$("limitsPagination").classList.toggle("hidden",tab!=="limits")}
+function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","allbooks","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab));const paged=["ev","arb","board","allbooks","movement","clv","props"].includes(tab);const pager=$("paginationBottom");if(paged){$("view-"+tab).appendChild(pager);pager.classList.remove("hidden")}else{$("view-ev").appendChild(pager);pager.classList.add("hidden")}pager.setAttribute("aria-hidden",String(!paged));$("limitChangesPagination").classList.toggle("hidden",tab!=="limits");$("limitsPagination").classList.toggle("hidden",tab!=="limits")}
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))}
 function renderProviderStatus(health){
  const selected=health.providers||[],pools=health.provider_keys||{},schedule=health.auto_refresh_schedule||{},coverage=health.provider_coverage||{};
@@ -499,5 +499,6 @@ $("simGame").addEventListener("change",()=>{
 });
 $("runSimulation").addEventListener("click",runSelectedSimulation);
 
+setTab("ev");
 load();
 </script></body></html>
