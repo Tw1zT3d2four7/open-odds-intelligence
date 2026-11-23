@@ -165,8 +165,9 @@ const row=(body,values)=>{const tr=document.createElement("tr");values.forEach(v
 const empty=(body,cols,msg)=>body.innerHTML='<tr><td class="empty" colspan="'+cols+'">'+msg+'</td></tr>';
 async function get(path){const r=await fetch(path);if(!r.ok)throw Error("API "+r.status+" for "+path);return r.json()}
 async function getSafe(path,fallback,failures){try{return await get(path)}catch(err){failures.push(err.message);return fallback}}
-function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);p.set("limit",state.pageSize);p.set("offset",state.page*state.pageSize);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
-function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","allbooks","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab))}
+function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
+function pageQuery(extra={}){return query({limit:state.pageSize,offset:state.page*state.pageSize,...extra})}
+function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","allbooks","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab));const paged=["ev","arb","board","allbooks","props"].includes(tab);["pagePrev","pageNext","pageLabel"].forEach(id=>$(id).hidden=!paged)}
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))}
 function renderProviderStatus(health){
  const selected=health.providers||[],pools=health.provider_keys||{},schedule=health.auto_refresh_schedule||{},coverage=health.provider_coverage||{};
@@ -209,15 +210,15 @@ async function load(){
   const request=(tab,path,fallback)=>activeTab===tab?getSafe(path,fallback,apiFailures):Promise.resolve(fallback);
   const [health,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
    getSafe("/api/health",{},apiFailures),
-   request("ev","/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]}),
-   request("arb","/api/arbitrage"+query(),{arbitrage:[]}),
-   request("board","/api/market-board"+query(),{quotes:[]}),
-   request("allbooks","/api/bookmaker-board"+query(),{quotes:[]}),
+   request("ev","/api/opportunities"+pageQuery({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]}),
+   request("arb","/api/arbitrage"+pageQuery(),{arbitrage:[]}),
+   request("board","/api/market-board"+pageQuery(),{quotes:[]}),
+   request("allbooks","/api/bookmaker-board"+pageQuery(),{quotes:[]}),
    request("movement","/api/movement"+query(),{movements:[]}),
    request("limits","/api/limits"+query(),{limits:[],status:{}}),
    request("limits","/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]}),
    request("clv","/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."}),
-   request("props","/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}})
+   request("props","/api/player-props"+pageQuery(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}})
   ]);
   renderProviderStatus(health);
   const freshness=health.sport_freshness||[];const selectedFreshness=state.sport?freshness.find(item=>item.sport===state.sport):null;const events=selectedFreshness?Number(selectedFreshness.event_count||0):freshness.reduce((total,item)=>total+Number(item.event_count||0),0);const pages=Math.max(1,Math.ceil(events/state.pageSize));if(state.page>=pages){state.page=pages-1;return load()}$("pageLabel").textContent="Page "+(state.page+1)+" of "+pages+" · "+events+" events";$("pagePrev").disabled=state.page===0;$("pageNext").disabled=state.page+1>=pages;
