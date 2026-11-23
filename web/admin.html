@@ -31,7 +31,8 @@ function render(c){
  return '<div class="provider"><div class="provider-head"><b>'+labels[name]+'</b><span class="pill '+(pool.configured&&selected.includes(name)?"good":"warn")+'">'+(pool.configured?(selected.includes(name)?"Enabled":"Configured · not selected"):"Not configured")+'</span></div><p class="muted">Key settings: <code>'+esc(keyVars[name])+'</code><br>Schedule: '+esc(schedule[name]?schedule[name]+"s":"manual / disabled")+'<br>Books: '+books.size+' · Markets: '+markets.size+' · Quotes: '+quotes+' · Props: '+props+'</p>'+(rows||'<small class="muted">No configured key fingerprints.</small>')+'</div>';
  }).join("");
  $("providerChecks").innerHTML=selected.map(name=>'<label><input type="checkbox" value="'+esc(name)+'" checked> '+esc(labels[name]||name)+'</label>').join("")||'<span class="muted">No active providers.</span>';
- $("providerAutoChecks").innerHTML=selected.map(name=>'<label><input type="checkbox" value="'+esc(name)+'" '+(c.settings.provider_auto_refresh_enabled?.[name]!==false?"checked":"")+'> '+esc(labels[name]||name)+'</label>').join("")||'<span class="muted">No active providers.</span>';
+  const autoNames=Object.keys(labels).filter(name=>(pools[name]||{}).configured);
+ $("providerAutoChecks").innerHTML=autoNames.map(name=>'<label><input type="checkbox" value="'+esc(name)+'" '+(c.settings.provider_auto_refresh_enabled?.[name]!==false?"checked":"")+'>'+esc(labels[name]||name)+'</label>').join("")||'<span class="muted">No configured providers.</span>';
  $("sport").innerHTML=(c.sports||[]).map(s=>'<option value="'+esc(s)+'">'+esc(s)+'</option>').join("");
  $("automatic").checked=!!c.settings.automatic_refresh_enabled;$("manual").checked=!!c.settings.manual_refresh_enabled;
  $("cooldown").value=c.settings.manual_refresh_cooldown_seconds;$("daily").value=c.settings.manual_refresh_daily_limit;
