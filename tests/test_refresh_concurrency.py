@@ -339,7 +339,7 @@ def test_provider_refresh_never_retries_quota_rate_limit(tmp_path, monkeypatch):
     assert result["ok"] is False
     assert calls == ["basketball_nba"]
     assert len(result["provider_errors"]) == 1
-    assert "429" in result["provider_errors"][0]
+    assert "rate limit reached" in result["provider_errors"][0]
     assert service.status()["provider_usage"]["requests_remaining"] == "0"
 
 
