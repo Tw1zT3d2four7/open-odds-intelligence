@@ -71,7 +71,7 @@ def test_merge_combines_reversed_home_away_and_canonicalizes_spread_lines():
     books = {book["key"]: book for book in merged[0]["bookmakers"]}
     assert set(books) == {"book-a", "book-b"}
     outcome = books["book-b"]["markets"][0]["outcomes"][0]
-    assert outcome["name"] == "Away"
+    assert outcome["name"] == "Home"
     assert outcome["point"] == -3.5
 
 
