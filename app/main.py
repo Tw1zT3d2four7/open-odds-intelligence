@@ -240,7 +240,7 @@ async def optional_basic_auth(request: Request, call_next):
     subscriber-wide AUTH credentials.
     """
     path = request.url.path
-    if path == "/api/health":
+    if path in {"/api/health", "/assets/odds-intelligence.svg"}:
         return await call_next(request)
 
     if _admin_path(path):
@@ -320,6 +320,8 @@ def admin_control():
         "sports": status.get("sports", config.ODDS_SPORTS),
         "odds_regions": status.get("odds_regions"),
         "odds_bookmakers": status.get("odds_bookmakers"),
+        "odds_markets": config.ODDS_MARKETS,
+        "odds_format": config.ODDS_FORMAT,
         "player_props": status.get("player_props", {}),
         "simulation_results": status.get("simulation_results", {}),
         "market_limits": limits_monitor.status(),
