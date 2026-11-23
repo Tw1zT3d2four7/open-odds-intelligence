@@ -720,3 +720,55 @@ def test_admin_credentials_must_differ_from_subscriber_credentials(monkeypatch):
         response = client.get("/admin", headers=headers)
     assert response.status_code == 503
     assert "different" in response.json()["detail"]
+
+
+def test_admin_refresh_supports_all_configured_leagues_and_selected_providers(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "secret")
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba", "americanfootball_nfl"])
+    monkeypatch.setattr(main.service, "active_provider_names", lambda: ["therundown", "oddize"])
+    monkeypatch.setattr(main, "_reserve_manual_refresh_slot", lambda: {
+        "allowed": True, "used_today": 1, "remaining_today": 2,
+    })
+    received = {}
+    def fake_refresh(sport=None, providers=None):
+        received.update(sport=sport, providers=providers)
+        return {"ok": True, "events": 8, "sports_refreshed": 2, "sports_requested": 2}
+    monkeypatch.setattr(main.service, "refresh", fake_refresh)
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:secret").decode()}
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/admin/refresh?sport=all&providers=therundown&providers=oddize",
+            headers=headers,
+        )
+    assert response.status_code == 200
+    assert received == {"sport": None, "providers": ["therundown", "oddize"]}
+    assert response.json()["sports_requested"] == 2
+    assert response.json()["sport"] == "all"
+
+
+def test_admin_refresh_returns_clear_gateway_error_when_refresh_raises(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "secret")
+    monkeypatch.setattr(main.service, "active_provider_names", lambda: ["therundown"])
+    monkeypatch.setattr(main, "_reserve_manual_refresh_slot", lambda: {"allowed": True})
+    def fail_refresh(sport=None, providers=None):
+        raise RuntimeError("upstream connection failed")
+    monkeypatch.setattr(main.service, "refresh", fail_refresh)
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:secret").decode()}
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/admin/refresh?sport=basketball_nba&providers=therundown",
+            headers=headers,
+        )
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Provider refresh failed: upstream connection failed"
+
+
+def test_admin_page_exposes_all_leagues_and_provider_refresh_errors():
+    page = main.ADMIN_WEB.read_text(encoding="utf-8")
+    assert 'value="all">All leagues' in page
+    assert 'r.provider_errors' in page
+    assert 'r.sports_refreshed' in page
