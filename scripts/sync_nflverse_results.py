@@ -169,7 +169,7 @@ def records_to_csv(records: list[dict]) -> str:
         "home_score", "away_score", "status", "source",
     )
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=fields, lineterminator="\n")
+    writer = csv.DictWriter(output, fieldnames=fields, lineterminator="\n", extrasaction="ignore")
     writer.writeheader()
     writer.writerows(records)
     return output.getvalue()
