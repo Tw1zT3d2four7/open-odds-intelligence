@@ -102,7 +102,7 @@ def test_provider_refresh_intervals_are_tracked_independently(tmp_path, monkeypa
     monkeypatch.setattr(main.config, "ODDS_PROVIDER", "therundown")
     monkeypatch.setattr(main.config, "ODDS_PROVIDERS_EXPLICIT", True, raising=False)
     monkeypatch.setattr(main.config, "ODDS_PROVIDERS", [
-        "therundown", "the_odds_api", "oddize", "oddslink"
+        "therundown", "the_odds_api", "retired_provider", "oddize", "oddslink"
     ], raising=False)
     monkeypatch.setattr(main.config, "THERUNDOWN_API_KEY", "Rundown-Key")
     monkeypatch.setattr(main.config, "THERUNDOWN_API_KEYS", "", raising=False)
