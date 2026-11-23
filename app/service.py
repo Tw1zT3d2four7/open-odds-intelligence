@@ -11,7 +11,7 @@ from .database import OddsDatabase
 from .providers.the_odds_api import TheOddsAPIProvider, ProviderError
 from .providers.therundown import TheRundownProvider
 from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
-from .providers.merge import merge_provider_events
+from .providers.merge import merge_provider_snapshot
 from .providers.oddize import OddizeProvider
 from .providers.oddslink import OddsLinkProvider
 ODDIZE_SUPPORTED_SPORTS = frozenset(OddizeProvider.SPORTS)
@@ -107,7 +107,10 @@ class OddsService:
         self._last_error = None
         self._updated_at = None
         self._provider_usage = {}
-        self._last_provider_results = {}
+        try:
+            self._last_provider_results = json.loads(self.db.get_state("provider_coverage") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            self._last_provider_results = {}
         self._provider_key_pools = {
             "the_odds_api": ProviderKeyPool(
                 "the_odds_api", parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
@@ -686,9 +689,15 @@ class OddsService:
             if not source_results:
                 continue
 
-            events = merge_provider_events(source_results)
+            # Merge this provider refresh with the latest quotes from providers
+            # that were not refreshed. A single-provider poll must not replace
+            # the other providers' still-current sportsbook data.
+            existing_events = self.db.latest_events(sport=sport_key)
+            events, snapshot_providers = merge_provider_snapshot(
+                existing_events, successful_providers, source_results
+            )
             fetched_at = datetime.now(timezone.utc).isoformat()
-            snapshot_provider = "+".join(successful_providers)
+            snapshot_provider = "+".join(snapshot_providers)
             self.db.save_snapshot(sport_key, events, snapshot_provider, fetched_at)
             self._invalidate_events_cache()
             self._cache[sport_key] = events
@@ -715,16 +724,49 @@ class OddsService:
             self.db.record_clv_candidates(clv_candidates, fetched_at)
             count += len(events)
             successful_sports += 1
+            # Report coverage from the complete merged snapshot, not only
+            # the providers contacted during this particular refresh.
+            snapshot_coverage = {}
+            for provider_name in snapshot_providers:
+                covered_events = set()
+                books_seen, markets_seen = set(), set()
+                quote_count = prop_quote_count = 0
+                for merged_event in events:
+                    for merged_book in merged_event.get("bookmakers") or []:
+                        for merged_market in merged_book.get("markets") or []:
+                            market_key = str(merged_market.get("key") or "")
+                            for outcome in merged_market.get("outcomes") or []:
+                                if outcome.get("source_provider") != provider_name:
+                                    continue
+                                covered_events.add(merged_event.get("id"))
+                                books_seen.add(merged_book.get("key"))
+                                markets_seen.add(market_key)
+                                quote_count += 1
+                                if "player" in market_key.lower() or "prop" in market_key.lower():
+                                    prop_quote_count += 1
+                snapshot_coverage[provider_name] = {
+                    "events": len(covered_events),
+                    "books": sorted(book for book in books_seen if book),
+                    "book_count": len(books_seen),
+                    "markets": sorted(markets_seen),
+                    "market_count": len(markets_seen),
+                    "quotes": quote_count,
+                    "prop_quotes": prop_quote_count,
+                }
             provider_results_summary[sport_key] = {
                 **provider_results_summary.get(sport_key, {}),
                 "providers_succeeded": successful_providers,
+                "providers_in_snapshot": snapshot_providers,
                 "providers_skipped_for_league_coverage": skipped_providers,
                 "providers_skipped_unconfigured": skipped_unconfigured,
-                "provider_coverage": source_coverage,
+                "provider_coverage": snapshot_coverage,
                 "events": len(events),
             }
 
         self._updated_at = datetime.now(timezone.utc).isoformat()
+        if provider_results_summary:
+            self._last_provider_results.update(provider_results_summary)
+            self.db.set_state("provider_coverage", json.dumps(self._last_provider_results))
         complete = successful_sports == len(sports)
         self._last_error = "; ".join(provider_errors)[:2000] if provider_errors else None
         alerts_sent = self._dispatch_alerts() if successful_sports else 0
