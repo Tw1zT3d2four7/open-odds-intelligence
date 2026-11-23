@@ -143,8 +143,8 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
     def fake_events(sport=None):
         received["sport"] = sport
         return [{"id": "event"}]
-    def fake_analysis(events, min_ev, min_consensus_books):
-        received.update(events=events, min_ev=min_ev, min_consensus_books=min_consensus_books)
+    def fake_analysis(events, min_ev, min_consensus_books, best_only=True):
+        received.update(events=events, min_ev=min_ev, min_consensus_books=min_consensus_books, best_only=best_only)
         return {"opportunities": [{"event_id": "event"}], "arbitrage": []}
     monkeypatch.setattr(main.service, "events", fake_events)
     monkeypatch.setattr(main, "analyze_markets", fake_analysis)
@@ -153,7 +153,7 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
     assert response.status_code == 200
     assert received == {
         "sport": "basketball_nba", "events": [{"id": "event"}],
-        "min_ev": 2.5, "min_consensus_books": 3,
+        "min_ev": 2.5, "min_consensus_books": 3, "best_only": False,
     }
     assert response.json()["opportunities"] == [{"event_id": "event"}]
 
