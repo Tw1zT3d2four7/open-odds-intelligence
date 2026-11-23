@@ -706,7 +706,7 @@ def test_admin_page_and_brand_logo_are_served(monkeypatch):
     assert "Administrator control center" in page.text
     assert logo.status_code == 200
     assert "<svg" in logo.text
-    assert "odds-intelligence.svg" in public_page.text
+    assert "data:image/svg+xml," in public_page.text
 
 
 def test_admin_credentials_must_differ_from_subscriber_credentials(monkeypatch):
