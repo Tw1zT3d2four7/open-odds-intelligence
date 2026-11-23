@@ -208,8 +208,9 @@ function renderProviderStatus(health){
    return '<div class="provider-key"><span>Key '+escapeHtml(String(key.key_id||"").slice(0,8))+' · '+escapeHtml(key.account_group||"default")+'</span> <span class="pill '+pill+'">'+escapeHtml(status)+'</span><small>'+escapeHtml(quota.join(" · ")||"Quota not reported yet")+'</small>'+(key.retry_in_seconds>0?'<small>Retry in '+escapeHtml(key.retry_in_seconds)+'s</small>':"")+(key.last_error?'<small class="warn">'+escapeHtml(key.last_error)+'</small>':"")+'</div>';
   }).join("");
   const isSelected=selected.includes(name);
-  const state=pool.configured?(isSelected?"Enabled":"Key set · not selected"):(isSelected?"Missing API key":"No API key");
-  const stateClass=pool.configured&&isSelected?"good":pool.configured?"warn":"bad";
+  const hasConfiguredKeys=Number(pool.configured_keys||0)>0;
+  const state=hasConfiguredKeys?(isSelected?"Enabled":"Key set · not selected"):(isSelected?"Missing API key":"No API key");
+  const stateClass=hasConfiguredKeys&&isSelected?"good":hasConfiguredKeys?"warn":"bad";
   const covered=Object.entries(coverage).filter(([,sportData])=>(sportData.provider_coverage||{})[name]);
   const sports=covered.map(([sport])=>sport);
   const books=new Set(),markets=new Set();let quotes=0,props=0;
