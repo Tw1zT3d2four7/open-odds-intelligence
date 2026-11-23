@@ -10,7 +10,7 @@ Enable every currently integrated free source by listing the providers
 whose keys you have configured:
 
 ```dotenv
-ODDS_PROVIDERS=therundown,the_odds_api,sports_game_odds,oddize,oddslink
+ODDS_PROVIDERS=therundown,the_odds_api,oddize,oddslink
 ODDS_SPORTS=americanfootball_nfl,americanfootball_ncaaf,basketball_nba,basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_epl,tennis_atp,tennis_wta
 ```
 
@@ -19,7 +19,6 @@ Keep the existing single-key settings working:
 ```dotenv
 THERUNDOWN_API_KEY=
 THE_ODDS_API_KEY=
-SPORTSGAMEODDS_API_KEY=
 ODDIZE_API_KEY=
 ODDSLINK_API_KEY=
 ```
@@ -29,7 +28,6 @@ For additional keys, use comma-separated or newline-separated values:
 ```dotenv
 THERUNDOWN_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
 THE_ODDS_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
-SPORTSGAMEODDS_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
 ODDSLINK_API_KEYS=first-case-sensitive-key,second-case-sensitive-key
 ODDIZE_API_KEY=one-free-developer-key
 ODDIZE_API_KEYS=another-free-account-key
@@ -88,19 +86,6 @@ account groups, remaining quota where reported, reset information and
 auto-refresh intervals. A provider may apply quota limits across multiple keys or an
 account, so multiple keys do not imply multiplied free allowances.
 
-## SportsGameOdds free tier
-
-The SportsGameOdds adapter is also included. Its published Amateur tier has
-a rolling 30-day object allowance, a 10-requests-per-minute limit, and support
-for player props and alternate lines. The adapter checks the provider's
-free account-usage endpoint before fetching events, caps the result limit to
-the remaining object allowance, and is excluded from automatic polling to
-protect that allowance. It is available when manually refreshing.
-
-The free tier requires a payment card at signup according to the provider's
-setup guide, but the provider states the free tier is not charged unless the
-account owner upgrades. Do not upgrade for this integration.
-
 ## Oddize free Developer tier
 
 Oddize offers a no-card Developer API tier with 1,500 credits per month, 30
@@ -140,13 +125,12 @@ default); the pool pauses the whole group when its quota is spent.
 ## Scope
 
 The current foundation supports simultaneous TheRundown, The Odds API,
-SportsGameOdds, Oddize, and OddsLink ingestion, with strict event identity
+Oddize, and OddsLink ingestion, with strict event identity
 matching, team-abbreviation reconciliation, quote-level source attribution,
 alternate-line and posted-limit preservation, independent provider schedules,
 quota-aware key rotation, and partial-refresh reporting. The TheRundown
 default is every four hours; The Odds API is manual by default and, when
-enabled, has a one-day minimum; SportsGameOdds defaults to every three days;
-Oddize and OddsLink default to daily.
+enabled, has a one-day minimum; Oddize and OddsLink default to daily.
 
 
 ## Provider plan references
@@ -157,7 +141,6 @@ also read live usage endpoints where available.
 
 - TheRundown: https://therundown.io/
 - The Odds API: https://the-odds-api.com/
-- SportsGameOdds: https://sportsgameodds.com/docs and https://sportsgameodds.com/pricing
 - Oddize: https://oddize.com/api/v1/docs and https://oddize.com/odds-api
 - OddsLink: https://oddslink.app/docs and https://oddslink.app/pricing
 

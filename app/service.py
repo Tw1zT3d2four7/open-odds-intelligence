@@ -12,10 +12,8 @@ from .providers.the_odds_api import TheOddsAPIProvider, ProviderError
 from .providers.therundown import TheRundownProvider
 from .providers.key_pool import NoAvailableKeys, ProviderKeyPool, parse_api_keys
 from .providers.merge import merge_provider_events
-from .providers.sports_game_odds import SportsGameOddsProvider
 from .providers.oddize import OddizeProvider
 from .providers.oddslink import OddsLinkProvider
-SPORTSGAMEODDS_SUPPORTED_SPORTS = frozenset(SportsGameOddsProvider.SPORTS)
 ODDIZE_SUPPORTED_SPORTS = frozenset(OddizeProvider.SPORTS)
 ODDSLINK_SUPPORTED_SPORTS = frozenset(OddsLinkProvider.SPORTS)
 from .markets import analyze_markets
@@ -110,11 +108,6 @@ class OddsService:
             "the_odds_api": ProviderKeyPool(
                 "the_odds_api", parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
             ),
-            "sports_game_odds": ProviderKeyPool(
-                "sports_game_odds", parse_api_keys(
-                    config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
-                )
-            ),
             "oddize": ProviderKeyPool(
                 "oddize", parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
             ),
@@ -156,11 +149,6 @@ class OddsService:
             for key in parse_api_keys(
                 config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY
             ) if config.ODDS_PROVIDER == "the_odds_api"
-        } | {
-            hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
-            for key in parse_api_keys(
-                config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY
-            ) if config.ODDS_PROVIDER == "sports_game_odds"
         } | {
             hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
             for key in parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
@@ -237,8 +225,6 @@ class OddsService:
             keys = parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
         elif provider_name == "the_odds_api":
             keys = parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
-        elif provider_name == "sports_game_odds":
-            keys = parse_api_keys(config.SPORTSGAMEODDS_API_KEYS, config.SPORTSGAMEODDS_API_KEY)
         elif provider_name == "oddize":
             keys = parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
         elif provider_name == "oddslink":
@@ -270,8 +256,6 @@ class OddsService:
                 api_key, config.ODDS_REGIONS, config.ODDS_MARKETS,
                 config.ODDS_FORMAT, config.ODDS_BOOKMAKERS,
             )
-        if provider_name == "sports_game_odds":
-            return SportsGameOddsProvider(api_key)
         if provider_name == "oddize":
             return OddizeProvider(api_key)
         if provider_name == "oddslink":
@@ -330,7 +314,6 @@ class OddsService:
         configured_intervals = {
             "therundown": config.RUNDOWN_REFRESH_INTERVAL_SECONDS,
             "the_odds_api": config.ODDS_REFRESH_INTERVAL_SECONDS,
-            "sports_game_odds": config.SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS,
             "oddize": config.ODDIZE_REFRESH_INTERVAL_SECONDS,
             "oddslink": config.ODDSLINK_REFRESH_INTERVAL_SECONDS,
         }
@@ -536,10 +519,6 @@ class OddsService:
             skipped_providers = []
             skipped_unconfigured = []
             for provider_name in provider_names:
-                if (provider_name == "sports_game_odds"
-                        and sport_key not in SPORTSGAMEODDS_SUPPORTED_SPORTS):
-                    skipped_providers.append(provider_name)
-                    continue
                 if provider_name == "oddize" and sport_key not in ODDIZE_SUPPORTED_SPORTS:
                     skipped_providers.append(provider_name)
                     continue

@@ -17,13 +17,6 @@ THERUNDOWN_API_KEY = os.getenv("THERUNDOWN_API_KEY", "")
 # Optional comma/newline-separated key pools; legacy single-key values remain supported.
 THERUNDOWN_API_KEYS = os.getenv("THERUNDOWN_API_KEYS", "")
 THE_ODDS_API_KEYS = os.getenv("THE_ODDS_API_KEYS", "")
-SPORTSGAMEODDS_API_KEY = os.getenv("SPORTSGAMEODDS_API_KEY", "")
-SPORTSGAMEODDS_API_KEYS = os.getenv("SPORTSGAMEODDS_API_KEYS", "")
-SPORTSGAMEODDS_MAX_EVENTS = max(1, min(100, int(os.getenv("SPORTSGAMEODDS_MAX_EVENTS", "25"))))
-_sgo_refresh_interval = max(0, int(os.getenv("SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS", "259200")))
-SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS = (
-    max(259200, _sgo_refresh_interval) if _sgo_refresh_interval > 0 else 0
-)
 # Oddize Developer tier includes one API key on the free plan.
 ODDIZE_API_KEY = os.getenv("ODDIZE_API_KEY", "")
 ODDIZE_API_KEYS = os.getenv("ODDIZE_API_KEYS", "")
@@ -71,11 +64,6 @@ PROVIDER_DEFAULT_ODDS_SPORTS = {
     # tournament-specific tennis keys, so it must not receive generic aliases.
     "therundown": BASE_DEFAULT_ODDS_SPORTS + ",tennis_atp,tennis_wta",
     "the_odds_api": BASE_DEFAULT_ODDS_SPORTS,
-    "sports_game_odds": (
-        "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,"
-        "basketball_ncaab,icehockey_nhl,baseball_mlb,soccer_mls,"
-        "soccer_uefa_champs_league"
-    ),
     "oddize": (
         "americanfootball_nfl,americanfootball_ncaaf,basketball_nba,"
         "basketball_ncaab,icehockey_nhl,baseball_mlb"

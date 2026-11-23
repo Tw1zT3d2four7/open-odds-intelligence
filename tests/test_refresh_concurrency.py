@@ -593,51 +593,6 @@ def test_multi_provider_refresh_keeps_successful_source_when_other_fails(tmp_pat
     assert len(database.latest_events("americanfootball_nfl")) == 1
 
 
-def test_sports_game_odds_is_manual_only_and_available_when_manually_refreshed(tmp_path, monkeypatch):
-    class FakeSportsGameOdds:
-        name = "sports_game_odds"
-        usage = {"tier": "amateur", "monthly_objects_remaining": 2400}
-        def __init__(self, api_key):
-            assert api_key == "SGO-Key"
-        def fetch_odds(self, sport):
-            return [{
-                "id": "sgo-manual", "sport_key": sport, "sport_title": "NBA",
-                "commence_time": "2026-11-23T20:00:00Z",
-                "home_team": "Home", "away_team": "Away",
-                "bookmakers": [{
-                    "key": "draftkings", "title": "DraftKings",
-                    "markets": [{"key": "h2h", "outcomes": [
-                        {"name": "Home", "price": -110,
-                         "source_provider": "sports_game_odds"}
-                    ]}],
-                }],
-            }]
-
-    monkeypatch.setattr(config, "ODDS_PROVIDER", "sports_game_odds")
-    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", True, raising=False)
-    monkeypatch.setattr(config, "ODDS_PROVIDERS", ["sports_game_odds"], raising=False)
-    monkeypatch.setattr(config, "SPORTSGAMEODDS_API_KEY", "SGO-Key", raising=False)
-    monkeypatch.setattr(config, "SPORTSGAMEODDS_API_KEYS", "", raising=False)
-    monkeypatch.setattr(config, "SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS", 0, raising=False)
-    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
-    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
-    monkeypatch.setattr(config, "PLAYER_PROPS_ENABLED", False)
-    monkeypatch.setattr("app.service.SportsGameOddsProvider", FakeSportsGameOdds)
-
-    database = OddsDatabase(tmp_path / "sgo-manual-only.sqlite3")
-    service = OddsService(database)
-    assert service.auto_refresh_provider_names() == []
-
-    result = service.refresh()
-    assert result["ok"] is True
-    assert result["provider_results"]["basketball_nba"]["providers_succeeded"] == [
-        "sports_game_odds"
-    ]
-    key_status = service.status()["provider_keys"]["sports_game_odds"]
-    assert key_status["keys"][0]["usage"]["monthly_objects_remaining"] == 2400
-    assert len(database.latest_events("basketball_nba")) == 1
-
-
 def test_oddize_is_manual_only_and_adds_credit_limited_player_props(tmp_path, monkeypatch):
     calls = []
 
