@@ -59,8 +59,8 @@ def _line_group(market_key, point):
     return abs(value) if market_key == "spreads" else value
 
 
-def market_board(events):
-    """Best quote for each exact market/outcome/line identity."""
+def market_board(events, best_only=True):
+    """Return best prices, or every valid sportsbook quote, per exact selection."""
     grouped = defaultdict(list)
     for event in _records(events):
         if not isinstance(event, dict):
@@ -115,7 +115,10 @@ def market_board(events):
                     })
     rows = []
     for quotes in grouped.values():
-        rows.append(max(quotes, key=lambda q: american_to_decimal(q["price"])))
+        if best_only:
+            rows.append(max(quotes, key=lambda q: american_to_decimal(q["price"])))
+        else:
+            rows.extend(quotes)
     return sorted(rows, key=lambda row: (
         row["commence_time"] or "", row["matchup"], row["market"],
         row["outcome"], row["point"] if row["point"] is not None else -999
