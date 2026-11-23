@@ -204,8 +204,8 @@ function renderProviderStatus(health){
 async function load(){
  const apiFailures=[];
  try{
-  const [health,odds,ev,arb,board,allBooks,limits,limitChanges,clv,playerProps]=await Promise.all([
-   getSafe("/api/health",{},apiFailures),getSafe("/api/odds"+query(),{events:[]},apiFailures),getSafe("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]},apiFailures),getSafe("/api/arbitrage"+query(),{arbitrage:[]},apiFailures),getSafe("/api/market-board"+query(),{quotes:[]},apiFailures),getSafe("/api/bookmaker-board"+query(),{quotes:[]},apiFailures),getSafe("/api/limits"+query(),{limits:[],status:{}},apiFailures),getSafe("/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]},apiFailures),getSafe("/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."},apiFailures),getSafe("/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}},apiFailures)
+  const [health,odds,ev,arb,board,limits,limitChanges,clv,playerProps]=await Promise.all([
+   getSafe("/api/health",{},apiFailures),getSafe("/api/odds"+query(),{events:[]},apiFailures),getSafe("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]},apiFailures),getSafe("/api/arbitrage"+query(),{arbitrage:[]},apiFailures),getSafe("/api/market-board"+query(),{quotes:[]},apiFailures),getSafe("/api/limits"+query(),{limits:[],status:{}},apiFailures),getSafe("/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]},apiFailures),getSafe("/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."},apiFailures),getSafe("/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}},apiFailures)
   ]);
   renderProviderStatus(health);
   const events=odds.events||[],books=new Set();events.forEach(e=>(e.bookmakers||[]).forEach(b=>books.add(b.key)));
@@ -236,6 +236,22 @@ async function load(){
 
  }catch(err){$("notice").textContent="Dashboard could not load API data: "+err.message}
 }
+async function loadAllBooks(){
+ const rows=$("allBookRows"),sport=state.sport||"";
+ if(rows.dataset.loadedSport===sport)return;
+ if(rows.dataset.loading==="true")return;
+ rows.dataset.loading="true";
+ rows.innerHTML='<tr><td class="empty" colspan="7">Loading all sportsbook quotes…</td></tr>';
+ try{
+  const response=await get("/api/bookmaker-board"+query());
+  rows.innerHTML="";
+  (response.quotes||[]).forEach(x=>row(rows,[x.matchup,x.market,(x.outcome_description?x.outcome_description+" · ":"")+x.outcome,x.point??"—",x.bookmaker,fmtOdds(x.price),date(x.commence_time)]));
+  if(!rows.children.length)empty(rows,7,"No sportsbook quotes loaded for this sport.");
+  rows.dataset.loadedSport=sport;
+ }catch(error){rows.innerHTML="";empty(rows,7,"Could not load sportsbook quotes: "+error.message)}
+ finally{rows.dataset.loading="false"}
+}
+
 async function loadMovement(){
  const rows=$("movementRows");
  if(rows.dataset.loading==="true")return;
@@ -335,7 +351,7 @@ async function applyEvFilters(){
 }
 $("apply").addEventListener("click",applyEvFilters);
 $("minEv").addEventListener("keydown",e=>{if(e.key==="Enter")applyEvFilters()});
-document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>{setTab(b.dataset.tab);if(b.dataset.tab==="movement")loadMovement()}));
+document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>{setTab(b.dataset.tab);if(b.dataset.tab==="movement")loadMovement();if(b.dataset.tab==="allbooks")loadAllBooks()}));
 
 /* Quota-free betting calculators. All odds are converted to decimal internally. */
 (()=>{
