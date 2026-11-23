@@ -5,7 +5,8 @@
 :root{color-scheme:dark;--bg:#0b1220;--panel:#121d30;--panel2:#16243a;--line:#263750;--muted:#91a4bd;--text:#edf4ff;--accent:#57c7a5;--good:#57c7a5;--warn:#f0bd65;--bad:#ed8585}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}
 header{padding:18px 28px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px}
-h1{font-size:20px;margin:0;letter-spacing:.04em}h2{font-size:17px;margin:0 0 14px}h3{font-size:15px;margin:0 0 12px}small,.muted{color:var(--muted)}main{padding:22px;max-width:1600px;margin:auto}
+h1{font-size:20px;margin:0;letter-spacing:.04em}
+.brand-lockup{display:flex;flex-direction:column;gap:5px;align-items:flex-start}.brand-logo{display:block;width:min(300px,65vw);height:auto;border-radius:6px}.brand-lockup small{letter-spacing:.08em}h2{font-size:17px;margin:0 0 14px}h3{font-size:15px;margin:0 0 12px}small,.muted{color:var(--muted)}main{padding:22px;max-width:1600px;margin:auto}
 .bar,.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 button,select,input{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:9px 12px;border-radius:7px}
 button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:var(--accent);color:#07140f;border:0;font-weight:700}
@@ -60,7 +61,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
 }
 @media(max-width:480px){.cards{grid-template-columns:1fr 1fr}.value{font-size:19px}main{padding:10px}.panel{padding:11px}}
 </style></head><body>
-<header><div><h1>OPEN ODDS INTELLIGENCE</h1><small>SELF-HOSTED SPORTSBOOK MARKET MONITOR</small></div><span class="good">OPEN SOURCE · V0.2</span></header>
+<header><div class="brand-lockup"><img class="brand-logo" src="/assets/odds-intelligence.svg" alt="Odds Intelligence"><small>SELF-HOSTED SPORTSBOOK MARKET MONITOR</small></div><span class="good">OPEN SOURCE · V0.2</span></header>
 <main>
 <div class="bar"><select id="sport"><option value="">All configured sports</option></select><button class="primary" id="refresh">Refresh odds</button><button id="reload">Reload view</button><span class="pill" id="updated">Waiting for data</span></div>
 <div class="notice" id="notice">Checking provider status…</div>
