@@ -123,8 +123,13 @@ def test_provider_refresh_intervals_are_tracked_independently(tmp_path, monkeypa
         "oddize": 86400,
         "oddslink": 86400,
     }
+    assert service.active_provider_names() == [
+        "therundown", "the_odds_api", "oddize", "oddslink"
+    ]
     assert set(service.providers_due_for_auto_refresh()) == {
+        "therundown", "the_odds_api", "oddize", "oddslink"
     }
     service.mark_auto_refresh(["the_odds_api", "oddize"])
     assert set(service.providers_due_for_auto_refresh()) == {
+        "therundown", "oddslink"
     }
