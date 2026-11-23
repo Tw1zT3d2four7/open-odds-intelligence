@@ -261,6 +261,12 @@ def market_board_api(sport: str | None = None):
     return {"quotes": market_board(service.events(sport))}
 
 
+@app.get("/api/bookmaker-board")
+def bookmaker_board_api(sport: str | None = None):
+    """Return every valid quote from every sportsbook in the merged snapshot."""
+    return {"quotes": market_board(service.events(sport), best_only=False)}
+
+
 @app.get("/api/simulation/leagues")
 def simulation_leagues():
     return {"leagues": [

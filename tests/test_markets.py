@@ -309,3 +309,30 @@ def test_market_board_ignores_events_without_stable_identity():
     }
     assert market_board([anonymous, None, "malformed"]) == []
 
+
+
+def test_all_books_board_returns_each_sportsbook_quote_while_best_board_stays_collapsed():
+    from app.markets import market_board
+
+    events = [{
+        "id": "all-books", "sport_title": "Football",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": "2026-11-18T00:00:00Z",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -110}, {"name": "Away", "price": -110}
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": 105}, {"name": "Away", "price": -125}
+                ]}]},
+        ],
+    }]
+
+    best = market_board(events)
+    every = market_board(events, best_only=False)
+    assert len(best) == 2
+    assert len(every) == 4
+    assert {row["bookmaker_key"] for row in every} == {"book-a", "book-b"}
+    assert {row["bookmaker_key"] for row in best} <= {"book-a", "book-b"}
