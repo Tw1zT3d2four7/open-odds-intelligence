@@ -929,9 +929,9 @@ class OddsService:
         with self._events_cache_lock:
             self._events_cache.clear()
 
-    def events(self, sport=None):
+    def events(self, sport=None, limit=None, offset=0):
         """Return a short-lived shared snapshot for concurrent dashboard reads."""
-        cache_key = sport or "__all__"
+        cache_key = (sport or "__all__") + f":{limit}:{offset}"
         now = time.monotonic()
         cached = self._events_cache.get(cache_key)
         if cached and now - cached[0] < self._events_cache_ttl_seconds:
@@ -941,13 +941,15 @@ class OddsService:
             cached = self._events_cache.get(cache_key)
             if cached and now - cached[0] < self._events_cache_ttl_seconds:
                 return cached[1]
-            stored = self.db.latest_events(sport)
+            stored = self.db.latest_events(sport, limit=limit, offset=offset)
             if stored:
                 result = stored
             elif sport:
-                result = list(self._cache.get(sport, []))
+                result = list(self._cache.get(sport, []))[offset:offset + limit if limit is not None else None]
             else:
                 result = [event for group in self._cache.values() for event in group]
+                if limit is not None:
+                    result = result[offset:offset + limit]
             self._events_cache[cache_key] = (time.monotonic(), result)
             return result
 
