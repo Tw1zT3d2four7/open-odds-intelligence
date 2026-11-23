@@ -495,7 +495,7 @@ class OddsDatabase:
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
         return snapshot_id
 
-    def latest_events(self, sport=None):
+    def latest_events(self, sport=None, limit=None, offset=0):
         """Load the latest stored event snapshots with linear-time grouping.
 
         Keep lookup maps while assembling each event. Rebuilding bookmaker and
@@ -513,14 +513,23 @@ class OddsDatabase:
                     ORDER BY s.sport""").fetchall()
             events = []
             for snap in snapshots:
+                page_clause = ""
+                page_args = [snap["id"]]
+                if limit is not None:
+                    page_clause = """ AND event_id IN (
+                        SELECT event_id FROM quotes WHERE snapshot_id=?
+                        GROUP BY event_id ORDER BY MIN(commence_time),event_id
+                        LIMIT ? OFFSET ?
+                    )"""
+                    page_args.extend([snap["id"], max(1, min(int(limit), 100)), max(0, int(offset))])
                 rows = db.execute(
                     """SELECT event_id,sport_title,commence_time,home_team,away_team,
                               bookmaker_key,bookmaker_title,market_key,outcome_name,
                               outcome_description,price,source_updated_at,source_provider,
                               is_main,size_json,size_source_provider,point
-                       FROM quotes WHERE snapshot_id=?
-                       ORDER BY event_id,bookmaker_key,market_key,outcome_name""",
-                    (snap["id"],),
+                       FROM quotes WHERE snapshot_id=?""" + page_clause + """
+                       ORDER BY commence_time,event_id,bookmaker_key,market_key,outcome_name""",
+                    page_args,
                 ).fetchall()
                 grouped = {}
                 bookmaker_maps = {}
