@@ -409,7 +409,6 @@ def refresh_limits():
 def market_limits(sport: str | None = None,
                   limit: int = Query(500, ge=1, le=2000)):
     return {"limits": limits_monitor.current(sport, limit),
-            "status": {"enabled": bool(limits_monitor.status().get("enabled"))},
             "note": "Only provider-reported posted market limits are shown. Missing values are not inferred; limits are not account-specific betting caps."}
 
 
