@@ -201,12 +201,12 @@ def merge_provider_events(provider_results):
                     for raw_outcome in raw_market.get("outcomes") or []:
                         if not isinstance(raw_outcome, dict):
                             continue
-                        identity_key = _outcome_identity(raw_outcome)
-                        if identity_key is None:
-                            continue
                         candidate = _canonical_outcome(
                             raw_outcome, event, target, market_key
                         )
+                        identity_key = _outcome_identity(candidate)
+                        if identity_key is None:
+                            continue
                         candidate["source_provider"] = provider_name
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
