@@ -429,11 +429,29 @@ def market_limits_history(event_id: str, bookmaker: str, market: str,
         event_id, bookmaker, market, outcome, point, limit
     )}
 
+def _public_events(sport=None):
+    """Return subscriber-safe event data without internal provider attribution."""
+    def strip_private_fields(value):
+        if isinstance(value, dict):
+            return {
+                key: strip_private_fields(item)
+                for key, item in value.items()
+                if str(key).lower() not in {
+                    "source_provider", "size_source_provider",
+                    "provider", "provider_name",
+                }
+            }
+        if isinstance(value, list):
+            return [strip_private_fields(item) for item in value]
+        return value
+    return strip_private_fields(service.events(sport))
+
+
 @app.get("/api/odds")
 def odds(sport: str | None = None):
     # Odds and bookmaker prices are subscriber-facing data; provider diagnostics
     # and account-level quota information stay behind /api/admin/control.
-    return {"events": service.events(sport)}
+    return {"events": _public_events(sport)}
 
 
 @app.post("/api/refresh")
