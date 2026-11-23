@@ -1122,3 +1122,20 @@ def test_latest_events_paginates_selected_sport(tmp_path):
 
     assert [event["id"] for event in first] == ["nba-0", "nba-1"]
     assert [event["id"] for event in second] == ["nba-2", "nba-3"]
+
+
+
+def test_snapshot_status_counts_distinct_books_in_latest_snapshot_per_sport(tmp_path):
+    db = OddsDatabase(tmp_path / "book-count.sqlite3")
+    first = fixture()
+    first[0]["bookmakers"].append({
+        "key": "book-b", "title": "Book B",
+        "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Home", "price": -115}, {"name": "Away", "price": 105}
+        ]}],
+    })
+    db.save_snapshot("basketball_nba", first, "test", "2026-11-17T12:00:00Z")
+    newer = fixture()
+    db.save_snapshot("basketball_nba", newer, "test", "2026-11-17T12:05:00Z")
+    status = db.snapshot_status()
+    assert status["bookmakers"] == 1
