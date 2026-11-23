@@ -111,3 +111,45 @@ thresholds merely to force a green status.
 
 This workflow deliberately does not enable TheRundown score sync, alter
 environment variables, or change any provider polling settings.
+
+
+## Automated NFL historical results (nflverse)
+
+The development build includes an NFL-only importer for the public nflverse
+schedules release. It reads only game ID, season, game type, game date, home
+and away team abbreviations, and final scores. Although the upstream CSV
+contains historical betting fields, those fields are deliberately ignored.
+No TheRundown data or odds API requests are used.
+
+The importer maps historical franchise abbreviations (for example SD, OAK,
+STL, and WAS) to current franchise identities. It imports completed regular
+season and playoff games only. Preseason rows and games without final scores
+are excluded.
+
+Run a dry-run first (this is the default):
+
+```bash
+python -m scripts.sync_nflverse_results
+```
+
+To inspect a saved source CSV without downloading it again:
+
+```bash
+python -m scripts.sync_nflverse_results --input /path/to/games.csv
+```
+
+Only after reviewing the report, explicitly persist the results:
+
+```bash
+python -m scripts.sync_nflverse_results --apply
+```
+
+The importer stores these records in the separate training-only results table.
+It does not populate archived-event settlements and does not make these rows
+eligible for calibration or holdout. The upstream schedule supplies a game
+date but not a consistently timezone-aware kickoff timestamp; the importer
+uses a noon-UTC date anchor strictly for chronological ordering. It must never
+be used to match an odds quote.
+
+Attribution: nflverse schedules, CC BY 4.0.
+Source: https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv
