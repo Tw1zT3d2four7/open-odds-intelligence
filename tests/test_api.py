@@ -674,7 +674,7 @@ def test_admin_routes_fail_closed_when_admin_credentials_are_missing(monkeypatch
 
 
 def test_public_odds_endpoint_returns_quotes_without_provider_status(monkeypatch):
-    monkeypatch.setattr(main.service, "events", lambda sport=None: [{"id": "event"}])
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [{"id": "event", "bookmakers": [{"key": "book", "markets": [{"key": "h2h", "outcomes": [{"name": "Home", "price": -110, "source_provider": "private-provider", "size_source_provider": "private-provider"}]}]}]}])
     monkeypatch.setattr(main.service, "status", lambda: {
         "providers": ["therundown"],
         "provider_keys": {"therundown": {"keys": [{"key_id": "private"}]}},
@@ -683,7 +683,10 @@ def test_public_odds_endpoint_returns_quotes_without_provider_status(monkeypatch
     with TestClient(main.app) as client:
         response = client.get("/api/odds")
     assert response.status_code == 200
-    assert response.json() == {"events": [{"id": "event"}]}
+    assert response.json()["events"][0]["id"] == "event"
+    outcome = response.json()["events"][0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert "source_provider" not in outcome
+    assert "size_source_provider" not in outcome
 
 
 def test_admin_page_and_brand_logo_are_served(monkeypatch):
