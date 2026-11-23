@@ -89,7 +89,7 @@ th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04
  <div class="filters">
   <label for="simLeague">League</label><select id="simLeague"><option value="">Select a league</option></select>
   <label for="simGame">Game</label><select id="simGame" disabled><option value="">Select a league first</option></select>
-  <button id="loadSimGames" type="button" disabled>Load / Refresh This League</button>
+  <button id="loadSimGames" type="button" disabled>Reload Stored Games</button>
   <button class="primary" id="runSimulation" disabled>Run 10,000 Simulations</button>
  </div>
  <p class="muted" id="simStatus" aria-live="polite">Select a league, then choose a game from the available odds snapshot.</p>
@@ -416,7 +416,7 @@ async function runSelectedSimulation(){
  finally{btn.disabled=!$("simGame").value;btn.textContent="Run 10,000 Simulations"}
 }
 $("simLeague").addEventListener("change",()=>{ $("loadSimGames").disabled=!$("simLeague").value;loadSimulationGames(false); });
-$("loadSimGames").addEventListener("click",()=>loadSimulationGames(true));
+$("loadSimGames").addEventListener("click",()=>loadSimulationGames(false));
 $("simGame").addEventListener("change",()=>{
  const selected=simulationGames.find(g=>g.event_id===$("simGame").value);
  $("runSimulation").disabled=!selected||!selected.can_simulate;
