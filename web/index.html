@@ -190,8 +190,9 @@ function renderProviderStatus(health){
    return '<div class="provider-key"><span>Key '+escapeHtml(String(key.key_id||"").slice(0,8))+' · '+escapeHtml(key.account_group||"default")+'</span> <span class="pill '+pill+'">'+escapeHtml(status)+'</span><small>'+escapeHtml(quota.join(" · ")||"Quota not reported yet")+'</small>'+(key.retry_in_seconds>0?'<small>Retry in '+escapeHtml(key.retry_in_seconds)+'s</small>':"")+(key.last_error?'<small class="warn">'+escapeHtml(key.last_error)+'</small>':"")+'</div>';
   }).join("");
   const isSelected=selected.includes(name);
-  const state=pool.configured?(isSelected?"Enabled":"Key set · not selected"):(isSelected?"Missing API key":"No API key");
-  const stateClass=pool.configured&&isSelected?"good":pool.configured?"warn":"bad";
+  const configured=pool.configured??Boolean(pool.configured_keys);
+  const state=configured?(isSelected?"Enabled":"Key set · not selected"):(isSelected?"Missing API key":"No API key");
+  const stateClass=configured&&isSelected?"good":configured?"warn":"bad";
   const covered=Object.entries(coverage).filter(([,sportData])=>(sportData.provider_coverage||{})[name]);
   const sports=covered.map(([sport])=>sport);
   const books=new Set(),markets=new Set();let quotes=0,props=0;
@@ -204,12 +205,26 @@ function renderProviderStatus(health){
 async function load(){
  const apiFailures=[];
  try{
+  const activeTab=document.querySelector('nav[aria-label="Market views"] .tab.active')?.dataset.tab||"ev";
+  const request=(tab,path,fallback)=>activeTab===tab?getSafe(path,fallback,apiFailures):Promise.resolve(fallback);
   const [health,odds,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
-   getSafe("/api/health",{},apiFailures),getSafe("/api/odds"+query(),{events:[]},apiFailures),getSafe("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]},apiFailures),getSafe("/api/arbitrage"+query(),{arbitrage:[]},apiFailures),getSafe("/api/market-board"+query(),{quotes:[]},apiFailures),getSafe("/api/bookmaker-board"+query(),{quotes:[]},apiFailures),getSafe("/api/movement"+query(),{movements:[]},apiFailures),getSafe("/api/limits"+query(),{limits:[],status:{}},apiFailures),getSafe("/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]},apiFailures),getSafe("/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."},apiFailures),getSafe("/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}},apiFailures)
+   getSafe("/api/health",{},apiFailures),
+   Promise.resolve({events:[]}),
+   request("ev","/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]}),
+   request("arb","/api/arbitrage"+query(),{arbitrage:[]}),
+   request("board","/api/market-board"+query(),{quotes:[]}),
+   request("allbooks","/api/bookmaker-board"+query(),{quotes:[]}),
+   request("movement","/api/movement"+query(),{movements:[]}),
+   request("limits","/api/limits"+query(),{limits:[],status:{}}),
+   request("limits","/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]}),
+   request("clv","/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."}),
+   request("props","/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}})
   ]);
   renderProviderStatus(health);
-  const events=odds.events||[],books=new Set();events.forEach(e=>(e.bookmakers||[]).forEach(b=>books.add(b.key)));
-  $("events").textContent=events.length;$("books").textContent=books.size;$("edges").textContent=(ev.opportunities||[]).length;$("arbs").textContent=(arb.arbitrage||[]).length;
+  const events=(health.sport_freshness||[]).reduce((total,item)=>total+Number(item.event_count||0),0);
+  const books=new Set();
+  Object.values(health.provider_coverage||{}).forEach(sportData=>Object.values(sportData.provider_coverage||{}).forEach(item=>(item.books||[]).forEach(book=>books.add(book))));
+  $("events").textContent=events;$("books").textContent=books.size;$("edges").textContent=(ev.opportunities||[]).length;$("arbs").textContent=(arb.arbitrage||[]).length;
   const providerLabel=(health.providers||[]).map(x=>({therundown:"TheRundown",the_odds_api:"The Odds API",sports_game_odds:"SportsGameOdds",oddize:"Oddize",oddslink:"OddsLink"}[x]||x)).join(", ")||health.provider;
   const status=health.configured?(health.last_error?"Provider refresh warning: "+health.last_error:"Providers "+providerLabel+" · Last refresh: "+(health.last_updated||"not yet refreshed")):"No configured odds provider. Set ODDS_PROVIDERS and provider API keys (or the legacy ODDS_PROVIDER key). No synthetic quotes are generated.";
   const quota=health.provider_usage||{};const quotaText=quota.datapoints_remaining!==undefined?" · Data points remaining: "+quota.datapoints_remaining+(quota.datapoints_total!==undefined?" (last response "+quota.datapoints_total+")":"")+(quota.data_delay_seconds!==undefined?" · Data delay "+quota.data_delay_seconds+"s":""):quota.requests_remaining!==undefined?" · API requests remaining: "+quota.requests_remaining+(quota.requests_used!==undefined?" (used "+quota.requests_used+")":""):"";const refreshText=health.refresh_interval_seconds>0?" · Auto refresh every "+health.refresh_interval_seconds+"s":" · Manual refresh";
@@ -295,7 +310,7 @@ $("refresh").addEventListener("click",refresh);$("reload").addEventListener("cli
 $("limitsDirection").addEventListener("change",load);$("refreshClv").addEventListener("click",load);$("closeLimitHistory").addEventListener("click",()=>$("limitHistoryPanel").classList.add("hidden"));
 $("refreshLimits").addEventListener("click",async()=>{const b=$("refreshLimits");b.disabled=true;b.textContent="Checking…";try{const r=await fetch("/api/limits/refresh",{method:"POST"}).then(x=>x.json());$("limitsStatus").textContent=(r.ok?"Limits refreshed":"Limits refresh failed") +" · "+r.observations+" posted-limit observations · "+(r.diagnostic?.events_returned||0)+" fixtures · "+(r.diagnostic?.posted_limit_outcomes||0)+" posted-limit outcomes"+(r.error?" · "+r.error:"");}catch(e){$("limitsStatus").textContent="Limits refresh failed: "+e.message}finally{b.disabled=false;b.textContent="Refresh limits";await load()}});
 $("apply").addEventListener("click",()=>{state.minEv=Math.max(-100,Math.min(100,Number($("minEv").value)||0));state.consensus=Number($("consensus").value)||2;load()});
-document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
+document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>{setTab(b.dataset.tab);load()}));
 
 /* Quota-free betting calculators. All odds are converted to decimal internally. */
 (()=>{
