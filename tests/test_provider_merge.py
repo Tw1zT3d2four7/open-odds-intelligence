@@ -54,15 +54,25 @@ def test_merge_prefers_first_provider_when_quote_timestamps_are_missing():
     assert outcome["source_provider"] == "first"
 
 
-def test_merge_does_not_combine_reversed_home_away_or_different_kickoffs():
-    primary = _event("a", [_book("book-a", [{"name": "Home", "price": -110}])])
-    reversed_event = _event("b", [], home="Away", away="Home")
+def test_merge_combines_reversed_home_away_and_canonicalizes_spread_lines():
+    primary = _event("a", [_book("book-a", [
+        {"name": "Home", "price": -110, "point": -3.5}
+    ], market="spreads")])
+    reversed_event = _event("b", [_book("book-b", [
+        {"name": "Home", "price": -105, "point": 3.5}
+    ], market="spreads")], home="Away", away="Home")
     different_time = _event("c", [], start="2026-11-24T20:00:00Z")
     merged = merge_provider_events([
         ("first", [primary]),
         ("second", [reversed_event, different_time]),
     ])
-    assert len(merged) == 3
+    assert len(merged) == 2
+    assert merged[0]["home_team"] == "Home"
+    books = {book["key"]: book for book in merged[0]["bookmakers"]}
+    assert set(books) == {"book-a", "book-b"}
+    outcome = books["book-b"]["markets"][0]["outcomes"][0]
+    assert outcome["name"] == "Away"
+    assert outcome["point"] == -3.5
 
 
 def test_merge_deduplicates_same_event_and_same_exact_outcome():
