@@ -300,8 +300,17 @@ def _simulation_games_for_sport(sport: str):
             continue
         from .simulation import market_readiness
         readiness = market_readiness(
-            event, model_parameters=league_model, require_independent_model=False
+            event, model_parameters=league_model, require_independent_model=True
         )
+        # Prefer the independent historical model when it is actually available.
+        # If only that model requirement fails, fall back to the explicitly
+        # market-backed simulator; market, schedule and freshness checks remain.
+        if not readiness.get("can_simulate"):
+            market_readiness_result = market_readiness(
+                event, model_parameters=league_model, require_independent_model=False
+            )
+            if market_readiness_result.get("can_simulate"):
+                readiness = market_readiness_result
         readiness["snapshot_freshness"] = freshness_state
         readiness["snapshot_age_seconds"] = freshness_age
         if freshness_state != "current":
