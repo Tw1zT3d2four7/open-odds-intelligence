@@ -256,15 +256,28 @@ def refresh(sport: str | None = None):
     return service.refresh(sport)
 
 
+def _page_results(items, limit, offset):
+    """Paginate rendered result rows, not source events (one event can yield many rows)."""
+    total = len(items)
+    start = max(0, int(offset))
+    size = max(1, min(int(limit), 100))
+    return {"items": items[start:start + size], "total": total,
+            "limit": size, "offset": start}
+
+
 @app.get("/api/market-board")
 def market_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    return {"quotes": market_board(service.events(sport, limit=limit, offset=offset))}
+    page = _page_results(market_board(service.events(sport)), limit, offset)
+    return {"quotes": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"]}
 
 
 @app.get("/api/bookmaker-board")
 def bookmaker_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    """Return every valid quote from every sportsbook in the selected event page."""
-    return {"quotes": market_board(service.events(sport, limit=limit, offset=offset), best_only=False)}
+    """Return every valid quote, paginated as 25 rendered sportsbook rows."""
+    page = _page_results(market_board(service.events(sport), best_only=False), limit, offset)
+    return {"quotes": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"]}
 
 
 @app.get("/api/simulation/leagues")
@@ -384,7 +397,7 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
 
 @app.get("/api/player-props")
 def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    events = service.events(sport, limit=limit, offset=offset)
+    events = service.events(sport)
     quotes = []
     for event in events:
         for book in event.get("bookmakers", []):
@@ -407,7 +420,10 @@ def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
                     })
     quotes.sort(key=lambda row: (row["commence_time"] or "", row["matchup"],
                                  row["player"], row["market"], str(row["point"])))
-    return {"quotes": quotes, "status": service.status()["player_props"],
+    page = _page_results(quotes, limit, offset)
+    return {"quotes": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"],
+            "status": service.status()["player_props"],
             "note": "Player props are fetched only when explicitly enabled and only from supported provider event-odds endpoints. Each event-level request can consume provider quota."}
 
 
@@ -449,13 +465,17 @@ def opportunities(sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20),
                   limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport, limit=limit, offset=offset), min_ev, min_consensus_books)
-    return {"opportunities": result["opportunities"],
+    result = analyze_markets(service.events(sport), min_ev, min_consensus_books)
+    page = _page_results(result["opportunities"], limit, offset)
+    return {"opportunities": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"],
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
 
 @app.get("/api/arbitrage")
 def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport, limit=limit, offset=offset), min_ev=101)
-    return {"arbitrage": result["arbitrage"],
+    result = analyze_markets(service.events(sport), min_ev=101)
+    page = _page_results(result["arbitrage"], limit, offset)
+    return {"arbitrage": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"],
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
