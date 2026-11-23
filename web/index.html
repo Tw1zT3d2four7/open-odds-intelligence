@@ -171,12 +171,22 @@ function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&"
 async function load(){
  const apiFailures=[];
  try{
-  const [health,odds,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
-   getSafe("/api/health",{},apiFailures),getSafe("/api/odds"+query(),{events:[]},apiFailures),getSafe("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]},apiFailures),getSafe("/api/arbitrage"+query(),{arbitrage:[]},apiFailures),getSafe("/api/market-board"+query(),{quotes:[]},apiFailures),getSafe("/api/bookmaker-board"+query(),{quotes:[]},apiFailures),getSafe("/api/movement"+query(),{movements:[]},apiFailures),getSafe("/api/limits"+query(),{limits:[],status:{}},apiFailures),getSafe("/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]},apiFailures),getSafe("/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."},apiFailures),getSafe("/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}},apiFailures)
+  const activeTab=document.querySelector('nav[aria-label="Market views"] .tab.active')?.dataset.tab||"ev";
+  const [health,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
+   getSafe("/api/health",{},apiFailures),
+   activeTab==="ev"?getSafe("/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]},apiFailures):Promise.resolve({opportunities:[]}),
+   activeTab==="arb"?getSafe("/api/arbitrage"+query(),{arbitrage:[]},apiFailures):Promise.resolve({arbitrage:[]}),
+   activeTab==="board"?getSafe("/api/market-board"+query(),{quotes:[]},apiFailures):Promise.resolve({quotes:[]}),
+   activeTab==="allbooks"?getSafe("/api/bookmaker-board"+query(),{quotes:[]},apiFailures):Promise.resolve({quotes:[]}),
+   activeTab==="movement"?getSafe("/api/movement"+query(),{movements:[]},apiFailures):Promise.resolve({movements:[]}),
+   activeTab==="limits"?getSafe("/api/limits"+query(),{limits:[],status:{}} ,apiFailures):Promise.resolve({limits:[]}),
+   activeTab==="limits"?getSafe("/api/limits/changes"+query({direction:$("limitsDirection")?.value||"increased",limit:200}),{changes:[]},apiFailures):Promise.resolve({changes:[]}),
+   activeTab==="clv"?getSafe("/api/clv"+query({limit:500}),{entries:[],summary:{},method:"CLV endpoint unavailable in this server version."},apiFailures):Promise.resolve({entries:[],summary:{}}),
+   activeTab==="props"?getSafe("/api/player-props"+query(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}},apiFailures):Promise.resolve({quotes:[],status:{enabled:false,reason:"Open the Player props tab to load this panel."}})
   ]);
-  const events=odds.events||[],books=new Set();events.forEach(e=>(e.bookmakers||[]).forEach(b=>books.add(b.key)));
-  $("events").textContent=events.length;$("books").textContent=books.size;$("edges").textContent=(ev.opportunities||[]).length;$("arbs").textContent=(arb.arbitrage||[]).length;
-  const sportFreshness=health.sport_freshness||[];const staleSports=sportFreshness.filter(x=>x.freshness==="stale").map(x=>x.sport);const missingSports=sportFreshness.filter(x=>x.freshness==="unavailable").map(x=>x.sport);const freshnessText=health.data_freshness==="stale"?"STALE ODDS: "+staleSports.join(", "):health.data_freshness==="partial"?"INCOMPLETE FEED: "+missingSports.join(", "):health.data_freshness==="current"?"Feed current":"Feed freshness unavailable";$("notice").textContent=freshnessText;$("updated").textContent=health.last_updated?"Updated "+date(health.last_updated):"No successful refresh";
+  const sportFreshness=health.sport_freshness||[];
+  $("events").textContent=sportFreshness.reduce((total,item)=>total+Number(item.event_count||0),0);
+  $("books").textContent="—";$("edges").textContent=activeTab==="ev"?(ev.opportunities||[]).length:"—";$("arbs").textContent=activeTab==="arb"?(arb.arbitrage||[]).length:"—";const staleSports=sportFreshness.filter(x=>x.freshness==="stale").map(x=>x.sport);const missingSports=sportFreshness.filter(x=>x.freshness==="unavailable").map(x=>x.sport);const freshnessText=health.data_freshness==="stale"?"STALE ODDS: "+staleSports.join(", "):health.data_freshness==="partial"?"INCOMPLETE FEED: "+missingSports.join(", "):health.data_freshness==="current"?"Feed current":"Feed freshness unavailable";$("notice").textContent=freshnessText;$("updated").textContent=health.last_updated?"Updated "+date(health.last_updated):"No successful refresh";
   const sel=$("sport"),current=state.sport;sellist(sel,health.sports||[],current);populateSimulationLeagues(health.sports||[]);
   const evRows=$("evRows");evRows.innerHTML="";(ev.opportunities||[]).forEach(x=>row(evRows,[x.matchup,x.market,(x.outcome_description?x.outcome_description+" · ":"")+(x.point===null||x.point===undefined?x.outcome:x.outcome+" ("+x.point+")"),x.bookmaker,fmtOdds(x.price),(x.fair_probability*100).toFixed(1)+"%",[Number(x.ev_percent).toFixed(2)+"%","good"],(x.consensus_books||0)+" books",date(x.commence_time)]));if(!evRows.children.length)empty(evRows,9,"No qualifying EV opportunities. More independent books may be required for consensus.");
   const arbRows=$("arbRows");arbRows.innerHTML="";(arb.arbitrage||[]).forEach(x=>{const a=x.legs||[];row(arbRows,[x.matchup,x.market,x.line??"—",[x.arb_percent.toFixed(3)+"%","good"],a[0]?.outcome||"—",a[0]?fmtOdds(a[0].price):"—",a[0]?a[0].stake_percent+"%":"—",a[1]?.outcome||"—",a[1]?fmtOdds(a[1].price):"—",a[1]?a[1].stake_percent+"%":"—",date(x.commence_time)]);});if(!arbRows.children.length)empty(arbRows,11,"No mathematical two-outcome arbitrage found in current quotes.");
@@ -250,7 +260,7 @@ $("sport").addEventListener("change",e=>{state.sport=e.target.value;load()});
 $("reload").addEventListener("click",load);
 $("limitsDirection").addEventListener("change",load);$("refreshClv").addEventListener("click",load);$("closeLimitHistory").addEventListener("click",()=>$("limitHistoryPanel").classList.add("hidden"));
 $("apply").addEventListener("click",()=>{state.minEv=Math.max(-100,Math.min(100,Number($("minEv").value)||0));state.consensus=Number($("consensus").value)||2;load()});
-document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
+document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>{setTab(b.dataset.tab);load()}));
 
 /* Quota-free betting calculators. All odds are converted to decimal internally. */
 (()=>{
