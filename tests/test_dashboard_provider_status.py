@@ -13,3 +13,6 @@ def test_provider_diagnostics_are_private_to_the_admin_dashboard():
     assert "provider_key" in admin_html
     assert "/api/admin/control" in admin_html
     assert "monthly_objects_remaining" not in public_html
+    assert "TheRundown" not in public_html
+    assert "The Odds API" not in public_html
+    assert "OddsLink" not in public_html
