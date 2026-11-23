@@ -172,23 +172,45 @@ def test_arbitrage_endpoint_requests_arbitrage_analysis(monkeypatch):
     assert response.json()["arbitrage"][0]["arb_percent"] == 1.2
 
 
-def test_clv_endpoint_passes_sport_and_bounded_limit(monkeypatch):
+def test_clv_endpoint_paginates_entries_and_preserves_summary(monkeypatch):
     received = {}
+    entries = [{"id": index} for index in range(61)]
     def fake_report(sport, limit):
         received.update(sport=sport, limit=limit)
-        return {"entries": [], "summary": {"total": 0}}
+        return {"entries": entries, "summary": {"total": 61}}
     monkeypatch.setattr(main.service, "clv_report", fake_report)
     with TestClient(main.app) as client:
-        response = client.get("/api/clv?sport=americanfootball_nfl&limit=1200")
+        response = client.get("/api/clv?sport=americanfootball_nfl&limit=25&offset=25")
     assert response.status_code == 200
-    assert received == {"sport": "americanfootball_nfl", "limit": 1200}
-    assert response.json()["summary"]["total"] == 0
+    assert received == {"sport": "americanfootball_nfl", "limit": 2000}
+    assert len(response.json()["entries"]) == 25
+    assert response.json()["entries"][0]["id"] == 25
+    assert response.json()["total"] == 61
+    assert response.json()["summary"]["total"] == 61
 
 
 def test_clv_endpoint_rejects_out_of_range_limit():
     with TestClient(main.app) as client:
-        response = client.get("/api/clv?limit=9000")
+        response = client.get("/api/clv?limit=101")
     assert response.status_code == 422
+
+
+
+def test_movement_endpoint_paginates_result_rows(monkeypatch):
+    rows = [{"row": index} for index in range(31)]
+    received = {}
+    def fake_movement(sport, limit):
+        received.update(sport=sport, limit=limit)
+        return rows
+    monkeypatch.setattr(main.service, "movement", fake_movement)
+    with TestClient(main.app) as client:
+        response = client.get("/api/movement?sport=americanfootball_nfl&limit=25&offset=25")
+    payload = response.json()
+    assert response.status_code == 200
+    assert received == {"sport": "americanfootball_nfl", "limit": 1000}
+    assert payload["total"] == 31
+    assert payload["offset"] == 25
+    assert payload["movements"] == rows[25:]
 
 
 def test_limits_endpoints_expose_observations_and_changes(monkeypatch):
@@ -208,8 +230,12 @@ def test_limits_endpoints_expose_observations_and_changes(monkeypatch):
             "/api/limits/history?event_id=e1&bookmaker=circa&market=spreads&outcome=Home&point=-2.5&limit=40"
         )
     assert current.status_code == changes.status_code == history.status_code == 200
-    assert current.json()["limits"] == [{"sport": "americanfootball_nfl", "limit": 25}]
-    assert changes.json()["changes"] == [{"sport": "americanfootball_nfl", "direction": "all", "limit": 30}]
+    assert current.json()["limits"] == [{"sport": "americanfootball_nfl", "limit": 2000}]
+    assert current.json()["total"] == 1
+    assert current.json()["limit"] == 25
+    assert changes.json()["changes"] == [{"sport": "americanfootball_nfl", "direction": "all", "limit": 2000}]
+    assert changes.json()["total"] == 1
+    assert changes.json()["limit"] == 30
     assert history.json()["observations"][0]["point"] == -2.5
 
 

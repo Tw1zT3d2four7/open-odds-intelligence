@@ -1,6 +1,6 @@
 services:
   open-odds-intelligence:
-    image: ghcr.io/tw1zt3d2four7/open-odds-intelligence:latest
+    image: ghcr.io/tw1zt3d2four7/open-odds-intelligence:development
     pull_policy: always
     container_name: open-odds-intelligence
     restart: unless-stopped

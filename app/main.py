@@ -222,8 +222,12 @@ def refresh_limits():
 
 @app.get("/api/limits")
 def market_limits(sport: str | None = None,
-                  limit: int = Query(500, ge=1, le=2000)):
-    return {"limits": limits_monitor.current(sport, limit),
+                  limit: int = Query(25, ge=1, le=100),
+                  offset: int = Query(0, ge=0)):
+    rows = limits_monitor.current(sport, 2000)
+    page = _page_results(rows, limit, offset)
+    return {"limits": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"],
             "status": limits_monitor.status(),
             "note": "Only provider-reported posted market limits are shown. Missing values are not inferred; limits are not account-specific betting caps."}
 
@@ -231,8 +235,12 @@ def market_limits(sport: str | None = None,
 @app.get("/api/limits/changes")
 def market_limits_changes(sport: str | None = None,
                           direction: str = Query("increased", pattern="^(increased|decreased|all)$"),
-                          limit: int = Query(200, ge=1, le=2000)):
-    return {"changes": limits_monitor.changes(sport, direction, limit),
+                          limit: int = Query(25, ge=1, le=100),
+                          offset: int = Query(0, ge=0)):
+    rows = limits_monitor.changes(sport, direction, 2000)
+    page = _page_results(rows, limit, offset)
+    return {"changes": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"],
             "note": "Changes are calculated from successive stored provider-reported posted-limit snapshots. Observation time is when this application received the snapshot, not a claimed sportsbook publication time."}
 
 
@@ -429,13 +437,21 @@ def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
 
 @app.get("/api/clv")
 def closing_line_value(sport: str | None = None,
-                       limit: int = Query(500, ge=1, le=2000)):
-    return service.clv_report(sport, limit)
+                       limit: int = Query(25, ge=1, le=100),
+                       offset: int = Query(0, ge=0)):
+    result = service.clv_report(sport, 2000)
+    page = _page_results(result.get("entries", []), limit, offset)
+    return {**result, "entries": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"]}
 
 
 @app.get("/api/movement")
-def movement(sport: str | None = None, limit: int = Query(200, ge=1, le=1000)):
-    return {"movements": service.movement(sport, limit),
+def movement(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
+             offset: int = Query(0, ge=0)):
+    rows = service.movement(sport, 1000)
+    page = _page_results(rows, limit, offset)
+    return {"movements": page["items"], "total": page["total"],
+            "limit": page["limit"], "offset": page["offset"],
             "note": "Movement reports meaningful changes across consecutive stored snapshots, with opening baselines at the first observed exact line. It is not proof of sharp-money activity."}
 
 
