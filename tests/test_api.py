@@ -671,3 +671,32 @@ def test_admin_routes_fail_closed_when_admin_credentials_are_missing(monkeypatch
         assert client.get("/admin").status_code == 503
         assert client.get("/api/admin/control").status_code == 503
         assert client.post("/api/refresh?sport=basketball_nba").status_code == 503
+
+
+def test_public_odds_endpoint_returns_quotes_without_provider_status(monkeypatch):
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [{"id": "event"}])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "providers": ["therundown"],
+        "provider_keys": {"therundown": {"keys": [{"key_id": "private"}]}},
+        "provider_usage": {"datapoints_remaining": 99},
+    })
+    with TestClient(main.app) as client:
+        response = client.get("/api/odds")
+    assert response.status_code == 200
+    assert response.json() == {"events": [{"id": "event"}]}
+
+
+def test_admin_page_and_brand_logo_are_served(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "secret")
+    headers = {"Authorization": "Basic " + base64.b64encode(b"admin:secret").decode()}
+    with TestClient(main.app) as client:
+        page = client.get("/admin", headers=headers)
+        logo = client.get("/assets/odds-intelligence.svg")
+        public_page = client.get("/")
+    assert page.status_code == 200
+    assert "Administrator control center" in page.text
+    assert logo.status_code == 200
+    assert "<svg" in logo.text
+    assert "odds-intelligence.svg" in public_page.text
