@@ -99,6 +99,10 @@ class OddsService:
         self.limits_monitor = MarketLimitsMonitor(path=self.db.path)
         self._refresh_lock = threading.Lock()
         self._alert_lock = threading.Lock()
+        # Share one assembled snapshot across concurrent dashboard endpoints.
+        self._events_cache_lock = threading.Lock()
+        self._events_cache = {}
+        self._events_cache_ttl_seconds = 3.0
         self._cache = {}
         self._last_error = None
         self._updated_at = None
@@ -685,6 +689,7 @@ class OddsService:
             fetched_at = datetime.now(timezone.utc).isoformat()
             snapshot_provider = "+".join(successful_providers)
             self.db.save_snapshot(sport_key, events, snapshot_provider, fetched_at)
+            self._invalidate_events_cache()
             self._cache[sport_key] = events
             if "oddslink" in successful_providers:
                 oddslink_events = next(
@@ -920,13 +925,31 @@ class OddsService:
         self._alert_error = self._last_alert_error
         return sent
 
+    def _invalidate_events_cache(self):
+        with self._events_cache_lock:
+            self._events_cache.clear()
+
     def events(self, sport=None):
-        stored = self.db.latest_events(sport)
-        if stored:
-            return stored
-        if sport:
-            return list(self._cache.get(sport, []))
-        return [event for group in self._cache.values() for event in group]
+        """Return a short-lived shared snapshot for concurrent dashboard reads."""
+        cache_key = sport or "__all__"
+        now = time.monotonic()
+        cached = self._events_cache.get(cache_key)
+        if cached and now - cached[0] < self._events_cache_ttl_seconds:
+            return cached[1]
+        with self._events_cache_lock:
+            now = time.monotonic()
+            cached = self._events_cache.get(cache_key)
+            if cached and now - cached[0] < self._events_cache_ttl_seconds:
+                return cached[1]
+            stored = self.db.latest_events(sport)
+            if stored:
+                result = stored
+            elif sport:
+                result = list(self._cache.get(sport, []))
+            else:
+                result = [event for group in self._cache.values() for event in group]
+            self._events_cache[cache_key] = (time.monotonic(), result)
+            return result
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None,
                 limit=100, outcome_description=None):
