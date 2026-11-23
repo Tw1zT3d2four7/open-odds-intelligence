@@ -133,3 +133,28 @@ def test_provider_refresh_intervals_are_tracked_independently(tmp_path, monkeypa
     assert set(service.providers_due_for_auto_refresh()) == {
         "therundown", "oddslink"
     }
+
+
+def test_admin_automatic_refresh_kill_switch_pauses_provider_requests(monkeypatch):
+    import asyncio
+
+    called = []
+    monkeypatch.setattr(main, "_admin_settings", lambda: {
+        "automatic_refresh_enabled": False,
+        "manual_refresh_enabled": True,
+        "manual_refresh_cooldown_seconds": 900,
+        "manual_refresh_daily_limit": 3,
+    })
+    monkeypatch.setattr(main, "_odds_refresh_interval_seconds", lambda: 1)
+    monkeypatch.setattr(main.service, "providers_due_for_auto_refresh", lambda: called.append("due") or ["therundown"])
+    monkeypatch.setattr(main.asyncio, "to_thread", lambda fn, *args, **kwargs: _immediate(fn, *args, **kwargs))
+    async def stop_after_one_sleep(delay):
+        raise asyncio.CancelledError
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_one_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main._automatic_refresh_loop())
+    assert called == []
+
+
+def _immediate(fn, *args, **kwargs):
+    return fn(*args, **kwargs)
