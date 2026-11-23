@@ -349,6 +349,63 @@ def test_simulation_endpoint_runs_only_the_requested_event(monkeypatch):
 
 
 
+def test_simulation_game_list_allows_market_ready_game_without_fitted_model(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    event = {
+        "id": "market-only-game", "sport_key": "basketball_nba",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": "2099-11-20T00:00:00Z",
+        "bookmakers": [{"key": "book", "markets": [
+            {"key": "spreads", "outcomes": [
+                {"name": "Home", "point": -3.5}, {"name": "Away", "point": 3.5}]},
+            {"key": "totals", "outcomes": [
+                {"name": "Over", "point": 220.5}, {"name": "Under", "point": 220.5}]},
+        ]}],
+    }
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main, "load_fitted_models", lambda path: {})
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current", "age_seconds": 60}]
+    })
+    with TestClient(main.app) as client:
+        response = client.get("/api/simulation/games?sport=basketball_nba")
+    game = response.json()["games"][0]
+    assert game["can_simulate"] is True
+    assert game["simulation_mode"] == "score_based_monte_carlo"
+    assert game["reason"] is None
+
+
+def test_simulation_endpoint_runs_market_backed_game_without_fitted_model(monkeypatch):
+    monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
+    event = {
+        "id": "market-only-game", "sport_key": "basketball_nba",
+        "home_team": "Home", "away_team": "Away",
+        "commence_time": "2099-11-20T00:00:00Z",
+        "bookmakers": [{"key": "book", "markets": [
+            {"key": "spreads", "outcomes": [
+                {"name": "Home", "point": -3.5}, {"name": "Away", "point": 3.5}]},
+            {"key": "totals", "outcomes": [
+                {"name": "Over", "point": 220.5}, {"name": "Under", "point": 220.5}]},
+        ]}],
+    }
+    monkeypatch.setattr(main.service, "events", lambda sport=None: [event])
+    monkeypatch.setattr(main, "load_fitted_models", lambda path: {})
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current", "age_seconds": 60}]
+    })
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/simulation/run?sport=basketball_nba&event_id=market-only-game"
+        )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["event_id"] == "market-only-game"
+    assert result["trials"] == 10_000
+    assert result["simulation_type"] == "score_based_monte_carlo"
+    assert result["model_projection"] is None
+    assert result["margin_market"]["model_source"] == "broad_league_prior"
+
+
 def test_simulation_endpoint_blocks_stale_league_snapshot(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_SPORTS", ["basketball_nba"])
     event = {
