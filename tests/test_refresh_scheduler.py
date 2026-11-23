@@ -102,20 +102,17 @@ def test_provider_refresh_intervals_are_tracked_independently(tmp_path, monkeypa
     monkeypatch.setattr(main.config, "ODDS_PROVIDER", "therundown")
     monkeypatch.setattr(main.config, "ODDS_PROVIDERS_EXPLICIT", True, raising=False)
     monkeypatch.setattr(main.config, "ODDS_PROVIDERS", [
-        "therundown", "the_odds_api", "sports_game_odds", "oddize", "oddslink"
+        "therundown", "the_odds_api", "oddize", "oddslink"
     ], raising=False)
     monkeypatch.setattr(main.config, "THERUNDOWN_API_KEY", "Rundown-Key")
     monkeypatch.setattr(main.config, "THERUNDOWN_API_KEYS", "", raising=False)
     monkeypatch.setattr(main.config, "THE_ODDS_API_KEY", "Odds-Key")
     monkeypatch.setattr(main.config, "THE_ODDS_API_KEYS", "", raising=False)
-    monkeypatch.setattr(main.config, "SPORTSGAMEODDS_API_KEY", "SGO-Key", raising=False)
-    monkeypatch.setattr(main.config, "SPORTSGAMEODDS_API_KEYS", "", raising=False)
     monkeypatch.setattr(main.config, "ODDIZE_API_KEY", "Oddize-Key", raising=False)
     monkeypatch.setattr(main.config, "ODDSLINK_API_KEY", "OddsLink-Key", raising=False)
     monkeypatch.setattr(main.config, "ODDSLINK_API_KEYS", "", raising=False)
     monkeypatch.setattr(main.config, "RUNDOWN_REFRESH_INTERVAL_SECONDS", 3600)
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 86400)
-    monkeypatch.setattr(main.config, "SPORTSGAMEODDS_REFRESH_INTERVAL_SECONDS", 259200, raising=False)
     monkeypatch.setattr(main.config, "ODDIZE_REFRESH_INTERVAL_SECONDS", 86400, raising=False)
     monkeypatch.setattr(main.config, "ODDSLINK_REFRESH_INTERVAL_SECONDS", 86400, raising=False)
 
@@ -123,14 +120,11 @@ def test_provider_refresh_intervals_are_tracked_independently(tmp_path, monkeypa
     assert service.auto_refresh_schedule() == {
         "therundown": 3600,
         "the_odds_api": 86400,
-        "sports_game_odds": 259200,
         "oddize": 86400,
         "oddslink": 86400,
     }
     assert set(service.providers_due_for_auto_refresh()) == {
-        "therundown", "the_odds_api", "sports_game_odds", "oddize", "oddslink"
     }
     service.mark_auto_refresh(["the_odds_api", "oddize"])
     assert set(service.providers_due_for_auto_refresh()) == {
-        "therundown", "sports_game_odds", "oddslink"
     }
