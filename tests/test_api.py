@@ -606,3 +606,23 @@ def test_all_bookmaker_quotes_endpoint_returns_every_book_and_respects_sport_fil
     quotes = response.json()["quotes"]
     assert len(quotes) == 4
     assert {quote["bookmaker_key"] for quote in quotes} == {"book-a", "book-b"}
+
+
+def test_odds_endpoint_returns_only_requested_event_page(monkeypatch):
+    received = {}
+    events = [{"id": f"event-{index}"} for index in range(25)]
+
+    def fake_events(sport=None, limit=None, offset=0):
+        received.update(sport=sport, limit=limit, offset=offset)
+        return events
+
+    monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {"providers": []})
+    with TestClient(main.app) as client:
+        response = client.get("/api/odds?sport=basketball_nba&limit=25&offset=50")
+
+    assert response.status_code == 200
+    assert received == {"sport": "basketball_nba", "limit": 25, "offset": 50}
+    assert response.json()["limit"] == 25
+    assert response.json()["offset"] == 50
+    assert len(response.json()["events"]) == 25
