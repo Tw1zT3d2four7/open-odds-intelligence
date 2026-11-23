@@ -673,6 +673,8 @@ def test_admin_routes_fail_closed_when_admin_credentials_are_missing(monkeypatch
         assert client.get("/admin").status_code == 503
         assert client.get("/api/admin/control").status_code == 503
         assert client.post("/api/refresh?sport=basketball_nba").status_code == 503
+        assert client.post("/api/limits/refresh").status_code == 503
+        assert client.post("/api/simulation/games/refresh?sport=basketball_nba").status_code == 503
 
 
 def test_public_odds_endpoint_returns_quotes_without_provider_status(monkeypatch):
