@@ -245,8 +245,8 @@ def market_limits_history(event_id: str, bookmaker: str, market: str,
     )}
 
 @app.get("/api/odds")
-def odds(sport: str | None = None):
-    return {"events": service.events(sport), "status": service.status()}
+def odds(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return {"events": service.events(sport, limit=limit, offset=offset), "limit": limit, "offset": offset, "status": service.status()}
 
 
 @app.post("/api/refresh")
@@ -257,14 +257,14 @@ def refresh(sport: str | None = None):
 
 
 @app.get("/api/market-board")
-def market_board_api(sport: str | None = None):
-    return {"quotes": market_board(service.events(sport))}
+def market_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return {"quotes": market_board(service.events(sport, limit=limit, offset=offset))}
 
 
 @app.get("/api/bookmaker-board")
-def bookmaker_board_api(sport: str | None = None):
-    """Return every valid quote from every sportsbook in the merged snapshot."""
-    return {"quotes": market_board(service.events(sport), best_only=False)}
+def bookmaker_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    """Return every valid quote from every sportsbook in the selected event page."""
+    return {"quotes": market_board(service.events(sport, limit=limit, offset=offset), best_only=False)}
 
 
 @app.get("/api/simulation/leagues")
@@ -383,8 +383,8 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
 
 
 @app.get("/api/player-props")
-def player_props(sport: str | None = None):
-    events = service.events(sport)
+def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    events = service.events(sport, limit=limit, offset=offset)
     quotes = []
     for event in events:
         for book in event.get("bookmakers", []):
@@ -447,14 +447,15 @@ def history(event_id: str, market: str, outcome: str,
 @app.get("/api/opportunities")
 def opportunities(sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
-                  min_consensus_books: int = Query(2, ge=1, le=20)):
-    result = analyze_markets(service.events(sport), min_ev, min_consensus_books)
+                  min_consensus_books: int = Query(2, ge=1, le=20),
+                  limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    result = analyze_markets(service.events(sport, limit=limit, offset=offset), min_ev, min_consensus_books)
     return {"opportunities": result["opportunities"],
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
 
 @app.get("/api/arbitrage")
-def arbitrage(sport: str | None = None):
-    result = analyze_markets(service.events(sport), min_ev=101)
+def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    result = analyze_markets(service.events(sport, limit=limit, offset=offset), min_ev=101)
     return {"arbitrage": result["arbitrage"],
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
