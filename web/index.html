@@ -207,9 +207,8 @@ async function load(){
  try{
   const activeTab=document.querySelector('nav[aria-label="Market views"] .tab.active')?.dataset.tab||"ev";
   const request=(tab,path,fallback)=>activeTab===tab?getSafe(path,fallback,apiFailures):Promise.resolve(fallback);
-  const [health,odds,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
+  const [health,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
    getSafe("/api/health",{},apiFailures),
-   Promise.resolve({events:[]}),
    request("ev","/api/opportunities"+query({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]}),
    request("arb","/api/arbitrage"+query(),{arbitrage:[]}),
    request("board","/api/market-board"+query(),{quotes:[]}),
@@ -224,7 +223,9 @@ async function load(){
   const events=(health.sport_freshness||[]).reduce((total,item)=>total+Number(item.event_count||0),0);
   const books=new Set();
   Object.values(health.provider_coverage||{}).forEach(sportData=>Object.values(sportData.provider_coverage||{}).forEach(item=>(item.books||[]).forEach(book=>books.add(book))));
-  $("events").textContent=events;$("books").textContent=books.size;$("edges").textContent=(ev.opportunities||[]).length;$("arbs").textContent=(arb.arbitrage||[]).length;
+  $("events").textContent=events;$("books").textContent=books.size;
+  if(activeTab==="ev")$("edges").textContent=(ev.opportunities||[]).length;
+  if(activeTab==="arb")$("arbs").textContent=(arb.arbitrage||[]).length;
   const providerLabel=(health.providers||[]).map(x=>({therundown:"TheRundown",the_odds_api:"The Odds API",sports_game_odds:"SportsGameOdds",oddize:"Oddize",oddslink:"OddsLink"}[x]||x)).join(", ")||health.provider;
   const status=health.configured?(health.last_error?"Provider refresh warning: "+health.last_error:"Providers "+providerLabel+" · Last refresh: "+(health.last_updated||"not yet refreshed")):"No configured odds provider. Set ODDS_PROVIDERS and provider API keys (or the legacy ODDS_PROVIDER key). No synthetic quotes are generated.";
   const quota=health.provider_usage||{};const quotaText=quota.datapoints_remaining!==undefined?" · Data points remaining: "+quota.datapoints_remaining+(quota.datapoints_total!==undefined?" (last response "+quota.datapoints_total+")":"")+(quota.data_delay_seconds!==undefined?" · Data delay "+quota.data_delay_seconds+"s":""):quota.requests_remaining!==undefined?" · API requests remaining: "+quota.requests_remaining+(quota.requests_used!==undefined?" (used "+quota.requests_used+")":""):"";const refreshText=health.refresh_interval_seconds>0?" · Auto refresh every "+health.refresh_interval_seconds+"s":" · Manual refresh";
