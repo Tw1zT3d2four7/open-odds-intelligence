@@ -300,7 +300,7 @@ function populateSimulationLeagues(sports){
  (sports||[]).forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s.replaceAll("_"," ").toUpperCase();sel.appendChild(o)});
  if(sports.includes(current))sel.value=current;
 }
-async function loadSimulationGames(refreshSelected=false){
+async function loadSimulationGames(){
  const sport=$("simLeague").value,game=$("simGame");
  $("runSimulation").disabled=true;$("simResults").classList.add("hidden");
  if(!sport){game.disabled=true;game.innerHTML='<option value="">Select a league first</option>';return}
@@ -308,9 +308,7 @@ async function loadSimulationGames(refreshSelected=false){
  const loadButton=$("loadSimGames");loadButton.disabled=true;
  try{
   const url="/api/simulation/games?sport="+encodeURIComponent(sport);
-  const data=refreshSelected
-   ?await (async()=>{const response=await fetch("/api/simulation/games/refresh?sport="+encodeURIComponent(sport),{method:"POST"});const payload=await response.json();if(!response.ok)throw Error(payload.detail||"Selected league refresh failed");return payload})()
-   :await get(url);
+  const data=await get(url);
   simulationGames=data.games||[];
   game.innerHTML='<option value="">Select a game</option>';
   simulationGames.forEach(g=>{const o=document.createElement("option");o.value=g.event_id;o.title=g.reason||"";const marketText=g.simulation_mode==="moneyline_outcome_only"?"moneyline "+(g.moneyline_books||0)+" books":"spread "+(g.spread_books||0)+" / total "+(g.total_books||0)+" books";const blocked=g.snapshot_freshness&&g.snapshot_freshness!=="current"?" · "+g.snapshot_freshness+" odds snapshot":" · NOT READY";o.textContent=g.matchup+" · "+date(g.commence_time)+" · "+marketText+(g.can_simulate?"":blocked);game.appendChild(o)});
@@ -415,7 +413,7 @@ async function runSelectedSimulation(){
  }catch(e){$("simStatus").textContent="Simulation unavailable: "+e.message;$("simResults").classList.add("hidden")}
  finally{btn.disabled=!$("simGame").value;btn.textContent="Run 10,000 Simulations"}
 }
-$("simLeague").addEventListener("change",()=>{ $("loadSimGames").disabled=!$("simLeague").value;loadSimulationGames(false); });
+$("simLeague").addEventListener("change",()=>{ $("loadSimGames").disabled=!$("simLeague").value;loadSimulationGames(); });
 $("loadSimGames").addEventListener("click",()=>loadSimulationGames(false));
 $("simGame").addEventListener("change",()=>{
  const selected=simulationGames.find(g=>g.event_id===$("simGame").value);
