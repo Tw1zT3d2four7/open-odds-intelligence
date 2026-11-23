@@ -1,5 +1,6 @@
 import threading
 import time
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -147,14 +148,12 @@ def test_admin_automatic_refresh_kill_switch_pauses_provider_requests(monkeypatc
     })
     monkeypatch.setattr(main, "_odds_refresh_interval_seconds", lambda: 1)
     monkeypatch.setattr(main.service, "providers_due_for_auto_refresh", lambda: called.append("due") or ["therundown"])
-    monkeypatch.setattr(main.asyncio, "to_thread", lambda fn, *args, **kwargs: _immediate(fn, *args, **kwargs))
+    async def fake_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+    monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
     async def stop_after_one_sleep(delay):
         raise asyncio.CancelledError
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_one_sleep)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(main._automatic_refresh_loop())
     assert called == []
-
-
-def _immediate(fn, *args, **kwargs):
-    return fn(*args, **kwargs)
