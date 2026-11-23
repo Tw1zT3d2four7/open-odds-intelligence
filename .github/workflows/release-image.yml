@@ -2,7 +2,7 @@ name: Build and publish release image
 
 on:
   push:
-    branches: [main]
+    branches: [main, recovery/pre-admin-performance]
   release:
     types: [published]
   workflow_dispatch:
@@ -87,7 +87,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}
           tags: |
-            type=raw,value=latest
+            type=raw,value=recovery-test
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
