@@ -56,8 +56,7 @@ def _same_event(left, right, tolerance_seconds=300):
         _team_matches(left.get("home_team"), right.get("home_team"))
         and _team_matches(left.get("away_team"), right.get("away_team"))
     )
-    tennis = str(left.get("sport_key") or "").startswith("tennis_")
-    swapped_orientation = tennis and (
+    swapped_orientation = (
         _team_matches(left.get("home_team"), right.get("away_team"))
         and _team_matches(left.get("away_team"), right.get("home_team"))
     )
@@ -68,19 +67,39 @@ def _same_event(left, right, tolerance_seconds=300):
     return a is not None and b is not None and abs(a - b) <= tolerance_seconds
 
 
-def _canonical_outcome_name(outcome, source_event, target_event):
-    name = str(outcome.get("name") or "")
+def _canonical_outcome(outcome, source_event, target_event, market_key):
+    """Normalize team selections and spread signs to the merged event orientation."""
+    candidate = dict(outcome)
+    name = str(candidate.get("name") or "")
+    reversed_orientation = (
+        _team_matches(source_event.get("home_team"), target_event.get("away_team"))
+        and _team_matches(source_event.get("away_team"), target_event.get("home_team"))
+    )
     if _team_matches(name, source_event.get("home_team")):
-        if _team_matches(source_event.get("home_team"), target_event.get("home_team")):
-            return target_event.get("home_team") or name
-        if _team_matches(source_event.get("home_team"), target_event.get("away_team")):
-            return target_event.get("away_team") or name
-    if _team_matches(name, source_event.get("away_team")):
-        if _team_matches(source_event.get("away_team"), target_event.get("away_team")):
-            return target_event.get("away_team") or name
-        if _team_matches(source_event.get("away_team"), target_event.get("home_team")):
-            return target_event.get("home_team") or name
-    return name
+        candidate["name"] = (
+            target_event.get("home_team")
+            if _team_matches(source_event.get("home_team"), target_event.get("home_team"))
+            else target_event.get("away_team") if _team_matches(source_event.get("home_team"), target_event.get("away_team"))
+            else name
+        )
+    elif _team_matches(name, source_event.get("away_team")):
+        candidate["name"] = (
+            target_event.get("away_team")
+            if _team_matches(source_event.get("away_team"), target_event.get("away_team"))
+            else target_event.get("home_team") if _team_matches(source_event.get("away_team"), target_event.get("home_team"))
+            else name
+        )
+    if reversed_orientation and (
+        market_key == "spreads" or market_key.startswith(("spreads_", "alternate_spreads", "run_line", "puck_line"))
+    ):
+        point = candidate.get("point")
+        try:
+            candidate["point"] = -float(point) if point is not None else None
+            if isinstance(point, int) and not isinstance(point, bool):
+                candidate["point"] = int(candidate["point"])
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return candidate
 
 
 def _outcome_identity(outcome):
@@ -185,9 +204,8 @@ def merge_provider_events(provider_results):
                         identity_key = _outcome_identity(raw_outcome)
                         if identity_key is None:
                             continue
-                        candidate = dict(raw_outcome)
-                        candidate["name"] = _canonical_outcome_name(
-                            candidate, event, target
+                        candidate = _canonical_outcome(
+                            raw_outcome, event, target, market_key
                         )
                         candidate["source_provider"] = provider_name
                         if "size" in candidate:
