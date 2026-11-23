@@ -580,3 +580,29 @@ def test_score_based_simulator_runs_through_api_for_each_supported_family(
     }
     assert payload["data_quality"]["spread_books"] == 1
     assert payload["data_quality"]["total_books"] == 1
+
+
+def test_all_bookmaker_quotes_endpoint_returns_every_book_and_respects_sport_filter(monkeypatch):
+    received = {}
+    events = [{
+        "id": "evt", "sport_title": "Football", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "h2h", "outcomes": [{"name": "Home", "price": -110}, {"name": "Away", "price": -110}]
+            }]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "h2h", "outcomes": [{"name": "Home", "price": 105}, {"name": "Away", "price": -125}]
+            }]},
+        ],
+    }]
+    def fake_events(sport=None):
+        received["sport"] = sport
+        return events
+    monkeypatch.setattr(main.service, "events", fake_events)
+    with TestClient(main.app) as client:
+        response = client.get("/api/bookmaker-board?sport=americanfootball_nfl")
+    assert response.status_code == 200
+    assert received["sport"] == "americanfootball_nfl"
+    quotes = response.json()["quotes"]
+    assert len(quotes) == 4
+    assert {quote["bookmaker_key"] for quote in quotes} == {"book-a", "book-b"}
