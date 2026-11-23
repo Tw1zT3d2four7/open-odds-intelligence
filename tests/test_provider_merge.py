@@ -169,7 +169,7 @@ def test_incremental_refresh_preserves_other_provider_quotes_and_replaces_refres
         [("therundown", [refreshed_rundown])],
     )
 
-    assert providers == ["therundown", "oddize"]
+    assert providers == ["oddize", "therundown"]
     assert len(merged) == 1
     books = {book["key"]: book for book in merged[0]["bookmakers"]}
     assert set(books) == {"draftkings", "fanduel", "bet365"}
