@@ -8,7 +8,7 @@ import asyncio
 import secrets
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from . import config
 from .service import service
 
@@ -281,6 +281,11 @@ def dashboard():
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():
     return ADMIN_WEB.read_text(encoding="utf-8")
+
+
+@app.get("/assets/odds-intelligence.svg")
+def brand_logo():
+    return FileResponse(WEB.parent / "assets" / "odds-intelligence.svg", media_type="image/svg+xml")
 
 
 @app.get("/api/health")
