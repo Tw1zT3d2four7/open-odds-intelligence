@@ -545,7 +545,7 @@ class OddsDatabase:
                         page_args.extend(selected_ids)
                 rows = db.execute(
                     """SELECT event_id,sport_title,commence_time,home_team,away_team,
-                              bookmaker_key,market_key,outcome_name,outcome_description,price,
+                              bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,price,
                               source_updated_at,source_provider,is_main,size_json,
                               size_source_provider,point
                        FROM quotes WHERE snapshot_id=?""" + page_clause + """
