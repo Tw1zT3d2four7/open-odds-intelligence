@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/logo.svg" alt="Odds Intelligence" width="460">
+</p>
+
 # Open Odds Intelligence
 
 Open-source, self-hosted sports odds comparison and market-monitoring platform. Independent of OddsLogic and sportsbooks.
