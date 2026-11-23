@@ -157,3 +157,34 @@ def test_admin_automatic_refresh_kill_switch_pauses_provider_requests(monkeypatc
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(main._automatic_refresh_loop())
     assert called == []
+
+
+def test_admin_can_pause_one_provider_without_pausing_other_scheduled_sources(monkeypatch):
+    import asyncio
+
+    called = []
+    monkeypatch.setattr(main, "_admin_settings", lambda: {
+        "automatic_refresh_enabled": True,
+        "manual_refresh_enabled": True,
+        "manual_refresh_cooldown_seconds": 900,
+        "manual_refresh_daily_limit": 3,
+        "provider_auto_refresh_enabled": {
+            "therundown": False, "the_odds_api": True, "oddize": True, "oddslink": True,
+        },
+    })
+    monkeypatch.setattr(main, "_odds_refresh_interval_seconds", lambda: 1)
+    monkeypatch.setattr(main.service, "providers_due_for_auto_refresh", lambda: ["therundown", "oddize"])
+    monkeypatch.setattr(main.service, "mark_auto_refresh", lambda providers: None)
+    async def fake_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+    monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
+    async def fake_refresh(**kwargs):
+        called.append(kwargs["providers"])
+        return {"ok": True, "provider_results": {"nba": {"providers_succeeded": ["oddize"]}}}
+    monkeypatch.setattr(main.service, "refresh", fake_refresh)
+    async def stop_after_one_sleep(delay):
+        raise asyncio.CancelledError
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_one_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main._automatic_refresh_loop())
+    assert called == [["oddize"]]
