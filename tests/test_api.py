@@ -707,3 +707,16 @@ def test_admin_page_and_brand_logo_are_served(monkeypatch):
     assert logo.status_code == 200
     assert "<svg" in logo.text
     assert "odds-intelligence.svg" in public_page.text
+
+
+def test_admin_credentials_must_differ_from_subscriber_credentials(monkeypatch):
+    import base64
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "shared")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "shared-secret")
+    monkeypatch.setattr(main.config, "ADMIN_USERNAME", "shared")
+    monkeypatch.setattr(main.config, "ADMIN_PASSWORD", "shared-secret")
+    headers = {"Authorization": "Basic " + base64.b64encode(b"shared:shared-secret").decode()}
+    with TestClient(main.app) as client:
+        response = client.get("/admin", headers=headers)
+    assert response.status_code == 503
+    assert "different" in response.json()["detail"]
