@@ -268,7 +268,7 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, i
                         "point": quote["outcome"].get("point"),
                         "bookmaker": quote["book"].get("title", quote["book"].get("key")),
                         "bookmaker_key": own_book, "price": price,
-                        "fair_probability": round(fair, 6), "consensus_books": len(peer_books),
+                        "fair_probability": round(fair, 6), "consensus_books": peer_count,
                         "ev_percent": round(ev, 2),
                     }
                     if best_only:
