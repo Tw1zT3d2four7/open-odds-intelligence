@@ -174,7 +174,7 @@ function renderProviderStatus(health){
  const intervalLabel=seconds=>seconds>=86400?Math.round(seconds/86400)+"d":seconds>=3600?Math.round(seconds/3600)+"h":Math.round(seconds/60)+"m";
  const autoText=Object.entries(schedule).map(([name,seconds])=>(labels[name]||name)+" "+intervalLabel(seconds)).join(", ")||"manual only";
  $("providerSummary").textContent=selected.length?selected.map(x=>labels[x]||x).join(" · ")+" · Auto refresh: "+autoText:"No providers selected";
- const allNames=["therundown","the_odds_api","sports_game_odds","oddize","oddslink"];
+ const allNames=["therundown","the_odds_api","oddize","oddslink"];
  const cards=allNames.map(name=>{
   const pool=pools[name]||{},keys=pool.keys||[];
   const rows=keys.map(key=>{
@@ -210,7 +210,7 @@ async function load(){
   renderProviderStatus(health);
   const events=odds.events||[],books=new Set();events.forEach(e=>(e.bookmakers||[]).forEach(b=>books.add(b.key)));
   $("events").textContent=events.length;$("books").textContent=books.size;$("edges").textContent=(ev.opportunities||[]).length;$("arbs").textContent=(arb.arbitrage||[]).length;
-  const providerLabel=(health.providers||[]).map(x=>({therundown:"TheRundown",the_odds_api:"The Odds API",sports_game_odds:"SportsGameOdds",oddize:"Oddize",oddslink:"OddsLink"}[x]||x)).join(", ")||health.provider;
+  const providerLabel=(health.providers||[]).map(x=>({therundown:"TheRundown",the_odds_api:"The Odds API",oddize:"Oddize",oddslink:"OddsLink"}[x]||x)).join(", ")||health.provider;
   const status=health.configured?(health.last_error?"Provider refresh warning: "+health.last_error:"Providers "+providerLabel+" · Last refresh: "+(health.last_updated||"not yet refreshed")):"No configured odds provider. Set ODDS_PROVIDERS and provider API keys (or the legacy ODDS_PROVIDER key). No synthetic quotes are generated.";
   const quota=health.provider_usage||{};const quotaText=quota.datapoints_remaining!==undefined?" · Data points remaining: "+quota.datapoints_remaining+(quota.datapoints_total!==undefined?" (last response "+quota.datapoints_total+")":"")+(quota.data_delay_seconds!==undefined?" · Data delay "+quota.data_delay_seconds+"s":""):quota.requests_remaining!==undefined?" · API requests remaining: "+quota.requests_remaining+(quota.requests_used!==undefined?" (used "+quota.requests_used+")":""):"";const refreshText=health.refresh_interval_seconds>0?" · Auto refresh every "+health.refresh_interval_seconds+"s":" · Manual refresh";
   const alertText=health.alerts_enabled===true?" · Discord ON · Sent "+(health.alerts_sent??0)+" · Qualified "+(health.last_alert_qualified??health.alerts_qualified??0)+" qualified this check · "+(health.last_alert_sent??0)+" sent last check"+(health.last_alert_error||health.alert_error?" · ALERT ERROR: "+(health.last_alert_error||health.alert_error):""): " · Discord OFF (webhook missing)";
