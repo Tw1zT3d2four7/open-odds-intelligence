@@ -125,7 +125,7 @@ def market_board(events, best_only=True):
     ))
 
 
-def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
+def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, arbitrage_only=False):
     """Calculate leave-one-book-out EV and cross-book two-way arbitrage.
 
     Only complete, matching outcome sets are compared. Soccer h2h is a
@@ -159,6 +159,8 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
                 if not isinstance(market_key, str) or not market_key.strip():
                     continue
                 market_key = market_key.strip()
+                if arbitrage_only and market_key not in ("h2h", "spreads", "totals"):
+                    continue
                 expected_outcomes = (
                     3 if market_key == "h2h" and sport_key.startswith("soccer_")
                     else 2
@@ -218,46 +220,47 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True):
             for book_quotes in selected.values():
                 line_sets[market_line].extend(book_quotes)
 
-        # EV: median of other books' no-vig probabilities for the same outcome/line.
-        best = {}
-        for (market_key, line, _player_scope), quotes in line_sets.items():
-            for quote in quotes:
-                peers = [q["probability"] for q in quotes
-                         if q["book"].get("key") != quote["book"].get("key")
-                         and q["identity"] == quote["identity"]]
-                peer_books = {q["book"].get("key") for q in quotes
-                              if q["book"].get("key") != quote["book"].get("key")
-                              and q["identity"] == quote["identity"]}
-                if len(peer_books) < min_consensus_books:
-                    continue
-                fair = median(peers)
-                price = quote["outcome"]["price"]
-                ev = (fair * american_to_decimal(price) - 1) * 100
-                if ev < min_ev:
-                    continue
-                identity = (market_key, line, quote["identity"])
-                row = {
-                    "event_id": event_id, "sport": event.get("sport_title"),
-                    "sport_key": event.get("sport_key") or event.get("sport"),
-                    "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
-                    "commence_time": event.get("commence_time"), "market": market_key,
-                    "outcome": quote["outcome"]["name"],
-                    "outcome_description": _outcome_description(quote["outcome"]),
-                    "point": quote["outcome"].get("point"),
-                    "bookmaker": quote["book"].get("title", quote["book"].get("key")),
-                    "bookmaker_key": quote["book"].get("key"), "price": price,
-                    "fair_probability": round(fair, 6), "consensus_books": len(peer_books),
-                    "ev_percent": round(ev, 2),
-                }
-                if best_only:
-                    if identity not in best or american_to_decimal(price) > american_to_decimal(best[identity]["price"]):
-                        best[identity] = row
-                else:
-                    # CLV needs each qualifying sportsbook's first quote,
-                    # not only the best price selected for the public board.
-                    opportunities.append(row)
-        if best_only:
-            opportunities.extend(best.values())
+        if not arbitrage_only:
+            # EV: median of other books' no-vig probabilities for the same outcome/line.
+            best = {}
+            for (market_key, line, _player_scope), quotes in line_sets.items():
+                for quote in quotes:
+                    peers = [q["probability"] for q in quotes
+                             if q["book"].get("key") != quote["book"].get("key")
+                             and q["identity"] == quote["identity"]]
+                    peer_books = {q["book"].get("key") for q in quotes
+                                  if q["book"].get("key") != quote["book"].get("key")
+                                  and q["identity"] == quote["identity"]}
+                    if len(peer_books) < min_consensus_books:
+                        continue
+                    fair = median(peers)
+                    price = quote["outcome"]["price"]
+                    ev = (fair * american_to_decimal(price) - 1) * 100
+                    if ev < min_ev:
+                        continue
+                    identity = (market_key, line, quote["identity"])
+                    row = {
+                        "event_id": event_id, "sport": event.get("sport_title"),
+                        "sport_key": event.get("sport_key") or event.get("sport"),
+                        "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
+                        "commence_time": event.get("commence_time"), "market": market_key,
+                        "outcome": quote["outcome"]["name"],
+                        "outcome_description": _outcome_description(quote["outcome"]),
+                        "point": quote["outcome"].get("point"),
+                        "bookmaker": quote["book"].get("title", quote["book"].get("key")),
+                        "bookmaker_key": quote["book"].get("key"), "price": price,
+                        "fair_probability": round(fair, 6), "consensus_books": len(peer_books),
+                        "ev_percent": round(ev, 2),
+                    }
+                    if best_only:
+                        if identity not in best or american_to_decimal(price) > american_to_decimal(best[identity]["price"]):
+                            best[identity] = row
+                    else:
+                        # CLV needs each qualifying sportsbook's first quote,
+                        # not only the best price selected for the public board.
+                        opportunities.append(row)
+            if best_only:
+                opportunities.extend(best.values())
 
         # Arbitrage: only complete two-outcome markets, with distinct books.
         for (market_key, line, _player_scope), quotes in line_sets.items():
