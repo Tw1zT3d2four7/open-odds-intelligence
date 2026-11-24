@@ -527,6 +527,73 @@ class IdentityStore:
         return True
 
 
+    def list_security_audit_events(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        event_type: str | None = None,
+        actor_identity_id: str | None = None,
+        subject_identity_id: str | None = None,
+    ) -> dict:
+        """Return a bounded, paginated audit view without credential material.
+
+        This is a storage primitive for the future administrator-only audit API;
+        it is not exposed over HTTP and does not return identity email addresses.
+        """
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("Audit page size must be between 1 and 500.")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("Audit offset must be a non-negative integer.")
+        filters = []
+        values: list[str | int] = []
+        for column, value in (
+            ("event_type", event_type),
+            ("actor_identity_id", actor_identity_id),
+            ("subject_identity_id", subject_identity_id),
+        ):
+            if value is not None:
+                if not isinstance(value, str) or not value or len(value) > 128:
+                    raise ValueError("Audit filters must be non-empty bounded strings.")
+                filters.append(f"{column}=?")
+                values.append(value)
+        where = " WHERE " + " AND ".join(filters) if filters else ""
+        with self.connect() as db:
+            total = db.execute(
+                "SELECT COUNT(*) AS count FROM security_audit_events" + where,
+                values,
+            ).fetchone()["count"]
+            rows = db.execute(
+                """SELECT id, actor_identity_id, event_type, subject_identity_id,
+                          occurred_at, metadata_json
+                   FROM security_audit_events"""
+                + where
+                + " ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?",
+                [*values, limit, offset],
+            ).fetchall()
+        events = []
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata_json"])
+            except (TypeError, json.JSONDecodeError):
+                raise RuntimeError("Audit event metadata is invalid.") from None
+            if not isinstance(metadata, dict):
+                raise RuntimeError("Audit event metadata is invalid.")
+            events.append({
+                "id": row["id"],
+                "actor_identity_id": row["actor_identity_id"],
+                "event_type": row["event_type"],
+                "subject_identity_id": row["subject_identity_id"],
+                "occurred_at": row["occurred_at"],
+                "metadata": metadata,
+            })
+        return {
+            "events": events,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
     def _mfa_cipher(self) -> Fernet:
         key = config.MFA_ENCRYPTION_KEY
         if not key:
