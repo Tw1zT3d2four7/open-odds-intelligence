@@ -90,16 +90,17 @@ def test_missing_expired_or_revoked_session_is_rejected():
     ).status_code == 401
 
 
-def test_store_database_failure_fails_closed_without_leaking_details():
-    app = make_app(StubStore(fail=True))
+def test_store_initialization_failure_fails_closed_without_leaking_details(monkeypatch):
+    import app.dependencies as dependencies
+
+    app = make_app(StubStore())
     client = TestClient(app)
-    # Exercise the actual lazy-store dependency rather than the injected stub.
     app.state.identity_store = None
 
     def broken_store():
         raise RuntimeError("private database detail")
 
-    app.dependency_overrides[get_identity_store] = broken_store
+    monkeypatch.setattr(dependencies, "IdentityStore", broken_store)
     response = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: "token"})
     assert response.status_code == 503
     assert "private database detail" not in response.text
