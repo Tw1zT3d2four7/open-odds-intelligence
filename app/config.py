@@ -45,6 +45,7 @@ RUNDOWN_UTC_OFFSET_MINUTES = int(os.getenv("RUNDOWN_UTC_OFFSET_MINUTES", "0"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/odds_history.sqlite3")
 # Identity data is stored separately from the immutable odds-history database.
 ACCOUNTS_DATABASE_PATH = os.getenv("ACCOUNTS_DATABASE_PATH", "./data/accounts.sqlite3")
+SESSION_IDLE_TIMEOUT_SECONDS = max(60, int(os.getenv("SESSION_IDLE_TIMEOUT_SECONDS", "3600")))
 SIMULATION_MODEL_PATH = os.getenv("SIMULATION_MODEL_PATH", "./data/simulation_models.json")
 # Flag stale odds snapshots without implying a manual-refresh feed is continuously live.
 ODDS_DATA_STALE_AFTER_SECONDS = max(300, int(os.getenv("ODDS_DATA_STALE_AFTER_SECONDS", "21600")))
