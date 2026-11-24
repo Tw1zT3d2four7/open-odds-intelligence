@@ -491,3 +491,22 @@ def test_unverified_subscriber_cannot_authenticate_or_create_session(tmp_path):
     ) == identity_id
     token, _ = store.create_session(identity_id)
     assert store.get_session(token)["identity_id"] == identity_id
+
+
+
+def test_subscriber_session_is_rejected_if_email_verification_is_revoked(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "verified@example.com", "a-strong-verified-password"
+    )
+    _verify_subscriber(store, "verified@example.com")
+    token, _ = store.create_session(identity_id)
+    assert store.get_session(token) is not None
+
+    with store.connect() as db:
+        db.execute(
+            "UPDATE identities SET email_verified_at=NULL WHERE id=?",
+            (identity_id,),
+        )
+
+    assert store.get_session(token) is None
