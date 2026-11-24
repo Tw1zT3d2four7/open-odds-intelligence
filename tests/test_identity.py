@@ -636,6 +636,16 @@ def test_cross_account_session_revocation_requires_active_administrator_actor(
 
     assert event["actor_identity_id"] == admin_id
     assert event["subject_identity_id"] == subject_id
+
+    second_token, _ = store.create_session(subject_id)
+    with pytest.raises(ValueError, match="MFA-enrolled administrator"):
+        store.revoke_all_sessions(
+            subject_id, actor_identity_id=other_subscriber_id
+        )
+    assert store.get_session(second_token) is not None
+    assert store.revoke_all_sessions(subject_id, actor_identity_id=admin_id) == 1
+    assert store.get_session(second_token) is None
+
     filtered = store.list_security_audit_events(
         event_type="identity.session_revoked",
         actor_identity_id=admin_id,
