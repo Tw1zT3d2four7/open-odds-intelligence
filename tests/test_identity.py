@@ -510,3 +510,53 @@ def test_subscriber_session_is_rejected_if_email_verification_is_revoked(tmp_pat
         )
 
     assert store.get_session(token) is None
+
+
+
+def test_identity_and_session_audit_events_exclude_credentials_and_tokens(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "audit@example.com", "a-strong-audit-password"
+    )
+    _verify_subscriber(store, "audit@example.com")
+    token, _ = store.create_session(identity_id)
+    assert store.revoke_session(token) is True
+
+    with store.connect() as db:
+        events = db.execute(
+            """SELECT event_type, metadata_json FROM security_audit_events
+               WHERE subject_identity_id=? ORDER BY rowid""",
+            (identity_id,),
+        ).fetchall()
+
+    assert [row["event_type"] for row in events] == [
+        "subscriber.registered",
+        "subscriber.email_verified",
+        "subscriber.session_created",
+        "identity.session_revoked",
+    ]
+    for row in events:
+        assert token not in row["metadata_json"]
+        assert "audit@example.com" not in row["metadata_json"]
+        assert row["metadata_json"] == "{}"
+
+
+def test_revoke_all_sessions_audit_records_only_revocation_count(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "bulk-audit@example.com", "a-strong-bulk-audit-password"
+    )
+    _verify_subscriber(store, "bulk-audit@example.com")
+    store.create_session(identity_id)
+    store.create_session(identity_id)
+
+    assert store.revoke_all_sessions(identity_id) == 2
+    with store.connect() as db:
+        row = db.execute(
+            """SELECT event_type, metadata_json FROM security_audit_events
+               WHERE subject_identity_id=? AND event_type='identity.sessions_revoked'""",
+            (identity_id,),
+        ).fetchone()
+
+    assert row["event_type"] == "identity.sessions_revoked"
+    assert row["metadata_json"] == '{"revoked_count":2}'
