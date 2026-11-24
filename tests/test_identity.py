@@ -310,6 +310,10 @@ def test_admin_totp_accepts_new_step_once_and_rejects_subscriber(tmp_path, monke
     assert store.verify_administrator_mfa(admin_id, next_code) is True
     assert store.verify_administrator_mfa(admin_id, next_code) is False
     assert store.verify_administrator_mfa(subscriber_id, next_code) is False
+    session_token, _ = store.create_session(admin_id)
+    assert store.get_session(session_token)["account_type"] == "administrator"
+    with pytest.raises(ValueError, match="MFA verification"):
+        store.create_session(admin_id)
 
 
 def test_admin_mfa_fails_closed_without_encryption_key(tmp_path, monkeypatch):
@@ -355,3 +359,28 @@ def test_initial_administrator_bootstrap_rejects_invalid_email_without_partial_r
             "SELECT COUNT(*) AS count FROM identities WHERE account_type='administrator'"
         ).fetchone()["count"]
     assert count == 0
+
+
+
+def test_administrator_cannot_create_session_without_mfa_proof(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator("admin@example.com", "administrator password")
+    with pytest.raises(ValueError, match="MFA verification"):
+        store.create_session(admin_id)
+
+
+def test_recovery_code_provides_one_time_admin_session_proof(tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+    from app import config
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator("admin@example.com", "administrator password")
+    uri = store.start_administrator_mfa_enrollment(admin_id)
+    import pyotp
+    totp = pyotp.parse_uri(uri)
+    codes = store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    assert store.consume_administrator_recovery_code(admin_id, codes[0]) is True
+    token, _ = store.create_session(admin_id)
+    assert store.get_session(token)["account_type"] == "administrator"
+    with pytest.raises(ValueError, match="MFA verification"):
+        store.create_session(admin_id)
