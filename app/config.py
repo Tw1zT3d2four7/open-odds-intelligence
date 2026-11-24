@@ -95,8 +95,8 @@ ODDS_REFRESH_INTERVAL_SECONDS = (
 
 # Discord webhook alerts are disabled unless a URL is configured.
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
-ALERT_MIN_EV_PERCENT = float(os.getenv("ALERT_MIN_EV_PERCENT", "5.0"))
-ALERT_MIN_ARB_PERCENT = float(os.getenv("ALERT_MIN_ARB_PERCENT", "1.0"))
+ALERT_MIN_EV_PERCENT = max(5.0, float(os.getenv("ALERT_MIN_EV_PERCENT", "5.0")))
+ALERT_MIN_ARB_PERCENT = max(1.0, float(os.getenv("ALERT_MIN_ARB_PERCENT", "1.0")))
 
 # Re-evaluate locally stored quotes on this interval; this never triggers provider polling.
 DISCORD_ALERT_REFRESH_INTERVAL_SECONDS = max(60, int(os.getenv("DISCORD_ALERT_REFRESH_INTERVAL_SECONDS", "300")))
