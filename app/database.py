@@ -56,7 +56,9 @@ class OddsDatabase:
                     ON quotes(snapshot_id, event_id, bookmaker_key, market_key, outcome_name);
                 CREATE TABLE IF NOT EXISTS sent_alerts (
                     fingerprint TEXT PRIMARY KEY, sent_at TEXT NOT NULL,
-                    alert_type TEXT NOT NULL, summary TEXT NOT NULL
+                    alert_type TEXT NOT NULL, summary TEXT NOT NULL,
+                    message_id TEXT, event_id TEXT, commence_time TEXT,
+                    embed_json TEXT, lifecycle_status TEXT NOT NULL DEFAULT 'pregame'
                 );
                 CREATE TABLE IF NOT EXISTS app_state (
                     state_key TEXT PRIMARY KEY,
@@ -98,6 +100,17 @@ class OddsDatabase:
                 CREATE INDEX IF NOT EXISTS idx_simulation_training_sport_time
                     ON simulation_training_settlements(sport_key, commence_time);
             """)
+            alert_columns = {row["name"] for row in db.execute("PRAGMA table_info(sent_alerts)")}
+            for column, declaration in (
+                ("message_id", "TEXT"),
+                ("event_id", "TEXT"),
+                ("commence_time", "TEXT"),
+                ("embed_json", "TEXT"),
+                ("lifecycle_status", "TEXT NOT NULL DEFAULT 'pregame'"),
+            ):
+                if column not in alert_columns:
+                    db.execute(f"ALTER TABLE sent_alerts ADD COLUMN {column} {declaration}")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_sent_alerts_event_lifecycle ON sent_alerts(event_id, lifecycle_status)")
             quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
             if "source_updated_at" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_updated_at TEXT")
@@ -1048,14 +1061,47 @@ class OddsDatabase:
         return {"entries": rows, "summary": dict(summary),
                 "method": "Entry American odds compared with last pregame no-vig consensus price from at least two other complete same-line sportsbooks. Positive means the entry price beat that consensus close; this is not betting profit or a win-rate measure."}
 
-    def claim_alert(self, fingerprint, alert_type, summary, sent_at=None):
-        """Atomically claim an alert fingerprint; returns False if already sent."""
+    def claim_alert(self, fingerprint, alert_type, summary, sent_at=None,
+                    event_id=None, commence_time=None, embed_json=None):
+        """Atomically claim an alert and retain metadata for Discord message lifecycle edits."""
         sent_at = sent_at or datetime.now(timezone.utc).isoformat()
         with self.connect() as db:
             cur = db.execute(
-                "INSERT OR IGNORE INTO sent_alerts(fingerprint,sent_at,alert_type,summary) VALUES(?,?,?,?)",
-                (fingerprint, sent_at, alert_type, summary))
+                """INSERT OR IGNORE INTO sent_alerts(
+                   fingerprint,sent_at,alert_type,summary,event_id,commence_time,embed_json)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (fingerprint, sent_at, alert_type, summary, event_id, commence_time, embed_json))
             return cur.rowcount == 1
+
+    def mark_alert_message(self, fingerprint, message_id):
+        with self.connect() as db:
+            db.execute("UPDATE sent_alerts SET message_id=? WHERE fingerprint=?",
+                       (str(message_id), fingerprint))
+
+    def pending_alert_lifecycle(self):
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT fingerprint,message_id,event_id,commence_time,embed_json,lifecycle_status
+                   FROM sent_alerts
+                   WHERE message_id IS NOT NULL AND event_id IS NOT NULL
+                     AND lifecycle_status IN ('pregame','started')
+                   ORDER BY commence_time"""
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def has_final_settlement(self, event_id):
+        with self.connect() as db:
+            return db.execute(
+                "SELECT 1 FROM simulation_settlements WHERE event_id=? AND status='final' LIMIT 1",
+                (str(event_id),),
+            ).fetchone() is not None
+
+    def update_alert_lifecycle(self, fingerprint, lifecycle_status):
+        if lifecycle_status not in ("started", "final"):
+            raise ValueError("Invalid Discord alert lifecycle status")
+        with self.connect() as db:
+            db.execute("UPDATE sent_alerts SET lifecycle_status=? WHERE fingerprint=?",
+                       (lifecycle_status, fingerprint))
 
     def release_alert(self, fingerprint):
         with self.connect() as db:
