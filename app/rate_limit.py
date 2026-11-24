@@ -79,58 +79,89 @@ class SQLiteRateLimiter:
         self, bucket_key: str, *, limit: int, window_seconds: int
     ) -> RateLimitDecision:
         """Consume one request from a fixed window, atomically across workers."""
-        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-            raise ValueError("Rate-limit count must be a positive integer.")
-        if (
-            not isinstance(window_seconds, int)
-            or isinstance(window_seconds, bool)
-            or window_seconds < 1
-        ):
-            raise ValueError("Rate-limit window must be a positive integer.")
+        return self.consume_many([(bucket_key, limit, window_seconds)])
+
+    def consume_many(
+        self, buckets: list[tuple[str, int, int]] | tuple[tuple[str, int, int], ...]
+    ) -> RateLimitDecision:
+        """Atomically check and consume multiple IP/account buckets.
+
+        Each entry is (bucket_key, limit, window_seconds). If any bucket is
+        already limited, none of the other buckets are incremented.
+        """
+        if not buckets:
+            raise ValueError("At least one rate-limit bucket is required.")
 
         now = max(0, int(self.clock()))
-        window_start = now - (now % window_seconds)
-        bucket_hash = self._digest(bucket_key)
+        normalized: dict[str, tuple[int, int, int]] = {}
+        for bucket_key, limit, window_seconds in buckets:
+            if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+                raise ValueError("Rate-limit count must be a positive integer.")
+            if (
+                not isinstance(window_seconds, int)
+                or isinstance(window_seconds, bool)
+                or window_seconds < 1
+            ):
+                raise ValueError("Rate-limit window must be a positive integer.")
+            bucket_hash = self._digest(bucket_key)
+            window_start = now - (now % window_seconds)
+            value = (limit, window_seconds, window_start)
+            if bucket_hash in normalized and normalized[bucket_hash] != value:
+                raise ValueError("Duplicate bucket keys must use identical policies.")
+            normalized[bucket_hash] = value
+
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                "DELETE FROM auth_rate_limit_buckets "
-                "WHERE bucket_hash = ? AND window_start < ?",
-                (bucket_hash, window_start),
-            )
-            row = connection.execute(
-                "SELECT request_count FROM auth_rate_limit_buckets "
-                "WHERE bucket_hash = ? AND window_start = ?",
-                (bucket_hash, window_start),
-            ).fetchone()
-            count = int(row[0]) if row else 0
-            if count >= limit:
+            counts: dict[str, int] = {}
+            blocked_retries: list[int] = []
+            for bucket_hash, (limit, window_seconds, window_start) in normalized.items():
+                connection.execute(
+                    "DELETE FROM auth_rate_limit_buckets "
+                    "WHERE bucket_hash = ? AND window_start < ?",
+                    (bucket_hash, window_start),
+                )
+                row = connection.execute(
+                    "SELECT request_count FROM auth_rate_limit_buckets "
+                    "WHERE bucket_hash = ? AND window_start = ?",
+                    (bucket_hash, window_start),
+                ).fetchone()
+                count = int(row[0]) if row else 0
+                counts[bucket_hash] = count
+                if count >= limit:
+                    blocked_retries.append(max(1, window_start + window_seconds - now))
+
+            if blocked_retries:
                 connection.execute("COMMIT")
                 return RateLimitDecision(
                     allowed=False,
                     remaining=0,
-                    retry_after_seconds=max(1, window_start + window_seconds - now),
+                    retry_after_seconds=max(blocked_retries),
                 )
-            connection.execute(
-                """
-                INSERT INTO auth_rate_limit_buckets
-                    (bucket_hash, window_start, request_count)
-                VALUES (?, ?, 1)
-                ON CONFLICT(bucket_hash) DO UPDATE SET
-                    window_start = excluded.window_start,
-                    request_count = CASE
-                        WHEN auth_rate_limit_buckets.window_start = excluded.window_start
-                        THEN auth_rate_limit_buckets.request_count + 1
-                        ELSE 1
-                    END
-                """,
-                (bucket_hash, window_start),
-            )
+
+            remaining_values = []
+            for bucket_hash, (limit, _window_seconds, window_start) in normalized.items():
+                count = counts[bucket_hash]
+                connection.execute(
+                    """
+                    INSERT INTO auth_rate_limit_buckets
+                        (bucket_hash, window_start, request_count)
+                    VALUES (?, ?, 1)
+                    ON CONFLICT(bucket_hash) DO UPDATE SET
+                        window_start = excluded.window_start,
+                        request_count = CASE
+                            WHEN auth_rate_limit_buckets.window_start = excluded.window_start
+                            THEN auth_rate_limit_buckets.request_count + 1
+                            ELSE 1
+                        END
+                    """,
+                    (bucket_hash, window_start),
+                )
+                remaining_values.append(limit - count - 1)
             connection.execute("COMMIT")
             return RateLimitDecision(
                 allowed=True,
-                remaining=max(0, limit - count - 1),
+                remaining=max(0, min(remaining_values)),
                 retry_after_seconds=0,
             )
         except Exception:
