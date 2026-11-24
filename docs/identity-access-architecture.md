@@ -70,7 +70,13 @@ The exact session lifetimes and rate limits should be configuration-backed, docu
 
 ## 6. Administrator MFA and provisioning
 
-Administrator MFA is mandatory, not optional. Initial implementation should support TOTP with a secure enrollment and recovery process. MFA seeds must be encrypted at rest using a dedicated encryption key supplied outside source control; they must never be returned after enrollment. Recovery codes are displayed once and stored only as hashes.
+Administrator MFA is mandatory, not optional. The isolated identity foundation now implements TOTP enrollment, encrypted seed storage, one-time verification, replay protection by accepted time-step, and ten single-use recovery codes stored only as hashes. The seed is encrypted using Fernet with the dedicated `MFA_ENCRYPTION_KEY`; this key must be generated out of band and supplied through the deployment's secret-management mechanism. It must never be committed, logged, or reused from an odds-provider key.
+
+The first administrator can be created only through the private interactive command `python -m scripts.bootstrap_admin`. It reads the password through a no-echo prompt, atomically refuses bootstrap if an administrator already exists, starts MFA enrollment, and displays the provisioning URI and recovery codes only in the interactive terminal. Do not run it with output redirected or captured. It is not an HTTP endpoint. The administrator must complete enrollment before any administrator login/session route is introduced.
+
+Generate a Fernet key in a trusted environment with:
+`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+Store the result as `MFA_ENCRYPTION_KEY` outside Git, in the deployment secret store or protected host environment. Losing this key makes enrolled TOTP seeds undecryptable; maintain a secure backup and a documented rotation/re-enrollment procedure.
 
 Administrator bootstrap must be a private operator action, not an HTTP endpoint exposed to the public internet. The bootstrap process must prevent accidental creation of multiple initial administrators and must not print credentials or MFA secrets into logs. Additional administrator creation and role changes must be explicit, authenticated, audited administrative actions.
 
