@@ -407,6 +407,14 @@ def test_recovery_code_provides_one_time_admin_session_proof(tmp_path, monkeypat
     totp = pyotp.parse_uri(uri)
     codes = store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
     assert store.consume_administrator_recovery_code(admin_id, codes[0]) is True
+    with store.connect() as db:
+        recovery_event = db.execute(
+            """SELECT actor_identity_id, subject_identity_id
+               FROM security_audit_events
+               WHERE event_type='administrator.mfa_recovery_used'"""
+        ).fetchone()
+    assert recovery_event["actor_identity_id"] == admin_id
+    assert recovery_event["subject_identity_id"] == admin_id
     token, _ = store.create_session(admin_id)
     assert store.get_session(token)["account_type"] == "administrator"
     with pytest.raises(ValueError, match="MFA verification"):
