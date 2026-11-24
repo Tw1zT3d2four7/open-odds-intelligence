@@ -1099,13 +1099,7 @@ class OddsService:
                         discord_message = json.loads(response_body.decode("utf-8"))
                         message_id = discord_message.get("id") if isinstance(discord_message, dict) else None
                         if message_id:
-                            self.db.mark_alert_message(fingerprint, message_id)
-                            self.db.connect().close()
-                            with self.db.connect() as db:
-                                db.execute(
-                                    "UPDATE sent_alerts SET embed_json=? WHERE fingerprint=?",
-                                    (embed_json, fingerprint),
-                                )
+                            self.db.mark_alert_message(fingerprint, message_id, embed_json)
                     except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
                         pass
                 sent += 1
