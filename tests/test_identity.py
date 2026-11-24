@@ -167,3 +167,91 @@ def test_authentication_rejects_unknown_or_malformed_accounts(tmp_path):
     assert store.authenticate("missing@example.com", "correct horse battery", "subscriber") is None
     assert store.authenticate("not-an-email", "correct horse battery", "subscriber") is None
     assert store.authenticate("known@example.com", "x" * 1025, "subscriber") is None
+
+
+
+def test_email_verification_challenge_is_hashed_expiring_and_one_time(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    token = store.create_email_verification_challenge("PERSON@example.com")
+    assert token
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT token_hash, consumed_at FROM email_verification_challenges"
+        ).fetchone()
+        identity = db.execute(
+            "SELECT email_verified_at FROM identities WHERE id=?", (identity_id,)
+        ).fetchone()
+    assert row["token_hash"] != token
+    assert row["consumed_at"] is None
+    assert identity["email_verified_at"] is None
+    assert store.consume_email_verification_challenge(token) is True
+    assert store.consume_email_verification_challenge(token) is False
+    with store.connect() as db:
+        identity = db.execute(
+            "SELECT email_verified_at FROM identities WHERE id=?", (identity_id,)
+        ).fetchone()
+    assert identity["email_verified_at"] is not None
+
+
+def test_email_verification_challenge_rejects_expired_and_unknown_tokens(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    store.create_subscriber("person@example.com", "correct horse battery")
+    token = store.create_email_verification_challenge("person@example.com")
+    with store.connect() as db:
+        db.execute(
+            """UPDATE email_verification_challenges
+               SET expires_at='2000-01-01T00:00:00+00:00' WHERE token_hash=?""",
+            (__import__("hashlib").sha256(token.encode()).hexdigest(),),
+        )
+    assert store.consume_email_verification_challenge(token) is False
+    assert store.consume_email_verification_challenge("unknown-token") is False
+
+
+def test_password_reset_is_one_time_and_revokes_all_sessions(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    first_token, _ = store.create_session(identity_id)
+    second_token, _ = store.create_session(identity_id)
+    reset_token = store.create_password_reset_challenge("person@example.com")
+    assert reset_token
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT token_hash FROM password_reset_challenges"
+        ).fetchone()
+    assert row["token_hash"] != reset_token
+    assert store.consume_password_reset_challenge(
+        reset_token, "a completely new secure password"
+    ) is True
+    assert store.consume_password_reset_challenge(
+        reset_token, "another completely new password"
+    ) is False
+    assert store.get_session(first_token) is None
+    assert store.get_session(second_token) is None
+    assert store.authenticate(
+        "person@example.com", "a completely new secure password", "subscriber"
+    ) == identity_id
+    assert store.authenticate(
+        "person@example.com", "correct horse battery", "subscriber"
+    ) is None
+
+
+def test_password_reset_unknown_email_is_non_disclosing_and_bad_password_rejected(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    assert store.create_password_reset_challenge("missing@example.com") is None
+    store.create_subscriber("person@example.com", "correct horse battery")
+    token = store.create_password_reset_challenge("person@example.com")
+    assert token
+    with pytest.raises(ValueError, match="Password"):
+        store.consume_password_reset_challenge(token, "short")
+    assert store.consume_password_reset_challenge(token, "valid new password here") is True
+
+
+def test_new_challenge_invalidates_previous_outstanding_challenge(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    store.create_subscriber("person@example.com", "correct horse battery")
+    first = store.create_password_reset_challenge("person@example.com")
+    second = store.create_password_reset_challenge("person@example.com")
+    assert first and second and first != second
+    assert store.consume_password_reset_challenge(first, "new secure password value") is False
+    assert store.consume_password_reset_challenge(second, "new secure password value") is True
