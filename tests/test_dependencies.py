@@ -154,7 +154,6 @@ def test_subscriber_dependency_uses_real_hashed_session_store(tmp_path):
     assert revoked.status_code == 401
 
 
-
 def test_rate_limiter_dependency_reuses_app_scoped_instance():
     limiter = object()
     app = FastAPI()
@@ -170,7 +169,6 @@ def test_rate_limiter_dependency_reuses_app_scoped_instance():
 
 
 def test_rate_limiter_dependency_fails_closed_without_hash_secret(monkeypatch, tmp_path):
-    import app.dependencies as dependencies
     from app import config
 
     monkeypatch.setattr(config, "RATE_LIMIT_HASH_KEY", "")
