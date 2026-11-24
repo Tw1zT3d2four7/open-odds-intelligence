@@ -22,6 +22,7 @@ from . import config
 
 _SCHEMA_VERSION = 1
 _PASSWORD_HASHER = PasswordHasher()
+_DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _ACCOUNT_TYPES = frozenset({"subscriber", "administrator"})
 
@@ -202,13 +203,14 @@ class IdentityStore:
         """Verify credentials for exactly one account class; MFA is a later admin gate."""
         if account_type not in _ACCOUNT_TYPES:
             raise ValueError("Unsupported account type.")
+        if not isinstance(password, str) or len(password) > 1024:
+            return None
         try:
             normalized_email = _normalize_email(email)
         except ValueError:
-            # Perform a dummy Argon2 verification to reduce obvious timing differences.
             try:
-                _PASSWORD_HASHER.hash("not-a-real-password-value")
-            except Exception:
+                _PASSWORD_HASHER.verify(_DUMMY_PASSWORD_HASH, password)
+            except (VerifyMismatchError, VerificationError, InvalidHashError, TypeError):
                 pass
             return None
         with self.connect() as db:
@@ -218,6 +220,10 @@ class IdentityStore:
                 (normalized_email, account_type),
             ).fetchone()
         if row is None:
+            try:
+                _PASSWORD_HASHER.verify(_DUMMY_PASSWORD_HASH, password)
+            except (VerifyMismatchError, VerificationError, InvalidHashError, TypeError):
+                pass
             return None
         try:
             valid = _PASSWORD_HASHER.verify(row["password_hash"], password)
