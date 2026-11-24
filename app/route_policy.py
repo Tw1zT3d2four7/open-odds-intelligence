@@ -51,8 +51,15 @@ def route_key(method: str, path: str) -> tuple[str, str]:
 
 
 def classify_route(method: str, path: str) -> str | None:
-    """Return the declared target class, or None for an unclassified route."""
-    return ROUTE_ACCESS_POLICY.get(route_key(method, path))
+    """Return the declared target class, or None for an unclassified route.
+
+    HEAD requests inherit the corresponding GET policy so they cannot bypass
+    authentication merely because Starlette handles HEAD through a GET route.
+    """
+    normalized_method = method.upper()
+    if normalized_method == "HEAD":
+        return ROUTE_ACCESS_POLICY.get(("GET", path))
+    return ROUTE_ACCESS_POLICY.get((normalized_method, path))
 
 
 def unclassified_routes(routes: Iterable[BaseRoute]) -> list[tuple[str, str]]:
