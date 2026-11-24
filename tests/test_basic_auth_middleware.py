@@ -92,3 +92,26 @@ def test_legacy_basic_auth_scheme_is_case_insensitive(client, monkeypatch):
         "/api/odds", headers={"authorization": f"bAsIc {token}"}
     )
     assert response.status_code == 200
+
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+def test_legacy_basic_auth_does_not_exempt_mutating_or_preflight_health_methods(
+    client, monkeypatch, method
+):
+    monkeypatch.setattr(config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "case-sensitive-secret")
+
+    response = client.request(method, "/api/health")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication required."
+
+
+def test_legacy_basic_auth_keeps_head_health_probe_public(client, monkeypatch):
+    monkeypatch.setattr(config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "case-sensitive-secret")
+
+    response = client.head("/api/health")
+    # FastAPI may return 405 if the route does not explicitly register HEAD;
+    # either way, the middleware must not challenge a safe liveness request.
+    assert response.status_code == 405
