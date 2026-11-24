@@ -117,6 +117,25 @@ class IdentityStore:
             ),
         )
 
+    def _resolve_audit_actor(
+        self, db: sqlite3.Connection, subject_identity_id: str,
+        actor_identity_id: str | None,
+    ) -> str:
+        """Allow self-service events or require an active administrator actor."""
+        if actor_identity_id is None or actor_identity_id == subject_identity_id:
+            return subject_identity_id
+        actor = db.execute(
+            """SELECT account_type, is_active FROM identities WHERE id=?""",
+            (actor_identity_id,),
+        ).fetchone()
+        if (
+            actor is None
+            or actor["account_type"] != "administrator"
+            or not actor["is_active"]
+        ):
+            raise ValueError("An active administrator is required for cross-account actions.")
+        return actor_identity_id
+
     @contextmanager
     def connect(self):
         """Yield a configured connection and always close it after use."""
@@ -813,6 +832,13 @@ class IdentityStore:
             if row is None:
                 db.rollback()
                 return False
+            try:
+                audit_actor = self._resolve_audit_actor(
+                    db, row["identity_id"], actor_identity_id
+                )
+            except ValueError:
+                db.rollback()
+                raise
             now = _timestamp(_now())
             db.execute(
                 """UPDATE sessions SET revoked_at=?
@@ -824,7 +850,7 @@ class IdentityStore:
                 "identity.session_revoked",
                 row["identity_id"],
                 now,
-                actor_identity_id=actor_identity_id or row["identity_id"],
+                actor_identity_id=audit_actor,
             )
             db.commit()
         return True
@@ -835,6 +861,13 @@ class IdentityStore:
         """Revoke every active session, e.g. after password reset or suspension."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            try:
+                audit_actor = self._resolve_audit_actor(
+                    db, identity_id, actor_identity_id
+                )
+            except ValueError:
+                db.rollback()
+                raise
             now = _timestamp(_now())
             cursor = db.execute(
                 """UPDATE sessions SET revoked_at=?
@@ -849,7 +882,7 @@ class IdentityStore:
                     identity_id,
                     now,
                     {"revoked_count": revoked_count},
-                    actor_identity_id=actor_identity_id or identity_id,
+                    actor_identity_id=audit_actor,
                 )
             db.commit()
         return revoked_count
