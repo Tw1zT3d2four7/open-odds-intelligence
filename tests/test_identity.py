@@ -159,3 +159,11 @@ def test_active_session_updates_last_seen_at(tmp_path):
             "SELECT last_seen_at FROM sessions WHERE id=?", (session_id,)
         ).fetchone()["last_seen_at"]
     assert last_seen
+
+
+def test_authentication_rejects_unknown_or_malformed_accounts(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    store.create_subscriber("known@example.com", "correct horse battery")
+    assert store.authenticate("missing@example.com", "correct horse battery", "subscriber") is None
+    assert store.authenticate("not-an-email", "correct horse battery", "subscriber") is None
+    assert store.authenticate("known@example.com", "x" * 1025, "subscriber") is None
