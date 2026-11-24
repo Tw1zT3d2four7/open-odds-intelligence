@@ -320,3 +320,69 @@ def test_discord_wait_response_persists_message_id_and_embed(tmp_path, monkeypat
     assert row["event_id"] == "event-1"
     assert row["commence_time"] == "2030-01-01T00:00:00Z"
     assert json.loads(row["embed_json"])["fields"]
+
+
+def test_discord_final_score_sync_uses_active_multi_provider_key_pool(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.providers.the_odds_api import ProviderError
+
+    commence = (datetime.now(timezone.utc) - timedelta(hours=3)).replace(microsecond=0).isoformat()
+    event = sample_event()
+    event["commence_time"] = commence
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    db.save_snapshot("basketball_nba", [event])
+
+    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", True)
+    monkeypatch.setattr(config, "ODDS_PROVIDERS", ["the_odds_api", "therundown"])
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEY", "CaseSensitive-Rundown-Key")
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEYS", "Second-Key")
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monkeypatch.setattr(config, "DISCORD_ALERT_RESULTS_SYNC_ENABLED", True)
+    monkeypatch.setattr(config, "SIMULATION_RESULTS_SYNC_ENABLED", False)
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+
+    service = OddsService(db)
+    used_keys = []
+
+    class FakeScoresProvider:
+        name = "therundown"
+        usage = {"requests_remaining": 90}
+
+        def __init__(self, key):
+            self.key = key
+
+        def fetch_scores(self, sport, event_dates):
+            used_keys.append((self.key, sport, event_dates))
+            return [{
+                "event_id": "event-1", "sport_key": sport,
+                "commence_time": commence, "home_team": "Home", "away_team": "Away",
+                "home_score": 101, "away_score": 98, "status": "final",
+                "source": "therundown", "source_record_id": "event-1",
+                "source_updated_at": datetime.now(timezone.utc).isoformat(),
+            }]
+
+    monkeypatch.setattr(
+        service, "_new_provider",
+        lambda name, key: FakeScoresProvider(key) if name == "therundown"
+        else (_ for _ in ()).throw(AssertionError(name)),
+    )
+
+    assert service.discord_results_sync_enabled()
+    result = service.sync_simulation_results()
+    assert result["inserted"] == 1
+    assert used_keys == [("CaseSensitive-Rundown-Key", "basketball_nba", [commence[:10]])]
+    assert db.has_final_settlement("event-1")
+    assert service._provider_key_pools["therundown"].status()["configured_keys"] == 2
+
+
+def test_discord_final_score_sync_stays_off_without_active_rundown(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", True)
+    monkeypatch.setattr(config, "ODDS_PROVIDERS", ["the_odds_api", "oddize"])
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEY", "unused-key")
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monkeypatch.setattr(config, "DISCORD_ALERT_RESULTS_SYNC_ENABLED", True)
+    service = OddsService(OddsDatabase(tmp_path / "odds.sqlite3"))
+    assert not service.discord_results_sync_enabled()
+    result = service.sync_simulation_results()
+    assert result["skipped"] is True
