@@ -91,3 +91,32 @@ sessions, CSRF enforcement, and fail-closed behavior when identity storage is
 unavailable. These dependencies are intentionally not attached to the 21
 existing routes yet. The Basic Auth middleware, dashboard, provider refresh
 behavior, and production deployment remain unchanged.
+
+## Machine-checked policy inventory (implemented, not active middleware)
+
+```python
+from app.route_policy import ROUTE_ACCESS_POLICY, classify_route
+```
+
+`app/route_policy.py` now records an explicit target access class for
+each of the 21 live HTTP routes. The classes are:
+
+- `public_minimal` — only `GET /api/health`.
+- `subscriber_entitled` — dashboard and subscriber product/data endpoints; authentication alone is not enough, and plan entitlements must be checked server-side.
+- `admin_or_internal` — shared provider/schedule refresh operations; these must not be exposed to ordinary subscriber sessions.
+
+`unclassified_routes()` and `stale_policy_entries()` compare
+the policy against FastAPI's actual route registry. CI tests require an exact
+match, so a newly added endpoint cannot silently inherit public access and a
+removed/renamed endpoint cannot leave a stale policy entry behind. Unknown
+method/path pairs return no classification; they are never implicitly public.
+
+This is an inventory and test guardrail only. It is not attached to middleware
+or routes, and the existing Basic Auth behavior remains unchanged.
+
+**Health endpoint follow-up:** the current `GET /api/health` response includes
+application/provider and alert-delivery status fields, and existing tests
+intentionally assert some operational diagnostics. Before identity-mode
+cutover, review this payload and split minimal public liveness from any
+sensitive/detailed readiness diagnostics without breaking container health
+checks or current operator workflows.
