@@ -588,7 +588,14 @@ def test_revoke_all_sessions_audit_records_only_revocation_count(tmp_path):
 
 
 
-def test_cross_account_session_revocation_requires_active_administrator_actor(tmp_path):
+def test_cross_account_session_revocation_requires_active_administrator_actor(
+    tmp_path, monkeypatch
+):
+    import pyotp
+    from cryptography.fernet import Fernet
+    from app import config
+
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     subject_id = store.create_subscriber(
         "subject@example.com", "a-strong-subject-password"
@@ -606,6 +613,9 @@ def test_cross_account_session_revocation_requires_active_administrator_actor(tm
     admin_id = store.provision_administrator(
         "audit-admin@example.com", "a-strong-audit-admin-password"
     )
+    provisioning_uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.parse_uri(provisioning_uri)
+    store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
     assert store.revoke_session(token, actor_identity_id=admin_id) is True
     with store.connect() as db:
         event = db.execute(
