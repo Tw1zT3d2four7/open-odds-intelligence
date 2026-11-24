@@ -6,6 +6,12 @@ import pytest
 from app.identity import IdentityStore
 
 
+def _verify_subscriber(store, email):
+    challenge = store.create_email_verification_challenge(email)
+    assert challenge
+    assert store.consume_email_verification_challenge(challenge) is True
+
+
 def test_identity_database_is_separate_and_restricts_file_permissions(tmp_path):
     odds_path = tmp_path / "odds_history.sqlite3"
     with sqlite3.connect(odds_path) as db:
@@ -87,6 +93,8 @@ def test_authentication_is_scoped_to_account_type(tmp_path):
     subscriber_id = store.create_subscriber("person@example.com", "correct horse battery")
     admin_id = store.provision_administrator("admin@example.com", "another secure password")
 
+    assert store.authenticate("PERSON@example.com", "correct horse battery", "subscriber") is None
+    _verify_subscriber(store, "person@example.com")
     assert store.authenticate("PERSON@example.com", "correct horse battery", "subscriber") == subscriber_id
     assert store.authenticate("person@example.com", "correct horse battery", "administrator") is None
     assert store.authenticate("admin@example.com", "another secure password", "subscriber") is None
@@ -97,6 +105,7 @@ def test_authentication_is_scoped_to_account_type(tmp_path):
 def test_session_token_is_opaque_hashed_revocable_and_expires(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    _verify_subscriber(store, "person@example.com")
     token, session_id = store.create_session(identity_id, timedelta(minutes=10))
 
     assert token
@@ -125,6 +134,7 @@ def test_session_creation_requires_active_identity_and_bounded_lifetime(tmp_path
 def test_revoking_all_sessions_invalidates_each_token(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    _verify_subscriber(store, "person@example.com")
     first, _ = store.create_session(identity_id)
     second, _ = store.create_session(identity_id)
     assert store.revoke_all_sessions(identity_id) == 2
@@ -135,6 +145,7 @@ def test_revoking_all_sessions_invalidates_each_token(tmp_path):
 def test_idle_session_is_revoked_and_last_seen_is_refreshed(tmp_path, monkeypatch):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    _verify_subscriber(store, "person@example.com")
     token, session_id = store.create_session(identity_id)
     with store.connect() as db:
         db.execute(
@@ -211,6 +222,7 @@ def test_email_verification_challenge_rejects_expired_and_unknown_tokens(tmp_pat
 def test_password_reset_is_one_time_and_revokes_all_sessions(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    _verify_subscriber(store, "person@example.com")
     first_token, _ = store.create_session(identity_id)
     second_token, _ = store.create_session(identity_id)
     reset_token = store.create_password_reset_challenge("person@example.com")
@@ -392,6 +404,7 @@ def test_recovery_code_provides_one_time_admin_session_proof(tmp_path, monkeypat
 def test_deactivated_identity_invalidates_existing_session(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("inactive@example.com", "a secure password phrase")
+    _verify_subscriber(store, "person@example.com")
     token, _session_id = store.create_session(identity_id)
 
     assert store.get_session(token)["identity_id"] == identity_id
