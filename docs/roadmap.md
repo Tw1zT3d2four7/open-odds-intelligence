@@ -194,8 +194,8 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified branch commit:** `36aeb4ab233af54bcb978ca862cbc689a30738c9`  
-**CI run:** `45512346310` — **732 passed, 1 warning**.
+**Latest verified branch commit:** `537d56ccd31003fb45dde4e2886dfd2842932c0d`  
+**CI run:** `45512503729` — **732 passed, 1 warning**.
 
 The authentication foundation remains isolated and is not wired into existing production routes. Existing Basic Auth and the current health response remain unchanged. No production deployment, restart, merge, or branch promotion has occurred.
 
