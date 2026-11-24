@@ -13,145 +13,88 @@ The current `optional_basic_auth` middleware protects application routes only wh
 
 | Current route | Method | Current purpose | Target access class | Notes |
 |---|---:|---|---|---|
-| `/` | GET | Existing odds dashboard | Subscriber | Keep existing dashboard available to authenticated subscribers. |
-| `/api/health` | GET | Container/application health | Public / minimal | Return no secrets, provider credentials, or private account data. |
-| `/api/limits/refresh` | POST | Trigger market-limit refresh | Administrator only | Only an administrator may trigger this shared provider operation; background refresh loops call service methods directly. |
+| `/` | GET | Existing odds dashboard | Subscriber | Keep dashboard available to authenticated subscribers. |
+| `/api/health` | GET | Container/application health | Public / minimal | Minimize public response at identity cutover; preserve successful probe response. |
+| `/api/limits/refresh` | POST | Trigger market-limit refresh | Administrator only | Background refresh loops call service methods directly. |
 | `/api/limits` | GET | Market limits | Subscriber + entitlement | Apply sport/feature entitlements server-side. |
 | `/api/limits/changes` | GET | Market-limit changes | Subscriber + entitlement | Apply sport/feature entitlements server-side. |
 | `/api/limits/history` | GET | Market-limit history | Subscriber + entitlement | Apply sport/feature entitlements server-side. |
-| `/api/odds` | GET | Odds data | Subscriber + entitlement | Preserve current query behavior. |
-| `/api/refresh` | POST | Trigger odds refresh | Administrator only | Administrator-only manual refresh; scheduled service loops do not use this HTTP route. |
-| `/api/market-board` | GET | Market board | Subscriber + entitlement | Preserve existing dashboard behavior. |
-| `/api/bookmaker-board` | GET | Bookmaker board | Subscriber + entitlement | Preserve existing dashboard behavior. |
+| `/api/odds` | GET | Odds data | Subscriber + entitlement | Preserve query behavior. |
+| `/api/refresh` | POST | Trigger odds refresh | Administrator only | Scheduled service loops do not use this HTTP route. |
+| `/api/market-board` | GET | Market board | Subscriber + entitlement | Preserve dashboard behavior. |
+| `/api/bookmaker-board` | GET | Bookmaker board | Subscriber + entitlement | Preserve dashboard behavior. |
 | `/api/simulation/leagues` | GET | Simulation league list | Subscriber + entitlement | Read-only. |
 | `/api/simulation/games` | GET | Simulation games | Subscriber + entitlement | Read-only. |
-| `/api/simulation/games/refresh` | POST | Refresh simulation schedule | Administrator only | Administrator-only manual schedule refresh; background synchronization uses internal service methods. |
-| `/api/simulation/run` | POST | Run a game simulation | Subscriber + entitlement | Add per-account rate limits and plan limits before multi-tenant launch. |
+| `/api/simulation/games/refresh` | POST | Refresh simulation schedule | Administrator only | Background synchronization uses internal service methods. |
+| `/api/simulation/run` | POST | Run a game simulation | Subscriber + entitlement | Add per-account and plan limits. |
 | `/api/player-props` | GET | Player prop data | Subscriber + entitlement | Apply sport/feature entitlements. |
 | `/api/clv` | GET | Closing-line value data | Subscriber + entitlement | Apply sport/feature entitlements. |
 | `/api/movement` | GET | Line movement | Subscriber + entitlement | Apply sport/feature entitlements. |
 | `/api/movement/history` | GET | Line movement history | Subscriber + entitlement | Apply sport/feature entitlements. |
-| `/api/history` | GET | Historical odds data | Subscriber + entitlement | Keep subscriber access scoped to product data, not administrative records. |
-| `/api/opportunities` | GET | Qualified opportunities | Subscriber + entitlement | Future alert preferences and plan filters apply separately. |
-| `/api/arbitrage` | GET | Arbitrage opportunities | Subscriber + entitlement | Future plan and feature entitlements apply server-side. |
+| `/api/history` | GET | Historical odds data | Subscriber + entitlement | Keep product data separate from administrative records. |
+| `/api/opportunities` | GET | Qualified opportunities | Subscriber + entitlement | Alert preferences and plan filters apply separately. |
+| `/api/arbitrage` | GET | Arbitrage opportunities | Subscriber + entitlement | Plan and feature entitlements apply server-side. |
 
 ## Access class definitions
 
-- **Public / minimal:** Only the health probe. Must not reveal secrets, user records, provider diagnostics containing credentials, or internal configuration.
-- **Subscriber:** Requires an active subscriber identity and valid subscriber session. Feature access is additionally checked against the subscriber's current subscription entitlements.
-- **Admin:** Requires a valid administrator identity, a completed MFA challenge, an administrator session, and the specific permission required for the operation.
+- **Public / minimal:** Only the health probe. It must not reveal secrets, user records, provider credentials, or detailed operational diagnostics.
+- **Subscriber:** Requires an active subscriber identity and valid subscriber session. Feature access is additionally checked against current server-side entitlements.
+- **Admin:** Requires a valid administrator identity, completed MFA, an administrator session, and the specific permission required.
 - **Internal:** Callable only by trusted background workers or narrowly scoped service credentials; never by a browser subscriber session.
-- **Subscriber + entitlement:** Subscriber authentication plus a server-side plan/feature check. Client-side hiding is not authorization.
+- **Subscriber + entitlement:** Subscriber authentication plus server-side plan/feature authorization. Client-side hiding is not authorization.
 
 ## Compatibility and migration requirements
 
-1. Keep the existing Basic Auth middleware in place until a complete replacement boundary is implemented and tested.
-2. Do not let a subscriber cookie satisfy an administrator route, or an administrator cookie silently become a subscriber session.
-3. Keep `/api/health` independent of browser authentication for container health checks.
-4. When new authentication is integrated, explicitly define how configured legacy Basic Auth behaves during migration. Do not unexpectedly lock out the current operator.
-5. Before moving shared refresh endpoints to Admin/Internal, provide an operator workflow or scheduler path that preserves the current refresh capability.
-6. Add tests for every route class, including direct API calls, wrong account class, inactive accounts, expired/revoked sessions, missing MFA, and entitlement denial.
-7. This inventory must be updated whenever routes are added, removed, or change purpose.
+1. Keep Basic Auth until a complete replacement boundary is implemented and tested.
+2. A subscriber cookie must never satisfy an administrator route, or vice versa.
+3. Keep health checks independent of browser cookies and Basic Auth.
+4. Explicitly define configured Basic Auth behavior during migration; do not unexpectedly lock out the operator.
+5. Preserve a safe operator/scheduler workflow before moving manual refresh endpoints to administrator-only access.
+6. Test every route class, direct API access, wrong account class, inactive accounts, expired/revoked sessions, missing MFA, and entitlement denial.
+7. Update this inventory whenever routes are added, removed, or change purpose.
 
-## Explicit non-goals at this stage
+## Explicit non-goals
 
 - No authentication middleware changes.
 - No new login, registration, admin, or account HTTP routes.
 - No endpoint behavior or dashboard changes.
-- No changes to production configuration, deployment, Docker Compose, or persistent data.
-
-
-## Inventory verification and session-boundary implementation
-
-The route inventory was rechecked against every `@app.get/post/put/patch/delete` decorator in `app/main.py` on 2026-11-24: all 21 current routes are represented above. There are no additional FastAPI route modules under `app/` at this point.
-
-The isolated helpers in `app/auth.py` now provide separate subscriber and administrator host-only session cookies, account-class-specific session resolution, and same-origin double-submit CSRF validation. Their design and HTTPS/reverse-proxy requirements are documented in `docs/session-boundary-design.md`.
-
-These helpers are not yet connected to middleware or endpoints. The existing optional Basic Auth middleware remains unchanged. The target access classes in this matrix remain policy intent until route dependencies and the compatibility transition are implemented and tested.
-
+- No production configuration, deployment, Compose, or persistent-data changes.
 
 ## Reusable dependency boundary (implemented, not yet wired)
 
-```python
-from app.dependencies import require_subscriber, require_administrator
-from app.dependencies import require_authenticated_csrf
-```
+The isolated dependencies in `app/dependencies.py` provide:
 
-The lazy `get_identity_store` dependency creates the separate identity store only
-when an identity-protected request first needs it, and supports app-state
-injection for tests. Store initialization and session lookup failures return a
-generic HTTP 503 response without exposing database details.
+- `require_subscriber` — only an active subscriber session from the subscriber cookie.
+- `require_administrator` — only an active administrator session from the administrator cookie.
+- `require_authenticated_csrf` — HTTPS same-origin double-submit validation for state-changing browser requests.
+- `get_identity_store` — lazy app-scoped identity storage; initialization/session lookup failures fail closed with generic HTTP 503.
 
-- `require_subscriber` accepts only the subscriber cookie and an active subscriber session.
-- `require_administrator` accepts only the administrator cookie and an active administrator session. Administrator sessions can only be created by the identity store after a recent, one-time MFA proof is consumed.
-- `require_authenticated_csrf` enforces the HTTPS same-origin double-submit token for state-changing browser requests.
+The identity store creates administrator sessions only after consuming a recent, one-time TOTP or recovery-code proof. The session cookie itself does not grant administrator privileges without a matching active administrator record in the identity store.
 
-Dependency-level HTTP tests cover cross-class cookie rejection, missing/invalid
-sessions, CSRF enforcement, and fail-closed behavior when identity storage is
-unavailable. These dependencies are intentionally not attached to the 21
-existing routes yet. The Basic Auth middleware, dashboard, provider refresh
-behavior, and production deployment remain unchanged.
+HTTP dependency tests now cover:
+- Subscriber/admin cookie separation and cross-class rejection.
+- Missing, expired, revoked, and inactive identity sessions.
+- Identity-store initialization and lookup failures without leaking internal errors.
+- CSRF rejection/acceptance for subscriber and administrator mutations.
+- Administrator session creation rejected without MFA proof; valid TOTP proof permits the admin session.
+- Subscriber session cannot authenticate an administrator route.
+
+CI run `45504487596` passed **673 tests** including these cases. These dependencies are still not attached to the 21 existing routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
 
 ## Machine-checked policy inventory (implemented, not active middleware)
 
-```python
-from app.route_policy import ROUTE_ACCESS_POLICY, classify_route
-```
+`app/route_policy.py` records an explicit target access class for each of the 21 live HTTP routes. Classes include `public_minimal` (only health), `subscriber_entitled` (product/data routes), and `administrator_only` (manual shared provider/schedule refresh routes).
 
-`app/route_policy.py` now records an explicit target access class for
-each of the 21 live HTTP routes. The classes are:
+CI compares the manifest with FastAPI's route registry. New routes cannot silently inherit public access, and removed/renamed routes cannot leave stale policy entries. Unknown method/path pairs return no classification; they are never implicitly public.
 
-- `public_minimal` — only `GET /api/health`.
-- `subscriber_entitled` — dashboard and subscriber product/data endpoints; authentication alone is not enough, and plan entitlements must be checked server-side.
-- `administrator_only` — shared provider/schedule refresh HTTP operations; these require an administrator session. Background refresh loops call internal service methods directly and do not need a public internal HTTP bypass.
+This is an inventory/test guardrail only. It is not attached to middleware or routes.
 
-`unclassified_routes()` and `stale_policy_entries()` compare
-the policy against FastAPI's actual route registry. CI tests require an exact
-match, so a newly added endpoint cannot silently inherit public access and a
-removed/renamed endpoint cannot leave a stale policy entry behind. Unknown
-method/path pairs return no classification; they are never implicitly public.
+## Health endpoint compatibility
 
-This is an inventory and test guardrail only. It is not attached to middleware
-or routes, and the existing Basic Auth behavior remains unchanged.
-
-**Health endpoint follow-up:** the current `GET /api/health` response includes
-application/provider and alert-delivery status fields, and existing tests
-intentionally assert some operational diagnostics. Before identity-mode
-cutover, review this payload and split minimal public liveness from any
-sensitive/detailed readiness diagnostics without breaking container health
-checks or current operator workflows.
-
-## Legacy Basic Auth compatibility regression coverage
-
-`tests/test_auth_compatibility.py` locks down the middleware behavior that must
-remain intact throughout the identity implementation:
-
-- With both legacy credentials unset, existing dashboard access remains as it is today.
-- With both credentials configured, requests require valid Basic Auth credentials.
-- Password comparison remains case-sensitive.
-- Partial credential configuration returns HTTP 503 rather than opening access.
-- `/api/health` remains available for the container health probe even when legacy auth is partially configured.
-
-These are compatibility tests, not a change to the middleware or a new identity-mode implementation.
+The current `GET /api/health` response includes application/provider and alert-delivery diagnostics. The exact Compose health probe in `docker-compose.yml` calls this route and only requires a successful HTTP response; it does not parse the JSON body. At identity-mode cutover, minimize the public response and move reviewed operational details behind administrator authorization while retaining a successful response for the probe. See `docs/health-endpoint-security-design.md`.
 
 ## Authentication rate-limit building blocks (implemented, not active)
 
-The isolated `app/rate_limit.py` module provides persistent fixed-window counters
-in the accounts database, atomic across workers sharing that database. Bucket
-identifiers are HMAC-SHA256 digests keyed by the dedicated
-`RATE_LIMIT_HASH_KEY` secret (minimum 32 bytes). It can build separate IP and
-normalized-account buckets without storing raw email addresses.
+`app/rate_limit.py` provides persistent fixed-window counters in the accounts database. `BEGIN IMMEDIATE` makes multi-bucket checks/consumption atomic across workers sharing the database. Bucket identifiers are HMAC-SHA256 digests keyed by `RATE_LIMIT_HASH_KEY` (minimum 32 bytes); raw email/IP identifiers are not persisted.
 
-Forwarded client-IP headers are ignored unless explicit trusted proxy CIDRs are
-provided. The chain resolver walks from the direct peer toward the client and
-stops at the first untrusted hop; malformed chains fall back to the direct peer.
-No proxy CIDRs are configured by this code. The actual Caddy-to-application
-peer must be inspected in the deployment before a narrow trusted range is
-selected.
-
-The helpers are not attached to any production route. A lazy FastAPI dependency
-provides an app-scoped limiter; the generic enforcement helper can atomically
-check all dimensions and return HTTP 429 with a bounded `Retry-After`; storage
-failures return a generic HTTP 503. Thresholds, cooldown strategy, and
-per-endpoint policies remain to be selected. See
-`docs/auth-rate-limit-design.md`.
+Forwarded client-IP headers are ignored unless explicit trusted proxy CIDRs are provided. The actual Caddy-to-app peer must be inspected before selecting a narrow trusted range. The helpers are not attached to production routes. Generic enforcement returns HTTP 429 with `Retry-After`; storage failures return generic HTTP 503. Proposed thresholds are documented in `docs/auth-rate-limit-policy.md` and remain inactive.
