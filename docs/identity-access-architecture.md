@@ -51,7 +51,7 @@ Later milestones may add organizations/tenants, notification destinations, prefe
 
 Do not add subscriber identity data to the odds-history tables. Do not replace, truncate, or rebuild `odds_history.sqlite3`. SQLite foreign keys cannot span separate database files, so relationships between account and odds data must be handled by application-level identifiers and explicit ownership checks.
 
-Use versioned, transactional migrations for the account database. Migrations must be additive where possible, tested against a fresh database and a copy of a prior-version account database, and must fail closed on unexpected schema state.
+Create or tighten the accounts database file to mode 0600 before SQLite opens it, and reject symlink paths. This prevents a newly created database or an existing overly-permissive file from being briefly opened with default permissions during schema initialization. Restrict SQLite WAL/SHM sidecars as well. Use versioned, transactional migrations for the account database. Migrations must be additive where possible, tested against a fresh database and a copy of a prior-version account database, and must fail closed on unexpected schema state.
 
 ## 5. Passwords and sessions
 
@@ -120,6 +120,7 @@ No production restart, Compose change, or deployment action is part of this desi
 
 ## 10. Required tests before the first production-facing milestone
 
+- Fresh and pre-existing account database files are mode 0600 before SQLite opens them; symlink paths are rejected, and WAL/SHM sidecars remain private.
 - Fresh account database initializes with the expected schema and restrictive file permissions.
 - Migrations are transactional and safe on a prior-version account database.
 - Subscriber registration cannot set administrator status or roles.
