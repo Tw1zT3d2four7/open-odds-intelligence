@@ -46,6 +46,18 @@ class SQLiteRateLimiter:
         self.hash_key = configured_key
         self.clock = clock
 
+    def _restrict_database_permissions(self) -> None:
+        """Restrict the database and any active SQLite WAL sidecars."""
+        for candidate in (
+            self.database_path,
+            Path(f"{self.database_path}-wal"),
+            Path(f"{self.database_path}-shm"),
+        ):
+            try:
+                candidate.chmod(0o600)
+            except FileNotFoundError:
+                pass
+
     def _connect(self) -> sqlite3.Connection:
         self.database_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         try:
@@ -61,19 +73,20 @@ class SQLiteRateLimiter:
         )
         connection.execute("PRAGMA busy_timeout = 5000")
         try:
-            os.chmod(self.database_path, 0o600)
-        except OSError:
-            connection.close()
-            raise
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS auth_rate_limit_buckets (
-                bucket_hash TEXT PRIMARY KEY,
-                window_start INTEGER NOT NULL,
-                request_count INTEGER NOT NULL CHECK (request_count >= 0)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS auth_rate_limit_buckets (
+                    bucket_hash TEXT PRIMARY KEY,
+                    window_start INTEGER NOT NULL,
+                    request_count INTEGER NOT NULL CHECK (request_count >= 0)
+                )
+                """
             )
-            """
-        )
+            self._restrict_database_permissions()
+        except Exception:
+            connection.close()
+            self._restrict_database_permissions()
+            raise
         return connection
 
     def _digest(self, bucket_key: str) -> str:
@@ -178,6 +191,7 @@ class SQLiteRateLimiter:
             raise
         finally:
             connection.close()
+            self._restrict_database_permissions()
 
 
 def request_peer_ip(
