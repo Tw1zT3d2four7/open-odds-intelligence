@@ -399,3 +399,31 @@ def test_deactivated_identity_invalidates_existing_session(tmp_path):
         db.execute("UPDATE identities SET is_active=0 WHERE id=?", (identity_id,))
 
     assert store.get_session(token) is None
+
+
+
+@pytest.mark.parametrize("preexisting", [False, True])
+def test_identity_database_permissions_are_restricted_before_sqlite_opens(
+    tmp_path, monkeypatch, preexisting
+):
+    from app import identity as identity_module
+
+    path = tmp_path / "accounts.sqlite3"
+    if preexisting:
+        path.write_bytes(b"")
+        path.chmod(0o644)
+
+    real_connect = sqlite3.connect
+    observed_modes = []
+
+    def inspect_connect(database, *args, **kwargs):
+        if str(database) == str(path):
+            observed_modes.append(path.stat().st_mode & 0o777)
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(identity_module.sqlite3, "connect", inspect_connect)
+    IdentityStore(path)
+
+    assert observed_modes
+    assert observed_modes[0] == 0o600
+    assert path.stat().st_mode & 0o777 == 0o600
