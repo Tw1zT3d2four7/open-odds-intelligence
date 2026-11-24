@@ -103,7 +103,7 @@ each of the 21 live HTTP routes. The classes are:
 
 - `public_minimal` — only `GET /api/health`.
 - `subscriber_entitled` — dashboard and subscriber product/data endpoints; authentication alone is not enough, and plan entitlements must be checked server-side.
-- `admin_or_internal` — shared provider/schedule refresh operations; these must not be exposed to ordinary subscriber sessions.
+- `administrator_only` — shared provider/schedule refresh HTTP operations; these require an administrator session. Background refresh loops call internal service methods directly and do not need a public internal HTTP bypass.
 
 `unclassified_routes()` and `stale_policy_entries()` compare
 the policy against FastAPI's actual route registry. CI tests require an exact
