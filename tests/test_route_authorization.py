@@ -38,10 +38,8 @@ def test_administrator_mutations_require_admin_session_and_csrf():
     ) == [require_administrator, require_same_origin_csrf]
 
 
-def test_administrator_read_routes_require_admin_session():
-    assert _dependencies("POST", "/api/refresh")[-2:] == [
-        require_administrator, require_same_origin_csrf
-    ]
+def test_administrator_read_routes_require_admin_session_without_csrf():
+    assert _dependencies("GET", "/docs") == [require_administrator]
 
 
 def test_public_health_route_has_no_browser_auth_dependency():
