@@ -1,0 +1,62 @@
+"""Fail-closed dependency assembly for the future identity route integration.
+
+This module deliberately does not attach dependencies to live routes. Callers
+must provide a real server-side entitlement dependency for subscriber product
+routes; there is no permissive default.
+"""
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from fastapi import Depends
+
+from .dependencies import (
+    require_administrator,
+    require_authenticated_csrf,
+    require_subscriber,
+)
+from .route_policy import classify_route
+
+_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def dependencies_for_route(
+    method: str,
+    path: str,
+    *,
+    entitlement_dependency: Callable | None = None,
+) -> list[Depends]:
+    """Return the complete dependency list for a classified route.
+
+    Unknown routes and subscriber routes without an explicit entitlement
+    dependency fail closed. State-changing authenticated routes always include
+    the same-origin CSRF guard. Public routes are restricted to safe methods.
+    """
+    normalized_method = method.upper()
+    access_class = classify_route(normalized_method, path)
+    if access_class is None:
+        raise ValueError("Route has no explicit access policy.")
+
+    mutating = normalized_method in _MUTATING_METHODS
+    if access_class == "public_minimal":
+        if mutating:
+            raise ValueError("Public routes cannot use state-changing methods.")
+        return []
+
+    if access_class == "administrator_only":
+        dependencies = [Depends(require_administrator)]
+    elif access_class == "subscriber_entitled":
+        if entitlement_dependency is None or not callable(entitlement_dependency):
+            raise RuntimeError(
+                "A server-side entitlement dependency is required for subscriber routes."
+            )
+        dependencies = [
+            Depends(require_subscriber),
+            Depends(entitlement_dependency),
+        ]
+    else:
+        raise ValueError("Route access policy is not supported.")
+
+    if mutating:
+        dependencies.append(Depends(require_authenticated_csrf))
+    return dependencies
