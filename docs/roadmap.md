@@ -315,7 +315,7 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [ ] Email delivery integration for verification and recovery links.
 - [ ] Wire login/session routes only after email delivery, rate limits, trusted-proxy handling, and production route integration tests are complete.
 - [x] Isolated subscriber/admin host-only Secure/HttpOnly cookies, CSRF/origin helpers, and lazy FastAPI authentication dependencies implemented; dependency-level HTTP tests cover account-class isolation, missing sessions, CSRF, and fail-closed store errors. These dependencies are not wired into existing application routes.
-- [ ] Production route-level authorization tests, including wrong account class, inactive users, missing MFA at session creation, and entitlement denial. Rate limits, trusted-proxy verification, and email delivery are also outstanding.
+- [ ] Production route-level authorization tests, including wrong account class, inactive users, missing MFA at session creation, and entitlement denial. Rate-limit policy thresholds, HTTP integration, deployment-specific trusted-proxy verification, and email delivery remain outstanding.
 - [ ] Review `/api/health`: current payload includes operational/provider and alert diagnostics; separate minimal public liveness from protected detailed diagnostics before identity-mode cutover, preserving existing health-check behavior.
 
 **Exit criteria:** Subscribers cannot access admin routes or APIs; public registration cannot create admins; administrator sessions require MFA; authentication and authorization tests pass. Existing odds dashboard behavior and history remain intact.
@@ -455,7 +455,7 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Identity and access architecture documented in `docs/identity-access-architecture.md`.
 - [x] Separate account database selected to isolate subscriber/admin data from odds history.
 
-### Phase 1 — Identity foundation (in progress; dependency and route-policy guardrails tested)
+### Phase 1 — Identity foundation (in progress; dependency, route-policy, and rate-limit primitives tested)
 - [x] Added a dedicated `ACCOUNTS_DATABASE_PATH` setting; default is `./data/accounts.sqlite3`.
 - [x] Added versioned, transactional schema initialization for identities, sessions, verification/reset challenges, administrator MFA storage, and security audit events.
 - [x] Added Argon2 password hashing and fixed account-class-specific authentication primitives.
@@ -467,12 +467,14 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Reviewed the route access matrix and documented the Basic Auth compatibility/cutover plan before wiring authentication into FastAPI.
 - [x] Preserved the existing Basic Auth middleware; isolated session-cookie, CSRF, and lazy FastAPI subscriber/admin dependencies are tested but not yet wired into existing routes.
 - [x] Added an explicit access-class manifest for every current route and CI tests that fail on an unclassified new route or stale policy entry.
+- [x] Added isolated persistent fixed-window rate-limit primitives with atomic SQLite counters, HMAC-hashed bucket identifiers, and separate IP/account buckets. Requires a dedicated 32-byte `RATE_LIMIT_HASH_KEY`; no route integration yet.
+- [x] Added spoof-resistant proxy-chain resolution that ignores forwarded headers unless explicit trusted CIDRs are supplied; deployment-specific proxy CIDRs remain unconfigured pending topology verification.
 - [x] Added HTTP regression tests locking down legacy Basic Auth compatibility: unset credentials preserve current behavior, configured credentials are required and case-sensitive, partial configuration fails closed, and `/api/health` remains available.
 
 **Latest verified implementation commit:** `a2c49223bb7ee793d6cf633f3009c16b2a1d73e8` (CI run `45496355528` passed: 641 tests).
 
 ### Next step
-Complete route-level authorization tests, including health/diagnostic response review, and trusted-proxy/rate-limit design while preserving the current Basic Auth middleware. Then implement subscriber and administrator login flows behind the explicit, tested migration boundary. Do not remove legacy Basic Auth or change production deployment until every cutover gate is met and the operator explicitly approves.
+Complete route-level authorization tests, choose endpoint-specific rate-limit thresholds and HTTP responses, verify the actual Caddy-to-app peer topology before configuring trusted proxies, and preserve the current Basic Auth middleware. Then implement subscriber and administrator login flows behind the explicit, tested migration boundary. Do not remove legacy Basic Auth or change production deployment until every cutover gate is met and the operator explicitly approves.
 
 ## 11. Continuing safeguards
 
