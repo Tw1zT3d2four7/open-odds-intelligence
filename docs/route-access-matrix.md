@@ -79,7 +79,7 @@ HTTP dependency tests now cover:
 - Administrator session creation rejected without MFA proof; valid TOTP proof permits the admin session.
 - Subscriber session cannot authenticate an administrator route.
 
-CI run `45504487596` passed **673 tests** including these cases. These dependencies are still not attached to the 21 existing routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
+CI run `45504487596` passed 673 tests; the follow-up absolute-expiry HTTP test passed in run `45504775274`, bringing the verified suite to **674 tests**. These dependencies are still not attached to the 21 existing routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
 
 ## Machine-checked policy inventory (implemented, not active middleware)
 
