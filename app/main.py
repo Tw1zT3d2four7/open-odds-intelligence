@@ -153,7 +153,7 @@ async def optional_basic_auth(request: Request, call_next):
     password = config.AUTH_PASSWORD
     # Keep the orchestrator health probe available even when operator auth is
     # misconfigured; every application/data route still fails closed below.
-    if request.url.path == "/api/health":
+    if request.url.path == "/api/health" and request.method in {"GET", "HEAD"}:
         return await call_next(request)
     if bool(username) != bool(password):
         return JSONResponse(
