@@ -386,3 +386,41 @@ def test_discord_final_score_sync_stays_off_without_active_rundown(tmp_path, mon
     assert not service.discord_results_sync_enabled()
     result = service.sync_simulation_results()
     assert result["skipped"] is True
+
+
+def test_discord_final_score_sync_respects_rundown_shared_quota_cooldown(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.providers.the_odds_api import ProviderError
+
+    commence = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(microsecond=0).isoformat()
+    event = sample_event()
+    event["commence_time"] = commence
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    db.save_snapshot("basketball_nba", [event])
+    monkeypatch.setattr(config, "ODDS_PROVIDERS_EXPLICIT", True)
+    monkeypatch.setattr(config, "ODDS_PROVIDERS", ["therundown"])
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEY", "Rundown-Key-One")
+    monkeypatch.setattr(config, "THERUNDOWN_API_KEYS", "Rundown-Key-Two")
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monkeypatch.setattr(config, "DISCORD_ALERT_RESULTS_SYNC_ENABLED", True)
+    monkeypatch.setattr(config, "SIMULATION_RESULTS_SYNC_ENABLED", False)
+    monkeypatch.setattr(config, "ODDS_SPORTS", ["basketball_nba"])
+    service = OddsService(db)
+    calls = []
+
+    class RateLimitedScoresProvider:
+        name = "therundown"
+        usage = {}
+
+        def __init__(self, key):
+            self.key = key
+
+        def fetch_scores(self, sport, event_dates):
+            calls.append(self.key)
+            raise ProviderError("TheRundown HTTP 429", status_code=429, retry_after=600)
+
+    monkeypatch.setattr(service, "_new_provider", lambda name, key: RateLimitedScoresProvider(key))
+    result = service.sync_simulation_results()
+    assert result["ok"] is False
+    assert calls == ["Rundown-Key-One"]
+    assert "HTTP 429" in result["error"]
