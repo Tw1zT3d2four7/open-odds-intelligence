@@ -30,7 +30,7 @@ def test_legacy_basic_auth_fails_closed_on_partial_configuration(client, monkeyp
     assert client.get("/api/health").status_code == 200
 
 
-@pytest.mark.parametrize("path", ["/", "/openapi.json", "/docs", "/redoc"])
+@pytest.mark.parametrize("path", ["/", "/api/odds", "/openapi.json", "/docs", "/redoc"])
 def test_legacy_basic_auth_protects_dashboard_and_framework_docs(
     client, monkeypatch, path
 ):
