@@ -225,3 +225,98 @@ def test_discord_sends_top_three_from_one_slate_with_timestamp(tmp_path, monkeyp
             for field in embed["fields"])
         for embed in embeds
     )
+
+
+
+def test_discord_alert_lifecycle_edits_started_then_verified_final(tmp_path, monkeypatch):
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    service = OddsService(db)
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    commence = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    fingerprint = "lifecycle-fingerprint"
+    original_embed = {
+        "title": "VALUE ALERT • +7.00% EV",
+        "description": "**Home vs Away**",
+        "fields": [{"name": "Alert timestamp", "value": "sent earlier"}],
+    }
+    assert db.claim_alert(
+        fingerprint, "ev", "VALUE +7.00%", event_id="event-lifecycle",
+        commence_time=commence,
+    )
+    db.mark_alert_message(fingerprint, "discord-message-123", json.dumps(original_embed))
+    edits = []
+
+    class PatchResponse(FakeResponse):
+        status = 200
+
+    def fake_urlopen(request, timeout):
+        edits.append((request, timeout))
+        return PatchResponse()
+
+    monkeypatch.setattr("app.service.urlopen", fake_urlopen)
+
+    assert service._update_discord_alert_lifecycle() == []
+    assert len(edits) == 1
+    request, timeout = edits[0]
+    assert request.get_method() == "PATCH"
+    assert request.full_url.endswith("/messages/discord-message-123")
+    started_embed = json.loads(request.data.decode())["embeds"][0]
+    assert started_embed["title"].startswith(
+        "GAME STARTED — NO LONGER A PRE-GAME OPPORTUNITY"
+    )
+    assert db.pending_alert_lifecycle()[0]["lifecycle_status"] == "started"
+
+    with db.connect() as conn:
+        conn.execute(
+            """INSERT INTO simulation_settlements(
+               event_id,sport_key,commence_time,home_team,away_team,home_score,away_score,
+               status,source,source_record_id,source_updated_at,imported_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("event-lifecycle", "basketball_nba", commence, "Home", "Away",
+             101, 98, "final", "test-results", "test-record", None,
+             datetime.now(timezone.utc).isoformat()),
+        )
+
+    assert service._update_discord_alert_lifecycle() == []
+    assert len(edits) == 2
+    final_embed = json.loads(edits[1][0].data.decode())["embeds"][0]
+    assert final_embed["title"].startswith("FINAL — GAME COMPLETED")
+    assert db.pending_alert_lifecycle() == []
+
+
+def test_discord_wait_response_persists_message_id_and_embed(tmp_path, monkeypatch):
+    import json
+
+    class CreatedMessageResponse(FakeResponse):
+        status = 200
+
+        def read(self):
+            return b'{"id":"discord-created-456"}'
+
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    db.save_snapshot("basketball_nba", [sample_event()])
+    service = OddsService(db)
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monkeypatch.setattr(config, "ALERT_MIN_EV_PERCENT", 3.0)
+    monkeypatch.setattr(config, "ALERT_MIN_ARB_PERCENT", 0.5)
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append(request)
+        return CreatedMessageResponse()
+
+    monkeypatch.setattr("app.service.urlopen", fake_urlopen)
+    assert service._dispatch_alerts() >= 1
+    assert all("wait=true" in request.full_url for request in requests)
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT message_id,event_id,commence_time,embed_json FROM sent_alerts "
+            "WHERE message_id='discord-created-456'"
+        ).fetchone()
+    assert row is not None
+    assert row["event_id"] == "event-1"
+    assert row["commence_time"] == "2030-01-01T00:00:00Z"
+    assert json.loads(row["embed_json"])["fields"]
