@@ -8,6 +8,12 @@ from app.auth import (
     SUBSCRIBER_COOKIE,
 )
 from app.identity import IdentityStore
+def _verify_subscriber(store, email):
+    challenge = store.create_email_verification_challenge(email)
+    assert challenge
+    assert store.consume_email_verification_challenge(challenge) is True
+
+
 from app.dependencies import (
     get_identity_store,
     get_rate_limiter,
@@ -150,6 +156,7 @@ def test_session_lookup_database_failure_fails_closed_without_leaking_details():
 def test_subscriber_dependency_uses_real_hashed_session_store(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("subscriber@example.test", "a-strong-test-password")
+    _verify_subscriber(store, "subscriber@example.test")
     token, _session_id = store.create_session(identity_id)
     client = TestClient(make_app(store))
 
@@ -272,6 +279,7 @@ def test_administrator_http_session_requires_mfa_proof_and_csrf(monkeypatch, tmp
     subscriber_id = store.create_subscriber(
         "subscriber@example.test", "a-strong-subscriber-password"
     )
+    _verify_subscriber(store, "subscriber@example.test")
     subscriber_token, _ = store.create_session(subscriber_id)
     denied_cross_class = client.get(
         "/administrator", cookies={ADMINISTRATOR_COOKIE: subscriber_token}
@@ -284,6 +292,7 @@ def test_inactive_identity_is_denied_at_http_dependency_boundary(tmp_path):
     identity_id = store.create_subscriber(
         "inactive@example.test", "a-strong-inactive-password"
     )
+    _verify_subscriber(store, "inactive@example.test")
     token, _session_id = store.create_session(identity_id)
     with store.connect() as db:
         db.execute("UPDATE identities SET is_active=0 WHERE id=?", (identity_id,))
@@ -300,6 +309,7 @@ def test_absolute_expiry_is_enforced_at_http_dependency_boundary(tmp_path):
     identity_id = store.create_subscriber(
         "expired@example.test", "a-strong-expired-password"
     )
+    _verify_subscriber(store, "expired@example.test")
     token, session_id = store.create_session(identity_id)
     with store.connect() as db:
         db.execute(
