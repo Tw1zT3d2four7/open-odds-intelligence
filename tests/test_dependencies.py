@@ -93,6 +93,7 @@ def test_missing_expired_or_revoked_session_is_rejected():
 
 
 def test_store_initialization_failure_fails_closed_without_leaking_details(monkeypatch):
+    import app.dependencies as dependencies
 
     app = make_app(StubStore())
     client = TestClient(app)
