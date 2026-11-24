@@ -2,9 +2,6 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from fastapi import FastAPI, Request
-from fastapi.testclient import TestClient
-
 from app.rate_limit import SQLiteRateLimiter, auth_rate_limit_keys
 
 
