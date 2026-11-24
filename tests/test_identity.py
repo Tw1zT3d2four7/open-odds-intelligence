@@ -327,6 +327,18 @@ def test_admin_totp_accepts_new_step_once_and_rejects_subscriber(tmp_path, monke
     assert store.verify_administrator_mfa(subscriber_id, next_code) is False
     session_token, _ = store.create_session(admin_id)
     assert store.get_session(session_token)["account_type"] == "administrator"
+    with store.connect() as db:
+        mfa_events = db.execute(
+            """SELECT event_type, actor_identity_id, subject_identity_id
+               FROM security_audit_events
+               WHERE subject_identity_id=? AND event_type LIKE 'administrator.mfa_%'""",
+            (admin_id,),
+        ).fetchall()
+    assert {row["event_type"] for row in mfa_events} == {
+        "administrator.mfa_enrolled", "administrator.mfa_verified"
+    }
+    assert all(row["actor_identity_id"] == admin_id for row in mfa_events)
+    assert all(row["subject_identity_id"] == admin_id for row in mfa_events)
     with pytest.raises(ValueError, match="MFA verification"):
         store.create_session(admin_id)
 
