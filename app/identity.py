@@ -7,6 +7,7 @@ provisioning must only be invoked by a private operator-controlled workflow.
 from __future__ import annotations
 
 import hashlib
+import os
 from contextlib import contextmanager
 import re
 import secrets
@@ -62,8 +63,27 @@ class IdentityStore:
     def __init__(self, path: str | Path | None = None):
         configured_path = path if path is not None else config.ACCOUNTS_DATABASE_PATH
         self.path = Path(configured_path).expanduser()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self._secure_database_file()
         self.initialize()
+
+    def _secure_database_file(self) -> None:
+        """Create or tighten the database file before SQLite can write secrets."""
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(
+                self.path,
+                os.O_CREAT | os.O_EXCL | os.O_RDWR | nofollow,
+                0o600,
+            )
+        except FileExistsError:
+            # Open the existing file without following symlinks, then tighten
+            # permissions before SQLite opens it or performs a migration.
+            descriptor = os.open(self.path, os.O_RDONLY | nofollow)
+        try:
+            os.fchmod(descriptor, 0o600)
+        finally:
+            os.close(descriptor)
 
     @contextmanager
     def connect(self):
