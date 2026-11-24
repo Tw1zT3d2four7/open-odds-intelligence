@@ -12,6 +12,7 @@ from contextlib import contextmanager
 import re
 import secrets
 import sqlite3
+import stat
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -77,10 +78,15 @@ class IdentityStore:
                 0o600,
             )
         except FileExistsError:
-            # Open the existing file without following symlinks, then tighten
-            # permissions before SQLite opens it or performs a migration.
-            descriptor = os.open(self.path, os.O_RDONLY | nofollow)
+            # O_NONBLOCK prevents a malicious or accidental FIFO path from
+            # hanging startup. O_NOFOLLOW rejects symlink substitution.
+            descriptor = os.open(
+                self.path, os.O_RDONLY | os.O_NONBLOCK | nofollow
+            )
         try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise ValueError("Identity database path must be a regular file.")
+            # Tighten permissions before SQLite opens the file or migrates it.
             os.fchmod(descriptor, 0o600)
         finally:
             os.close(descriptor)
