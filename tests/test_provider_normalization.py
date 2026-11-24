@@ -552,7 +552,7 @@ def test_therundown_drops_invalid_prices_without_aborting_event_normalization():
 @pytest.mark.parametrize("value", [-99, -50, -1, 1, 50, 99])
 def test_odds_api_rejects_american_prices_inside_invalid_range(value):
     provider = TheOddsAPIProvider("CaseSensitiveKey")
-    with pytest.raises(ValueError, match="\+100 or greater"):
+    with pytest.raises(ValueError, match=r"\+100 or greater"):
         provider._normalize_price(value)
 
 
