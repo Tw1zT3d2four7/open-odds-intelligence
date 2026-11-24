@@ -563,18 +563,26 @@ class IdentityStore:
                 values.append(value)
         where = " WHERE " + " AND ".join(filters) if filters else ""
         with self.connect() as db:
-            total = db.execute(
-                "SELECT COUNT(*) AS count FROM security_audit_events" + where,
-                values,
-            ).fetchone()["count"]
-            rows = db.execute(
-                """SELECT id, actor_identity_id, event_type, subject_identity_id,
-                          occurred_at, metadata_json
-                   FROM security_audit_events"""
-                + where
-                + " ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?",
-                [*values, limit, offset],
-            ).fetchall()
+            # Keep the total and page on the same read snapshot while new
+            # audit events may be appended by concurrent requests.
+            db.execute("BEGIN")
+            try:
+                total = db.execute(
+                    "SELECT COUNT(*) AS count FROM security_audit_events" + where,
+                    values,
+                ).fetchone()["count"]
+                rows = db.execute(
+                    """SELECT id, actor_identity_id, event_type, subject_identity_id,
+                              occurred_at, metadata_json
+                       FROM security_audit_events"""
+                    + where
+                    + " ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?",
+                    [*values, limit, offset],
+                ).fetchall()
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
         events = []
         for row in rows:
             try:
