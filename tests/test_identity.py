@@ -427,3 +427,32 @@ def test_identity_database_permissions_are_restricted_before_sqlite_opens(
     assert observed_modes
     assert observed_modes[0] == 0o600
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+
+def test_identity_database_rejects_fifo_without_blocking(tmp_path):
+    import os
+
+    path = tmp_path / "accounts.sqlite3"
+    os.mkfifo(path)
+
+    with pytest.raises(ValueError, match="regular file"):
+        IdentityStore(path)
+
+
+def test_identity_database_rejects_symlink_path(tmp_path):
+    target = tmp_path / "real.sqlite3"
+    target.write_bytes(b"")
+    link = tmp_path / "accounts.sqlite3"
+    link.symlink_to(target)
+
+    with pytest.raises(OSError):
+        IdentityStore(link)
+
+
+def test_identity_database_rejects_directory_path(tmp_path):
+    path = tmp_path / "accounts.sqlite3"
+    path.mkdir()
+
+    with pytest.raises(ValueError, match="regular file"):
+        IdentityStore(path)
