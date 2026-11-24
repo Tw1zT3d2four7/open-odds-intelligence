@@ -68,3 +68,26 @@ The route inventory was rechecked against every `@app.get/post/put/patch/delete`
 The isolated helpers in `app/auth.py` now provide separate subscriber and administrator host-only session cookies, account-class-specific session resolution, and same-origin double-submit CSRF validation. Their design and HTTPS/reverse-proxy requirements are documented in `docs/session-boundary-design.md`.
 
 These helpers are not yet connected to middleware or endpoints. The existing optional Basic Auth middleware remains unchanged. The target access classes in this matrix remain policy intent until route dependencies and the compatibility transition are implemented and tested.
+
+
+## Reusable dependency boundary (implemented, not yet wired)
+
+```python
+from app.dependencies import require_subscriber, require_administrator
+from app.dependencies import require_authenticated_csrf
+```
+
+The lazy `get_identity_store` dependency creates the separate identity store only
+when an identity-protected request first needs it, and supports app-state
+injection for tests. Store initialization and session lookup failures return a
+generic HTTP 503 response without exposing database details.
+
+- `require_subscriber` accepts only the subscriber cookie and an active subscriber session.
+- `require_administrator` accepts only the administrator cookie and an active administrator session. Administrator sessions can only be created by the identity store after a recent, one-time MFA proof is consumed.
+- `require_authenticated_csrf` enforces the HTTPS same-origin double-submit token for state-changing browser requests.
+
+Dependency-level HTTP tests cover cross-class cookie rejection, missing/invalid
+sessions, CSRF enforcement, and fail-closed behavior when identity storage is
+unavailable. These dependencies are intentionally not attached to the 21
+existing routes yet. The Basic Auth middleware, dashboard, provider refresh
+behavior, and production deployment remain unchanged.
