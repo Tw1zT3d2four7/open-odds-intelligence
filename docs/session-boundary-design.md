@@ -20,7 +20,7 @@ The cookie lifetime must not exceed the server-side session lifetime. Logout mus
 
 State-changing browser endpoints must call `require_same_origin_csrf` before performing work. It requires:
 
-1. A syntactically valid HTTP(S) Origin.
+1. A syntactically valid HTTPS Origin (HTTP origins are rejected).
 2. An exact case-insensitive match between the Origin authority and request Host.
 3. A host-only `__Host-ooi_csrf` cookie.
 4. A matching `X-Ooi-Csrf-Token` request header, compared in constant time.
