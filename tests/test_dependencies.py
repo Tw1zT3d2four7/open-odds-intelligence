@@ -196,6 +196,7 @@ def test_rate_limiter_dependency_initializes_once_when_secret_is_configured(monk
 
     @app.get("/limiter")
     def inspect(limiter=Depends(get_rate_limiter)):
+        limiter.consume("test:bucket", limit=2, window_seconds=60)
         return {"type": type(limiter).__name__}
 
     client = TestClient(app)
