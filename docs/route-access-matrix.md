@@ -149,8 +149,9 @@ No proxy CIDRs are configured by this code. The actual Caddy-to-application
 peer must be inspected in the deployment before a narrow trusted range is
 selected.
 
-The helpers are not attached to any production route. A generic enforcement
-helper can atomically check all dimensions and return HTTP 429 with a bounded
-`Retry-After`; storage failures return a generic HTTP 503. Thresholds, cooldown
-strategy, and per-endpoint policies remain to be selected. See
+The helpers are not attached to any production route. A lazy FastAPI dependency
+provides an app-scoped limiter; the generic enforcement helper can atomically
+check all dimensions and return HTTP 429 with a bounded `Retry-After`; storage
+failures return a generic HTTP 503. Thresholds, cooldown strategy, and
+per-endpoint policies remain to be selected. See
 `docs/auth-rate-limit-design.md`.
