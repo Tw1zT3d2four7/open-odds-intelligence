@@ -304,11 +304,12 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] One-time password-reset challenges (hashed at rest, expiry, replay protection, session revocation).
 - [x] Security audit events for email verification and password reset, without challenge/password values.
 - [x] Existing HTTP route inventory and target access policy documented in `docs/route-access-matrix.md`.
-- [x] Full CI test suite passed after challenge-flow implementation (run 45445121174).
+- [x] Full CI test suite passed after challenge-flow implementation (run 45445121174); schema migration v2 and the complete MFA/bootstrap test suite also passed on run 45447733756. The latest bootstrap-specific tests are in CI.
 
 **Still required before Phase 1 is complete:**
-- [ ] Private administrator bootstrap command and first-admin enrollment process.
-- [ ] Administrator MFA enrollment, encrypted TOTP secret storage, verification, replay prevention, and recovery codes.
+- [x] Private interactive first-administrator bootstrap command; atomic one-time provisioning, no-echo password prompt, MFA enrollment before admin authentication exists.
+- [x] Administrator TOTP enrollment, Fernet-encrypted seed storage, verification, accepted-time-step replay prevention, and ten single-use hashed recovery codes.
+- [x] Dedicated `MFA_ENCRYPTION_KEY` configuration and operator setup documentation.
 - [ ] Complete route authorization integration tests and explicit legacy Basic Auth migration behavior.
 - [ ] Email delivery integration for verification and recovery links.
 - [ ] Wire login/session routes only after MFA and route-boundary design is complete.
