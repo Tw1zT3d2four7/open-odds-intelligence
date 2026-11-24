@@ -293,10 +293,18 @@ class IdentityStore:
             return None
         with self.connect() as db:
             row = db.execute(
-                """SELECT id, password_hash FROM identities
+                """SELECT id, password_hash, email_verified_at FROM identities
                    WHERE email = ? AND account_type = ? AND is_active = 1""",
                 (normalized_email, account_type),
             ).fetchone()
+            # Subscriber credentials are not sufficient until the address is
+            # verified. Administrators use mandatory MFA as their second factor.
+            if (
+                row is not None
+                and account_type == "subscriber"
+                and row["email_verified_at"] is None
+            ):
+                row = None
         if row is None:
             try:
                 _PASSWORD_HASHER.verify(_DUMMY_PASSWORD_HASH, password)
@@ -661,11 +669,19 @@ class IdentityStore:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             identity = db.execute(
-                "SELECT is_active, account_type FROM identities WHERE id=?", (identity_id,)
+                """SELECT is_active, account_type, email_verified_at
+                   FROM identities WHERE id=?""",
+                (identity_id,),
             ).fetchone()
             if identity is None or not identity["is_active"]:
                 db.rollback()
                 raise ValueError("An active identity is required to create a session.")
+            if (
+                identity["account_type"] == "subscriber"
+                and identity["email_verified_at"] is None
+            ):
+                db.rollback()
+                raise ValueError("A verified subscriber email is required to create a session.")
             if identity["account_type"] == "administrator":
                 mfa = db.execute(
                     "SELECT mfa_login_verified_at FROM administrator_mfa WHERE identity_id=? AND enrolled_at IS NOT NULL",
