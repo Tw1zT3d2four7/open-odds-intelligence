@@ -104,13 +104,17 @@ Implemented on the feature branch so far:
 - [x] Separate subscriber/admin Secure host-only cookies, CSRF/origin helpers, and lazy FastAPI session dependencies.
 - [x] Persistent atomic rate-limit primitives using HMAC-hashed bucket identifiers and fail-closed behavior; not yet attached to production routes.
 - [x] Explicit access policy for all 25 registered HTTP routes (21 application endpoints plus four framework-generated schema/documentation routes); CI detects unclassified or stale entries. Manual refresh and framework documentation routes are administrator-only in the target policy.
-- [x] Fail-closed route dependency assembly: subscriber routes require a supplied server-side entitlement dependency; authenticated mutations require CSRF; public mutation and unclassified routes are rejected. The helper remains isolated and is not wired to live routes.
+- [x] Fail-closed route dependency assembly: subscriber routes require a supplied server-side entitlement dependency; every authenticated non-safe HTTP method requires CSRF; public mutation and unclassified routes are rejected. The helper remains isolated and is not wired to live routes.
 - [x] Legacy Basic Auth behavior covered by HTTP regression tests and left unchanged.
+- [x] Subscriber email verification enforced in authentication, session creation, and session resolution; unverified accounts cannot establish usable sessions.
+- [x] Session resolution is atomic with revocation/deactivation; session, MFA, and one-time challenge time checks are evaluated after acquiring their database transaction.
+- [x] Security audit events cover registration/provisioning, verification, password reset, MFA, and session lifecycle. Actor attribution is validated for cross-account session revocation.
+- [x] Bounded, paginated, secret-free audit query supports event-type, actor, and subject filters without returning email addresses.
 - [x] Proxy-chain parsing ignores forwarded headers unless explicitly trusted CIDRs are configured; deployment-specific trust remains unconfigured pending topology review.
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
 - [x] Proposed endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md`; thresholds remain inactive pending route integration and deployment review.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
-- [x] CI run `45504487596` passed **673 tests** on commit `02cc3f9e19dc511319e4b215a3a5afe86e7127e3`; follow-up HTTP absolute-expiry coverage passed in run `45504775274` with 674 tests on commit `bc4f0568dbc414d664639822b2689b3e900954e5`; pre-open identity database permission hardening and its tests passed in run `45505030744` with **676 tests** on commit `19f023b4915dce7a26e30dbd8999e131a3201508`.
+- [x] Latest full CI verification: run `45509207698`, commit `2bed46d946076508006bceac017eec57b28c9676` — **719 passed**.
 
 Still required before Phase 1 is complete:
 
