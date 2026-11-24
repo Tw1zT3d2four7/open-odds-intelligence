@@ -7,6 +7,7 @@ from app.auth import (
     CSRF_HEADER,
     SUBSCRIBER_COOKIE,
 )
+from app.identity import IdentityStore
 from app.dependencies import (
     get_identity_store,
     require_subscriber,
@@ -135,3 +136,19 @@ def test_session_lookup_database_failure_fails_closed_without_leaking_details():
     response = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: "token"})
     assert response.status_code == 503
     assert "private database detail" not in response.text
+
+
+
+def test_subscriber_dependency_uses_real_hashed_session_store(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("subscriber@example.test", "a-strong-test-password")
+    token, _session_id = store.create_session(identity_id)
+    client = TestClient(make_app(store))
+
+    accepted = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: token})
+    assert accepted.status_code == 200
+    assert accepted.json() == {"account_type": "subscriber"}
+
+    assert store.revoke_session(token) is True
+    revoked = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: token})
+    assert revoked.status_code == 401
