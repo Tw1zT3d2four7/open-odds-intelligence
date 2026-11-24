@@ -422,5 +422,5 @@ def test_discord_final_score_sync_respects_rundown_shared_quota_cooldown(tmp_pat
     monkeypatch.setattr(service, "_new_provider", lambda name, key: RateLimitedScoresProvider(key))
     result = service.sync_simulation_results()
     assert result["ok"] is False
-    assert calls == ["Rundown-Key-One"]
+    assert calls == ["Rundown-Key-Two"]
     assert "HTTP 429" in result["error"]
