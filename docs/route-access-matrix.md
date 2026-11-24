@@ -7,7 +7,7 @@ This is a design artifact only. It does not change middleware, endpoint behavior
 
 ## Current authentication behavior
 
-The current `optional_basic_auth` middleware protects application routes only when both `AUTH_USERNAME` and `AUTH_PASSWORD` are configured. `/api/health` is intentionally public for container health checks. If both credentials are unset, the current middleware permits requests. This behavior must not be silently changed during identity integration.
+The current `optional_basic_auth` middleware protects application routes only when both `AUTH_USERNAME` and `AUTH_PASSWORD` are configured. Only safe GET/HEAD requests to the exact `/api/health` path bypass Basic Auth for container liveness; POST/PUT/PATCH/DELETE/OPTIONS requests to that path remain protected. If both credentials are unset, the current middleware permits requests. This behavior must not be silently changed during identity integration.
 
 ## Route inventory and intended future access
 
@@ -83,7 +83,7 @@ HTTP dependency tests now cover:
 - Administrator session creation rejected without MFA proof; valid TOTP proof permits the admin session.
 - Subscriber session cannot authenticate an administrator route.
 
-The latest authentication and route-policy suite passed **732 tests** in CI run `45513406898`. Coverage includes server-enforced subscriber email verification, rejection of sessions if verification is revoked, atomic session resolution with revocation, and the legacy Basic Auth compatibility contract (including fail-closed partial configuration and protection of framework documentation routes). The isolated identity dependencies are still not attached to live application routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
+The latest authentication and route-policy suite passed **738 tests** in CI run `45513563192`. Coverage includes server-enforced subscriber email verification, rejection of sessions if verification is revoked, atomic session resolution with revocation, and the legacy Basic Auth compatibility contract (including fail-closed partial configuration and protection of framework documentation routes). The isolated identity dependencies are still not attached to live application routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
 
 ## Machine-checked policy inventory (implemented, not active middleware)
 
@@ -93,7 +93,7 @@ CI compares the manifest with FastAPI's route registry, including framework-gene
 
 This is an inventory/test guardrail only. It is not attached to middleware or routes.
 
-The isolated helper in `app/route_authorization.py` assembles FastAPI dependencies from this manifest without wiring them to live routes. It requires an explicit server-side entitlement dependency for every `subscriber_entitled` route, adds CSRF protection to every authenticated non-safe HTTP method, refuses public mutation routes, rejects unknown policy classes, and requires the entitlement dependency to be callable. It deliberately has no default entitlement allow path. HEAD requests inherit their corresponding GET access class, preventing a method-based access-policy gap; an HTTP-level test verifies subscriber authentication and entitlement are enforced on an actual HEAD endpoint. Tests verify dependency assembly for every route in the 25-route manifest and cover uncommon non-safe verbs. HTTP integration tests exercise subscriber entitlement denial, administrator session/CSRF enforcement, and the public health route. Legacy Basic Auth HTTP regression tests cover the dashboard, product API, and framework documentation routes, including malformed authorization headers and case-insensitive scheme parsing.
+The isolated helper in `app/route_authorization.py` assembles FastAPI dependencies from this manifest without wiring them to live routes. It requires an explicit server-side entitlement dependency for every `subscriber_entitled` route, adds CSRF protection to every authenticated non-safe HTTP method, refuses public mutation routes, rejects unknown policy classes, and requires the entitlement dependency to be callable. It deliberately has no default entitlement allow path. HEAD requests inherit their corresponding GET access class, preventing a method-based access-policy gap; an HTTP-level test verifies subscriber authentication and entitlement are enforced on an actual HEAD endpoint. Tests verify dependency assembly for every route in the 25-route manifest and cover uncommon non-safe verbs. HTTP integration tests exercise subscriber entitlement denial, administrator session/CSRF enforcement, and the public health route. Legacy Basic Auth HTTP regression tests cover the dashboard, product API, and framework documentation routes, including malformed authorization headers, case-insensitive scheme parsing, and method-scoped health-path exemptions.
 
 ## Health endpoint compatibility
 
