@@ -125,15 +125,21 @@ class IdentityStore:
         if actor_identity_id is None or actor_identity_id == subject_identity_id:
             return subject_identity_id
         actor = db.execute(
-            """SELECT account_type, is_active FROM identities WHERE id=?""",
+            """SELECT i.account_type, i.is_active, m.enrolled_at
+               FROM identities i
+               LEFT JOIN administrator_mfa m ON m.identity_id=i.id
+               WHERE i.id=?""",
             (actor_identity_id,),
         ).fetchone()
         if (
             actor is None
             or actor["account_type"] != "administrator"
             or not actor["is_active"]
+            or actor["enrolled_at"] is None
         ):
-            raise ValueError("An active administrator is required for cross-account actions.")
+            raise ValueError(
+                "An active MFA-enrolled administrator is required for cross-account actions."
+            )
         return actor_identity_id
 
     @contextmanager
