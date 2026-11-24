@@ -386,3 +386,16 @@ def test_recovery_code_provides_one_time_admin_session_proof(tmp_path, monkeypat
     assert store.get_session(token)["account_type"] == "administrator"
     with pytest.raises(ValueError, match="MFA verification"):
         store.create_session(admin_id)
+
+
+
+def test_deactivated_identity_invalidates_existing_session(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("inactive@example.com", "a secure password phrase")
+    token, _session_id = store.create_session(identity_id)
+
+    assert store.get_session(token)["identity_id"] == identity_id
+    with store.connect() as db:
+        db.execute("UPDATE identities SET is_active=0 WHERE id=?", (identity_id,))
+
+    assert store.get_session(token) is None
