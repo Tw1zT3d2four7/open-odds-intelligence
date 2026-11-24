@@ -67,3 +67,28 @@ def test_public_route_cannot_be_state_changing():
             dependencies_for_route("POST", "/api/test-public-write")
     finally:
         route_policy.ROUTE_ACCESS_POLICY.pop(("POST", "/api/test-public-write"))
+
+
+
+def test_dependency_assembly_covers_every_declared_route_class():
+    from app.route_policy import ROUTE_ACCESS_POLICY
+
+    def entitlement_guard():
+        return True
+
+    for (method, path), access_class in ROUTE_ACCESS_POLICY.items():
+        resolved = _dependencies(method, path, entitlement_guard)
+        if access_class == "public_minimal":
+            assert resolved == [], (method, path)
+        elif access_class == "administrator_only":
+            expected = [require_administrator]
+            if method in {"POST", "PUT", "PATCH", "DELETE"}:
+                expected.append(require_same_origin_csrf)
+            assert resolved == expected, (method, path)
+        elif access_class == "subscriber_entitled":
+            expected = [require_subscriber, entitlement_guard]
+            if method in {"POST", "PUT", "PATCH", "DELETE"}:
+                expected.append(require_same_origin_csrf)
+            assert resolved == expected, (method, path)
+        else:
+            pytest.fail(f"Unsupported access class for {method} {path}: {access_class}")
