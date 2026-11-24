@@ -10,6 +10,7 @@ from app.auth import (
 from app.identity import IdentityStore
 from app.dependencies import (
     get_identity_store,
+    get_rate_limiter,
     require_subscriber,
     require_administrator,
     require_authenticated_csrf,
@@ -152,3 +153,35 @@ def test_subscriber_dependency_uses_real_hashed_session_store(tmp_path):
     assert store.revoke_session(token) is True
     revoked = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: token})
     assert revoked.status_code == 401
+
+
+
+def test_rate_limiter_dependency_reuses_app_scoped_instance():
+    limiter = object()
+    app = FastAPI()
+    app.state.rate_limiter = limiter
+
+    @app.get("/limiter")
+    def inspect(request):
+        return {"same": get_rate_limiter(request) is limiter}
+
+    response = TestClient(app).get("/limiter")
+    assert response.status_code == 200
+    assert response.json() == {"same": True}
+
+
+def test_rate_limiter_dependency_fails_closed_without_hash_secret(monkeypatch, tmp_path):
+    import app.dependencies as dependencies
+    from app import config
+
+    monkeypatch.setattr(config, "RATE_LIMIT_HASH_KEY", "")
+    monkeypatch.setattr(config, "ACCOUNTS_DATABASE_PATH", str(tmp_path / "accounts.sqlite3"))
+    app = FastAPI()
+
+    @app.get("/limiter")
+    def inspect(request):
+        return {"available": get_rate_limiter(request) is not None}
+
+    response = TestClient(app).get("/limiter")
+    assert response.status_code == 503
+    assert "RATE_LIMIT_HASH_KEY" not in response.text
