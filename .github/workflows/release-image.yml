@@ -7,7 +7,7 @@ on:
     types: [published]
   workflow_dispatch:
 
-# Prevent older concurrent builds from finishing later and overwriting :latest.
+# Keep branch image tags isolated; main publishes :latest and development publishes :dev.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -44,7 +44,7 @@ jobs:
           scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S)
           if not scripts:
               raise SystemExit("No inline dashboard JavaScript found")
-          Path("/tmp/open-odds-dashboard.js").write_text("\n".join(scripts), encoding="utf-8")
+          Path("/tmp/open-odds-dashboard.js").write_text("\\n".join(scripts), encoding="utf-8")
           PY
           node --check /tmp/open-odds-dashboard.js
       - name: Validate Docker Compose configuration
@@ -88,7 +88,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-            type=raw,value=development,enable=${{ github.ref == 'refs/heads/development' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/development' }}
             type=raw,value=recovery-test
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
