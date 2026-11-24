@@ -93,7 +93,7 @@ Inventory routes, middleware, configuration, SQLite schema, Compose, volumes, ba
 
 Implemented on the feature branch so far:
 
-- [x] Separate SQLite identity database; odds-history database remains separate.
+- [x] Separate SQLite identity database; odds-history database remains separate. Identity DB files are created/tightened to mode 0600 before SQLite opens them, with symlink paths rejected and WAL/SHM sidecars restricted.
 - [x] Versioned identity schema with subscriber/admin account classes.
 - [x] Argon2 password hashing and account-type-scoped authentication.
 - [x] Opaque server-side sessions with hashed tokens, bounded absolute lifetime, idle expiry, and revocation.
@@ -109,7 +109,7 @@ Implemented on the feature branch so far:
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
 - [x] Proposed endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md`; thresholds remain inactive pending route integration and deployment review.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
-- [x] CI run `45504487596` passed **673 tests** on commit `02cc3f9e19dc511319e4b215a3a5afe86e7127e3`; follow-up HTTP absolute-expiry coverage passed in run `45504775274` with **674 tests** on commit `bc4f0568dbc414d664639822b2689b3e900954e5`.
+- [x] CI run `45504487596` passed **673 tests** on commit `02cc3f9e19dc511319e4b215a3a5afe86e7127e3`; follow-up HTTP absolute-expiry coverage passed in run `45504775274` with 674 tests on commit `bc4f0568dbc414d664639822b2689b3e900954e5`; pre-open identity database permission hardening and its tests passed in run `45505030744` with **676 tests** on commit `19f023b4915dce7a26e30dbd8999e131a3201508`.
 
 Still required before Phase 1 is complete:
 
@@ -189,8 +189,8 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `bc4f0568dbc414d664639822b2689b3e900954e5`  
-**CI run:** `45504775274` — **674 passed**.
+**Latest verified implementation commit:** `19f023b4915dce7a26e30dbd8999e131a3201508`  
+**CI run:** `45505030744` — **676 passed**.
 
 The authentication foundation remains isolated and is not wired into existing production routes. Existing Basic Auth and the current health response remain unchanged. No production deployment, restart, merge, or branch promotion has occurred.
 
