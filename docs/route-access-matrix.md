@@ -133,3 +133,22 @@ remain intact throughout the identity implementation:
 - `/api/health` remains available for the container health probe even when legacy auth is partially configured.
 
 These are compatibility tests, not a change to the middleware or a new identity-mode implementation.
+
+## Authentication rate-limit building blocks (implemented, not active)
+
+The isolated `app/rate_limit.py` module provides persistent fixed-window counters
+in the accounts database, atomic across workers sharing that database. Bucket
+identifiers are HMAC-SHA256 digests keyed by the dedicated
+`RATE_LIMIT_HASH_KEY` secret (minimum 32 bytes). It can build separate IP and
+normalized-account buckets without storing raw email addresses.
+
+Forwarded client-IP headers are ignored unless explicit trusted proxy CIDRs are
+provided. The chain resolver walks from the direct peer toward the client and
+stops at the first untrusted hop; malformed chains fall back to the direct peer.
+No proxy CIDRs are configured by this code. The actual Caddy-to-application
+peer must be inspected in the deployment before a narrow trusted range is
+selected.
+
+The helpers are not attached to any route. Thresholds, HTTP 429 behavior,
+cooldown strategy, and per-endpoint policies remain to be selected. See
+`docs/auth-rate-limit-design.md`.
