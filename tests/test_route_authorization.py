@@ -1,6 +1,6 @@
 import pytest
 
-from app.auth import require_same_origin_csrf
+from app.dependencies import require_authenticated_csrf
 from app.dependencies import require_administrator, require_subscriber
 from app.route_authorization import dependencies_for_route
 
@@ -29,7 +29,7 @@ def test_subscriber_mutations_also_require_csrf():
 
     assert _dependencies(
         "POST", "/api/simulation/run", require_entitlement
-    ) == [require_subscriber, require_entitlement, require_same_origin_csrf]
+    ) == [require_subscriber, require_entitlement, require_authenticated_csrf]
 
 
 def test_administrator_mutations_require_admin_session_and_csrf():
