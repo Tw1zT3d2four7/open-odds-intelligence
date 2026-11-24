@@ -470,3 +470,24 @@ def test_identity_database_rejects_directory_path(tmp_path):
 
     with pytest.raises(ValueError, match="regular file"):
         IdentityStore(path)
+
+
+
+def test_unverified_subscriber_cannot_authenticate_or_create_session(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "pending@example.com", "a-strong-pending-password"
+    )
+
+    assert store.authenticate(
+        "pending@example.com", "a-strong-pending-password", "subscriber"
+    ) is None
+    with pytest.raises(ValueError, match="verified subscriber email"):
+        store.create_session(identity_id)
+
+    _verify_subscriber(store, "pending@example.com")
+    assert store.authenticate(
+        "pending@example.com", "a-strong-pending-password", "subscriber"
+    ) == identity_id
+    token, _ = store.create_session(identity_id)
+    assert store.get_session(token)["identity_id"] == identity_id
