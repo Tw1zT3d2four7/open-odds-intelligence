@@ -132,18 +132,55 @@ class SQLiteRateLimiter:
             connection.close()
 
 
-def request_peer_ip(request: Request) -> str:
-    """Return the direct TCP peer only; never trust forwarded headers implicitly."""
+def request_peer_ip(
+    request: Request, trusted_proxy_cidrs: tuple[str, ...] | list[str] = ()
+) -> str:
+    """Resolve the client IP only through explicitly trusted proxy networks.
+
+    Forwarded headers are ignored by default. If a configured proxy chain is
+    malformed, fall back to the direct TCP peer instead of trusting partial data.
+    """
     peer = request.client.host if request.client else ""
     try:
-        return str(ipaddress.ip_address(peer))
+        direct_peer = ipaddress.ip_address(peer)
     except ValueError:
         return "unknown"
 
+    if not trusted_proxy_cidrs or not request.client:
+        return str(direct_peer)
+    try:
+        trusted_networks = tuple(
+            ipaddress.ip_network(value, strict=False) for value in trusted_proxy_cidrs
+        )
+    except ValueError:
+        return str(direct_peer)
 
-def auth_rate_limit_keys(request: Request, identifier: str | None = None) -> tuple[str, ...]:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if not forwarded:
+        return str(direct_peer)
+    try:
+        chain = [ipaddress.ip_address(part.strip()) for part in forwarded.split(",")]
+        if not chain or len(chain) > 20:
+            return str(direct_peer)
+    except ValueError:
+        return str(direct_peer)
+
+    current = direct_peer
+    for hop in reversed(chain):
+        if not any(current in network for network in trusted_networks):
+            break
+        current = hop
+    return str(current)
+
+
+def auth_rate_limit_keys(
+    request: Request,
+    identifier: str | None = None,
+    *,
+    trusted_proxy_cidrs: tuple[str, ...] | list[str] = (),
+) -> tuple[str, ...]:
     """Build independent IP and account buckets without persisting raw PII."""
-    keys = [f"auth:ip:{request_peer_ip(request)}"]
+    keys = [f"auth:ip:{request_peer_ip(request, trusted_proxy_cidrs)}"]
     if identifier:
         normalized = identifier.strip().casefold()
         if normalized:
