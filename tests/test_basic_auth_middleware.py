@@ -56,3 +56,39 @@ def test_legacy_basic_auth_health_route_remains_public_when_configured(
 
     response = client.get("/api/health")
     assert response.status_code == 200
+
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        "Basic !!!",
+        "Basic bm8tY29sb24=",  # valid base64, but no username/password separator
+        "Bearer not-a-basic-token",
+        "Basic /w==",  # decoded bytes are not valid UTF-8
+    ],
+)
+def test_legacy_basic_auth_rejects_malformed_authorization_headers(
+    client, monkeypatch, authorization
+):
+    monkeypatch.setattr(config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "case-sensitive-secret")
+
+    response = client.get(
+        "/api/odds", headers={"authorization": authorization}
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication required."
+
+
+def test_legacy_basic_auth_scheme_is_case_insensitive(client, monkeypatch):
+    import base64
+
+    monkeypatch.setattr(config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "case-sensitive-secret")
+    token = base64.b64encode(b"operator:case-sensitive-secret").decode("ascii")
+
+    response = client.get(
+        "/api/odds", headers={"authorization": f"bAsIc {token}"}
+    )
+    assert response.status_code == 200
