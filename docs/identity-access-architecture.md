@@ -51,6 +51,8 @@ Later milestones may add organizations/tenants, notification destinations, prefe
 
 Do not add subscriber identity data to the odds-history tables. Do not replace, truncate, or rebuild `odds_history.sqlite3`. SQLite foreign keys cannot span separate database files, so relationships between account and odds data must be handled by application-level identifiers and explicit ownership checks.
 
+Security audit events record the actor and subject identity separately where applicable. Self-service registration/session events identify the account itself; cross-account session revocation requires an active administrator actor. Event metadata is restricted to reviewed, non-secret values and never includes passwords, raw session tokens, MFA seeds, recovery codes, or email addresses.
+
 Create or tighten the accounts database file to mode 0600 before SQLite opens it, and reject symlink paths. This prevents a newly created database or an existing overly-permissive file from being briefly opened with default permissions during schema initialization. Restrict SQLite WAL/SHM sidecars as well. Use versioned, transactional migrations for the account database. Migrations must be additive where possible, tested against a fresh database and a copy of a prior-version account database, and must fail closed on unexpected schema state.
 
 ## 5. Passwords and sessions
