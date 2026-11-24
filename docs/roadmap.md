@@ -190,11 +190,11 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `151e56a0277232e64f567b345c286bc93990c32f`  
-**CI run:** `45508158978` — **704 passed**.
+**Latest verified implementation commit:** `5c8baa8d28c003ffd0641034dcac6abf1af5fc01`  
+**CI run:** `45508488904` — **709 passed**.
 
 The authentication foundation remains isolated and is not wired into existing production routes. Existing Basic Auth and the current health response remain unchanged. No production deployment, restart, merge, or branch promotion has occurred.
 
 ### Immediate next work
 
-Continue designing the route-protection integration and explicit identity-mode middleware behind the documented compatibility boundary. The current test suite now covers the legacy Basic Auth contract (including partial-configuration fail-closed behavior and framework documentation routes), server-enforced subscriber email verification, atomic session resolution/revocation, all 25 registered route policies, fail-closed dependency assembly across the complete route manifest, CSRF enforcement for every non-safe HTTP method, and legacy Basic Auth protection of both dashboard and product API routes. Do not wire identity mode into the existing application until the email-delivery choice, trusted-proxy topology, entitlement model, complete route coverage, and rollback path are resolved.
+Continue designing the route-protection integration and explicit identity-mode middleware behind the documented compatibility boundary. The current test suite now covers the legacy Basic Auth contract (including partial-configuration fail-closed behavior and framework documentation routes), server-enforced subscriber email verification, atomic session resolution/revocation, all 25 registered route policies, fail-closed dependency assembly across the complete route manifest, CSRF enforcement for every non-safe HTTP method, legacy Basic Auth protection of dashboard/product API/framework docs, HTTP-level integration of the assembled route policies, and secret-free audit events for identity provisioning and session creation/revocation. Do not wire identity mode into the existing application until the email-delivery choice, trusted-proxy topology, entitlement model, complete route coverage, and rollback path are resolved.
