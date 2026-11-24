@@ -1,6 +1,6 @@
 # Health Endpoint Security and Compatibility Design
 
-**Status:** Design only — no route, middleware, response, Docker, or deployment changes are made by this document.
+**Status:** Design document with a narrow middleware hardening already implemented; the health handler, response, Docker configuration, and deployment behavior remain unchanged.
 
 ## Why this review is required
 
@@ -14,7 +14,7 @@ The current `GET /api/health` handler returns `{"status": "ok"}` plus the comple
 - Alert enablement, delivery counts, and last-send/check timestamps.
 - Refresh scheduling and interval information.
 
-The current middleware deliberately exempts this endpoint from Basic Auth so Docker/orchestrator health checks continue to work. Existing tests also rely on this endpoint remaining available when legacy Basic Auth is partially configured. Removing or renaming it without a compatibility plan could mark a healthy container unhealthy or lock out operator diagnostics.
+The middleware exempts only safe `GET` and `HEAD` requests to this exact path from Basic Auth so liveness checks continue to work. State-changing methods and `OPTIONS` do not inherit the exemption. The health handler and its detailed response remain unchanged. Existing tests also rely on this endpoint remaining available when legacy Basic Auth is partially configured. Removing or renaming it without a compatibility plan could mark a healthy container unhealthy or lock out operator diagnostics.
 
 ## Target contract
 
