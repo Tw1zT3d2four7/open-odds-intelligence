@@ -83,7 +83,7 @@ HTTP dependency tests now cover:
 - Administrator session creation rejected without MFA proof; valid TOTP proof permits the admin session.
 - Subscriber session cannot authenticate an administrator route.
 
-The latest identity/session verification suite passed **686 tests** in CI run `45507193988`. Coverage includes subscriber email verification as a prerequisite for authentication and session creation, plus rejection of a session if subscriber verification state is later revoked. The isolated dependencies are still not attached to live application routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
+The latest authentication and route-policy suite passed **693 tests** in CI run `45507309948`. Coverage includes server-enforced subscriber email verification, rejection of sessions if verification is revoked, atomic session resolution with revocation, and the legacy Basic Auth compatibility contract (including fail-closed partial configuration and protection of framework documentation routes). The isolated identity dependencies are still not attached to live application routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
 
 ## Machine-checked policy inventory (implemented, not active middleware)
 
