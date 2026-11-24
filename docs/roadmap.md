@@ -304,6 +304,7 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] One-time password-reset challenges (hashed at rest, expiry, replay protection, session revocation).
 - [x] Security audit events for email verification and password reset, without challenge/password values.
 - [x] Existing HTTP route inventory and target access policy documented in `docs/route-access-matrix.md`.
+- [x] Added a machine-checked target access-policy manifest for all 21 live routes; CI verifies there are no unclassified routes or stale policy entries. This is not active middleware.
 - [x] Full CI test suite passed after challenge-flow implementation (run 45445121174); schema migration v2 and the complete MFA/bootstrap test suite also passed on run 45447733756. The latest bootstrap-specific tests are in CI.
 
 **Still required before Phase 1 is complete:**
@@ -315,6 +316,7 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [ ] Wire login/session routes only after email delivery, rate limits, trusted-proxy handling, and production route integration tests are complete.
 - [x] Isolated subscriber/admin host-only Secure/HttpOnly cookies, CSRF/origin helpers, and lazy FastAPI authentication dependencies implemented; dependency-level HTTP tests cover account-class isolation, missing sessions, CSRF, and fail-closed store errors. These dependencies are not wired into existing application routes.
 - [ ] Production route-level authorization tests, including wrong account class, inactive users, missing MFA at session creation, and entitlement denial. Rate limits, trusted-proxy verification, and email delivery are also outstanding.
+- [ ] Review `/api/health`: current payload includes operational/provider and alert diagnostics; separate minimal public liveness from protected detailed diagnostics before identity-mode cutover, preserving existing health-check behavior.
 
 **Exit criteria:** Subscribers cannot access admin routes or APIs; public registration cannot create admins; administrator sessions require MFA; authentication and authorization tests pass. Existing odds dashboard behavior and history remain intact.
 
@@ -453,7 +455,7 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Identity and access architecture documented in `docs/identity-access-architecture.md`.
 - [x] Separate account database selected to isolate subscriber/admin data from odds history.
 
-### Phase 1 — Identity foundation (in progress; isolated FastAPI dependency boundary tested)
+### Phase 1 — Identity foundation (in progress; dependency and route-policy guardrails tested)
 - [x] Added a dedicated `ACCOUNTS_DATABASE_PATH` setting; default is `./data/accounts.sqlite3`.
 - [x] Added versioned, transactional schema initialization for identities, sessions, verification/reset challenges, administrator MFA storage, and security audit events.
 - [x] Added Argon2 password hashing and fixed account-class-specific authentication primitives.
@@ -464,11 +466,12 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Added one-time identity lifecycle methods for email verification and password reset.
 - [x] Reviewed the route access matrix and documented the Basic Auth compatibility/cutover plan before wiring authentication into FastAPI.
 - [x] Preserved the existing Basic Auth middleware; isolated session-cookie, CSRF, and lazy FastAPI subscriber/admin dependencies are tested but not yet wired into existing routes.
+- [x] Added an explicit access-class manifest for every current route and CI tests that fail on an unclassified new route or stale policy entry.
 
-**Current implementation commit:** `77523d782ed2f46d5d6835e65865dfb0765ba1c1` (CI run `45495642761` passed).
+**Current implementation commit:** `3e7eba185ba9fac0142ff59ad26b869fd43176a1` (route-policy tests added; final CI verification pending).
 
 ### Next step
-Complete production route-level authorization tests and trusted-proxy/rate-limit design while preserving the current Basic Auth middleware. Then implement subscriber and administrator login flows behind the explicit, tested migration boundary. Do not remove legacy Basic Auth or change production deployment until every cutover gate is met and the operator explicitly approves.
+Complete route-level authorization tests, including health/diagnostic response review, and trusted-proxy/rate-limit design while preserving the current Basic Auth middleware. Then implement subscriber and administrator login flows behind the explicit, tested migration boundary. Do not remove legacy Basic Auth or change production deployment until every cutover gate is met and the operator explicitly approves.
 
 ## 11. Continuing safeguards
 
