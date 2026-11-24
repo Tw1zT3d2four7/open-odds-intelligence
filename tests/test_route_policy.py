@@ -1,4 +1,3 @@
-from fastapi.routing import APIRoute
 
 from app import main
 from app.route_policy import (
@@ -10,7 +9,8 @@ from app.route_policy import (
 
 
 def _application_routes():
-    return [route for route in main.app.routes if isinstance(route, APIRoute)]
+    # Include framework-generated docs/schema routes, not only APIRoute objects.
+    return [route for route in main.app.routes if getattr(route, "methods", None)]
 
 
 def test_every_application_route_has_an_explicit_target_access_class():
@@ -19,7 +19,7 @@ def test_every_application_route_has_an_explicit_target_access_class():
     assert stale_policy_entries(routes) == []
 
 
-def test_policy_inventory_covers_all_21_existing_http_routes():
+def test_policy_inventory_covers_all_application_and_framework_http_routes():
     routes = _application_routes()
     actual = {
         (method, route.path)
@@ -27,7 +27,7 @@ def test_policy_inventory_covers_all_21_existing_http_routes():
         for method in (route.methods or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert len(actual) == 21
+    assert len(actual) == 25
     assert set(ROUTE_ACCESS_POLICY) == actual
 
 
@@ -54,6 +54,11 @@ def test_health_is_the_only_public_target_route():
         if access_class == "public_minimal"
     ]
     assert public == [("GET", "/api/health")]
+
+
+def test_framework_schema_and_interactive_docs_are_not_implicitly_public():
+    for path in ("/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"):
+        assert classify_route("GET", path) == "administrator_only"
 
 
 def test_unknown_route_is_unclassified_not_implicitly_public():
