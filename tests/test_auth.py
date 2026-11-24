@@ -133,3 +133,20 @@ def test_same_origin_csrf_accepts_explicit_default_https_port():
         cookie=f"{CSRF_COOKIE}={token}",
     )
     require_same_origin_csrf(request)
+
+
+@pytest.mark.parametrize("host", [
+    "example.com/path",
+    "example.com?query=1",
+    "example.com#fragment",
+    "user@example.com",
+])
+def test_same_origin_csrf_rejects_malformed_host_authority(host):
+    request = make_request(
+        headers={"host": host, "origin": "https://example.com",
+                 "x-ooi-csrf-token": "same"},
+        cookie=f"{CSRF_COOKIE}=same",
+    )
+    with pytest.raises(HTTPException) as error:
+        require_same_origin_csrf(request)
+    assert error.value.status_code == 403
