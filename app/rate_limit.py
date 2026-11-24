@@ -10,6 +10,7 @@ import hmac
 import ipaddress
 import os
 import sqlite3
+import stat
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,16 +59,29 @@ class SQLiteRateLimiter:
             except FileNotFoundError:
                 pass
 
-    def _connect(self) -> sqlite3.Connection:
-        self.database_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    def _secure_database_file(self) -> None:
+        """Create or tighten the accounts DB before SQLite can open it."""
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
         try:
             descriptor = os.open(
-                self.database_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+                self.database_path,
+                os.O_CREAT | os.O_EXCL | os.O_RDWR | nofollow,
+                0o600,
             )
         except FileExistsError:
-            pass
-        else:
+            descriptor = os.open(
+                self.database_path, os.O_RDONLY | os.O_NONBLOCK | nofollow
+            )
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise ValueError("Rate-limit database path must be a regular file.")
+            os.fchmod(descriptor, 0o600)
+        finally:
             os.close(descriptor)
+
+    def _connect(self) -> sqlite3.Connection:
+        self.database_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self._secure_database_file()
         connection = sqlite3.connect(
             str(self.database_path), timeout=5.0, isolation_level=None
         )
