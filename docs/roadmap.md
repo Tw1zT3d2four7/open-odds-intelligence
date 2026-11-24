@@ -105,7 +105,7 @@ Implemented on the feature branch so far:
 - [x] Persistent atomic rate-limit primitives using HMAC-hashed bucket identifiers and fail-closed behavior; not yet attached to production routes.
 - [x] Explicit access policy for all 25 registered HTTP routes (21 application endpoints plus four framework-generated schema/documentation routes); CI detects unclassified or stale entries. Manual refresh and framework documentation routes are administrator-only in the target policy.
 - [x] Fail-closed route dependency assembly: subscriber routes require a supplied server-side entitlement dependency; every authenticated non-safe HTTP method requires CSRF; public mutation and unclassified routes are rejected. The helper remains isolated and is not wired to live routes.
-- [x] Legacy Basic Auth behavior covered by HTTP regression tests and left unchanged.
+- [x] Legacy Basic Auth behavior covered by HTTP regression tests (including malformed base64, missing separators, invalid UTF-8, mixed-case scheme handling, and product API protection) and left unchanged.
 - [x] Subscriber email verification enforced in authentication, session creation, and session resolution; unverified accounts cannot establish usable sessions.
 - [x] Session resolution is atomic with revocation/deactivation; session, MFA, and one-time challenge time checks are evaluated after acquiring their database transaction.
 - [x] Security audit events cover registration/provisioning, verification, password reset, MFA, and session lifecycle. Actor attribution is validated for cross-account session revocation.
@@ -194,8 +194,8 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified branch commit:** `41baf4e045dcd7a7d1f8afb5171d72a5e95522bb`  
-**CI run:** `45511810854` — **727 passed, 1 warning**.
+**Latest verified branch commit:** `43c0f414f9b96b2fbef414ef346f8c78e4faa55b`  
+**CI run:** `45512027570` — **732 passed, 1 warning**.
 
 The authentication foundation remains isolated and is not wired into existing production routes. Existing Basic Auth and the current health response remain unchanged. No production deployment, restart, merge, or branch promotion has occurred.
 
