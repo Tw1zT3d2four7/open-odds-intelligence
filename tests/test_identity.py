@@ -255,3 +255,67 @@ def test_new_challenge_invalidates_previous_outstanding_challenge(tmp_path):
     assert first and second and first != second
     assert store.consume_password_reset_challenge(first, "new secure password value") is False
     assert store.consume_password_reset_challenge(second, "new secure password value") is True
+
+
+
+def test_admin_totp_enrollment_encrypts_seed_and_issues_hashed_recovery_codes(tmp_path, monkeypatch):
+    import pyotp
+    from cryptography.fernet import Fernet
+    from app import config
+    from app import identity as identity_module
+
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator("admin@example.com", "administrator password")
+    uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.parse_uri(uri)
+    code = totp.now()
+    recovery_codes = store.confirm_administrator_mfa_enrollment(admin_id, code)
+    assert len(recovery_codes) == 10
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT encrypted_secret, enrolled_at, last_totp_counter FROM administrator_mfa WHERE identity_id=?",
+            (admin_id,),
+        ).fetchone()
+        hashes = db.execute(
+            "SELECT code_hash FROM administrator_mfa_recovery_codes WHERE identity_id=?",
+            (admin_id,),
+        ).fetchall()
+    assert row["encrypted_secret"]
+    assert totp.secret.encode() not in row["encrypted_secret"]
+    assert row["enrolled_at"] is not None
+    assert all(item["code_hash"] != code for item in hashes)
+    assert store.verify_administrator_mfa(admin_id, code) is False  # enrollment step cannot replay
+    assert store.consume_administrator_recovery_code(admin_id, recovery_codes[0]) is True
+    assert store.consume_administrator_recovery_code(admin_id, recovery_codes[0]) is False
+
+
+def test_admin_totp_accepts_new_step_once_and_rejects_subscriber(tmp_path, monkeypatch):
+    from datetime import timedelta
+    import pyotp
+    from cryptography.fernet import Fernet
+    from app import config
+    from app import identity as identity_module
+
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator("admin@example.com", "administrator password")
+    subscriber_id = store.create_subscriber("user@example.com", "subscriber password")
+    uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.parse_uri(uri)
+    store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    next_time = identity_module._now() + timedelta(seconds=30)
+    monkeypatch.setattr(identity_module, "_now", lambda: next_time)
+    next_code = totp.at(next_time)
+    assert store.verify_administrator_mfa(admin_id, next_code) is True
+    assert store.verify_administrator_mfa(admin_id, next_code) is False
+    assert store.verify_administrator_mfa(subscriber_id, next_code) is False
+
+
+def test_admin_mfa_fails_closed_without_encryption_key(tmp_path, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", "")
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator("admin@example.com", "administrator password")
+    with pytest.raises(RuntimeError, match="MFA_ENCRYPTION_KEY"):
+        store.start_administrator_mfa_enrollment(admin_id)
