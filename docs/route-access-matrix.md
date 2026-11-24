@@ -83,7 +83,7 @@ HTTP dependency tests now cover:
 - Administrator session creation rejected without MFA proof; valid TOTP proof permits the admin session.
 - Subscriber session cannot authenticate an administrator route.
 
-The latest authentication and route-policy suite passed **693 tests** in CI run `45507309948`. Coverage includes server-enforced subscriber email verification, rejection of sessions if verification is revoked, atomic session resolution with revocation, and the legacy Basic Auth compatibility contract (including fail-closed partial configuration and protection of framework documentation routes). The isolated identity dependencies are still not attached to live application routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
+The latest authentication and route-policy suite passed **702 tests** in CI run `45507830130`. Coverage includes server-enforced subscriber email verification, rejection of sessions if verification is revoked, atomic session resolution with revocation, and the legacy Basic Auth compatibility contract (including fail-closed partial configuration and protection of framework documentation routes). The isolated identity dependencies are still not attached to live application routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
 
 ## Machine-checked policy inventory (implemented, not active middleware)
 
@@ -93,7 +93,7 @@ CI compares the manifest with FastAPI's route registry, including framework-gene
 
 This is an inventory/test guardrail only. It is not attached to middleware or routes.
 
-The isolated helper in `app/route_authorization.py` assembles FastAPI dependencies from this manifest without wiring them to live routes. It requires an explicit server-side entitlement dependency for every `subscriber_entitled` route, adds CSRF protection to authenticated state-changing methods, refuses public mutation routes, and rejects unknown policy classes. It deliberately has no default entitlement allow path.
+The isolated helper in `app/route_authorization.py` assembles FastAPI dependencies from this manifest without wiring them to live routes. It requires an explicit server-side entitlement dependency for every `subscriber_entitled` route, adds CSRF protection to authenticated state-changing methods, refuses public mutation routes, and rejects unknown policy classes. It deliberately has no default entitlement allow path. Tests verify dependency assembly for every route in the 25-route manifest.
 
 ## Health endpoint compatibility
 
