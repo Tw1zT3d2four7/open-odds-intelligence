@@ -145,3 +145,7 @@ AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")
 PROVIDER_RETRY_ATTEMPTS = max(0, min(3, int(os.getenv("PROVIDER_RETRY_ATTEMPTS", "2"))))
 PROVIDER_RETRY_BASE_DELAY_SECONDS = max(0.1, min(5.0, float(os.getenv("PROVIDER_RETRY_BASE_DELAY_SECONDS", "0.5"))))
 PROVIDER_RETRY_MAX_DELAY_SECONDS = max(PROVIDER_RETRY_BASE_DELAY_SECONDS, min(30.0, float(os.getenv("PROVIDER_RETRY_MAX_DELAY_SECONDS", "5"))))
+
+# Dedicated Fernet key for administrator TOTP seeds. Generate out of band;
+# never commit this value or reuse an odds-provider API key.
+MFA_ENCRYPTION_KEY = os.getenv("MFA_ENCRYPTION_KEY", "")
