@@ -115,3 +115,22 @@ def test_legacy_basic_auth_keeps_head_health_probe_public(client, monkeypatch):
     # FastAPI may return 405 if the route does not explicitly register HEAD;
     # either way, the middleware must not challenge a safe liveness request.
     assert response.status_code == 405
+
+
+
+def test_legacy_basic_auth_health_bypass_is_limited_to_safe_methods(
+    client, monkeypatch
+):
+    monkeypatch.setattr(config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "case-sensitive-secret")
+
+    assert client.get("/api/health").status_code == 200
+    assert client.head("/api/health").status_code == 200
+
+    denied = client.post("/api/health")
+    assert denied.status_code == 401
+
+    authenticated = client.post(
+        "/api/health", auth=("operator", "case-sensitive-secret")
+    )
+    assert authenticated.status_code == 405
