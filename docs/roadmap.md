@@ -472,7 +472,7 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Added spoof-resistant proxy-chain resolution that ignores forwarded headers unless explicit trusted CIDRs are supplied; deployment-specific proxy CIDRs remain unconfigured pending topology verification.
 - [x] Added HTTP regression tests locking down legacy Basic Auth compatibility: unset credentials preserve current behavior, configured credentials are required and case-sensitive, partial configuration fails closed, and `/api/health` remains available.
 
-**Latest verified implementation commit:** `a23aff8af15ae3e40b39965770cd4ca264449e18` (CI run `45498133450` passed: 669 tests).
+**Latest verified implementation commit:** `4d74fba76f8ecffe607e837ac82302ef3acefb32` (CI run `45498399095` passed: 671 tests).
 
 ### Next step
 Complete route-level authorization tests, choose endpoint-specific rate-limit thresholds and HTTP responses, verify the actual Caddy-to-app peer topology before configuring trusted proxies, and preserve the current Basic Auth middleware. Then implement subscriber and administrator login flows behind the explicit, tested migration boundary. Do not remove legacy Basic Auth or change production deployment until every cutover gate is met and the operator explicitly approves.
