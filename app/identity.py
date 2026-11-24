@@ -7,6 +7,7 @@ provisioning must only be invoked by a private operator-controlled workflow.
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import re
 import secrets
 import sqlite3
@@ -61,12 +62,17 @@ class IdentityStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.initialize()
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self):
+        """Yield a configured connection and always close it after use."""
         connection = sqlite3.connect(str(self.path), timeout=30, isolation_level=None)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 30000")
-        return connection
+        try:
+            yield connection
+        finally:
+            connection.close()
 
     def initialize(self) -> None:
         """Apply additive, versioned schema migrations without touching odds data."""
