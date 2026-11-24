@@ -154,6 +154,15 @@ def _make_policy_integration_app():
     def odds_endpoint():
         return {"ok": True}
 
+    @app.head(
+        "/api/odds",
+        dependencies=dependencies_for_route(
+            "HEAD", "/api/odds", entitlement_dependency=entitlement_guard
+        ),
+    )
+    def odds_head_endpoint():
+        return {"ok": True}
+
     @app.post(
         "/api/refresh",
         dependencies=dependencies_for_route("POST", "/api/refresh"),
@@ -243,3 +252,18 @@ def test_head_product_route_requires_subscriber_entitlement_without_csrf():
     assert _dependencies(
         "HEAD", "/api/odds", entitlement_guard
     ) == [require_subscriber, entitlement_guard]
+
+
+
+def test_head_product_endpoint_enforces_the_get_entitlement_policy_over_http():
+    from fastapi.testclient import TestClient
+
+    app, cookies = _make_policy_integration_app()
+    client = TestClient(app)
+
+    assert client.head("/api/odds").status_code == 401
+    client.cookies.set(cookies["subscriber_cookie"], "subscriber-free")
+    assert client.head("/api/odds").status_code == 403
+    client.cookies.clear()
+    client.cookies.set(cookies["subscriber_cookie"], "subscriber-entitled")
+    assert client.head("/api/odds").status_code == 200
