@@ -272,6 +272,8 @@ def test_admin_totp_enrollment_encrypts_seed_and_issues_hashed_recovery_codes(tm
     code = totp.now()
     recovery_codes = store.confirm_administrator_mfa_enrollment(admin_id, code)
     assert len(recovery_codes) == 10
+    with pytest.raises(ValueError, match="already enrolled"):
+        store.start_administrator_mfa_enrollment(admin_id)
     with store.connect() as db:
         row = db.execute(
             "SELECT encrypted_secret, enrolled_at, last_totp_counter FROM administrator_mfa WHERE identity_id=?",
