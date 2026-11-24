@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from . import config
 
@@ -226,3 +226,29 @@ def auth_rate_limit_keys(
         if normalized:
             keys.append(f"auth:identity:{normalized}")
     return tuple(keys)
+
+
+
+def enforce_rate_limit(
+    limiter: SQLiteRateLimiter,
+    bucket_keys: list[str] | tuple[str, ...],
+    *,
+    limit: int,
+    window_seconds: int,
+) -> None:
+    """Enforce all supplied dimensions, returning generic 429/503 responses."""
+    try:
+        decision = limiter.consume_many(
+            [(key, limit, window_seconds) for key in bucket_keys]
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication protection is temporarily unavailable.",
+        ) from None
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please try again later.",
+            headers={"Retry-After": str(decision.retry_after_seconds)},
+        )
