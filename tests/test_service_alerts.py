@@ -136,3 +136,29 @@ def test_discord_event_time_handles_missing_and_invalid_values():
     assert _discord_event_time("not-a-date") == "Time unavailable"
     rendered = _discord_event_time("2030-01-01T00:00:00Z")
     assert "<t:" in rendered and ":F>" in rendered and ":R>" in rendered
+
+
+
+def test_discord_rate_limit_stops_the_current_delivery_cycle(tmp_path, monkeypatch):
+    from urllib.error import HTTPError
+    from email.message import Message
+
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    db.save_snapshot("basketball_nba", [sample_event()])
+    service = OddsService(db)
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monkeypatch.setattr(config, "ALERT_MIN_EV_PERCENT", 3.0)
+    monkeypatch.setattr(config, "ALERT_MIN_ARB_PERCENT", 0.5)
+    calls = []
+
+    def rate_limited(request, timeout):
+        calls.append(request)
+        headers = Message()
+        headers["Retry-After"] = "2"
+        raise HTTPError(request.full_url, 429, "Too Many Requests", headers, None)
+
+    monkeypatch.setattr("app.service.urlopen", rate_limited)
+    assert service._dispatch_alerts() == 0
+    assert len(calls) == 1
+    assert "HTTP 429" in service.status()["last_alert_error"]
+    assert "deferred to the next check" in service.status()["last_alert_error"]
