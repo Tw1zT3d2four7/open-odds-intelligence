@@ -35,7 +35,7 @@ def test_subscriber_mutations_also_require_csrf():
 def test_administrator_mutations_require_admin_session_and_csrf():
     assert _dependencies(
         "POST", "/api/refresh"
-    ) == [require_administrator, require_same_origin_csrf]
+    ) == [require_administrator, require_authenticated_csrf]
 
 
 def test_administrator_read_routes_require_admin_session_without_csrf():
@@ -83,12 +83,12 @@ def test_dependency_assembly_covers_every_declared_route_class():
         elif access_class == "administrator_only":
             expected = [require_administrator]
             if method in {"POST", "PUT", "PATCH", "DELETE"}:
-                expected.append(require_same_origin_csrf)
+                expected.append(require_authenticated_csrf)
             assert resolved == expected, (method, path)
         elif access_class == "subscriber_entitled":
             expected = [require_subscriber, entitlement_guard]
             if method in {"POST", "PUT", "PATCH", "DELETE"}:
-                expected.append(require_same_origin_csrf)
+                expected.append(require_authenticated_csrf)
             assert resolved == expected, (method, path)
         else:
             pytest.fail(f"Unsupported access class for {method} {path}: {access_class}")
