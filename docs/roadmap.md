@@ -431,6 +431,31 @@ Each milestone must have a written design, bounded scope, implementation review,
 - Payment provider choice and billing lifecycle rules.
 - Data retention, privacy, account closure, and audit retention policies.
 
-## 10. Immediate next step
+## 10. Current implementation status
 
-Continue read-only architecture discovery on this feature branch. Present the proposed authentication and authorization design, threat boundaries, data model, and migration approach for review. Do not begin authentication, database, UI, configuration, or deployment implementation until the relevant design is discussed and approved.
+### Phase 0 — Architecture and design
+- [x] Product roadmap and confirmed decisions documented.
+- [x] Existing FastAPI, frontend, authentication, SQLite, Compose, and CI architecture reviewed.
+- [x] Identity and access architecture documented in `docs/identity-access-architecture.md`.
+- [x] Separate account database selected to isolate subscriber/admin data from odds history.
+
+### Phase 1 — Identity foundation (in progress)
+- [x] Added a dedicated `ACCOUNTS_DATABASE_PATH` setting; default is `./data/accounts.sqlite3`.
+- [x] Added versioned, transactional schema initialization for identities, sessions, verification/reset challenges, administrator MFA storage, and security audit events.
+- [x] Added Argon2 password hashing and fixed account-class-specific authentication primitives.
+- [x] Added opaque server-side sessions with hashed tokens, revocation, absolute expiry, and idle expiry.
+- [x] Added tests for database isolation, schema versioning/idempotence, email/password validation, account-class separation, session revocation, and idle expiry.
+- [x] GitHub Actions CI passed on the current feature-branch head.
+- [ ] Add the private administrator bootstrap command and MFA enrollment/verification.
+- [ ] Add identity lifecycle methods for email verification and password reset.
+- [ ] Review route access matrix and compatibility plan before wiring authentication into FastAPI.
+- [ ] Preserve and verify existing Basic Auth behavior until the replacement boundary is fully tested.
+
+**Current implementation commit:** `4b9c8c9397a0923d7cc4481802845133c7154c9d`
+
+### Next step
+Complete the remaining isolated identity primitives and security tests. Then introduce authentication routes and the two login experiences in a separately tested milestone. Do not remove legacy Basic Auth or change production deployment until the new route policy is complete and approved.
+
+## 11. Continuing safeguards
+
+All safeguards in Section 8 remain in force. The current identity foundation is not yet wired into the application and is not a production-ready subscriber authentication system.
