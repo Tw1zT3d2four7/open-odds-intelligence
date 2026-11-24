@@ -1,4 +1,5 @@
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi import FastAPI, Request
@@ -70,22 +71,9 @@ def test_bucket_key_is_not_stored_in_plaintext_and_database_is_private(tmp_path)
 
 
 def test_auth_rate_limit_keys_use_direct_peer_and_separate_identity_bucket():
-    app = FastAPI()
-
-    @app.get("/")
-    def inspect(request: Request):
-        return {"keys": auth_rate_limit_keys(request, " User@Example.Test ")}
-
-    response = TestClient(app).get(
-        "/",
-        headers={
-            "x-forwarded-for": "198.51.100.25",
-            "x-real-ip": "203.0.113.7",
-        },
-    )
-    assert response.status_code == 200
-    keys = response.json()["keys"]
-    assert keys[0] == "auth:ip:testclient"
+    request = _request("192.0.2.20", "198.51.100.25")
+    keys = auth_rate_limit_keys(request, " User@Example.Test ")
+    assert keys[0] == "auth:ip:192.0.2.20"
     assert keys[1] == "auth:identity:user@example.test"
 
 
@@ -154,3 +142,23 @@ def test_invalid_trusted_proxy_network_fails_closed_to_direct_peer():
 def test_missing_or_short_hash_secret_prevents_rate_limiter_initialization(tmp_path):
     with pytest.raises(ValueError, match="RATE_LIMIT_HASH_KEY"):
         SQLiteRateLimiter(tmp_path / "accounts.sqlite3", hash_key="too-short")
+
+
+
+def test_concurrent_requests_cannot_exceed_fixed_window_limit(tmp_path):
+    db = tmp_path / "accounts.sqlite3"
+    limiter = SQLiteRateLimiter(
+        db,
+        hash_key="test-rate-limit-hash-key-at-least-32-bytes",
+        clock=lambda: 900.0,
+    )
+
+    def consume(_):
+        return limiter.consume(
+            "login:ip:192.0.2.99", limit=4, window_seconds=60
+        ).allowed
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results = list(pool.map(consume, range(12)))
+
+    assert sum(results) == 4
