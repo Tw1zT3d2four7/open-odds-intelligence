@@ -34,6 +34,10 @@ The current `optional_basic_auth` middleware protects application routes only wh
 | `/api/history` | GET | Historical odds data | Subscriber + entitlement | Keep product data separate from administrative records. |
 | `/api/opportunities` | GET | Qualified opportunities | Subscriber + entitlement | Alert preferences and plan filters apply separately. |
 | `/api/arbitrage` | GET | Arbitrage opportunities | Subscriber + entitlement | Plan and feature entitlements apply server-side. |
+| `/openapi.json` | GET | OpenAPI schema | Administrator only | Framework-generated route; never implicitly public in identity mode. |
+| `/docs` | GET | Swagger UI | Administrator only | Framework-generated route; review whether to disable in production. |
+| `/docs/oauth2-redirect` | GET | Swagger OAuth redirect | Administrator only | Framework-generated route associated with Swagger UI. |
+| `/redoc` | GET | ReDoc UI | Administrator only | Framework-generated route; review whether to disable in production. |
 
 ## Access class definitions
 
@@ -85,7 +89,7 @@ CI run `45504487596` passed 673 tests; absolute-expiry HTTP coverage passed in r
 
 `app/route_policy.py` records an explicit target access class for each of the 21 live HTTP routes. Classes include `public_minimal` (only health), `subscriber_entitled` (product/data routes), and `administrator_only` (manual shared provider/schedule refresh routes).
 
-CI compares the manifest with FastAPI's route registry. New routes cannot silently inherit public access, and removed/renamed routes cannot leave stale policy entries. Unknown method/path pairs return no classification; they are never implicitly public.
+CI compares the manifest with FastAPI's route registry, including framework-generated Starlette routes such as OpenAPI, Swagger UI, its OAuth redirect, and ReDoc (not only APIRoute endpoints). New routes cannot silently inherit public access, and removed/renamed routes cannot leave stale policy entries. Unknown method/path pairs return no classification; they are never implicitly public.
 
 This is an inventory/test guardrail only. It is not attached to middleware or routes.
 
