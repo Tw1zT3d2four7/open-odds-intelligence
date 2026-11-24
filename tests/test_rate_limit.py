@@ -87,3 +87,64 @@ def test_auth_rate_limit_keys_use_direct_peer_and_separate_identity_bucket():
     keys = response.json()["keys"]
     assert keys[0] == "auth:ip:testclient"
     assert keys[1] == "auth:identity:user@example.test"
+
+
+
+def _request(peer, forwarded_for=None):
+    headers = []
+    if forwarded_for is not None:
+        headers.append((b"x-forwarded-for", forwarded_for.encode("ascii")))
+    from starlette.requests import Request
+
+    return Request({
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "https",
+        "path": "/",
+        "raw_path": b"/",
+        "query_string": b"",
+        "headers": headers,
+        "client": (peer, 44321),
+        "server": ("example.test", 443),
+    })
+
+
+def test_forwarded_for_is_ignored_unless_direct_peer_is_trusted():
+    request = _request("192.0.2.20", "198.51.100.30")
+    assert auth_rate_limit_keys(request)[0] == "auth:ip:192.0.2.20"
+    assert auth_rate_limit_keys(
+        request, trusted_proxy_cidrs=("10.0.0.0/8",)
+    )[0] == "auth:ip:192.0.2.20"
+
+
+def test_trusted_proxy_chain_resolves_first_untrusted_client_hop():
+    request = _request("10.0.0.3", "198.51.100.30, 10.0.0.2")
+    assert auth_rate_limit_keys(
+        request, trusted_proxy_cidrs=("10.0.0.0/8",)
+    )[0] == "auth:ip:198.51.100.30"
+
+
+def test_untrusted_proxy_hop_stops_chain_walk():
+    request = _request("10.0.0.3", "198.51.100.30, 203.0.113.7")
+    assert auth_rate_limit_keys(
+        request, trusted_proxy_cidrs=("10.0.0.0/8",)
+    )[0] == "auth:ip:203.0.113.7"
+
+
+@pytest.mark.parametrize(
+    "forwarded",
+    ["not-an-ip", "198.51.100.1, malformed", "198.51.100.1,"],
+)
+def test_malformed_forwarded_chain_falls_back_to_direct_peer(forwarded):
+    request = _request("10.0.0.3", forwarded)
+    assert auth_rate_limit_keys(
+        request, trusted_proxy_cidrs=("10.0.0.0/8",)
+    )[0] == "auth:ip:10.0.0.3"
+
+
+def test_invalid_trusted_proxy_network_fails_closed_to_direct_peer():
+    request = _request("10.0.0.3", "198.51.100.30")
+    assert auth_rate_limit_keys(
+        request, trusted_proxy_cidrs=("not-a-cidr",)
+    )[0] == "auth:ip:10.0.0.3"
