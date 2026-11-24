@@ -16,11 +16,13 @@ from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from cryptography.fernet import Fernet, InvalidToken
+import pyotp
 
 from . import config
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -158,6 +160,20 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (1, _timestamp(_now())),
+                    )
+                if current < 2:
+                    db.execute("ALTER TABLE administrator_mfa ADD COLUMN last_totp_counter INTEGER")
+                    db.execute("""CREATE TABLE administrator_mfa_recovery_codes (
+                        id TEXT PRIMARY KEY,
+                        identity_id TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+                        code_hash TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL,
+                        consumed_at TEXT
+                    )""")
+                    db.execute("CREATE INDEX idx_admin_mfa_recovery_identity ON administrator_mfa_recovery_codes(identity_id)")
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (2, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
@@ -377,6 +393,176 @@ class IdentityStore:
                     id, event_type, subject_identity_id, occurred_at, metadata_json
                 ) VALUES (?, 'identity.password_reset', ?, ?, '{}')""",
                 (secrets.token_urlsafe(18), challenge["identity_id"], now),
+            )
+            db.commit()
+        return True
+
+
+    def _mfa_cipher(self) -> Fernet:
+        key = config.MFA_ENCRYPTION_KEY
+        if not key:
+            raise RuntimeError("MFA_ENCRYPTION_KEY must be configured before administrator MFA.")
+        try:
+            return Fernet(key.encode("ascii"))
+        except (ValueError, UnicodeEncodeError) as exc:
+            raise RuntimeError("MFA_ENCRYPTION_KEY must be a valid Fernet key.") from exc
+
+    def start_administrator_mfa_enrollment(self, identity_id: str) -> str:
+        """Create a pending encrypted TOTP seed and return its provisioning URI once."""
+        cipher = self._mfa_cipher()
+        secret = pyotp.random_base32()
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            identity = db.execute(
+                "SELECT email FROM identities WHERE id=? AND account_type='administrator' AND is_active=1",
+                (identity_id,),
+            ).fetchone()
+            if identity is None:
+                db.rollback()
+                raise ValueError("An active administrator identity is required.")
+            db.execute(
+                """INSERT INTO administrator_mfa(
+                    identity_id, encrypted_secret, enrolled_at, last_verified_at, last_totp_counter
+                ) VALUES (?, ?, NULL, NULL, NULL)
+                ON CONFLICT(identity_id) DO UPDATE SET
+                    encrypted_secret=excluded.encrypted_secret,
+                    enrolled_at=NULL, last_verified_at=NULL, last_totp_counter=NULL""",
+                (identity_id, cipher.encrypt(secret.encode("utf-8"))),
+            )
+            db.execute(
+                "DELETE FROM administrator_mfa_recovery_codes WHERE identity_id=?",
+                (identity_id,),
+            )
+            db.commit()
+        return pyotp.TOTP(secret).provisioning_uri(name=identity["email"], issuer_name=config.APP_NAME)
+
+    def confirm_administrator_mfa_enrollment(self, identity_id: str, code: str) -> list[str]:
+        """Confirm pending TOTP enrollment; return single-use recovery codes exactly once."""
+        if not isinstance(code, str) or not code.isdigit() or len(code) != 6:
+            raise ValueError("A valid six-digit authenticator code is required.")
+        cipher = self._mfa_cipher()
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        recovery_codes = [secrets.token_urlsafe(9) for _ in range(10)]
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT m.encrypted_secret FROM administrator_mfa m
+                   JOIN identities i ON i.id=m.identity_id
+                   WHERE m.identity_id=? AND m.enrolled_at IS NULL
+                     AND i.account_type='administrator' AND i.is_active=1""",
+                (identity_id,),
+            ).fetchone()
+            if row is None:
+                db.rollback()
+                raise ValueError("No pending administrator MFA enrollment exists.")
+            try:
+                secret = cipher.decrypt(row["encrypted_secret"]).decode("utf-8")
+            except (InvalidToken, ValueError, TypeError) as exc:
+                db.rollback()
+                raise RuntimeError("Administrator MFA seed could not be decrypted.") from exc
+            totp = pyotp.TOTP(secret)
+            if not totp.verify(code, for_time=now_dt, valid_window=1):
+                db.rollback()
+                raise ValueError("Authenticator code is invalid.")
+            current_counter = totp.timecode(now_dt)
+            matched_counter = next(
+                counter for counter in (current_counter - 1, current_counter, current_counter + 1)
+                if totp.verify(code, for_time=counter * totp.interval)
+            )
+            db.execute(
+                """UPDATE administrator_mfa
+                   SET enrolled_at=?, last_verified_at=?, last_totp_counter=?
+                   WHERE identity_id=?""",
+                (now, now, matched_counter, identity_id),
+            )
+            db.executemany(
+                """INSERT INTO administrator_mfa_recovery_codes(
+                    id, identity_id, code_hash, created_at
+                ) VALUES (?, ?, ?, ?)""",
+                [(secrets.token_urlsafe(18), identity_id, _token_digest(item), now) for item in recovery_codes],
+            )
+            db.execute(
+                """INSERT INTO security_audit_events(
+                    id, event_type, subject_identity_id, occurred_at, metadata_json
+                ) VALUES (?, 'administrator.mfa_enrolled', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), identity_id, now),
+            )
+            db.commit()
+        return recovery_codes
+
+    def verify_administrator_mfa(self, identity_id: str, code: str) -> bool:
+        """Verify a fresh TOTP time-step; previously accepted codes cannot replay."""
+        if not isinstance(code, str) or not code.isdigit() or len(code) != 6:
+            return False
+        cipher = self._mfa_cipher()
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT m.encrypted_secret, m.last_totp_counter
+                   FROM administrator_mfa m JOIN identities i ON i.id=m.identity_id
+                   WHERE m.identity_id=? AND m.enrolled_at IS NOT NULL
+                     AND i.account_type='administrator' AND i.is_active=1""",
+                (identity_id,),
+            ).fetchone()
+            if row is None:
+                db.rollback()
+                return False
+            try:
+                secret = cipher.decrypt(row["encrypted_secret"]).decode("utf-8")
+            except (InvalidToken, ValueError, TypeError) as exc:
+                db.rollback()
+                raise RuntimeError("Administrator MFA seed could not be decrypted.") from exc
+            totp = pyotp.TOTP(secret)
+            current_counter = totp.timecode(now_dt)
+            previous_counter = row["last_totp_counter"] if row["last_totp_counter"] is not None else -1
+            matched_counter = next(
+                (
+                    counter for counter in (current_counter - 1, current_counter, current_counter + 1)
+                    if counter > previous_counter and totp.verify(code, for_time=counter * totp.interval)
+                ),
+                None,
+            )
+            if matched_counter is None:
+                db.rollback()
+                return False
+            db.execute(
+                "UPDATE administrator_mfa SET last_totp_counter=?, last_verified_at=? WHERE identity_id=?",
+                (matched_counter, now, identity_id),
+            )
+            db.execute(
+                """INSERT INTO security_audit_events(
+                    id, event_type, subject_identity_id, occurred_at, metadata_json
+                ) VALUES (?, 'administrator.mfa_verified', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), identity_id, now),
+            )
+            db.commit()
+        return True
+
+    def consume_administrator_recovery_code(self, identity_id: str, code: str) -> bool:
+        """Atomically consume one hashed, single-use administrator recovery code."""
+        if not isinstance(code, str) or not code or len(code) > 128:
+            return False
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT id FROM administrator_mfa_recovery_codes
+                   WHERE identity_id=? AND code_hash=? AND consumed_at IS NULL""",
+                (identity_id, _token_digest(code)),
+            ).fetchone()
+            if row is None:
+                db.rollback()
+                return False
+            db.execute("UPDATE administrator_mfa_recovery_codes SET consumed_at=? WHERE id=?", (now, row["id"]))
+            db.execute(
+                """INSERT INTO security_audit_events(
+                    id, event_type, subject_identity_id, occurred_at, metadata_json
+                ) VALUES (?, 'administrator.mfa_recovery_used', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), identity_id, now),
             )
             db.commit()
         return True
