@@ -1,6 +1,6 @@
 # Admin Console, Subscribers & Commercial Platform Roadmap
 
-**Status:** Planning / architecture discovery  
+**Status:** Foundation implementation in progress  
 **Working branch:** `feature/admin-panel-and-subscriptions`  
 **Base branch:** `development`  
 **Production branch:** `main`  
@@ -295,14 +295,27 @@ Each milestone must have a written design, bounded scope, implementation review,
 
 ### Phase 1 — Authentication and authorization foundation
 
-- Replace optional shared Basic Auth as the long-term account model with individual identities and secure sessions.
-- Add subscriber and administrator roles with server-enforced authorization.
-- Build separate subscriber and admin login experiences on the same domain.
-- Establish private administrator provisioning and MFA.
-- Add secure password recovery and session lifecycle.
-- Add authorization tests for direct URL/API access and privilege escalation attempts.
+**Implementation status (feature branch only):**
+- [x] Separate SQLite identity database path; odds-history database remains separate.
+- [x] Versioned identity schema with subscriber/admin account classes.
+- [x] Argon2id password hashing and account-type-scoped authentication.
+- [x] Opaque server-side sessions with hashed tokens, bounded absolute lifetime, idle expiry, and revocation.
+- [x] One-time email-verification challenges (hashed at rest, expiry, replay protection).
+- [x] One-time password-reset challenges (hashed at rest, expiry, replay protection, session revocation).
+- [x] Security audit events for email verification and password reset, without challenge/password values.
+- [x] Existing HTTP route inventory and target access policy documented in `docs/route-access-matrix.md`.
+- [x] Full CI test suite passed after challenge-flow implementation (run 45445121174).
 
-**Exit criteria:** Subscribers cannot access admin routes or APIs; public registration cannot create admins; authentication and authorization tests pass.
+**Still required before Phase 1 is complete:**
+- [ ] Private administrator bootstrap command and first-admin enrollment process.
+- [ ] Administrator MFA enrollment, encrypted TOTP secret storage, verification, replay prevention, and recovery codes.
+- [ ] Complete route authorization integration tests and explicit legacy Basic Auth migration behavior.
+- [ ] Email delivery integration for verification and recovery links.
+- [ ] Wire login/session routes only after MFA and route-boundary design is complete.
+- [ ] Separate subscriber/admin cookies, CSRF/origin protection, rate limits, and secure cookie settings.
+- [ ] Full route-level authorization tests, including wrong account class, missing MFA, inactive users, and entitlement denial.
+
+**Exit criteria:** Subscribers cannot access admin routes or APIs; public registration cannot create admins; administrator sessions require MFA; authentication and authorization tests pass. Existing odds dashboard behavior and history remain intact.
 
 ### Phase 2 — Admin Console foundation
 
