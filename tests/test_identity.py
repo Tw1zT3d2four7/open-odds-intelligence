@@ -319,3 +319,39 @@ def test_admin_mfa_fails_closed_without_encryption_key(tmp_path, monkeypatch):
     admin_id = store.provision_administrator("admin@example.com", "administrator password")
     with pytest.raises(RuntimeError, match="MFA_ENCRYPTION_KEY"):
         store.start_administrator_mfa_enrollment(admin_id)
+
+
+
+def test_initial_administrator_bootstrap_is_private_and_one_time(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_initial_administrator(
+        "first-admin@example.com", "initial administrator password"
+    )
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT account_type FROM identities WHERE id=?", (admin_id,)
+        ).fetchone()
+        events = db.execute(
+            "SELECT event_type FROM security_audit_events WHERE subject_identity_id=?",
+            (admin_id,),
+        ).fetchall()
+    assert row["account_type"] == "administrator"
+    assert [event["event_type"] for event in events] == ["administrator.initially_provisioned"]
+    with pytest.raises(ValueError, match="already exists"):
+        store.provision_initial_administrator(
+            "second-admin@example.com", "another administrator password"
+        )
+    assert store.authenticate(
+        "second-admin@example.com", "another administrator password", "administrator"
+    ) is None
+
+
+def test_initial_administrator_bootstrap_rejects_invalid_email_without_partial_record(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    with pytest.raises(ValueError, match="email"):
+        store.provision_initial_administrator("not-an-email", "initial administrator password")
+    with store.connect() as db:
+        count = db.execute(
+            "SELECT COUNT(*) AS count FROM identities WHERE account_type='administrator'"
+        ).fetchone()["count"]
+    assert count == 0
