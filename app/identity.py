@@ -343,10 +343,10 @@ class IdentityStore:
             normalized_email = _normalize_email(email)
         except ValueError:
             return None
-        now = _now()
         token = secrets.token_urlsafe(32)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            now = _now()
             identity_query = "SELECT id FROM identities WHERE email=? AND is_active=1"
             params: tuple = (normalized_email,)
             if account_type is not None:
@@ -385,9 +385,9 @@ class IdentityStore:
         """Consume a valid verification link exactly once."""
         if not isinstance(token, str) or not token or len(token) > 256:
             return False
-        now = _timestamp(_now())
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            now = _timestamp(_now())
             challenge = db.execute(
                 """SELECT c.id, c.identity_id FROM email_verification_challenges c
                    JOIN identities i ON i.id=c.identity_id
@@ -431,9 +431,9 @@ class IdentityStore:
         password_hash = _password_hash(new_password)
         if not isinstance(token, str) or not token or len(token) > 256:
             return False
-        now = _timestamp(_now())
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            now = _timestamp(_now())
             challenge = db.execute(
                 """SELECT c.id, c.identity_id FROM password_reset_challenges c
                    JOIN identities i ON i.id=c.identity_id
@@ -481,9 +481,9 @@ class IdentityStore:
         """Create a pending encrypted TOTP seed and return its provisioning URI once."""
         cipher = self._mfa_cipher()
         secret = pyotp.random_base32()
-        now = _timestamp(_now())
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            now = _timestamp(_now())
             identity = db.execute(
                 "SELECT email FROM identities WHERE id=? AND account_type='administrator' AND is_active=1",
                 (identity_id,),
@@ -521,11 +521,11 @@ class IdentityStore:
         if not isinstance(code, str) or not code.isdigit() or len(code) != 6:
             raise ValueError("A valid six-digit authenticator code is required.")
         cipher = self._mfa_cipher()
-        now_dt = _now()
-        now = _timestamp(now_dt)
         recovery_codes = [secrets.token_urlsafe(9) for _ in range(10)]
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            now_dt = _now()
+            now = _timestamp(now_dt)
             row = db.execute(
                 """SELECT m.encrypted_secret FROM administrator_mfa m
                    JOIN identities i ON i.id=m.identity_id
@@ -576,10 +576,10 @@ class IdentityStore:
         if not isinstance(code, str) or not code.isdigit() or len(code) != 6:
             return False
         cipher = self._mfa_cipher()
-        now_dt = _now()
-        now = _timestamp(now_dt)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            now_dt = _now()
+            now = _timestamp(now_dt)
             row = db.execute(
                 """SELECT m.encrypted_secret, m.last_totp_counter
                    FROM administrator_mfa m JOIN identities i ON i.id=m.identity_id
@@ -625,9 +625,9 @@ class IdentityStore:
         """Atomically consume one hashed, single-use administrator recovery code."""
         if not isinstance(code, str) or not code or len(code) > 128:
             return False
-        now = _timestamp(_now())
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            now = _timestamp(_now())
             row = db.execute(
                 """SELECT r.id FROM administrator_mfa_recovery_codes r
                    JOIN identities i ON i.id=r.identity_id
@@ -662,12 +662,12 @@ class IdentityStore:
         """Return raw opaque token once and its server-side session ID."""
         if lifetime <= timedelta(0) or lifetime > timedelta(days=30):
             raise ValueError("Session lifetime must be greater than zero and at most 30 days.")
-        now = _now()
         token = secrets.token_urlsafe(32)
         session_id = secrets.token_urlsafe(18)
-        now_text = _timestamp(now)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            now = _now()
+            now_text = _timestamp(now)
             identity = db.execute(
                 """SELECT is_active, account_type, email_verified_at
                    FROM identities WHERE id=?""",
@@ -712,12 +712,12 @@ class IdentityStore:
         """Resolve an active session without exposing its stored token digest."""
         if not isinstance(token, str) or not token or len(token) > 256:
             return None
-        now = _timestamp(_now())
         with self.connect() as db:
             # Serialize session resolution with revocation/deactivation writes.
             # Otherwise a revoke could commit after SELECT but before the
             # last-seen update, allowing one stale request to pass.
             db.execute("BEGIN IMMEDIATE")
+            now = _timestamp(_now())
             row = db.execute(
                 """SELECT s.id AS session_id, s.identity_id, s.expires_at,
                           s.last_seen_at, i.email, i.account_type
