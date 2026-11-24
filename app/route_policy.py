@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from fastapi.routing import APIRoute
+from starlette.routing import BaseRoute
 
 
 # Values are deliberately descriptive policy classes, not authorization
@@ -17,6 +17,12 @@ from fastapi.routing import APIRoute
 ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/"): "subscriber_entitled",
     ("GET", "/api/health"): "public_minimal",
+    # FastAPI's built-in schema and interactive docs are not APIRoute objects,
+    # but must still receive an explicit access policy during identity cutover.
+    ("GET", "/openapi.json"): "administrator_only",
+    ("GET", "/docs"): "administrator_only",
+    ("GET", "/docs/oauth2-redirect"): "administrator_only",
+    ("GET", "/redoc"): "administrator_only",
     ("POST", "/api/limits/refresh"): "administrator_only",
     ("GET", "/api/limits"): "subscriber_entitled",
     ("GET", "/api/limits/changes"): "subscriber_entitled",
@@ -49,24 +55,24 @@ def classify_route(method: str, path: str) -> str | None:
     return ROUTE_ACCESS_POLICY.get(route_key(method, path))
 
 
-def unclassified_routes(routes: Iterable[APIRoute]) -> list[tuple[str, str]]:
+def unclassified_routes(routes: Iterable[BaseRoute]) -> list[tuple[str, str]]:
     """List application routes without an explicit policy entry."""
     missing = {
         route_key(method, route.path)
         for route in routes
-        for method in (route.methods or set())
+        for method in (getattr(route, "methods", None) or set())
         if method not in {"HEAD", "OPTIONS"}
         and classify_route(method, route.path) is None
     }
     return sorted(missing)
 
 
-def stale_policy_entries(routes: Iterable[APIRoute]) -> list[tuple[str, str]]:
+def stale_policy_entries(routes: Iterable[BaseRoute]) -> list[tuple[str, str]]:
     """List policy entries that no longer correspond to a live application route."""
     actual = {
         route_key(method, route.path)
         for route in routes
-        for method in (route.methods or set())
+        for method in (getattr(route, "methods", None) or set())
         if method not in {"HEAD", "OPTIONS"}
     }
     return sorted(set(ROUTE_ACCESS_POLICY) - actual)
