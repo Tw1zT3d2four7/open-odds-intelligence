@@ -633,6 +633,7 @@ def test_audit_query_is_paginated_filtered_and_secret_free(tmp_path):
         {"limit": 501},
         {"limit": True},
         {"offset": -1},
+        {"offset": 10_000_001},
         {"offset": True},
         {"event_type": ""},
         {"actor_identity_id": "x" * 129},
