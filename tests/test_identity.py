@@ -619,6 +619,13 @@ def test_cross_account_session_revocation_requires_active_administrator_actor(
     provisioning_uri = store.start_administrator_mfa_enrollment(admin_id)
     totp = pyotp.parse_uri(provisioning_uri)
     store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    with store.connect() as db:
+        db.execute("UPDATE identities SET is_active=0 WHERE id=?", (admin_id,))
+    with pytest.raises(ValueError, match="MFA-enrolled administrator"):
+        store.revoke_session(token, actor_identity_id=admin_id)
+    assert store.get_session(token) is not None
+    with store.connect() as db:
+        db.execute("UPDATE identities SET is_active=1 WHERE id=?", (admin_id,))
     assert store.revoke_session(token, actor_identity_id=admin_id) is True
     with store.connect() as db:
         event = db.execute(
