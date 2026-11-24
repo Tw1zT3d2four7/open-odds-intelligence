@@ -183,14 +183,13 @@ def test_policy_dependencies_enforce_subscriber_entitlement_over_http():
     client = TestClient(app)
 
     assert client.get("/api/odds").status_code == 401
-    free = client.get(
-        "/api/odds", cookies={cookies["subscriber_cookie"]: "subscriber-free"}
-    )
+    client.cookies.set(cookies["subscriber_cookie"], "subscriber-free")
+    free = client.get("/api/odds")
     assert free.status_code == 403
 
-    entitled = client.get(
-        "/api/odds", cookies={cookies["subscriber_cookie"]: "subscriber-entitled"}
-    )
+    client.cookies.clear()
+    client.cookies.set(cookies["subscriber_cookie"], "subscriber-entitled")
+    entitled = client.get("/api/odds")
     assert entitled.status_code == 200
     assert entitled.json() == {"ok": True}
 
@@ -201,9 +200,9 @@ def test_policy_dependencies_enforce_admin_session_and_csrf_over_http():
     app, cookies = _make_policy_integration_app()
     client = TestClient(app)
 
+    client.cookies.set(cookies["subscriber_cookie"], "subscriber-entitled")
     subscriber = client.post(
         "/api/refresh",
-        cookies={cookies["subscriber_cookie"]: "subscriber-entitled"},
         headers={
             "origin": "https://testserver",
             cookies["csrf_header"]: "csrf-value",
@@ -211,18 +210,14 @@ def test_policy_dependencies_enforce_admin_session_and_csrf_over_http():
     )
     assert subscriber.status_code == 401
 
-    missing_csrf = client.post(
-        "/api/refresh",
-        cookies={cookies["admin_cookie"]: "administrator"},
-    )
+    client.cookies.clear()
+    client.cookies.set(cookies["admin_cookie"], "administrator")
+    missing_csrf = client.post("/api/refresh")
     assert missing_csrf.status_code == 403
 
+    client.cookies.set(cookies["csrf_cookie"], "csrf-value")
     accepted = client.post(
         "/api/refresh",
-        cookies={
-            cookies["admin_cookie"]: "administrator",
-            cookies["csrf_cookie"]: "csrf-value",
-        },
         headers={
             "origin": "https://testserver",
             cookies["csrf_header"]: "csrf-value",
