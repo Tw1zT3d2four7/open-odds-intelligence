@@ -93,6 +93,8 @@ CI compares the manifest with FastAPI's route registry, including framework-gene
 
 This is an inventory/test guardrail only. It is not attached to middleware or routes.
 
+The isolated helper in `app/route_authorization.py` assembles FastAPI dependencies from this manifest without wiring them to live routes. It requires an explicit server-side entitlement dependency for every `subscriber_entitled` route, adds CSRF protection to authenticated state-changing methods, refuses public mutation routes, and rejects unknown policy classes. It deliberately has no default entitlement allow path.
+
 ## Health endpoint compatibility
 
 The current `GET /api/health` response includes application/provider and alert-delivery diagnostics. The exact Compose health probe in `docker-compose.yml` calls this route and only requires a successful HTTP response; it does not parse the JSON body. At identity-mode cutover, minimize the public response and move reviewed operational details behind administrator authorization while retaining a successful response for the probe. See `docs/health-endpoint-security-design.md`.
