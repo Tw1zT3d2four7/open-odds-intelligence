@@ -543,8 +543,12 @@ class IdentityStore:
         """
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
             raise ValueError("Audit page size must be between 1 and 500.")
-        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
-            raise ValueError("Audit offset must be a non-negative integer.")
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or not 0 <= offset <= 10_000_000
+        ):
+            raise ValueError("Audit offset must be between 0 and 10000000.")
         filters = []
         values: list[str | int] = []
         for column, value in (
