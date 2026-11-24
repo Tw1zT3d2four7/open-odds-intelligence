@@ -121,9 +121,9 @@ class SQLiteRateLimiter:
             if (
                 not isinstance(window_seconds, int)
                 or isinstance(window_seconds, bool)
-                or window_seconds < 1
+                or not 1 <= window_seconds <= 30 * 24 * 60 * 60
             ):
-                raise ValueError("Rate-limit window must be a positive integer.")
+                raise ValueError("Rate-limit window must be between 1 second and 30 days.")
             bucket_hash = self._digest(bucket_key)
             window_start = now - (now % window_seconds)
             value = (limit, window_seconds, window_start)
@@ -134,6 +134,12 @@ class SQLiteRateLimiter:
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            # Bound abandoned identifier/IP buckets without deleting any
+            # supported active window (maximum configured window is 30 days).
+            connection.execute(
+                "DELETE FROM auth_rate_limit_buckets WHERE window_start < ?",
+                (now - 90 * 24 * 60 * 60,),
+            )
             counts: dict[str, int] = {}
             blocked_retries: list[int] = []
             for bucket_hash, (limit, window_seconds, window_start) in normalized.items():
