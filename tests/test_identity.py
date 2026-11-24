@@ -163,6 +163,7 @@ def test_idle_session_is_revoked_and_last_seen_is_refreshed(tmp_path, monkeypatc
 def test_active_session_updates_last_seen_at(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    _verify_subscriber(store, "person@example.com")
     token, session_id = store.create_session(identity_id)
     assert store.get_session(token) is not None
     with store.connect() as db:
@@ -404,7 +405,7 @@ def test_recovery_code_provides_one_time_admin_session_proof(tmp_path, monkeypat
 def test_deactivated_identity_invalidates_existing_session(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("inactive@example.com", "a secure password phrase")
-    _verify_subscriber(store, "person@example.com")
+    _verify_subscriber(store, "inactive@example.com")
     token, _session_id = store.create_session(identity_id)
 
     assert store.get_session(token)["identity_id"] == identity_id
