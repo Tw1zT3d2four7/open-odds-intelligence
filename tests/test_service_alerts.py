@@ -423,4 +423,4 @@ def test_discord_final_score_sync_respects_rundown_shared_quota_cooldown(tmp_pat
     result = service.sync_simulation_results()
     assert result["ok"] is False
     assert calls == ["Rundown-Key-Two"]
-    assert "HTTP 429" in result["error"]
+    assert "all configured keys are unavailable" in result["error"]
