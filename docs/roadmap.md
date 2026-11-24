@@ -467,8 +467,9 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Reviewed the route access matrix and documented the Basic Auth compatibility/cutover plan before wiring authentication into FastAPI.
 - [x] Preserved the existing Basic Auth middleware; isolated session-cookie, CSRF, and lazy FastAPI subscriber/admin dependencies are tested but not yet wired into existing routes.
 - [x] Added an explicit access-class manifest for every current route and CI tests that fail on an unclassified new route or stale policy entry.
+- [x] Added HTTP regression tests locking down legacy Basic Auth compatibility: unset credentials preserve current behavior, configured credentials are required and case-sensitive, partial configuration fails closed, and `/api/health` remains available.
 
-**Current implementation commit:** `3e7eba185ba9fac0142ff59ad26b869fd43176a1` (route-policy tests added; final CI verification pending).
+**Latest verified implementation commit:** `a2c49223bb7ee793d6cf633f3009c16b2a1d73e8` (CI run `45496355528` passed: 641 tests).
 
 ### Next step
 Complete route-level authorization tests, including health/diagnostic response review, and trusted-proxy/rate-limit design while preserving the current Basic Auth middleware. Then implement subscriber and administrator login flows behind the explicit, tested migration boundary. Do not remove legacy Basic Auth or change production deployment until every cutover gate is met and the operator explicitly approves.
