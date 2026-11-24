@@ -125,3 +125,12 @@ def test_mutating_subscriber_route_requires_csrf_origin_cookie_and_header():
     )
     assert accepted.status_code == 200
     assert accepted.json() == {"ok": True, "identity_id": "s1"}
+
+
+
+def test_session_lookup_database_failure_fails_closed_without_leaking_details():
+    store = StubStore(fail=True)
+    client = TestClient(make_app(store))
+    response = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: "token"})
+    assert response.status_code == 503
+    assert "private database detail" not in response.text
