@@ -68,8 +68,7 @@ class SQLiteRateLimiter:
         )
         return connection
 
-    @staticmethod
-    def _digest(bucket_key: str) -> str:
+    def _digest(self, bucket_key: str) -> str:
         if not isinstance(bucket_key, str) or not bucket_key or len(bucket_key) > 2048:
             raise ValueError("A non-empty bounded rate-limit key is required.")
         return hmac.new(
