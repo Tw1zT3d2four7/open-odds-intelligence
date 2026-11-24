@@ -22,7 +22,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -174,6 +174,12 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (2, _timestamp(_now())),
+                    )
+                if current < 3:
+                    db.execute("ALTER TABLE administrator_mfa ADD COLUMN mfa_login_verified_at TEXT")
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (3, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
@@ -560,8 +566,8 @@ class IdentityStore:
                 db.rollback()
                 return False
             db.execute(
-                "UPDATE administrator_mfa SET last_totp_counter=?, last_verified_at=? WHERE identity_id=?",
-                (matched_counter, now, identity_id),
+                "UPDATE administrator_mfa SET last_totp_counter=?, last_verified_at=?, mfa_login_verified_at=? WHERE identity_id=?",
+                (matched_counter, now, now, identity_id),
             )
             db.execute(
                 """INSERT INTO security_audit_events(
@@ -589,6 +595,10 @@ class IdentityStore:
                 return False
             db.execute("UPDATE administrator_mfa_recovery_codes SET consumed_at=? WHERE id=?", (now, row["id"]))
             db.execute(
+                "UPDATE administrator_mfa SET mfa_login_verified_at=? WHERE identity_id=?",
+                (now, identity_id),
+            )
+            db.execute(
                 """INSERT INTO security_audit_events(
                     id, event_type, subject_identity_id, occurred_at, metadata_json
                 ) VALUES (?, 'administrator.mfa_recovery_used', ?, ?, '{}')""",
@@ -608,21 +618,39 @@ class IdentityStore:
         now = _now()
         token = secrets.token_urlsafe(32)
         session_id = secrets.token_urlsafe(18)
+        now_text = _timestamp(now)
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             identity = db.execute(
-                "SELECT is_active FROM identities WHERE id=?", (identity_id,)
+                "SELECT is_active, account_type FROM identities WHERE id=?", (identity_id,)
             ).fetchone()
             if identity is None or not identity["is_active"]:
+                db.rollback()
                 raise ValueError("An active identity is required to create a session.")
+            if identity["account_type"] == "administrator":
+                mfa = db.execute(
+                    "SELECT mfa_login_verified_at FROM administrator_mfa WHERE identity_id=? AND enrolled_at IS NOT NULL",
+                    (identity_id,),
+                ).fetchone()
+                verified_at = datetime.fromisoformat(mfa["mfa_login_verified_at"]) if mfa and mfa["mfa_login_verified_at"] else None
+                if verified_at is None or now - verified_at > timedelta(minutes=5) or verified_at > now:
+                    db.rollback()
+                    raise ValueError("A recent, unused administrator MFA verification is required.")
+                # Consume the one-time MFA proof in the same transaction as session creation.
+                db.execute(
+                    "UPDATE administrator_mfa SET mfa_login_verified_at=NULL WHERE identity_id=?",
+                    (identity_id,),
+                )
             db.execute(
                 """INSERT INTO sessions(
                     id, identity_id, token_hash, created_at, last_seen_at, expires_at
                 ) VALUES (?, ?, ?, ?, ?, ?)""",
                 (
                     session_id, identity_id, _token_digest(token),
-                    _timestamp(now), _timestamp(now), _timestamp(now + lifetime),
+                    now_text, now_text, _timestamp(now + lifetime),
                 ),
             )
+            db.commit()
         return token, session_id
 
     def get_session(self, token: str) -> dict | None:
