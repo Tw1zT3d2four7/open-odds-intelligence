@@ -524,8 +524,8 @@ def test_identity_and_session_audit_events_exclude_credentials_and_tokens(tmp_pa
 
     with store.connect() as db:
         events = db.execute(
-            """SELECT event_type, metadata_json FROM security_audit_events
-               WHERE subject_identity_id=? ORDER BY rowid""",
+            """SELECT event_type, actor_identity_id, metadata_json
+               FROM security_audit_events WHERE subject_identity_id=? ORDER BY rowid""",
             (identity_id,),
         ).fetchall()
 
@@ -534,6 +534,9 @@ def test_identity_and_session_audit_events_exclude_credentials_and_tokens(tmp_pa
         "subscriber.email_verified",
         "subscriber.session_created",
         "identity.session_revoked",
+    ]
+    assert [row["actor_identity_id"] for row in events] == [
+        identity_id, None, identity_id, identity_id
     ]
     for row in events:
         assert token not in row["metadata_json"]
@@ -553,10 +556,43 @@ def test_revoke_all_sessions_audit_records_only_revocation_count(tmp_path):
     assert store.revoke_all_sessions(identity_id) == 2
     with store.connect() as db:
         row = db.execute(
-            """SELECT event_type, metadata_json FROM security_audit_events
+            """SELECT event_type, actor_identity_id, metadata_json
+               FROM security_audit_events
                WHERE subject_identity_id=? AND event_type='identity.sessions_revoked'""",
             (identity_id,),
         ).fetchone()
 
     assert row["event_type"] == "identity.sessions_revoked"
+    assert row["actor_identity_id"] == identity_id
     assert row["metadata_json"] == '{"revoked_count":2}'
+
+
+
+def test_cross_account_session_revocation_requires_active_administrator_actor(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subject_id = store.create_subscriber(
+        "subject@example.com", "a-strong-subject-password"
+    )
+    _verify_subscriber(store, "subject@example.com")
+    token, _ = store.create_session(subject_id)
+    other_subscriber_id = store.create_subscriber(
+        "other@example.com", "a-strong-other-password"
+    )
+
+    with pytest.raises(ValueError, match="active administrator"):
+        store.revoke_session(token, actor_identity_id=other_subscriber_id)
+    assert store.get_session(token) is not None
+
+    admin_id = store.provision_administrator(
+        "audit-admin@example.com", "a-strong-audit-admin-password"
+    )
+    assert store.revoke_session(token, actor_identity_id=admin_id) is True
+    with store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, subject_identity_id
+               FROM security_audit_events
+               WHERE event_type='identity.session_revoked'""",
+        ).fetchone()
+
+    assert event["actor_identity_id"] == admin_id
+    assert event["subject_identity_id"] == subject_id
