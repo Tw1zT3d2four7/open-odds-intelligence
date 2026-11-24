@@ -194,8 +194,8 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified branch commit:** `d2e780402cdfbaff75ef15eb90ddc25db0948661`  
-**CI run:** `45513703271` — **739 passed, 1 warning**.
+**Latest verified branch commit:** `540b9d84c66bdf95b6b56e8e0b5bb1a43ac3fcd1`  
+**CI run:** `45513882283` — **738 passed, 1 warning**.
 
 The identity foundation remains isolated and is not wired into existing production routes. Legacy Basic Auth remains the live boundary; only safe GET/HEAD requests to the exact health path bypass it. The detailed health response is unchanged. No production deployment, restart, merge, or branch promotion has occurred.
 
