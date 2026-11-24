@@ -92,14 +92,28 @@ def require_same_origin_csrf(request: Request) -> None:
     origin = request.headers.get("origin", "")
     host = request.headers.get("host", "")
     parsed = urlsplit(origin)
+    try:
+        origin_port = parsed.port
+        host_parts = urlsplit("//" + host)
+        request_port = host_parts.port
+        origin_authority = (parsed.hostname or "").casefold()
+        request_authority = (host_parts.hostname or "").casefold()
+        origin_effective_port = origin_port or 443
+        request_effective_port = request_port or 443
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Request origin is not allowed.")
     if (
         not origin
         or not host
-        or parsed.scheme not in {"https", "http"}
+        or parsed.scheme != "https"
         or not parsed.netloc
-        or parsed.netloc.casefold() != host.casefold()
+        or not origin_authority
+        or origin_authority != request_authority
+        or origin_effective_port != request_effective_port
         or parsed.username is not None
         or parsed.password is not None
+        or host_parts.username is not None
+        or host_parts.password is not None
         or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
