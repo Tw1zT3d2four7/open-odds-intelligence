@@ -102,9 +102,10 @@ async def lifespan(app: FastAPI):
         task = asyncio.create_task(_automatic_refresh_loop())
     if service.configured and config.DISCORD_WEBHOOK_URL:
         alert_task = asyncio.create_task(_discord_alert_loop())
-    if (config.SIMULATION_RESULTS_SYNC_ENABLED
+    if service.discord_results_sync_enabled() or (
+            config.SIMULATION_RESULTS_SYNC_ENABLED
             and "therundown" in service.active_provider_names()
-            and (config.THERUNDOWN_API_KEY or config.THERUNDOWN_API_KEYS)):
+            and service._provider_key_pools["therundown"].configured):
         results_task = asyncio.create_task(_simulation_results_loop())
     try:
         yield
