@@ -99,14 +99,17 @@ class IdentityStore:
         identity_id: str,
         occurred_at: str,
         metadata: dict | None = None,
+        actor_identity_id: str | None = None,
     ) -> None:
-        """Write a secret-free security audit event in the caller's transaction."""
+        """Write a secret-free, attributable audit event in the caller's transaction."""
         db.execute(
             """INSERT INTO security_audit_events(
-                id, event_type, subject_identity_id, occurred_at, metadata_json
-            ) VALUES (?, ?, ?, ?, ?)""",
+                id, actor_identity_id, event_type, subject_identity_id,
+                occurred_at, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 secrets.token_urlsafe(18),
+                actor_identity_id,
                 event_type,
                 identity_id,
                 occurred_at,
@@ -304,7 +307,13 @@ class IdentityStore:
                 if account_type == "subscriber"
                 else "administrator.provisioned"
             )
-            self._record_audit_event(db, event_type, identity_id, now)
+            self._record_audit_event(
+                db,
+                event_type,
+                identity_id,
+                now,
+                actor_identity_id=identity_id if account_type == "subscriber" else None,
+            )
             db.commit()
         return identity_id
 
@@ -741,6 +750,7 @@ class IdentityStore:
                 f"{identity['account_type']}.session_created",
                 identity_id,
                 now_text,
+                actor_identity_id=identity_id,
             )
             db.commit()
         return token, session_id
@@ -787,7 +797,9 @@ class IdentityStore:
         result.pop("last_seen_at", None)
         return result
 
-    def revoke_session(self, token: str) -> bool:
+    def revoke_session(
+        self, token: str, *, actor_identity_id: str | None = None
+    ) -> bool:
         """Revoke a session by its raw token; safe to call repeatedly."""
         if not isinstance(token, str) or not token or len(token) > 256:
             return False
@@ -808,12 +820,18 @@ class IdentityStore:
                 (now, _token_digest(token)),
             )
             self._record_audit_event(
-                db, "identity.session_revoked", row["identity_id"], now
+                db,
+                "identity.session_revoked",
+                row["identity_id"],
+                now,
+                actor_identity_id=actor_identity_id or row["identity_id"],
             )
             db.commit()
         return True
 
-    def revoke_all_sessions(self, identity_id: str) -> int:
+    def revoke_all_sessions(
+        self, identity_id: str, *, actor_identity_id: str | None = None
+    ) -> int:
         """Revoke every active session, e.g. after password reset or suspension."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -831,6 +849,7 @@ class IdentityStore:
                     identity_id,
                     now,
                     {"revoked_count": revoked_count},
+                    actor_identity_id=actor_identity_id or identity_id,
                 )
             db.commit()
         return revoked_count
