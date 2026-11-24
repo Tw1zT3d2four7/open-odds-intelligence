@@ -184,3 +184,24 @@ def test_rate_limiter_dependency_fails_closed_without_hash_secret(monkeypatch, t
     response = TestClient(app).get("/limiter")
     assert response.status_code == 503
     assert "RATE_LIMIT_HASH_KEY" not in response.text
+
+
+
+def test_rate_limiter_dependency_initializes_once_when_secret_is_configured(monkeypatch, tmp_path):
+    from app import config
+
+    database = tmp_path / "accounts.sqlite3"
+    monkeypatch.setattr(config, "RATE_LIMIT_HASH_KEY", "configured-test-hash-key-with-at-least-32-bytes")
+    monkeypatch.setattr(config, "ACCOUNTS_DATABASE_PATH", str(database))
+    app = FastAPI()
+
+    @app.get("/limiter")
+    def inspect(limiter=Depends(get_rate_limiter)):
+        return {"type": type(limiter).__name__}
+
+    client = TestClient(app)
+    assert client.get("/limiter").json() == {"type": "SQLiteRateLimiter"}
+    first = app.state.rate_limiter
+    assert client.get("/limiter").json() == {"type": "SQLiteRateLimiter"}
+    assert app.state.rate_limiter is first
+    assert database.exists()
