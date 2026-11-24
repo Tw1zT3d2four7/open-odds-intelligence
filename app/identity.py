@@ -714,15 +714,22 @@ class IdentityStore:
             return None
         now = _timestamp(_now())
         with self.connect() as db:
+            # Serialize session resolution with revocation/deactivation writes.
+            # Otherwise a revoke could commit after SELECT but before the
+            # last-seen update, allowing one stale request to pass.
+            db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 """SELECT s.id AS session_id, s.identity_id, s.expires_at,
                           s.last_seen_at, i.email, i.account_type
                    FROM sessions s JOIN identities i ON i.id=s.identity_id
                    WHERE s.token_hash=? AND s.revoked_at IS NULL
-                     AND s.expires_at>? AND i.is_active=1""",
+                     AND s.expires_at>? AND i.is_active=1
+                     AND (i.account_type='administrator'
+                          OR i.email_verified_at IS NOT NULL)""",
                 (_token_digest(token), now),
             ).fetchone()
             if row is None:
+                db.rollback()
                 return None
             idle_cutoff = _timestamp(
                 _now() - timedelta(seconds=config.SESSION_IDLE_TIMEOUT_SECONDS)
@@ -732,11 +739,13 @@ class IdentityStore:
                     "UPDATE sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL",
                     (now, row["session_id"]),
                 )
+                db.commit()
                 return None
             db.execute(
-                "UPDATE sessions SET last_seen_at=? WHERE id=?",
+                "UPDATE sessions SET last_seen_at=? WHERE id=? AND revoked_at IS NULL",
                 (now, row["session_id"]),
             )
+            db.commit()
         result = dict(row)
         result.pop("last_seen_at", None)
         return result
