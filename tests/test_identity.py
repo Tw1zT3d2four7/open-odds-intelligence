@@ -130,3 +130,32 @@ def test_revoking_all_sessions_invalidates_each_token(tmp_path):
     assert store.revoke_all_sessions(identity_id) == 2
     assert store.get_session(first) is None
     assert store.get_session(second) is None
+
+
+def test_idle_session_is_revoked_and_last_seen_is_refreshed(tmp_path, monkeypatch):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    token, session_id = store.create_session(identity_id)
+    with store.connect() as db:
+        db.execute(
+            "UPDATE sessions SET last_seen_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (session_id,),
+        )
+    assert store.get_session(token) is None
+    with store.connect() as db:
+        revoked = db.execute(
+            "SELECT revoked_at FROM sessions WHERE id=?", (session_id,)
+        ).fetchone()["revoked_at"]
+    assert revoked is not None
+
+
+def test_active_session_updates_last_seen_at(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("person@example.com", "correct horse battery")
+    token, session_id = store.create_session(identity_id)
+    assert store.get_session(token) is not None
+    with store.connect() as db:
+        last_seen = db.execute(
+            "SELECT last_seen_at FROM sessions WHERE id=?", (session_id,)
+        ).fetchone()["last_seen_at"]
+    assert last_seen
