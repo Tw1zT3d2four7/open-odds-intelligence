@@ -159,3 +159,34 @@ def test_concurrent_requests_cannot_exceed_fixed_window_limit(tmp_path):
         results = list(pool.map(consume, range(12)))
 
     assert sum(results) == 4
+
+
+
+def test_multi_bucket_consumption_is_atomic_when_identity_bucket_is_limited(tmp_path):
+    now = [600.0]
+    limiter = SQLiteRateLimiter(
+        tmp_path / "accounts.sqlite3",
+        hash_key="test-rate-limit-hash-key-at-least-32-bytes",
+        clock=lambda: now[0],
+    )
+    ip = "login:ip:192.0.2.45"
+    user_a = "login:identity:a@example.test"
+    user_b = "login:identity:b@example.test"
+
+    assert limiter.consume_many([(ip, 2, 60), (user_a, 1, 60)]).allowed
+    denied = limiter.consume_many([(ip, 2, 60), (user_a, 1, 60)])
+    assert not denied.allowed
+
+    # The denied attempt must not consume the still-available IP bucket.
+    assert limiter.consume_many([(ip, 2, 60), (user_b, 1, 60)]).allowed
+
+
+def test_multi_bucket_rejects_empty_or_conflicting_duplicate_buckets(tmp_path):
+    limiter = SQLiteRateLimiter(
+        tmp_path / "accounts.sqlite3",
+        hash_key="test-rate-limit-hash-key-at-least-32-bytes",
+    )
+    with pytest.raises(ValueError):
+        limiter.consume_many([])
+    with pytest.raises(ValueError, match="Duplicate bucket"):
+        limiter.consume_many([("same", 2, 60), ("same", 3, 60)])
