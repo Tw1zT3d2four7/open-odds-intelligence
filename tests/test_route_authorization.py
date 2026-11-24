@@ -108,3 +108,133 @@ def test_uncommon_authenticated_http_methods_also_require_csrf():
         ]
     finally:
         route_policy.ROUTE_ACCESS_POLICY.pop(("TRACE", "/api/test-admin-trace"))
+
+
+
+def _make_policy_integration_app():
+    from fastapi import Depends, FastAPI, HTTPException
+    from app.auth import (
+        ADMINISTRATOR_COOKIE,
+        CSRF_COOKIE,
+        CSRF_HEADER,
+        SUBSCRIBER_COOKIE,
+    )
+
+    class SessionStore:
+        sessions = {
+            "subscriber-entitled": {
+                "account_type": "subscriber", "identity_id": "sub-1",
+                "entitled": True,
+            },
+            "subscriber-free": {
+                "account_type": "subscriber", "identity_id": "sub-2",
+                "entitled": False,
+            },
+            "administrator": {
+                "account_type": "administrator", "identity_id": "admin-1",
+            },
+        }
+
+        def get_session(self, token):
+            return self.sessions.get(token)
+
+    app = FastAPI()
+    app.state.identity_store = SessionStore()
+
+    def entitlement_guard(session=Depends(require_subscriber)):
+        if not session.get("entitled"):
+            raise HTTPException(status_code=403, detail="Feature not included in plan.")
+
+    @app.get(
+        "/api/odds",
+        dependencies=dependencies_for_route(
+            "GET", "/api/odds", entitlement_dependency=entitlement_guard
+        ),
+    )
+    def odds_endpoint():
+        return {"ok": True}
+
+    @app.post(
+        "/api/refresh",
+        dependencies=dependencies_for_route("POST", "/api/refresh"),
+    )
+    def refresh_endpoint():
+        return {"ok": True}
+
+    @app.get(
+        "/api/health",
+        dependencies=dependencies_for_route("GET", "/api/health"),
+    )
+    def health_endpoint():
+        return {"status": "ok"}
+
+    return app, {
+        "admin_cookie": ADMINISTRATOR_COOKIE,
+        "csrf_cookie": CSRF_COOKIE,
+        "csrf_header": CSRF_HEADER,
+        "subscriber_cookie": SUBSCRIBER_COOKIE,
+    }
+
+
+def test_policy_dependencies_enforce_subscriber_entitlement_over_http():
+    from fastapi.testclient import TestClient
+
+    app, cookies = _make_policy_integration_app()
+    client = TestClient(app)
+
+    assert client.get("/api/odds").status_code == 401
+    free = client.get(
+        "/api/odds", cookies={cookies["subscriber_cookie"]: "subscriber-free"}
+    )
+    assert free.status_code == 403
+
+    entitled = client.get(
+        "/api/odds", cookies={cookies["subscriber_cookie"]: "subscriber-entitled"}
+    )
+    assert entitled.status_code == 200
+    assert entitled.json() == {"ok": True}
+
+
+def test_policy_dependencies_enforce_admin_session_and_csrf_over_http():
+    from fastapi.testclient import TestClient
+
+    app, cookies = _make_policy_integration_app()
+    client = TestClient(app)
+
+    subscriber = client.post(
+        "/api/refresh",
+        cookies={cookies["subscriber_cookie"]: "subscriber-entitled"},
+        headers={
+            "origin": "https://testserver",
+            cookies["csrf_header"]: "csrf-value",
+        },
+    )
+    assert subscriber.status_code == 401
+
+    missing_csrf = client.post(
+        "/api/refresh",
+        cookies={cookies["admin_cookie"]: "administrator"},
+    )
+    assert missing_csrf.status_code == 403
+
+    accepted = client.post(
+        "/api/refresh",
+        cookies={
+            cookies["admin_cookie"]: "administrator",
+            cookies["csrf_cookie"]: "csrf-value",
+        },
+        headers={
+            "origin": "https://testserver",
+            cookies["csrf_header"]: "csrf-value",
+        },
+    )
+    assert accepted.status_code == 200
+
+
+def test_policy_dependencies_keep_minimal_health_route_public_over_http():
+    from fastapi.testclient import TestClient
+
+    app, _cookies = _make_policy_integration_app()
+    response = TestClient(app).get("/api/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
