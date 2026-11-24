@@ -616,6 +616,13 @@ def test_cross_account_session_revocation_requires_active_administrator_actor(tm
 
     assert event["actor_identity_id"] == admin_id
     assert event["subject_identity_id"] == subject_id
+    filtered = store.list_security_audit_events(
+        event_type="identity.session_revoked",
+        actor_identity_id=admin_id,
+        subject_identity_id=subject_id,
+    )
+    assert filtered["total"] == 1
+    assert filtered["events"][0]["actor_identity_id"] == admin_id
 
 
 
