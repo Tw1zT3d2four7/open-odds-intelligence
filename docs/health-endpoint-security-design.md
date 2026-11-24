@@ -56,7 +56,7 @@ If orchestration later needs readiness distinct from liveness, introduce a separ
 
 ## Compatibility and migration gates
 
-1. Inspect the current Docker Compose health-check command and any external monitor that consumes `/api/health`; record the exact expected status code/body.
+1. **Compose contract inspected:** `docker-compose.yml` runs Python `urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=5).read()`. The probe requires a successful HTTP response; it does not parse or depend on the JSON body. Keep the route and successful status code stable. Inspect any external monitors separately before implementation.
 2. Add contract tests for the public liveness payload and the protected diagnostics response before changing the handler.
 3. Preserve the current detailed `/api/health` behavior while the legacy Basic Auth mode remains active, unless a separately reviewed security emergency requires an explicit operator migration.
 4. When identity mode is ready, switch the public endpoint to the minimal response and move detailed diagnostics behind administrator authentication in the same reviewed cutover.
