@@ -292,3 +292,22 @@ def test_inactive_identity_is_denied_at_http_dependency_boundary(tmp_path):
         "/subscriber", cookies={SUBSCRIBER_COOKIE: token}
     )
     assert response.status_code == 401
+
+
+
+def test_absolute_expiry_is_enforced_at_http_dependency_boundary(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "expired@example.test", "a-strong-expired-password"
+    )
+    token, session_id = store.create_session(identity_id)
+    with store.connect() as db:
+        db.execute(
+            "UPDATE sessions SET expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (session_id,),
+        )
+
+    response = TestClient(make_app(store)).get(
+        "/subscriber", cookies={SUBSCRIBER_COOKIE: token}
+    )
+    assert response.status_code == 401
