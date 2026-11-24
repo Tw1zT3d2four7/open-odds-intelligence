@@ -17,7 +17,7 @@ from .dependencies import (
 )
 from .route_policy import classify_route
 
-_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def dependencies_for_route(
@@ -37,7 +37,9 @@ def dependencies_for_route(
     if access_class is None:
         raise ValueError("Route has no explicit access policy.")
 
-    mutating = normalized_method in _MUTATING_METHODS
+    # Treat every method outside the HTTP safe-method set as state-changing;
+    # do not let uncommon/custom verbs bypass CSRF protection.
+    mutating = normalized_method not in _SAFE_METHODS
     if access_class == "public_minimal":
         if mutating:
             raise ValueError("Public routes cannot use state-changing methods.")
