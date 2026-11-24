@@ -891,7 +891,7 @@ class OddsService:
             self._alert_lock.release()
 
     def _dispatch_alerts_locked(self):
-        """Send newly observed EV/arb candidates once; isolate failures per delivery."""
+        """Select the strongest alerts from one upcoming calendar-day slate."""
         self._last_alert_check = datetime.now(timezone.utc).isoformat()
         self._last_alert_evaluated = 0
         self._last_alert_qualified = 0
@@ -904,7 +904,40 @@ class OddsService:
         sent = 0
         delivery_limit = config.DISCORD_ALERT_MAX_PER_CYCLE
         rate_limited = False
-        for event in self.events():
+        events = self.events()
+        now = datetime.now(timezone.utc)
+
+        def event_datetime(event):
+            value = event.get("commence_time")
+            if not isinstance(value, str) or not value.strip():
+                return None
+            try:
+                parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc)
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        # A Discord cycle represents one slate only: the nearest upcoming
+        # game date, based on the provider's event commence timestamp.
+        upcoming = [
+            parsed for event in events
+            if isinstance(event, dict)
+            for parsed in [event_datetime(event)]
+            if parsed is not None and parsed >= now
+        ]
+        if not upcoming:
+            return 0
+        slate_date = min(upcoming).date()
+
+        candidates = []
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            commence = event_datetime(event)
+            if commence is None or commence.date() != slate_date or commence < now:
+                continue
             try:
                 result = analyze_markets(
                     [event], min_ev=config.ALERT_MIN_EV_PERCENT,
@@ -914,70 +947,83 @@ class OddsService:
                 errors.append(f"Analysis for {event.get('id', 'unknown event')}: {exc}")
                 continue
 
-            candidates = []
+            self._last_alert_evaluated += len(result["opportunities"]) + len(result["arbitrage"])
             for row in result["opportunities"]:
+                if row["ev_percent"] < config.ALERT_MIN_EV_PERCENT:
+                    continue
                 identity = ["ev", row["event_id"], row["market"], row["outcome"],
                             row.get("outcome_description"), row.get("point"),
-                            row["bookmaker_key"], row["price"]]
+                            row["bookmaker_key"], int(round(row["price"] / 5.0)),
+                            int(round(row["ev_percent"] / 2.0))]
                 summary = (
                     f'VALUE +{row["ev_percent"]:.2f}% · {row["matchup"]} · '
                     f'{row["market"]} · {row["outcome"]} · {row["bookmaker"]} '
                     f'({row["price"]:+d})'
                 )
-                candidates.append(("ev", identity, summary, _discord_ev_embed(row)))
+                # Edge is the primary rank; independent-book support breaks ties.
+                rank = (float(row["ev_percent"]), int(row.get("consensus_books") or 0))
+                candidates.append((rank, "ev", identity, summary, _discord_ev_embed(row)))
             for row in result["arbitrage"]:
                 if row["arb_percent"] < config.ALERT_MIN_ARB_PERCENT:
                     continue
                 identity = ["arb", row["event_id"], row["market"], row.get("line"),
-                            sorted((leg["bookmaker_key"], leg["outcome"], leg["price"])
+                            int(round(row["arb_percent"] / 0.5)),
+                            sorted((leg["bookmaker_key"], leg["outcome"],
+                                    int(round(leg["price"] / 5.0)))
                                    for leg in row["legs"])]
                 summary = (
                     f'ARBITRAGE {row["arb_percent"]:.3f}% · {row["matchup"]} · '
                     f'{row["market"]}'
                 )
-                candidates.append(("arbitrage", identity, summary, _discord_arbitrage_embed(row)))
+                rank = (float(row["arb_percent"]), len({leg["bookmaker_key"] for leg in row["legs"]}))
+                candidates.append((rank, "arbitrage", identity, summary, _discord_arbitrage_embed(row)))
 
-            self._last_alert_evaluated += len(result["opportunities"]) + len(result["arbitrage"])
-            self._last_alert_qualified += len(candidates)
-            for alert_type, identity, message, embed in candidates:
-                if sent >= delivery_limit:
-                    break
-                fingerprint = hashlib.sha256(
-                    json.dumps(identity, sort_keys=True).encode()
-                ).hexdigest()
-                try:
-                    if not self.db.claim_alert(fingerprint, alert_type, message):
-                        continue
-                    payload = json.dumps({"embeds": [embed], "allowed_mentions": {"parse": []}}).encode()
-                    request = Request(
-                        config.DISCORD_WEBHOOK_URL, data=payload,
-                        headers={"Content-Type": "application/json",
-                                 "User-Agent": "OpenOddsIntelligence/0.4"},
-                        method="POST",
-                    )
-                    with urlopen(request, timeout=8) as response:
-                        if response.status not in (200, 204):
-                            raise RuntimeError(
-                                f"Discord webhook returned HTTP {response.status}"
-                            )
-                    sent += 1
-                    if sent < delivery_limit:
-                        time.sleep(0.5)
-                except HTTPError as exc:
-                    self.db.release_alert(fingerprint)
-                    if exc.code == 429:
-                        retry_after = (exc.headers.get("Retry-After")
-                                       if exc.headers else None)
-                        suffix = f"; retry after {retry_after}s" if retry_after else ""
-                        errors.append(f"Discord rate limit reached (HTTP 429){suffix}; remaining alerts deferred to the next check.")
-                        rate_limited = True
-                        break
-                    errors.append(f"Discord webhook HTTP {exc.code}: {str(exc)[:200]}")
-                except Exception as exc:
-                    self.db.release_alert(fingerprint)
-                    errors.append(str(exc)[:300])
-            if rate_limited or sent >= delivery_limit:
+        self._last_alert_qualified = len(candidates)
+        # Sort the entire slate before delivery; never let event iteration order
+        # decide which opportunities make the three-alert cut.
+        candidates.sort(key=lambda item: (item[0][0], item[0][1]), reverse=True)
+
+        for _rank, alert_type, identity, message, embed in candidates:
+            if sent >= delivery_limit:
                 break
+            fingerprint = hashlib.sha256(
+                json.dumps(identity, sort_keys=True).encode()
+            ).hexdigest()
+            try:
+                if not self.db.claim_alert(fingerprint, alert_type, message):
+                    continue
+                generated_at = int(datetime.now(timezone.utc).timestamp())
+                embed.setdefault("fields", []).append(_discord_field(
+                    "Alert timestamp", f"<t:{generated_at}:F> (<t:{generated_at}:R>)"
+                ))
+                payload = json.dumps({"embeds": [embed], "allowed_mentions": {"parse": []}}).encode()
+                request = Request(
+                    config.DISCORD_WEBHOOK_URL, data=payload,
+                    headers={"Content-Type": "application/json",
+                             "User-Agent": "OpenOddsIntelligence/0.4"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=8) as response:
+                    if response.status not in (200, 204):
+                        raise RuntimeError(
+                            f"Discord webhook returned HTTP {response.status}"
+                        )
+                sent += 1
+                if sent < delivery_limit:
+                    time.sleep(0.5)
+            except HTTPError as exc:
+                self.db.release_alert(fingerprint)
+                if exc.code == 429:
+                    retry_after = (exc.headers.get("Retry-After")
+                                   if exc.headers else None)
+                    suffix = f"; retry after {retry_after}s" if retry_after else ""
+                    errors.append(f"Discord rate limit reached (HTTP 429){suffix}; remaining alerts deferred to the next check.")
+                    rate_limited = True
+                    break
+                errors.append(f"Discord webhook HTTP {exc.code}: {str(exc)[:200]}")
+            except Exception as exc:
+                self.db.release_alert(fingerprint)
+                errors.append(str(exc)[:300])
 
         self._last_alert_sent = sent
         self._alerts_evaluated += self._last_alert_evaluated

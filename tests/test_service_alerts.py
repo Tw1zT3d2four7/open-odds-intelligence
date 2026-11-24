@@ -162,3 +162,66 @@ def test_discord_rate_limit_stops_the_current_delivery_cycle(tmp_path, monkeypat
     assert len(calls) == 1
     assert "HTTP 429" in service.status()["last_alert_error"]
     assert "deferred to the next check" in service.status()["last_alert_error"]
+
+
+
+def test_discord_sends_top_three_from_one_slate_with_timestamp(tmp_path, monkeypatch):
+    import json
+    from datetime import datetime, timezone
+
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    service = OddsService(db)
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
+    monkeypatch.setattr(config, "ALERT_MIN_EV_PERCENT", 5.0)
+    monkeypatch.setattr(config, "ALERT_MIN_ARB_PERCENT", 1.0)
+    monkeypatch.setattr(config, "DISCORD_ALERT_MAX_PER_CYCLE", 3)
+
+    events = [
+        {"id": "slate-low", "commence_time": "2030-01-01T18:00:00Z"},
+        {"id": "slate-mid", "commence_time": "2030-01-01T19:00:00Z"},
+        {"id": "slate-high", "commence_time": "2030-01-01T20:00:00Z"},
+        {"id": "slate-top", "commence_time": "2030-01-01T21:00:00Z"},
+        # A much larger edge on another date must not enter this slate's top three.
+        {"id": "tomorrow-best", "commence_time": "2030-01-02T18:00:00Z"},
+    ]
+    service.events = lambda: events
+    edges = {
+        "slate-low": 5.5, "slate-mid": 7.0, "slate-high": 8.5,
+        "slate-top": 9.0, "tomorrow-best": 99.0,
+    }
+
+    def fake_analysis(items, min_ev, min_consensus_books):
+        event_id = items[0]["id"]
+        if event_id == "tomorrow-best":
+            edge = edges[event_id]
+        else:
+            edge = edges[event_id]
+        row = {
+            "event_id": event_id, "market": "h2h", "outcome": "Home",
+            "outcome_description": "", "point": None, "bookmaker_key": "book",
+            "price": 110, "matchup": event_id, "bookmaker": "Book",
+            "ev_percent": edge, "consensus_books": 3,
+        }
+        return {"opportunities": [row], "arbitrage": []}
+
+    monkeypatch.setattr("app.service.analyze_markets", fake_analysis)
+    monkeypatch.setattr("app.service._discord_ev_embed",
+                        lambda row: {"title": row["event_id"], "fields": []})
+    sent = []
+
+    def fake_urlopen(request, timeout):
+        sent.append(json.loads(request.data.decode()))
+        return FakeResponse()
+
+    monkeypatch.setattr("app.service.urlopen", fake_urlopen)
+
+    assert service._dispatch_alerts() == 3
+    embeds = [payload["embeds"][0] for payload in sent]
+    assert {embed["title"] for embed in embeds} == {
+        "slate-mid", "slate-high", "slate-top"
+    }
+    assert all(
+        any(field["name"] == "Alert timestamp" and "<t:" in field["value"]
+            for field in embed["fields"])
+        for embed in embeds
+    )
