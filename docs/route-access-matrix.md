@@ -83,11 +83,11 @@ HTTP dependency tests now cover:
 - Administrator session creation rejected without MFA proof; valid TOTP proof permits the admin session.
 - Subscriber session cannot authenticate an administrator route.
 
-CI run `45504487596` passed 673 tests; absolute-expiry HTTP coverage passed in run `45504775274` (674 tests). The latest identity database hardening tests passed in run `45505030744`, bringing the verified suite to **676 tests**. These dependencies are still not attached to the 21 existing routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
+The latest identity/session verification suite passed **686 tests** in CI run `45507193988`. Coverage includes subscriber email verification as a prerequisite for authentication and session creation, plus rejection of a session if subscriber verification state is later revoked. The isolated dependencies are still not attached to live application routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
 
 ## Machine-checked policy inventory (implemented, not active middleware)
 
-`app/route_policy.py` records an explicit target access class for each of the 21 live HTTP routes. Classes include `public_minimal` (only health), `subscriber_entitled` (product/data routes), and `administrator_only` (manual shared provider/schedule refresh routes).
+`app/route_policy.py` records an explicit target access class for all 25 registered HTTP routes: 21 application endpoints plus four framework-generated schema/documentation endpoints. Classes include `public_minimal` (only health), `subscriber_entitled` (product/data routes), and `administrator_only` (manual shared provider/schedule refresh routes).
 
 CI compares the manifest with FastAPI's route registry, including framework-generated Starlette routes such as OpenAPI, Swagger UI, its OAuth redirect, and ReDoc (not only APIRoute endpoints). New routes cannot silently inherit public access, and removed/renamed routes cannot leave stale policy entries. Unknown method/path pairs return no classification; they are never implicitly public.
 
