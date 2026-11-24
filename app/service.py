@@ -136,7 +136,7 @@ class OddsService:
                     except (TypeError, ValueError, json.JSONDecodeError):
                         continue
         self._simulation_results_status = {
-            "enabled": bool(config.SIMULATION_RESULTS_SYNC_ENABLED and config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY),
+            "enabled": bool(config.SIMULATION_RESULTS_SYNC_ENABLED or getattr(config, "DISCORD_ALERT_RESULTS_SYNC_ENABLED", False)),
             "provider": config.ODDS_PROVIDER,
             "last_sync": self.db.get_state("simulation_results_last_sync"),
             "last_error": self.db.get_state("simulation_results_last_error"),
@@ -789,28 +789,41 @@ class OddsService:
         }
 
 
+    def discord_results_sync_enabled(self):
+        """Enable score-only final-result sync when Discord lifecycle needs it."""
+        pool = self._provider_key_pools.get("therundown")
+        return bool(
+            getattr(config, "DISCORD_ALERT_RESULTS_SYNC_ENABLED", False)
+            and config.DISCORD_WEBHOOK_URL
+            and "therundown" in self.active_provider_names()
+            and pool is not None and pool.configured
+        )
+
     def sync_simulation_results(self):
-        """Collect final scores only for games already present in local odds history."""
-        enabled = bool(config.SIMULATION_RESULTS_SYNC_ENABLED and
-                       config.ODDS_PROVIDER == "therundown" and config.THERUNDOWN_API_KEY)
-        if not enabled:
+        """Collect verified final scores for archived games using the configured key pool."""
+        discord_enabled = self.discord_results_sync_enabled()
+        simulator_enabled = bool(
+            config.SIMULATION_RESULTS_SYNC_ENABLED
+            and "therundown" in self.active_provider_names()
+            and self._provider_key_pools["therundown"].configured
+        )
+        if not (discord_enabled or simulator_enabled):
             self._simulation_results_status.update({
                 "enabled": False,
-                "reason": "Score sync is disabled or TheRundown is not the active configured odds provider.",
+                "reason": "Final-score sync is disabled, or TheRundown is not active with a configured key.",
             })
             return {"ok": False, "skipped": True, "reason": "disabled"}
         if not self._refresh_lock.acquire(blocking=False):
             return {"ok": False, "skipped": True,
-                    "reason": "Odds refresh is active; score sync deferred to protect the provider rate limit."}
-        provider = TheRundownProvider(
-            config.THERUNDOWN_API_KEY, utc_offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES
-        )
+                    "reason": "Odds refresh is active; score sync deferred to protect provider rate limits."}
+
+        pool = self._provider_key_pools["therundown"]
         now = datetime.now(timezone.utc)
         inserted = corrected = duplicates = rejected = groups_checked = events_returned = 0
         errors = []
         try:
             groups = self.db.pending_simulation_result_dates(
-                [sport for sport in config.ODDS_SPORTS if sport in provider.SPORTS],
+                [sport for sport in config.ODDS_SPORTS if sport in TheRundownProvider.SPORTS],
                 lookback_days=config.SIMULATION_RESULTS_LOOKBACK_DAYS, now=now,
                 offset_minutes=config.RUNDOWN_UTC_OFFSET_MINUTES,
                 recheck_days=config.SIMULATION_RESULTS_RECHECK_DAYS,
@@ -827,11 +840,37 @@ class OddsService:
                     previous_at = None
                 if previous_at is None or (now - previous_at.astimezone(timezone.utc)).total_seconds() >= config.SIMULATION_RESULTS_RETRY_SECONDS:
                     due_groups.append((group, state_key))
+
             due_groups = due_groups[:config.SIMULATION_RESULTS_MAX_GROUPS_PER_RUN]
             for group, state_key in due_groups:
                 self.db.set_state(state_key, datetime.now(timezone.utc).isoformat())
-                try:
-                    results = provider.fetch_scores(group["sport"], [group["event_date"]])
+                group_done = False
+                last_error = None
+                for _ in range(pool.status()["configured_keys"]):
+                    try:
+                        lease = pool.acquire()
+                    except NoAvailableKeys as exc:
+                        last_error = ProviderError(str(exc))
+                        break
+                    provider = self._new_provider("therundown", lease.key)
+                    try:
+                        results = provider.fetch_scores(group["sport"], [group["event_date"]])
+                    except ProviderError as exc:
+                        usage = getattr(provider, "usage", {})
+                        self._record_provider_key_usage("therundown", pool, lease, usage)
+                        self._remember_provider_usage(usage, "therundown", lease.fingerprint)
+                        disposition = pool.mark_failure(
+                            lease, status_code=getattr(exc, "status_code", None),
+                            message=str(exc), retry_after_seconds=getattr(exc, "retry_after", None),
+                        )
+                        last_error = exc
+                        if disposition in ("disabled", "cooldown"):
+                            continue
+                        break
+                    usage = getattr(provider, "usage", {})
+                    self._record_provider_key_usage("therundown", pool, lease, usage)
+                    self._remember_provider_usage(usage, "therundown", lease.fingerprint)
+                    pool.mark_success(lease)
                     events_returned += len(results)
                     saved = self.db.save_simulation_settlements(results)
                     inserted += saved["inserted"]
@@ -839,39 +878,37 @@ class OddsService:
                     duplicates += saved["duplicates"]
                     rejected += len(saved["rejected"])
                     groups_checked += 1
-                except ProviderError as exc:
-                    errors.append(str(group["sport"]) + " " + str(group["event_date"]) + ": " + str(exc))
-                    continue
-            self._remember_provider_usage(provider.usage)
+                    group_done = True
+                    break
+                if not group_done and last_error is not None:
+                    errors.append(str(group["sport"]) + " " + str(group["event_date"]) + ": " + str(last_error))
+
             last_sync = datetime.now(timezone.utc).isoformat()
-            last_error = "; ".join(errors)[:1000] if errors else None
+            last_error_text = "; ".join(errors)[:1000] if errors else None
             self.db.set_state("simulation_results_last_sync", last_sync)
-            self.db.set_state("simulation_results_last_error", last_error or "")
+            self.db.set_state("simulation_results_last_error", last_error_text or "")
             self._simulation_results_status = {
-                "enabled": True, "provider": provider.name, "last_sync": last_sync,
-                "last_error": last_error, "groups_pending": len(groups),
+                "enabled": True, "provider": "therundown", "last_sync": last_sync,
+                "last_error": last_error_text, "groups_pending": len(groups),
                 "groups_checked": groups_checked, "events_returned": events_returned,
                 "inserted_last_run": inserted, "corrected_last_run": corrected,
-                "duplicates_last_run": duplicates,
-                "rejected_last_run": rejected,
+                "duplicates_last_run": duplicates, "rejected_last_run": rejected,
                 "settlements_stored": len(self.db.simulation_settlements()),
                 "lookback_days": config.SIMULATION_RESULTS_LOOKBACK_DAYS,
                 "recheck_days": config.SIMULATION_RESULTS_RECHECK_DAYS,
                 "refresh_interval_seconds": config.SIMULATION_RESULTS_SYNC_INTERVAL_SECONDS,
                 "retry_interval_seconds": config.SIMULATION_RESULTS_RETRY_SECONDS,
                 "max_groups_per_run": config.SIMULATION_RESULTS_MAX_GROUPS_PER_RUN,
-                "data_policy": "Score-only affiliate_ids=0 requests; only final scores for event IDs already in local odds snapshots are stored.",
+                "discord_lifecycle_sync": discord_enabled,
+                "data_policy": "Score-only affiliate_ids=0 requests; only verified final scores for event IDs already in local odds snapshots are stored.",
             }
+            # Newly stored final scores are reflected by the normal Discord alert
+            # lifecycle checker, which edits the original webhook message in place.
+            self._update_discord_alert_lifecycle()
             return {"ok": not bool(errors), "groups_checked": groups_checked,
                     "events_returned": events_returned, "inserted": inserted,
                     "corrected": corrected, "duplicates": duplicates,
-                    "rejected": rejected, "error": last_error}
-        except ProviderError as exc:
-            self._remember_provider_usage(provider.usage)
-            last_error = str(exc)
-            self.db.set_state("simulation_results_last_error", last_error)
-            self._simulation_results_status.update({"enabled": True, "last_error": last_error})
-            return {"ok": False, "error": last_error, "groups_checked": groups_checked}
+                    "rejected": rejected, "error": last_error_text}
         finally:
             self._refresh_lock.release()
 
