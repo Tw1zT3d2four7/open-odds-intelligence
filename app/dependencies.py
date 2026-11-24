@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException, Request
 
 from .auth import require_same_origin_csrf, resolve_session
 from .identity import IdentityStore
+from .rate_limit import SQLiteRateLimiter
 
 
 def get_identity_store(request: Request) -> IdentityStore:
@@ -64,3 +65,20 @@ def require_administrator(
 def require_authenticated_csrf(request: Request) -> None:
     """Require the HTTPS same-origin double-submit CSRF check for mutations."""
     require_same_origin_csrf(request)
+
+
+
+def get_rate_limiter(request: Request) -> SQLiteRateLimiter:
+    """Return a lazy app-scoped limiter; missing secret/storage fails closed."""
+    limiter = getattr(request.app.state, "rate_limiter", None)
+    if limiter is not None:
+        return limiter
+    try:
+        limiter = SQLiteRateLimiter()
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication protection is temporarily unavailable.",
+        ) from None
+    request.app.state.rate_limiter = limiter
+    return limiter
