@@ -149,3 +149,6 @@ PROVIDER_RETRY_MAX_DELAY_SECONDS = max(PROVIDER_RETRY_BASE_DELAY_SECONDS, min(30
 # Dedicated Fernet key for administrator TOTP seeds. Generate out of band;
 # never commit this value or reuse an odds-provider API key.
 MFA_ENCRYPTION_KEY = os.getenv("MFA_ENCRYPTION_KEY", "")
+
+# Required keyed-hash secret before persistent authentication rate limits are enabled.
+RATE_LIMIT_HASH_KEY = os.getenv("RATE_LIMIT_HASH_KEY", "")
