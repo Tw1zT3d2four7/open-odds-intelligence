@@ -194,6 +194,36 @@ class IdentityStore:
         """Create an unverified subscriber. Public routes must call this only."""
         return self._create_identity(email, password, "subscriber")
 
+    def provision_initial_administrator(self, email: str, password: str) -> str:
+        """Atomically create the first and only bootstrap administrator."""
+        normalized_email = _normalize_email(email)
+        password_hash = _password_hash(password)
+        now = _timestamp(_now())
+        identity_id = secrets.token_urlsafe(24)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            count = db.execute(
+                "SELECT COUNT(*) AS count FROM identities WHERE account_type='administrator'"
+            ).fetchone()["count"]
+            if count:
+                db.rollback()
+                raise ValueError("An administrator already exists; initial bootstrap is closed.")
+            db.execute(
+                """INSERT INTO identities(
+                    id, email, account_type, password_hash, created_at, updated_at,
+                    password_changed_at
+                ) VALUES (?, ?, 'administrator', ?, ?, ?, ?)""",
+                (identity_id, normalized_email, password_hash, now, now, now),
+            )
+            db.execute(
+                """INSERT INTO security_audit_events(
+                    id, event_type, subject_identity_id, occurred_at, metadata_json
+                ) VALUES (?, 'administrator.initially_provisioned', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), identity_id, now),
+            )
+            db.commit()
+        return identity_id
+
     def provision_administrator(self, email: str, password: str) -> str:
         """Privileged bootstrap primitive; never expose through public HTTP routes."""
         return self._create_identity(email, password, "administrator")
