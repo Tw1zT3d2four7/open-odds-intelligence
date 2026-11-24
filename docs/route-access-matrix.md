@@ -59,3 +59,12 @@ The current `optional_basic_auth` middleware protects application routes only wh
 - No new login, registration, admin, or account HTTP routes.
 - No endpoint behavior or dashboard changes.
 - No changes to production configuration, deployment, Docker Compose, or persistent data.
+
+
+## Inventory verification and session-boundary implementation
+
+The route inventory was rechecked against every `@app.get/post/put/patch/delete` decorator in `app/main.py` on 2026-11-24: all 21 current routes are represented above. There are no additional FastAPI route modules under `app/` at this point.
+
+The isolated helpers in `app/auth.py` now provide separate subscriber and administrator host-only session cookies, account-class-specific session resolution, and same-origin double-submit CSRF validation. Their design and HTTPS/reverse-proxy requirements are documented in `docs/session-boundary-design.md`.
+
+These helpers are not yet connected to middleware or endpoints. The existing optional Basic Auth middleware remains unchanged. The target access classes in this matrix remain policy intent until route dependencies and the compatibility transition are implemented and tested.
