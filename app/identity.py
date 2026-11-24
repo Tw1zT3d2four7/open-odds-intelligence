@@ -457,13 +457,22 @@ class IdentityStore:
             if identity is None:
                 db.rollback()
                 raise ValueError("An active administrator identity is required.")
+            existing_mfa = db.execute(
+                "SELECT enrolled_at FROM administrator_mfa WHERE identity_id=?",
+                (identity_id,),
+            ).fetchone()
+            if existing_mfa and existing_mfa["enrolled_at"] is not None:
+                db.rollback()
+                raise ValueError("Administrator MFA is already enrolled; use the verified recovery process.")
             db.execute(
                 """INSERT INTO administrator_mfa(
-                    identity_id, encrypted_secret, enrolled_at, last_verified_at, last_totp_counter
-                ) VALUES (?, ?, NULL, NULL, NULL)
+                    identity_id, encrypted_secret, enrolled_at, last_verified_at,
+                    last_totp_counter, mfa_login_verified_at
+                ) VALUES (?, ?, NULL, NULL, NULL, NULL)
                 ON CONFLICT(identity_id) DO UPDATE SET
                     encrypted_secret=excluded.encrypted_secret,
-                    enrolled_at=NULL, last_verified_at=NULL, last_totp_counter=NULL""",
+                    enrolled_at=NULL, last_verified_at=NULL, last_totp_counter=NULL,
+                    mfa_login_verified_at=NULL""",
                 (identity_id, cipher.encrypt(secret.encode("utf-8"))),
             )
             db.execute(
@@ -586,8 +595,12 @@ class IdentityStore:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                """SELECT id FROM administrator_mfa_recovery_codes
-                   WHERE identity_id=? AND code_hash=? AND consumed_at IS NULL""",
+                """SELECT r.id FROM administrator_mfa_recovery_codes r
+                   JOIN identities i ON i.id=r.identity_id
+                   JOIN administrator_mfa m ON m.identity_id=i.id
+                   WHERE r.identity_id=? AND r.code_hash=? AND r.consumed_at IS NULL
+                     AND i.account_type='administrator' AND i.is_active=1
+                     AND m.enrolled_at IS NOT NULL""",
                 (identity_id, _token_digest(code)),
             ).fetchone()
             if row is None:
