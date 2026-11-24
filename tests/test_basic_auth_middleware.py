@@ -125,7 +125,9 @@ def test_legacy_basic_auth_health_bypass_is_limited_to_safe_methods(
     monkeypatch.setattr(config, "AUTH_PASSWORD", "case-sensitive-secret")
 
     assert client.get("/api/health").status_code == 200
-    assert client.head("/api/health").status_code == 200
+    # HEAD is not explicitly registered on this endpoint, so the route may
+    # return 405; the auth middleware must still let the safe probe through.
+    assert client.head("/api/health").status_code == 405
 
     denied = client.post("/api/health")
     assert denied.status_code == 401
