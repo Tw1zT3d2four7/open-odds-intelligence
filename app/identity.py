@@ -7,6 +7,7 @@ provisioning must only be invoked by a private operator-controlled workflow.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from contextlib import contextmanager
 import re
@@ -90,6 +91,28 @@ class IdentityStore:
             os.fchmod(descriptor, 0o600)
         finally:
             os.close(descriptor)
+
+    def _record_audit_event(
+        self,
+        db: sqlite3.Connection,
+        event_type: str,
+        identity_id: str,
+        occurred_at: str,
+        metadata: dict | None = None,
+    ) -> None:
+        """Write a secret-free security audit event in the caller's transaction."""
+        db.execute(
+            """INSERT INTO security_audit_events(
+                id, event_type, subject_identity_id, occurred_at, metadata_json
+            ) VALUES (?, ?, ?, ?, ?)""",
+            (
+                secrets.token_urlsafe(18),
+                event_type,
+                identity_id,
+                occurred_at,
+                json.dumps(metadata or {}, separators=(",", ":"), sort_keys=True),
+            ),
+        )
 
     @contextmanager
     def connect(self):
@@ -268,6 +291,7 @@ class IdentityStore:
         now = _timestamp(_now())
         identity_id = secrets.token_urlsafe(24)
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             db.execute(
                 """INSERT INTO identities(
                     id, email, account_type, password_hash, created_at, updated_at,
@@ -275,6 +299,13 @@ class IdentityStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (identity_id, normalized_email, account_type, password_hash, now, now, now),
             )
+            event_type = (
+                "subscriber.registered"
+                if account_type == "subscriber"
+                else "administrator.provisioned"
+            )
+            self._record_audit_event(db, event_type, identity_id, now)
+            db.commit()
         return identity_id
 
     def authenticate(self, email: str, password: str, account_type: str) -> str | None:
@@ -705,6 +736,12 @@ class IdentityStore:
                     now_text, now_text, _timestamp(now + lifetime),
                 ),
             )
+            self._record_audit_event(
+                db,
+                f"{identity['account_type']}.session_created",
+                identity_id,
+                now_text,
+            )
             db.commit()
         return token, session_id
 
@@ -755,19 +792,45 @@ class IdentityStore:
         if not isinstance(token, str) or not token or len(token) > 256:
             return False
         with self.connect() as db:
-            cursor = db.execute(
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT identity_id FROM sessions
+                   WHERE token_hash=? AND revoked_at IS NULL""",
+                (_token_digest(token),),
+            ).fetchone()
+            if row is None:
+                db.rollback()
+                return False
+            now = _timestamp(_now())
+            db.execute(
                 """UPDATE sessions SET revoked_at=?
                    WHERE token_hash=? AND revoked_at IS NULL""",
-                (_timestamp(_now()), _token_digest(token)),
+                (now, _token_digest(token)),
             )
-        return cursor.rowcount == 1
+            self._record_audit_event(
+                db, "identity.session_revoked", row["identity_id"], now
+            )
+            db.commit()
+        return True
 
     def revoke_all_sessions(self, identity_id: str) -> int:
         """Revoke every active session, e.g. after password reset or suspension."""
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            now = _timestamp(_now())
             cursor = db.execute(
                 """UPDATE sessions SET revoked_at=?
                    WHERE identity_id=? AND revoked_at IS NULL""",
-                (_timestamp(_now()), identity_id),
+                (now, identity_id),
             )
-        return cursor.rowcount
+            revoked_count = cursor.rowcount
+            if revoked_count:
+                self._record_audit_event(
+                    db,
+                    "identity.sessions_revoked",
+                    identity_id,
+                    now,
+                    {"revoked_count": revoked_count},
+                )
+            db.commit()
+        return revoked_count
