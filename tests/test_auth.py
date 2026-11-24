@@ -99,7 +99,8 @@ def test_same_origin_csrf_accepts_matching_origin_cookie_and_header():
 
 @pytest.mark.parametrize("origin", [
     "https://attacker.example", "null", "https://example.com.attacker.example",
-    "https://user@example.com", "https://example.com/path",
+    "https://user@example.com", "https://example.com/path", "http://example.com",
+    "https://example.com:444",
 ])
 def test_same_origin_csrf_rejects_untrusted_origins(origin):
     request = make_request(
@@ -121,3 +122,14 @@ def test_same_origin_csrf_requires_header_and_cookie_match():
     with pytest.raises(HTTPException) as error:
         require_same_origin_csrf(request)
     assert error.value.status_code == 403
+
+
+
+def test_same_origin_csrf_accepts_explicit_default_https_port():
+    token = "csrf-default-port"
+    request = make_request(
+        headers={"host": "example.com:443", "origin": "https://example.com",
+                 "x-ooi-csrf-token": token},
+        cookie=f"{CSRF_COOKIE}={token}",
+    )
+    require_same_origin_csrf(request)
