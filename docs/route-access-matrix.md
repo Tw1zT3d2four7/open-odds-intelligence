@@ -15,17 +15,17 @@ The current `optional_basic_auth` middleware protects application routes only wh
 |---|---:|---|---|---|
 | `/` | GET | Existing odds dashboard | Subscriber | Keep existing dashboard available to authenticated subscribers. |
 | `/api/health` | GET | Container/application health | Public / minimal | Return no secrets, provider credentials, or private account data. |
-| `/api/limits/refresh` | POST | Trigger market-limit refresh | Admin or internal | Do not let each subscriber trigger shared provider work or consume provider quota. |
+| `/api/limits/refresh` | POST | Trigger market-limit refresh | Administrator only | Only an administrator may trigger this shared provider operation; background refresh loops call service methods directly. |
 | `/api/limits` | GET | Market limits | Subscriber + entitlement | Apply sport/feature entitlements server-side. |
 | `/api/limits/changes` | GET | Market-limit changes | Subscriber + entitlement | Apply sport/feature entitlements server-side. |
 | `/api/limits/history` | GET | Market-limit history | Subscriber + entitlement | Apply sport/feature entitlements server-side. |
 | `/api/odds` | GET | Odds data | Subscriber + entitlement | Preserve current query behavior. |
-| `/api/refresh` | POST | Trigger odds refresh | Admin or internal | Shared provider operation; avoid subscriber-triggered quota exhaustion. |
+| `/api/refresh` | POST | Trigger odds refresh | Administrator only | Administrator-only manual refresh; scheduled service loops do not use this HTTP route. |
 | `/api/market-board` | GET | Market board | Subscriber + entitlement | Preserve existing dashboard behavior. |
 | `/api/bookmaker-board` | GET | Bookmaker board | Subscriber + entitlement | Preserve existing dashboard behavior. |
 | `/api/simulation/leagues` | GET | Simulation league list | Subscriber + entitlement | Read-only. |
 | `/api/simulation/games` | GET | Simulation games | Subscriber + entitlement | Read-only. |
-| `/api/simulation/games/refresh` | POST | Refresh simulation schedule | Admin or internal | Shared schedule refresh; protect provider/resource usage. |
+| `/api/simulation/games/refresh` | POST | Refresh simulation schedule | Administrator only | Administrator-only manual schedule refresh; background synchronization uses internal service methods. |
 | `/api/simulation/run` | POST | Run a game simulation | Subscriber + entitlement | Add per-account rate limits and plan limits before multi-tenant launch. |
 | `/api/player-props` | GET | Player prop data | Subscriber + entitlement | Apply sport/feature entitlements. |
 | `/api/clv` | GET | Closing-line value data | Subscriber + entitlement | Apply sport/feature entitlements. |
