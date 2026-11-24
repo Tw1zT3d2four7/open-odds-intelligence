@@ -128,10 +128,6 @@ def test_store_initialization_failure_fails_closed_without_leaking_details(monke
 def test_mutating_subscriber_route_requires_csrf_origin_cookie_and_header():
     store = StubStore({"sub-token": {"account_type": "subscriber", "identity_id": "s1"}})
     client = TestClient(make_app(store))
-    cookies = {
-        SUBSCRIBER_COOKIE: "sub-token",
-        CSRF_COOKIE: "csrf-value",
-    }
     client.cookies.set(SUBSCRIBER_COOKIE, "sub-token")
     client.cookies.set(CSRF_COOKIE, "csrf-value")
     denied = client.post("/subscriber/change")
