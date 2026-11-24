@@ -31,7 +31,7 @@ def test_policy_inventory_covers_all_21_existing_http_routes():
     assert set(ROUTE_ACCESS_POLICY) == actual
 
 
-def test_shared_provider_refresh_routes_are_not_subscriber_accessible():
+def test_shared_provider_refresh_routes_require_administrator_access():
     assert classify_route("POST", "/api/refresh") == "administrator_only"
     assert classify_route("POST", "/api/limits/refresh") == "administrator_only"
     assert classify_route("POST", "/api/simulation/games/refresh") == "administrator_only"
