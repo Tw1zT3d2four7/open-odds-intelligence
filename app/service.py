@@ -953,7 +953,8 @@ class OddsService:
                     continue
                 identity = ["ev", row["event_id"], row["market"], row["outcome"],
                             row.get("outcome_description"), row.get("point"),
-                            row["bookmaker_key"], row["price"]]
+                            row["bookmaker_key"], int(round(row["price"] / 5.0)),
+                            int(round(row["ev_percent"] / 2.0))]
                 summary = (
                     f'VALUE +{row["ev_percent"]:.2f}% · {row["matchup"]} · '
                     f'{row["market"]} · {row["outcome"]} · {row["bookmaker"]} '
@@ -966,7 +967,9 @@ class OddsService:
                 if row["arb_percent"] < config.ALERT_MIN_ARB_PERCENT:
                     continue
                 identity = ["arb", row["event_id"], row["market"], row.get("line"),
-                            sorted((leg["bookmaker_key"], leg["outcome"], leg["price"])
+                            int(round(row["arb_percent"] / 0.5)),
+                            sorted((leg["bookmaker_key"], leg["outcome"],
+                                    int(round(leg["price"] / 5.0)))
                                    for leg in row["legs"])]
                 summary = (
                     f'ARBITRAGE {row["arb_percent"]:.3f}% · {row["matchup"]} · '
