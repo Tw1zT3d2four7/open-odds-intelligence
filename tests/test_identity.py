@@ -613,6 +613,9 @@ def test_cross_account_session_revocation_requires_active_administrator_actor(
     admin_id = store.provision_administrator(
         "audit-admin@example.com", "a-strong-audit-admin-password"
     )
+    with pytest.raises(ValueError, match="MFA-enrolled administrator"):
+        store.revoke_session(token, actor_identity_id=admin_id)
+    assert store.get_session(token) is not None
     provisioning_uri = store.start_administrator_mfa_enrollment(admin_id)
     totp = pyotp.parse_uri(provisioning_uri)
     store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
