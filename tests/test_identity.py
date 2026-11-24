@@ -596,3 +596,49 @@ def test_cross_account_session_revocation_requires_active_administrator_actor(tm
 
     assert event["actor_identity_id"] == admin_id
     assert event["subject_identity_id"] == subject_id
+
+
+
+def test_audit_query_is_paginated_filtered_and_secret_free(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "audit-query@example.com", "a-strong-audit-query-password"
+    )
+    _verify_subscriber(store, "audit-query@example.com")
+    token, _ = store.create_session(identity_id)
+    store.revoke_session(token)
+
+    page = store.list_security_audit_events(limit=2, offset=1)
+    assert page["total"] == 4
+    assert page["limit"] == 2
+    assert page["offset"] == 1
+    assert len(page["events"]) == 2
+    assert all("metadata" in event for event in page["events"])
+    assert all("audit-query@example.com" not in str(event) for event in page["events"])
+    assert all(token not in str(event) for event in page["events"])
+
+    filtered = store.list_security_audit_events(
+        event_type="subscriber.session_created",
+        actor_identity_id=identity_id,
+        subject_identity_id=identity_id,
+    )
+    assert filtered["total"] == 1
+    assert filtered["events"][0]["event_type"] == "subscriber.session_created"
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"limit": 0},
+        {"limit": 501},
+        {"limit": True},
+        {"offset": -1},
+        {"offset": True},
+        {"event_type": ""},
+        {"actor_identity_id": "x" * 129},
+    ],
+)
+def test_audit_query_rejects_unbounded_or_invalid_parameters(tmp_path, kwargs):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    with pytest.raises(ValueError):
+        store.list_security_audit_events(**kwargs)
