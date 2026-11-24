@@ -2,7 +2,11 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from app.rate_limit import SQLiteRateLimiter, auth_rate_limit_keys
+from app.rate_limit import (
+    SQLiteRateLimiter,
+    auth_rate_limit_keys,
+    enforce_rate_limit,
+)
 
 
 def test_fixed_window_allows_limit_then_denies_with_retry_after(tmp_path):
@@ -190,3 +194,53 @@ def test_multi_bucket_rejects_empty_or_conflicting_duplicate_buckets(tmp_path):
         limiter.consume_many([])
     with pytest.raises(ValueError, match="Duplicate bucket"):
         limiter.consume_many([("same", 2, 60), ("same", 3, 60)])
+
+
+
+def test_http_rate_limit_returns_429_and_retry_after_header(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    limiter = SQLiteRateLimiter(
+        tmp_path / "accounts.sqlite3",
+        hash_key="test-rate-limit-hash-key-at-least-32-bytes",
+        clock=lambda: 120.0,
+    )
+    app = FastAPI()
+
+    @app.post("/login")
+    def login():
+        enforce_rate_limit(
+            limiter,
+            ["login:ip:192.0.2.50", "login:identity:user@example.test"],
+            limit=1,
+            window_seconds=60,
+        )
+        return {"ok": True}
+
+    client = TestClient(app)
+    assert client.post("/login").status_code == 200
+    denied = client.post("/login")
+    assert denied.status_code == 429
+    assert denied.headers["retry-after"] == "60"
+    assert denied.json()["detail"] == "Too many requests. Please try again later."
+
+
+def test_rate_limit_storage_failure_fails_closed_without_leaking_details():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    class BrokenLimiter:
+        def consume_many(self, _buckets):
+            raise RuntimeError("private database path and error")
+
+    app = FastAPI()
+
+    @app.post("/login")
+    def login():
+        enforce_rate_limit(BrokenLimiter(), ["login:ip:192.0.2.50"], limit=1, window_seconds=60)
+        return {"ok": True}
+
+    response = TestClient(app).post("/login")
+    assert response.status_code == 503
+    assert "private database path" not in response.text
