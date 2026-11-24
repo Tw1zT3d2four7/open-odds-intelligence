@@ -467,7 +467,7 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Reviewed the route access matrix and documented the Basic Auth compatibility/cutover plan before wiring authentication into FastAPI.
 - [x] Preserved the existing Basic Auth middleware; isolated session-cookie, CSRF, and lazy FastAPI subscriber/admin dependencies are tested but not yet wired into existing routes.
 - [x] Added an explicit access-class manifest for every current route and CI tests that fail on an unclassified new route or stale policy entry.
-- [x] Added isolated persistent fixed-window rate-limit primitives with atomic SQLite counters, HMAC-hashed bucket identifiers, and separate IP/account buckets. Requires a dedicated 32-byte `RATE_LIMIT_HASH_KEY`; no route integration yet.
+- [x] Added isolated persistent fixed-window rate-limit primitives with atomic SQLite counters, HMAC-hashed bucket identifiers, and atomic IP/account bucket consumption. Includes generic HTTP 429/Retry-After and fail-closed 503 helpers. Requires a dedicated 32-byte `RATE_LIMIT_HASH_KEY`; no production route integration yet.
 - [x] Added spoof-resistant proxy-chain resolution that ignores forwarded headers unless explicit trusted CIDRs are supplied; deployment-specific proxy CIDRs remain unconfigured pending topology verification.
 - [x] Added HTTP regression tests locking down legacy Basic Auth compatibility: unset credentials preserve current behavior, configured credentials are required and case-sensitive, partial configuration fails closed, and `/api/health` remains available.
 
