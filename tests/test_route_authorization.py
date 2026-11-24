@@ -82,7 +82,7 @@ def test_dependency_assembly_covers_every_declared_route_class():
             assert resolved == [], (method, path)
         elif access_class == "administrator_only":
             expected = [require_administrator]
-            if method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if method not in {"GET", "HEAD", "OPTIONS"}:
                 expected.append(require_authenticated_csrf)
             assert resolved == expected, (method, path)
         elif access_class == "subscriber_entitled":
@@ -92,3 +92,15 @@ def test_dependency_assembly_covers_every_declared_route_class():
             assert resolved == expected, (method, path)
         else:
             pytest.fail(f"Unsupported access class for {method} {path}: {access_class}")
+
+
+def test_uncommon_authenticated_http_methods_also_require_csrf():
+    from app import route_policy
+
+    route_policy.ROUTE_ACCESS_POLICY[("TRACE", "/api/test-admin-trace")] = "administrator_only"
+    try:
+        assert _dependencies("TRACE", "/api/test-admin-trace") == [
+            require_administrator, require_authenticated_csrf
+        ]
+    finally:
+        route_policy.ROUTE_ACCESS_POLICY.pop(("TRACE", "/api/test-admin-trace"))
