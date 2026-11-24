@@ -6,6 +6,7 @@ odds-history database. Caller must enforce each returned bucket dimension.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import ipaddress
 import os
 import sqlite3
@@ -33,9 +34,16 @@ class SQLiteRateLimiter:
         self,
         database_path: str | Path | None = None,
         *,
+        hash_key: str | bytes | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.database_path = Path(database_path or config.ACCOUNTS_DATABASE_PATH)
+        configured_key = hash_key if hash_key is not None else config.RATE_LIMIT_HASH_KEY
+        if isinstance(configured_key, str):
+            configured_key = configured_key.encode("utf-8")
+        if not isinstance(configured_key, bytes) or len(configured_key) < 32:
+            raise ValueError("RATE_LIMIT_HASH_KEY must contain at least 32 bytes.")
+        self.hash_key = configured_key
         self.clock = clock
 
     def _connect(self) -> sqlite3.Connection:
@@ -64,7 +72,9 @@ class SQLiteRateLimiter:
     def _digest(bucket_key: str) -> str:
         if not isinstance(bucket_key, str) or not bucket_key or len(bucket_key) > 2048:
             raise ValueError("A non-empty bounded rate-limit key is required.")
-        return hashlib.sha256(bucket_key.encode("utf-8")).hexdigest()
+        return hmac.new(
+            self.hash_key, bucket_key.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
     def consume(
         self, bucket_key: str, *, limit: int, window_seconds: int
