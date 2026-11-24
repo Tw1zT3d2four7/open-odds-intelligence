@@ -13,7 +13,7 @@ Protect subscriber registration, login, email verification, password recovery, a
 - Each bucket key is stored as an HMAC-SHA256 digest. A dedicated `RATE_LIMIT_HASH_KEY` of at least 32 bytes is required to instantiate the limiter. It must be generated randomly and stored as a deployment secret, never committed or logged.
 - The limiter returns allow/deny, remaining count, and retry-after seconds. `consume_many()` checks and consumes IP/account buckets atomically so a denied identity bucket does not partially consume the IP bucket. `enforce_rate_limit()` maps denials to generic HTTP 429 responses with `Retry-After` and storage failures to generic fail-closed HTTP 503 responses. A lazy app-scoped FastAPI dependency reuses an injected limiter or initializes one from the dedicated secret. Policy thresholds are intentionally not wired or selected.
 - Independent bucket dimensions can be generated for the direct client IP and normalized account identifier. Raw identifiers are not persisted.
-- SQLite database permissions are restricted to mode 0600.
+- SQLite database and active WAL/SHM sidecars are restricted to mode 0600. Rate-limit windows are capped at 30 days, and abandoned bucket rows older than 90 days are pruned using an indexed timestamp.
 
 ## Proxy trust
 
