@@ -64,6 +64,7 @@ Create or tighten the accounts database file to mode 0600 before SQLite opens it
 - Enforce server-side idle and absolute session expiry, logout/revocation, and revocation after password reset or account suspension.
 - Protect cookie-authenticated state-changing requests with CSRF tokens and origin checks.
 - Apply rate limits and generic authentication errors to reduce brute-force and account-enumeration risk.
+- A subscriber must have a successfully verified email before password authentication can succeed or a session can be created. Enforce this in the identity-store methods themselves, not only in registration/login routes; session resolution also rejects a subscriber whose verification state is no longer valid.
 - Never log passwords, raw session tokens, MFA secrets, recovery codes, or reset/verification tokens.
 
 The exact session lifetimes and rate limits should be configuration-backed, documented, and tested before launch.
