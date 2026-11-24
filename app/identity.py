@@ -240,6 +240,147 @@ class IdentityStore:
                 )
         return row["id"]
 
+    def _issue_challenge(
+        self,
+        email: str,
+        table: str,
+        lifetime: timedelta,
+        account_type: str | None = None,
+    ) -> str | None:
+        """Issue a one-time challenge; only its SHA-256 digest is persisted."""
+        if table not in {"email_verification_challenges", "password_reset_challenges"}:
+            raise ValueError("Unsupported challenge type.")
+        maximum = timedelta(hours=48) if table == "email_verification_challenges" else timedelta(hours=1)
+        if lifetime <= timedelta(0) or lifetime > maximum:
+            raise ValueError("Challenge lifetime is outside the permitted range.")
+        try:
+            normalized_email = _normalize_email(email)
+        except ValueError:
+            return None
+        now = _now()
+        token = secrets.token_urlsafe(32)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            identity_query = "SELECT id FROM identities WHERE email=? AND is_active=1"
+            params: tuple = (normalized_email,)
+            if account_type is not None:
+                identity_query += " AND account_type=?"
+                params = (normalized_email, account_type)
+            identity = db.execute(identity_query, params).fetchone()
+            if identity is None:
+                db.commit()
+                return None
+            # A newly issued challenge invalidates any earlier outstanding link.
+            db.execute(
+                f"UPDATE {table} SET consumed_at=? WHERE identity_id=? AND consumed_at IS NULL",
+                (_timestamp(now), identity["id"]),
+            )
+            db.execute(
+                f"""INSERT INTO {table}(
+                    id, identity_id, token_hash, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?)""",
+                (
+                    secrets.token_urlsafe(18), identity["id"], _token_digest(token),
+                    _timestamp(now), _timestamp(now + lifetime),
+                ),
+            )
+            db.commit()
+        return token
+
+    def create_email_verification_challenge(
+        self, email: str, lifetime: timedelta = timedelta(hours=24)
+    ) -> str | None:
+        """Create a verification link for an active subscriber only."""
+        return self._issue_challenge(
+            email, "email_verification_challenges", lifetime, "subscriber"
+        )
+
+    def consume_email_verification_challenge(self, token: str) -> bool:
+        """Consume a valid verification link exactly once."""
+        if not isinstance(token, str) or not token or len(token) > 256:
+            return False
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            challenge = db.execute(
+                """SELECT c.id, c.identity_id FROM email_verification_challenges c
+                   JOIN identities i ON i.id=c.identity_id
+                   WHERE c.token_hash=? AND c.consumed_at IS NULL
+                     AND c.expires_at>? AND i.is_active=1
+                     AND i.account_type='subscriber'""",
+                (_token_digest(token), now),
+            ).fetchone()
+            if challenge is None:
+                db.rollback()
+                return False
+            db.execute(
+                "UPDATE email_verification_challenges SET consumed_at=? WHERE id=?",
+                (now, challenge["id"]),
+            )
+            db.execute(
+                "UPDATE identities SET email_verified_at=?, updated_at=? WHERE id=?",
+                (now, now, challenge["identity_id"]),
+            )
+            db.execute(
+                """INSERT INTO security_audit_events(
+                    id, event_type, subject_identity_id, occurred_at, metadata_json
+                ) VALUES (?, 'subscriber.email_verified', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), challenge["identity_id"], now),
+            )
+            db.commit()
+        return True
+
+    def create_password_reset_challenge(
+        self, email: str, lifetime: timedelta = timedelta(minutes=30)
+    ) -> str | None:
+        """Create a short-lived password reset link for an active identity.
+
+        HTTP handlers must return the same response whether this returns a token
+        or None, so account existence is never disclosed to unauthenticated users.
+        """
+        return self._issue_challenge(email, "password_reset_challenges", lifetime)
+
+    def consume_password_reset_challenge(self, token: str, new_password: str) -> bool:
+        """Atomically consume a reset link, change the password, and revoke sessions."""
+        password_hash = _password_hash(new_password)
+        if not isinstance(token, str) or not token or len(token) > 256:
+            return False
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            challenge = db.execute(
+                """SELECT c.id, c.identity_id FROM password_reset_challenges c
+                   JOIN identities i ON i.id=c.identity_id
+                   WHERE c.token_hash=? AND c.consumed_at IS NULL
+                     AND c.expires_at>? AND i.is_active=1""",
+                (_token_digest(token), now),
+            ).fetchone()
+            if challenge is None:
+                db.rollback()
+                return False
+            db.execute(
+                "UPDATE password_reset_challenges SET consumed_at=? WHERE id=?",
+                (now, challenge["id"]),
+            )
+            db.execute(
+                """UPDATE identities SET password_hash=?, password_changed_at=?,
+                   updated_at=? WHERE id=?""",
+                (password_hash, now, now, challenge["identity_id"]),
+            )
+            db.execute(
+                """UPDATE sessions SET revoked_at=?
+                   WHERE identity_id=? AND revoked_at IS NULL""",
+                (now, challenge["identity_id"]),
+            )
+            db.execute(
+                """INSERT INTO security_audit_events(
+                    id, event_type, subject_identity_id, occurred_at, metadata_json
+                ) VALUES (?, 'identity.password_reset', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), challenge["identity_id"], now),
+            )
+            db.commit()
+        return True
+
     def create_session(
         self,
         identity_id: str,
