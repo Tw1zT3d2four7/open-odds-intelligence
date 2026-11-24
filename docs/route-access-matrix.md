@@ -120,3 +120,16 @@ intentionally assert some operational diagnostics. Before identity-mode
 cutover, review this payload and split minimal public liveness from any
 sensitive/detailed readiness diagnostics without breaking container health
 checks or current operator workflows.
+
+## Legacy Basic Auth compatibility regression coverage
+
+`tests/test_auth_compatibility.py` locks down the middleware behavior that must
+remain intact throughout the identity implementation:
+
+- With both legacy credentials unset, existing dashboard access remains as it is today.
+- With both credentials configured, requests require valid Basic Auth credentials.
+- Password comparison remains case-sensitive.
+- Partial credential configuration returns HTTP 503 rather than opening access.
+- `/api/health` remains available for the container health probe even when legacy auth is partially configured.
+
+These are compatibility tests, not a change to the middleware or a new identity-mode implementation.
