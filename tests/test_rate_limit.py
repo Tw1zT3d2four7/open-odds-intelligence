@@ -286,3 +286,58 @@ def test_stale_rate_limit_buckets_are_pruned_after_retention_window(tmp_path):
     finally:
         connection.close()
     assert count == 1
+
+
+
+@pytest.mark.parametrize("preexisting", [False, True])
+def test_rate_limiter_secures_database_before_sqlite_opens(tmp_path, monkeypatch, preexisting):
+    from app import rate_limit as rate_limit_module
+
+    db = tmp_path / "accounts.sqlite3"
+    if preexisting:
+        db.write_bytes(b"")
+        db.chmod(0o644)
+
+    real_connect = sqlite3.connect
+    observed_modes = []
+
+    def inspect_connect(database, *args, **kwargs):
+        if str(database) == str(db):
+            observed_modes.append(db.stat().st_mode & 0o777)
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(rate_limit_module.sqlite3, "connect", inspect_connect)
+    limiter = SQLiteRateLimiter(
+        db, hash_key="test-rate-limit-hash-key-at-least-32-bytes"
+    )
+    limiter.consume("permission-check", limit=1, window_seconds=60)
+
+    assert observed_modes
+    assert observed_modes[0] == 0o600
+    assert db.stat().st_mode & 0o777 == 0o600
+
+
+def test_rate_limiter_rejects_fifo_without_blocking(tmp_path):
+    import os
+
+    db = tmp_path / "accounts.sqlite3"
+    os.mkfifo(db)
+    limiter = SQLiteRateLimiter(
+        db, hash_key="test-rate-limit-hash-key-at-least-32-bytes"
+    )
+
+    with pytest.raises(ValueError, match="regular file"):
+        limiter.consume("fifo-check", limit=1, window_seconds=60)
+
+
+def test_rate_limiter_rejects_symlink_database_path(tmp_path):
+    target = tmp_path / "real.sqlite3"
+    target.write_bytes(b"")
+    link = tmp_path / "accounts.sqlite3"
+    link.symlink_to(target)
+    limiter = SQLiteRateLimiter(
+        link, hash_key="test-rate-limit-hash-key-at-least-32-bytes"
+    )
+
+    with pytest.raises(OSError):
+        limiter.consume("symlink-check", limit=1, window_seconds=60)
