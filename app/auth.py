@@ -88,7 +88,7 @@ def resolve_session(request: Request, store, account_type: str) -> dict:
 
 
 def require_same_origin_csrf(request: Request) -> None:
-    """Require a same-host Origin plus matching host-only CSRF cookie/header."""
+    """Require a same-host HTTPS Origin plus matching host-only CSRF cookie/header."""
     origin = request.headers.get("origin", "")
     host = request.headers.get("host", "")
     parsed = urlsplit(origin)
@@ -114,6 +114,9 @@ def require_same_origin_csrf(request: Request) -> None:
         or parsed.password is not None
         or host_parts.username is not None
         or host_parts.password is not None
+        or host_parts.path
+        or host_parts.query
+        or host_parts.fragment
         or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
