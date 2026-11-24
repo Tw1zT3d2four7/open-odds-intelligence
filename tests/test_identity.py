@@ -663,3 +663,22 @@ def test_audit_query_rejects_unbounded_or_invalid_parameters(tmp_path, kwargs):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     with pytest.raises(ValueError):
         store.list_security_audit_events(**kwargs)
+
+
+
+@pytest.mark.parametrize("metadata_json", ["not-json", "[]", "null"])
+def test_audit_query_fails_closed_on_invalid_metadata(tmp_path, metadata_json):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "bad-audit@example.com", "a-strong-bad-audit-password"
+    )
+    with store.connect() as db:
+        db.execute(
+            """INSERT INTO security_audit_events(
+                id, event_type, subject_identity_id, occurred_at, metadata_json
+            ) VALUES (?, 'test.corrupt_metadata', ?, ?, ?)""",
+            ("corrupt-audit-event", identity_id, "2026-11-24T00:00:00+00:00", metadata_json),
+        )
+
+    with pytest.raises(RuntimeError, match="Audit event metadata is invalid"):
+        store.list_security_audit_events(event_type="test.corrupt_metadata")
