@@ -902,6 +902,8 @@ class OddsService:
 
         errors = []
         sent = 0
+        delivery_limit = config.DISCORD_ALERT_MAX_PER_CYCLE
+        rate_limited = False
         for event in self.events():
             try:
                 result = analyze_markets(
@@ -938,6 +940,8 @@ class OddsService:
             self._last_alert_evaluated += len(result["opportunities"]) + len(result["arbitrage"])
             self._last_alert_qualified += len(candidates)
             for alert_type, identity, message, embed in candidates:
+                if sent >= delivery_limit:
+                    break
                 fingerprint = hashlib.sha256(
                     json.dumps(identity, sort_keys=True).encode()
                 ).hexdigest()
@@ -957,9 +961,23 @@ class OddsService:
                                 f"Discord webhook returned HTTP {response.status}"
                             )
                     sent += 1
+                    if sent < delivery_limit:
+                        time.sleep(0.5)
+                except HTTPError as exc:
+                    self.db.release_alert(fingerprint)
+                    if exc.code == 429:
+                        retry_after = (exc.headers.get("Retry-After")
+                                       if exc.headers else None)
+                        suffix = f"; retry after {retry_after}s" if retry_after else ""
+                        errors.append(f"Discord rate limit reached (HTTP 429){suffix}; remaining alerts deferred to the next check.")
+                        rate_limited = True
+                        break
+                    errors.append(f"Discord webhook HTTP {exc.code}: {str(exc)[:200]}")
                 except Exception as exc:
                     self.db.release_alert(fingerprint)
                     errors.append(str(exc)[:300])
+            if rate_limited or sent >= delivery_limit:
+                break
 
         self._last_alert_sent = sent
         self._alerts_evaluated += self._last_alert_evaluated

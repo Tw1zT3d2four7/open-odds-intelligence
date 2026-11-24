@@ -321,7 +321,7 @@ def _simulation_games_for_sport(sport: str):
             continue
         from .simulation import market_readiness
         readiness = market_readiness(
-            event, model_parameters=league_model, require_independent_model=True
+            event, model_parameters=league_model, require_independent_model=bool(league_model)
         )
         readiness["snapshot_freshness"] = freshness_state
         readiness["snapshot_age_seconds"] = freshness_age
@@ -396,7 +396,7 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
         models = load_fitted_models(config.SIMULATION_MODEL_PATH)
         result = run_game_simulation(
             event, SIMULATION_TRIALS, seed=seed,
-            model_parameters=models.get(sport), require_independent_model=True,
+            model_parameters=models.get(sport), require_independent_model=bool(models.get(sport)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

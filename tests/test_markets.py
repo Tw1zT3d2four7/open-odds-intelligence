@@ -377,3 +377,49 @@ def test_arbitrage_only_skips_player_props_and_ev_analysis():
     assert focused["opportunities"] == []
     assert focused["arbitrage"] == complete["arbitrage"]
     assert len(focused["arbitrage"]) == 1
+
+
+def test_spread_arbitrage_rejects_same_signed_points_for_both_sides():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "invalid-spread-signs", "sport_key": "icehockey_nhl",
+        "sport_title": "NHL", "home_team": "Jets", "away_team": "Mammoth",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Mammoth", "point": -4.5, "price": 2977},
+                    {"name": "Jets", "point": -4.5, "price": 2500},
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Mammoth", "point": -4.5, "price": 2000},
+                    {"name": "Jets", "point": -4.5, "price": 2300},
+                ]}]},
+        ],
+    }]
+    assert analyze_markets(events, arbitrage_only=True)["arbitrage"] == []
+
+
+def test_spread_arbitrage_accepts_opposite_signed_points():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "valid-spread-signs", "sport_key": "americanfootball_nfl",
+        "sport_title": "NFL", "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "point": -3.5, "price": 120},
+                    {"name": "Away", "point": 3.5, "price": -140},
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "spreads", "outcomes": [
+                    {"name": "Home", "point": -3.5, "price": -140},
+                    {"name": "Away", "point": 3.5, "price": 120},
+                ]}]},
+        ],
+    }]
+    result = analyze_markets(events, arbitrage_only=True)
+    assert len(result["arbitrage"]) == 1
+    assert result["arbitrage"][0]["arb_percent"] > 0

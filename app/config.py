@@ -100,6 +100,7 @@ ALERT_MIN_ARB_PERCENT = float(os.getenv("ALERT_MIN_ARB_PERCENT", "0.5"))
 
 # Re-evaluate locally stored quotes on this interval; this never triggers provider polling.
 DISCORD_ALERT_REFRESH_INTERVAL_SECONDS = max(60, int(os.getenv("DISCORD_ALERT_REFRESH_INTERVAL_SECONDS", "300")))
+DISCORD_ALERT_MAX_PER_CYCLE = max(1, min(50, int(os.getenv("DISCORD_ALERT_MAX_PER_CYCLE", "10"))))
 
 # Optional OddsLink free-tier posted-market-limit feed. Keys are case-sensitive.
 ODDSLINK_API_KEY = os.getenv("ODDSLINK_API_KEY", "")
