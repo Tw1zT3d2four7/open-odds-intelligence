@@ -267,3 +267,23 @@ def test_head_product_endpoint_enforces_the_get_entitlement_policy_over_http():
     client.cookies.clear()
     client.cookies.set(cookies["subscriber_cookie"], "subscriber-entitled")
     assert client.head("/api/odds").status_code == 200
+
+
+
+def test_route_policy_typo_fails_closed():
+    from app import route_policy
+
+    route_policy.ROUTE_ACCESS_POLICY[("GET", "/api/test-unsupported")] = "subscriber"
+    try:
+        with pytest.raises(ValueError, match="not supported"):
+            dependencies_for_route(
+                "GET", "/api/test-unsupported",
+                entitlement_dependency=lambda: True,
+            )
+    finally:
+        route_policy.ROUTE_ACCESS_POLICY.pop(("GET", "/api/test-unsupported"))
+
+
+def test_non_callable_entitlement_dependency_fails_closed():
+    with pytest.raises(RuntimeError, match="entitlement dependency"):
+        dependencies_for_route("GET", "/api/odds", entitlement_dependency=object())
