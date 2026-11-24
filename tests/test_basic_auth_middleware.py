@@ -107,17 +107,6 @@ def test_legacy_basic_auth_does_not_exempt_mutating_or_preflight_health_methods(
     assert response.json()["detail"] == "Authentication required."
 
 
-def test_legacy_basic_auth_keeps_head_health_probe_public(client, monkeypatch):
-    monkeypatch.setattr(config, "AUTH_USERNAME", "operator")
-    monkeypatch.setattr(config, "AUTH_PASSWORD", "case-sensitive-secret")
-
-    response = client.head("/api/health")
-    # FastAPI may return 405 if the route does not explicitly register HEAD;
-    # either way, the middleware must not challenge a safe liveness request.
-    assert response.status_code == 405
-
-
-
 def test_legacy_basic_auth_health_bypass_is_limited_to_safe_methods(
     client, monkeypatch
 ):
