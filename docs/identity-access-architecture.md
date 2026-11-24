@@ -62,6 +62,7 @@ Create or tighten the accounts database file to mode 0600 before SQLite opens it
 - Cookies must be `HttpOnly`, `Secure`, and `SameSite=Lax`, with host-only scope and `Path=/`. Production must use HTTPS.
 - Rotate session identifiers after authentication and privilege-sensitive events.
 - Enforce server-side idle and absolute session expiry, logout/revocation, and revocation after password reset or account suspension.
+- Resolve sessions inside a write transaction serialized with revocation and account deactivation. Evaluate session expiry, MFA windows, and one-time challenge expiry only after acquiring the transaction lock so database contention cannot make stale time checks authorize a request.
 - Protect cookie-authenticated state-changing requests with CSRF tokens and origin checks.
 - Apply rate limits and generic authentication errors to reduce brute-force and account-enumeration risk.
 - A subscriber must have a successfully verified email before password authentication can succeed or a session can be created. Enforce this in the identity-store methods themselves, not only in registration/login routes; session resolution also rejects a subscriber whose verification state is no longer valid.
