@@ -881,6 +881,76 @@ class OddsService:
             return 0
         return self._dispatch_alerts()
 
+    def _update_discord_alert_lifecycle(self):
+        """Edit previously delivered webhook messages when a game starts or is verified final."""
+        if not config.DISCORD_WEBHOOK_URL:
+            return []
+        errors = []
+        now = datetime.now(timezone.utc)
+        webhook_base = config.DISCORD_WEBHOOK_URL.split("?", 1)[0].rstrip("/")
+        for alert in self.db.pending_alert_lifecycle():
+            try:
+                commence = datetime.fromisoformat(
+                    str(alert.get("commence_time") or "").replace("Z", "+00:00")
+                )
+                if commence.tzinfo is None:
+                    continue
+                is_final = self.db.has_final_settlement(alert["event_id"])
+                is_started = now >= commence.astimezone(timezone.utc)
+                if is_final:
+                    next_status = "final"
+                    status_title = "FINAL — GAME COMPLETED"
+                    color = 0x7F8C8D
+                elif is_started and alert["lifecycle_status"] == "pregame":
+                    next_status = "started"
+                    status_title = "GAME STARTED — NO LONGER A PRE-GAME OPPORTUNITY"
+                    color = 0xE67E22
+                else:
+                    continue
+
+                embed = json.loads(alert.get("embed_json") or "{}")
+                if not isinstance(embed, dict):
+                    continue
+                original_title = str(embed.get("title") or "OPEN ODDS INTELLIGENCE ALERT")
+                embed["title"] = f"{status_title} · {original_title}"[:256]
+                embed["color"] = color
+                fields = embed.setdefault("fields", [])
+                fields.append(_discord_field(
+                    "Alert status", status_title
+                ))
+                updated_at = int(now.timestamp())
+                fields.append(_discord_field(
+                    "Status updated", f"<t:{updated_at}:F> (<t:{updated_at}:R>)"
+                ))
+                payload = json.dumps({
+                    "embeds": [embed],
+                    "allowed_mentions": {"parse": []},
+                }).encode()
+                request = Request(
+                    f"{webhook_base}/messages/{alert['message_id']}",
+                    data=payload,
+                    headers={"Content-Type": "application/json",
+                             "User-Agent": "OpenOddsIntelligence/0.4"},
+                    method="PATCH",
+                )
+                with urlopen(request, timeout=8) as response:
+                    if response.status not in (200, 204):
+                        raise RuntimeError(
+                            f"Discord message edit returned HTTP {response.status}"
+                        )
+                self.db.update_alert_lifecycle(alert["fingerprint"], next_status)
+            except HTTPError as exc:
+                errors.append(
+                    f"Discord lifecycle edit HTTP {exc.code} for event "
+                    f"{alert.get('event_id', 'unknown')}: {str(exc)[:160]}"
+                )
+            except Exception as exc:
+                errors.append(
+                    f"Discord lifecycle edit for event "
+                    f"{alert.get('event_id', 'unknown')}: {str(exc)[:160]}"
+                )
+        return errors
+
     def _dispatch_alerts(self):
         """Serialize alert checks so scheduled and post-refresh checks cannot overlap."""
         if not self._alert_lock.acquire(blocking=False):
@@ -900,11 +970,15 @@ class OddsService:
         if not config.DISCORD_WEBHOOK_URL:
             return 0
 
-        errors = []
+        errors = self._update_discord_alert_lifecycle()
         sent = 0
         delivery_limit = config.DISCORD_ALERT_MAX_PER_CYCLE
         rate_limited = False
         events = self.events()
+        events_by_id = {
+            str(event.get("id")): event for event in events
+            if isinstance(event, dict) and event.get("id") is not None
+        }
         now = datetime.now(timezone.utc)
 
         def event_datetime(event):
@@ -990,15 +1064,25 @@ class OddsService:
                 json.dumps(identity, sort_keys=True).encode()
             ).hexdigest()
             try:
-                if not self.db.claim_alert(fingerprint, alert_type, message):
+                event_id = str(identity[1])
+                event = events_by_id.get(event_id, {})
+                commence_time = event.get("commence_time")
+                if not self.db.claim_alert(
+                    fingerprint, alert_type, message,
+                    event_id=event_id, commence_time=commence_time,
+                ):
                     continue
                 generated_at = int(datetime.now(timezone.utc).timestamp())
                 embed.setdefault("fields", []).append(_discord_field(
                     "Alert timestamp", f"<t:{generated_at}:F> (<t:{generated_at}:R>)"
                 ))
+                embed_json = json.dumps(embed, sort_keys=True)
+                # Discord returns the created message ID only with wait=true.
+                separator = "&" if "?" in config.DISCORD_WEBHOOK_URL else "?"
+                post_url = f"{config.DISCORD_WEBHOOK_URL}{separator}wait=true"
                 payload = json.dumps({"embeds": [embed], "allowed_mentions": {"parse": []}}).encode()
                 request = Request(
-                    config.DISCORD_WEBHOOK_URL, data=payload,
+                    post_url, data=payload,
                     headers={"Content-Type": "application/json",
                              "User-Agent": "OpenOddsIntelligence/0.4"},
                     method="POST",
@@ -1008,6 +1092,22 @@ class OddsService:
                         raise RuntimeError(
                             f"Discord webhook returned HTTP {response.status}"
                         )
+                    response_reader = getattr(response, "read", None)
+                    response_body = response_reader() if callable(response_reader) else b""
+                if response_body:
+                    try:
+                        discord_message = json.loads(response_body.decode("utf-8"))
+                        message_id = discord_message.get("id") if isinstance(discord_message, dict) else None
+                        if message_id:
+                            self.db.mark_alert_message(fingerprint, message_id)
+                            self.db.connect().close()
+                            with self.db.connect() as db:
+                                db.execute(
+                                    "UPDATE sent_alerts SET embed_json=? WHERE fingerprint=?",
+                                    (embed_json, fingerprint),
+                                )
+                    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+                        pass
                 sent += 1
                 if sent < delivery_limit:
                     time.sleep(0.5)
