@@ -2,6 +2,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from app.identity import IdentityStore
 from app.rate_limit import (
     SQLiteRateLimiter,
     auth_rate_limit_keys,
@@ -244,3 +245,20 @@ def test_rate_limit_storage_failure_fails_closed_without_leaking_details():
     response = TestClient(app).post("/login")
     assert response.status_code == 503
     assert "private database path" not in response.text
+
+
+
+def test_rate_limiter_restricts_identity_database_wal_sidecars(tmp_path):
+    db = tmp_path / "accounts.sqlite3"
+    IdentityStore(db)
+    limiter = SQLiteRateLimiter(
+        db,
+        hash_key="test-rate-limit-hash-key-at-least-32-bytes",
+        clock=lambda: 120.0,
+    )
+    limiter.consume("admin-login:ip:192.0.2.60", limit=2, window_seconds=60)
+
+    assert db.stat().st_mode & 0o777 == 0o600
+    for sidecar in (tmp_path / "accounts.sqlite3-wal", tmp_path / "accounts.sqlite3-shm"):
+        if sidecar.exists():
+            assert sidecar.stat().st_mode & 0o777 == 0o600
