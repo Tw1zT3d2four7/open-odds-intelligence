@@ -64,3 +64,10 @@ def test_framework_schema_and_interactive_docs_are_not_implicitly_public():
 def test_unknown_route_is_unclassified_not_implicitly_public():
     assert classify_route("GET", "/api/new-endpoint") is None
     assert classify_route("POST", "/api/odds") is None
+
+
+
+def test_head_requests_inherit_the_get_route_access_class():
+    assert classify_route("HEAD", "/api/odds") == "subscriber_entitled"
+    assert classify_route("HEAD", "/api/health") == "public_minimal"
+    assert classify_route("HEAD", "/docs") == "administrator_only"
