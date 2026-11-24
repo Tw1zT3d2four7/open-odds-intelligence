@@ -103,7 +103,7 @@ Implemented on the feature branch so far:
 - [x] Administrator TOTP enrollment, encrypted seed storage, fresh-step replay prevention, and ten single-use hashed recovery codes.
 - [x] Separate subscriber/admin Secure host-only cookies, CSRF/origin helpers, and lazy FastAPI session dependencies.
 - [x] Persistent atomic rate-limit primitives using HMAC-hashed bucket identifiers and fail-closed behavior; not yet attached to production routes.
-- [x] Explicit access policy for all 21 existing routes; CI detects unclassified or stale entries. Manual refresh endpoints are administrator-only in the target policy.
+- [x] Explicit access policy for all 25 registered HTTP routes (21 application endpoints plus four framework-generated schema/documentation routes); CI detects unclassified or stale entries. Manual refresh and framework documentation routes are administrator-only in the target policy.
 - [x] Legacy Basic Auth behavior covered by HTTP regression tests and left unchanged.
 - [x] Proxy-chain parsing ignores forwarded headers unless explicitly trusted CIDRs are configured; deployment-specific trust remains unconfigured pending topology review.
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
@@ -189,11 +189,11 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `19f023b4915dce7a26e30dbd8999e131a3201508`  
-**CI run:** `45505030744` — **676 passed**.
+**Latest verified implementation commit:** `3c36f58b4eba596e778d7f6f89f7959bcd9868a9`  
+**CI run:** `45507309948` — **693 passed**.
 
 The authentication foundation remains isolated and is not wired into existing production routes. Existing Basic Auth and the current health response remain unchanged. No production deployment, restart, merge, or branch promotion has occurred.
 
 ### Immediate next work
 
-Continue expanding the HTTP authorization test matrix around route policy, account-class mismatch, session expiry/revocation, MFA, and fail-closed behavior. Then design the explicit route-protection integration and identity-mode middleware behind the documented compatibility boundary. Do not wire it into the existing application until the email-delivery choice, trusted-proxy topology, complete route coverage, and rollback path are resolved.
+Continue designing the route-protection integration and explicit identity-mode middleware behind the documented compatibility boundary. The current test suite now covers the legacy Basic Auth contract (including partial-configuration fail-closed behavior and framework documentation routes), server-enforced subscriber email verification, atomic session resolution/revocation, and all 25 registered route policies. Do not wire identity mode into the existing application until the email-delivery choice, trusted-proxy topology, entitlement model, complete route coverage, and rollback path are resolved.
