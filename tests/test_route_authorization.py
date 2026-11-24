@@ -62,11 +62,15 @@ def test_public_route_cannot_be_state_changing():
     from app import route_policy
 
     route_policy.ROUTE_ACCESS_POLICY[("POST", "/api/test-public-write")] = "public_minimal"
+    route_policy.ROUTE_ACCESS_POLICY[("TRACE", "/api/test-public-trace")] = "public_minimal"
     try:
         with pytest.raises(ValueError, match="state-changing"):
             dependencies_for_route("POST", "/api/test-public-write")
+        with pytest.raises(ValueError, match="state-changing"):
+            dependencies_for_route("TRACE", "/api/test-public-trace")
     finally:
         route_policy.ROUTE_ACCESS_POLICY.pop(("POST", "/api/test-public-write"))
+        route_policy.ROUTE_ACCESS_POLICY.pop(("TRACE", "/api/test-public-trace"))
 
 
 
@@ -87,7 +91,7 @@ def test_dependency_assembly_covers_every_declared_route_class():
             assert resolved == expected, (method, path)
         elif access_class == "subscriber_entitled":
             expected = [require_subscriber, entitlement_guard]
-            if method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if method not in {"GET", "HEAD", "OPTIONS"}:
                 expected.append(require_authenticated_csrf)
             assert resolved == expected, (method, path)
         else:
