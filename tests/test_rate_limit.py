@@ -47,7 +47,7 @@ def test_multiple_limiter_instances_share_atomic_counter(tmp_path):
 
 @pytest.mark.parametrize(
     "limit,window",
-    [(0, 60), (1, 0), (-1, 60), (True, 60), (1, False)],
+    [(0, 60), (1, 0), (-1, 60), (True, 60), (1, False), (1, 30 * 24 * 60 * 60 + 1)],
 )
 def test_invalid_limits_are_rejected(tmp_path, limit, window):
     limiter = SQLiteRateLimiter(tmp_path / "accounts.sqlite3", hash_key="test-rate-limit-hash-key-at-least-32-bytes")
@@ -262,3 +262,27 @@ def test_rate_limiter_restricts_identity_database_wal_sidecars(tmp_path):
     for sidecar in (tmp_path / "accounts.sqlite3-wal", tmp_path / "accounts.sqlite3-shm"):
         if sidecar.exists():
             assert sidecar.stat().st_mode & 0o777 == 0o600
+
+
+
+def test_stale_rate_limit_buckets_are_pruned_after_retention_window(tmp_path):
+    db = tmp_path / "accounts.sqlite3"
+    now = [100.0]
+    limiter = SQLiteRateLimiter(
+        db,
+        hash_key="test-rate-limit-hash-key-at-least-32-bytes",
+        clock=lambda: now[0],
+    )
+    limiter.consume("old:identity:former@example.test", limit=2, window_seconds=60)
+
+    now[0] += 91 * 24 * 60 * 60
+    limiter.consume("new:identity:current@example.test", limit=2, window_seconds=60)
+
+    connection = sqlite3.connect(db)
+    try:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM auth_rate_limit_buckets"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    assert count == 1
