@@ -606,7 +606,7 @@ def test_cross_account_session_revocation_requires_active_administrator_actor(
         "other@example.com", "a-strong-other-password"
     )
 
-    with pytest.raises(ValueError, match="active administrator"):
+    with pytest.raises(ValueError, match="administrator is required"):
         store.revoke_session(token, actor_identity_id=other_subscriber_id)
     assert store.get_session(token) is not None
 
