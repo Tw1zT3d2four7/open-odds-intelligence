@@ -48,6 +48,14 @@ class SQLiteRateLimiter:
 
     def _connect(self) -> sqlite3.Connection:
         self.database_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            descriptor = os.open(
+                self.database_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+            )
+        except FileExistsError:
+            pass
+        else:
+            os.close(descriptor)
         connection = sqlite3.connect(
             str(self.database_path), timeout=5.0, isolation_level=None
         )
