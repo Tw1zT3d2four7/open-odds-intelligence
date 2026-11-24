@@ -68,7 +68,8 @@ def make_app(store):
 def test_subscriber_dependency_accepts_only_subscriber_cookie():
     store = StubStore({"sub-token": {"account_type": "subscriber", "identity_id": "s1"}})
     client = TestClient(make_app(store))
-    response = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: "sub-token"})
+    client.cookies.set(SUBSCRIBER_COOKIE, "sub-token")
+    response = client.get("/subscriber")
     assert response.status_code == 200
     assert response.json() == {"account_type": "subscriber"}
     assert store.calls == ["sub-token"]
@@ -77,7 +78,8 @@ def test_subscriber_dependency_accepts_only_subscriber_cookie():
 def test_administrator_dependency_accepts_only_administrator_cookie():
     store = StubStore({"admin-token": {"account_type": "administrator", "identity_id": "a1"}})
     client = TestClient(make_app(store))
-    response = client.get("/administrator", cookies={ADMINISTRATOR_COOKIE: "admin-token"})
+    client.cookies.set(ADMINISTRATOR_COOKIE, "admin-token")
+    response = client.get("/administrator")
     assert response.status_code == 200
     assert response.json() == {"account_type": "administrator"}
 
@@ -85,14 +87,16 @@ def test_administrator_dependency_accepts_only_administrator_cookie():
 def test_subscriber_cookie_cannot_authenticate_administrator_route():
     store = StubStore({"sub-token": {"account_type": "subscriber", "identity_id": "s1"}})
     client = TestClient(make_app(store))
-    response = client.get("/administrator", cookies={SUBSCRIBER_COOKIE: "sub-token"})
+    client.cookies.set(SUBSCRIBER_COOKIE, "sub-token")
+    response = client.get("/administrator")
     assert response.status_code == 401
 
 
 def test_administrator_cookie_cannot_authenticate_subscriber_route():
     store = StubStore({"admin-token": {"account_type": "administrator", "identity_id": "a1"}})
     client = TestClient(make_app(store))
-    response = client.get("/subscriber", cookies={ADMINISTRATOR_COOKIE: "admin-token"})
+    client.cookies.set(ADMINISTRATOR_COOKIE, "admin-token")
+    response = client.get("/subscriber")
     assert response.status_code == 401
 
 
@@ -100,9 +104,8 @@ def test_missing_expired_or_revoked_session_is_rejected():
     store = StubStore({"expired-or-revoked": None})
     client = TestClient(make_app(store))
     assert client.get("/subscriber").status_code == 401
-    assert client.get(
-        "/subscriber", cookies={SUBSCRIBER_COOKIE: "expired-or-revoked"}
-    ).status_code == 401
+    client.cookies.set(SUBSCRIBER_COOKIE, "expired-or-revoked")
+    assert client.get("/subscriber").status_code == 401
 
 
 def test_store_initialization_failure_fails_closed_without_leaking_details(monkeypatch):
@@ -116,7 +119,8 @@ def test_store_initialization_failure_fails_closed_without_leaking_details(monke
         raise RuntimeError("private database detail")
 
     monkeypatch.setattr(dependencies, "IdentityStore", broken_store)
-    response = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: "token"})
+    client.cookies.set(SUBSCRIBER_COOKIE, "token")
+    response = client.get("/subscriber")
     assert response.status_code == 503
     assert "private database detail" not in response.text
 
@@ -128,12 +132,13 @@ def test_mutating_subscriber_route_requires_csrf_origin_cookie_and_header():
         SUBSCRIBER_COOKIE: "sub-token",
         CSRF_COOKIE: "csrf-value",
     }
-    denied = client.post("/subscriber/change", cookies=cookies)
+    client.cookies.set(SUBSCRIBER_COOKIE, "sub-token")
+    client.cookies.set(CSRF_COOKIE, "csrf-value")
+    denied = client.post("/subscriber/change")
     assert denied.status_code == 403
 
     accepted = client.post(
         "/subscriber/change",
-        cookies=cookies,
         headers={
             "origin": "https://testserver",
             CSRF_HEADER: "csrf-value",
@@ -147,7 +152,8 @@ def test_mutating_subscriber_route_requires_csrf_origin_cookie_and_header():
 def test_session_lookup_database_failure_fails_closed_without_leaking_details():
     store = StubStore(fail=True)
     client = TestClient(make_app(store))
-    response = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: "token"})
+    client.cookies.set(SUBSCRIBER_COOKIE, "token")
+    response = client.get("/subscriber")
     assert response.status_code == 503
     assert "private database detail" not in response.text
 
@@ -160,12 +166,13 @@ def test_subscriber_dependency_uses_real_hashed_session_store(tmp_path):
     token, _session_id = store.create_session(identity_id)
     client = TestClient(make_app(store))
 
-    accepted = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: token})
+    client.cookies.set(SUBSCRIBER_COOKIE, token)
+    accepted = client.get("/subscriber")
     assert accepted.status_code == 200
     assert accepted.json() == {"account_type": "subscriber"}
 
     assert store.revoke_session(token) is True
-    revoked = client.get("/subscriber", cookies={SUBSCRIBER_COOKIE: token})
+    revoked = client.get("/subscriber")
     assert revoked.status_code == 401
 
 
@@ -251,22 +258,17 @@ def test_administrator_http_session_requires_mfa_proof_and_csrf(monkeypatch, tmp
     token, _session_id = store.create_session(admin_id)
 
     client = TestClient(make_app(store))
-    accepted_read = client.get(
-        "/administrator", cookies={ADMINISTRATOR_COOKIE: token}
-    )
+    client.cookies.set(ADMINISTRATOR_COOKIE, token)
+    accepted_read = client.get("/administrator")
     assert accepted_read.status_code == 200
     assert accepted_read.json() == {"account_type": "administrator"}
 
-    cookies = {
-        ADMINISTRATOR_COOKIE: token,
-        CSRF_COOKIE: "admin-csrf-value",
-    }
-    denied_mutation = client.post("/administrator/change", cookies=cookies)
+    client.cookies.set(CSRF_COOKIE, "admin-csrf-value")
+    denied_mutation = client.post("/administrator/change")
     assert denied_mutation.status_code == 403
 
     accepted_mutation = client.post(
         "/administrator/change",
-        cookies=cookies,
         headers={
             "origin": "https://testserver",
             CSRF_HEADER: "admin-csrf-value",
@@ -281,9 +283,9 @@ def test_administrator_http_session_requires_mfa_proof_and_csrf(monkeypatch, tmp
     )
     _verify_subscriber(store, "subscriber@example.test")
     subscriber_token, _ = store.create_session(subscriber_id)
-    denied_cross_class = client.get(
-        "/administrator", cookies={ADMINISTRATOR_COOKIE: subscriber_token}
-    )
+    client.cookies.clear()
+    client.cookies.set(ADMINISTRATOR_COOKIE, subscriber_token)
+    denied_cross_class = client.get("/administrator")
     assert denied_cross_class.status_code == 401
 
 
@@ -297,9 +299,9 @@ def test_inactive_identity_is_denied_at_http_dependency_boundary(tmp_path):
     with store.connect() as db:
         db.execute("UPDATE identities SET is_active=0 WHERE id=?", (identity_id,))
 
-    response = TestClient(make_app(store)).get(
-        "/subscriber", cookies={SUBSCRIBER_COOKIE: token}
-    )
+    client = TestClient(make_app(store))
+    client.cookies.set(SUBSCRIBER_COOKIE, token)
+    response = client.get("/subscriber")
     assert response.status_code == 401
 
 
@@ -317,7 +319,7 @@ def test_absolute_expiry_is_enforced_at_http_dependency_boundary(tmp_path):
             (session_id,),
         )
 
-    response = TestClient(make_app(store)).get(
-        "/subscriber", cookies={SUBSCRIBER_COOKIE: token}
-    )
+    client = TestClient(make_app(store))
+    client.cookies.set(SUBSCRIBER_COOKIE, token)
+    response = client.get("/subscriber")
     assert response.status_code == 401
