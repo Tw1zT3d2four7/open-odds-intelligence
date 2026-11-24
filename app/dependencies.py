@@ -32,12 +32,25 @@ def get_identity_store(request: Request) -> IdentityStore:
     return store
 
 
+def _resolve_session_fail_closed(request: Request, store: IdentityStore, account_type: str) -> dict:
+    """Translate identity-store outages into a generic fail-closed response."""
+    try:
+        return resolve_session(request, store, account_type)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication services are temporarily unavailable.",
+        ) from None
+
+
 def require_subscriber(
     request: Request,
     store: IdentityStore = Depends(get_identity_store),
 ) -> dict:
     """Require an active subscriber session; admin cookies never satisfy it."""
-    return resolve_session(request, store, "subscriber")
+    return _resolve_session_fail_closed(request, store, "subscriber")
 
 
 def require_administrator(
@@ -45,7 +58,7 @@ def require_administrator(
     store: IdentityStore = Depends(get_identity_store),
 ) -> dict:
     """Require an active administrator session established after MFA."""
-    return resolve_session(request, store, "administrator")
+    return _resolve_session_fail_closed(request, store, "administrator")
 
 
 def require_authenticated_csrf(request: Request) -> None:
