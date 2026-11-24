@@ -233,3 +233,13 @@ def test_policy_dependencies_keep_minimal_health_route_public_over_http():
     response = TestClient(app).get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+
+def test_head_product_route_requires_subscriber_entitlement_without_csrf():
+    def entitlement_guard():
+        return True
+
+    assert _dependencies(
+        "HEAD", "/api/odds", entitlement_guard
+    ) == [require_subscriber, entitlement_guard]
