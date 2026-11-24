@@ -188,6 +188,15 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
                 for (line, player_scope), items in groups.items():
                     if len(items) != expected_outcomes:
                         continue
+                    # A valid spread pair must describe opposite sides of the
+                    # same handicap. Some feeds incorrectly attach the same
+                    # signed point to both teams; this can manufacture huge,
+                    # impossible arbitrage percentages.
+                    if market_key == "spreads":
+                        spread_points = [_finite_point(item.get("point")) for item in items]
+                        if (any(point is None or point == 0 for point in spread_points)
+                                or spread_points[0] * spread_points[1] >= 0):
+                            continue
                     identities = [
                         (outcome["name"], _line_group(market_key, outcome.get("point")),
                          _outcome_description(outcome))
