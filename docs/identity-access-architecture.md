@@ -45,7 +45,7 @@ Initial tables should cover:
 - password-reset challenges;
 - sessions and session revocation/expiry;
 - administrator MFA enrollment and recovery-code hashes;
-- security and administrative audit events.
+- security and administrative audit events for provisioning, registration, verification, MFA, password reset, and session lifecycle.
 
 Later milestones may add organizations/tenants, notification destinations, preferences, plans, entitlements, subscriptions, billing references, and delivery records. Those should be introduced with explicit migrations and ownership rules.
 
