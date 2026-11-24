@@ -270,13 +270,30 @@ class IdentityStore:
         with self.connect() as db:
             row = db.execute(
                 """SELECT s.id AS session_id, s.identity_id, s.expires_at,
-                          i.email, i.account_type
+                          s.last_seen_at, i.email, i.account_type
                    FROM sessions s JOIN identities i ON i.id=s.identity_id
                    WHERE s.token_hash=? AND s.revoked_at IS NULL
                      AND s.expires_at>? AND i.is_active=1""",
                 (_token_digest(token), now),
             ).fetchone()
-        return dict(row) if row else None
+            if row is None:
+                return None
+            idle_cutoff = _timestamp(
+                _now() - timedelta(seconds=config.SESSION_IDLE_TIMEOUT_SECONDS)
+            )
+            if row["last_seen_at"] <= idle_cutoff:
+                db.execute(
+                    "UPDATE sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL",
+                    (now, row["session_id"]),
+                )
+                return None
+            db.execute(
+                "UPDATE sessions SET last_seen_at=? WHERE id=?",
+                (now, row["session_id"]),
+            )
+        result = dict(row)
+        result.pop("last_seen_at", None)
+        return result
 
     def revoke_session(self, token: str) -> bool:
         """Revoke a session by its raw token; safe to call repeatedly."""
