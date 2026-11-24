@@ -1073,10 +1073,12 @@ class OddsDatabase:
                 (fingerprint, sent_at, alert_type, summary, event_id, commence_time, embed_json))
             return cur.rowcount == 1
 
-    def mark_alert_message(self, fingerprint, message_id):
+    def mark_alert_message(self, fingerprint, message_id, embed_json=None):
         with self.connect() as db:
-            db.execute("UPDATE sent_alerts SET message_id=? WHERE fingerprint=?",
-                       (str(message_id), fingerprint))
+            db.execute(
+                "UPDATE sent_alerts SET message_id=?,embed_json=? WHERE fingerprint=?",
+                (str(message_id), embed_json, fingerprint),
+            )
 
     def pending_alert_lifecycle(self):
         with self.connect() as db:
