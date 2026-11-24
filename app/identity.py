@@ -694,9 +694,10 @@ class IdentityStore:
             )
             db.execute(
                 """INSERT INTO security_audit_events(
-                    id, event_type, subject_identity_id, occurred_at, metadata_json
-                ) VALUES (?, 'administrator.mfa_enrolled', ?, ?, '{}')""",
-                (secrets.token_urlsafe(18), identity_id, now),
+                    id, actor_identity_id, event_type, subject_identity_id,
+                    occurred_at, metadata_json
+                ) VALUES (?, ?, 'administrator.mfa_enrolled', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), identity_id, identity_id, now),
             )
             db.commit()
         return recovery_codes
@@ -744,9 +745,10 @@ class IdentityStore:
             )
             db.execute(
                 """INSERT INTO security_audit_events(
-                    id, event_type, subject_identity_id, occurred_at, metadata_json
-                ) VALUES (?, 'administrator.mfa_verified', ?, ?, '{}')""",
-                (secrets.token_urlsafe(18), identity_id, now),
+                    id, actor_identity_id, event_type, subject_identity_id,
+                    occurred_at, metadata_json
+                ) VALUES (?, ?, 'administrator.mfa_verified', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), identity_id, identity_id, now),
             )
             db.commit()
         return True
@@ -777,9 +779,10 @@ class IdentityStore:
             )
             db.execute(
                 """INSERT INTO security_audit_events(
-                    id, event_type, subject_identity_id, occurred_at, metadata_json
-                ) VALUES (?, 'administrator.mfa_recovery_used', ?, ?, '{}')""",
-                (secrets.token_urlsafe(18), identity_id, now),
+                    id, actor_identity_id, event_type, subject_identity_id,
+                    occurred_at, metadata_json
+                ) VALUES (?, ?, 'administrator.mfa_recovery_used', ?, ?, '{}')""",
+                (secrets.token_urlsafe(18), identity_id, identity_id, now),
             )
             db.commit()
         return True
