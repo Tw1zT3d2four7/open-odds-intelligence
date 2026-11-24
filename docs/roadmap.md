@@ -310,10 +310,10 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Private interactive first-administrator bootstrap command; atomic one-time provisioning, no-echo password prompt, MFA enrollment before admin authentication exists.
 - [x] Administrator TOTP enrollment, Fernet-encrypted seed storage, verification, accepted-time-step replay prevention, and ten single-use hashed recovery codes.
 - [x] Dedicated `MFA_ENCRYPTION_KEY` configuration and operator setup documentation.
-- [ ] Complete route authorization integration tests and explicit legacy Basic Auth migration behavior.
+- [x] Documented the explicit legacy Basic Auth to identity-mode cutover gates and rollback procedure in `docs/basic-auth-transition.md`; route authorization integration tests remain outstanding.
 - [ ] Email delivery integration for verification and recovery links.
 - [ ] Wire login/session routes only after MFA and route-boundary design is complete.
-- [ ] Separate subscriber/admin cookies, CSRF/origin protection, rate limits, and secure cookie settings.
+- [x] Isolated subscriber/admin host-only Secure/HttpOnly cookies and CSRF/origin helpers implemented and unit-tested; HTTP route integration, rate limits, and trusted-proxy verification remain outstanding.
 - [ ] Full route-level authorization tests, including wrong account class, missing MFA, inactive users, and entitlement denial.
 
 **Exit criteria:** Subscribers cannot access admin routes or APIs; public registration cannot create admins; administrator sessions require MFA; authentication and authorization tests pass. Existing odds dashboard behavior and history remain intact.
@@ -453,22 +453,22 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Identity and access architecture documented in `docs/identity-access-architecture.md`.
 - [x] Separate account database selected to isolate subscriber/admin data from odds history.
 
-### Phase 1 — Identity foundation (in progress)
+### Phase 1 — Identity foundation (in progress; isolated session boundary now tested)
 - [x] Added a dedicated `ACCOUNTS_DATABASE_PATH` setting; default is `./data/accounts.sqlite3`.
 - [x] Added versioned, transactional schema initialization for identities, sessions, verification/reset challenges, administrator MFA storage, and security audit events.
 - [x] Added Argon2 password hashing and fixed account-class-specific authentication primitives.
 - [x] Added opaque server-side sessions with hashed tokens, revocation, absolute expiry, and idle expiry.
 - [x] Added tests for database isolation, schema versioning/idempotence, email/password validation, account-class separation, session revocation, and idle expiry.
 - [x] GitHub Actions CI passed on the current feature-branch head.
-- [ ] Add the private administrator bootstrap command and MFA enrollment/verification.
-- [ ] Add identity lifecycle methods for email verification and password reset.
-- [ ] Review route access matrix and compatibility plan before wiring authentication into FastAPI.
-- [ ] Preserve and verify existing Basic Auth behavior until the replacement boundary is fully tested.
+- [x] Added the private administrator bootstrap command and MFA enrollment/verification.
+- [x] Added one-time identity lifecycle methods for email verification and password reset.
+- [x] Reviewed the route access matrix and documented the Basic Auth compatibility/cutover plan before wiring authentication into FastAPI.
+- [x] Preserved the existing Basic Auth middleware; isolated session-cookie and CSRF helpers are tested but not yet wired into routes.
 
 **Current implementation commit:** `4b9c8c9397a0923d7cc4481802845133c7154c9d`
 
 ### Next step
-Complete the remaining isolated identity primitives and security tests. Then introduce authentication routes and the two login experiences in a separately tested milestone. Do not remove legacy Basic Auth or change production deployment until the new route policy is complete and approved.
+Complete route-level authentication dependencies and integration tests while preserving the current Basic Auth middleware. Then implement the subscriber and administrator login flows behind the explicit, tested migration boundary. Do not remove legacy Basic Auth or change production deployment until every cutover gate is met and the operator explicitly approves.
 
 ## 11. Continuing safeguards
 
