@@ -32,9 +32,9 @@ def test_policy_inventory_covers_all_21_existing_http_routes():
 
 
 def test_shared_provider_refresh_routes_are_not_subscriber_accessible():
-    assert classify_route("POST", "/api/refresh") == "admin_or_internal"
-    assert classify_route("POST", "/api/limits/refresh") == "admin_or_internal"
-    assert classify_route("POST", "/api/simulation/games/refresh") == "admin_or_internal"
+    assert classify_route("POST", "/api/refresh") == "administrator_only"
+    assert classify_route("POST", "/api/limits/refresh") == "administrator_only"
+    assert classify_route("POST", "/api/simulation/games/refresh") == "administrator_only"
 
 
 def test_read_and_simulation_routes_require_subscriber_entitlement():
