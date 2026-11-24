@@ -49,6 +49,13 @@ def make_app(store):
     ):
         return {"ok": True, "identity_id": session["identity_id"]}
 
+    @app.post("/administrator/change")
+    def administrator_change(
+        session=Depends(require_administrator),
+        _csrf=Depends(require_authenticated_csrf),
+    ):
+        return {"ok": True, "identity_id": session["identity_id"]}
+
     return app
 
 
@@ -205,3 +212,83 @@ def test_rate_limiter_dependency_initializes_once_when_secret_is_configured(monk
     assert client.get("/limiter").json() == {"type": "SQLiteRateLimiter"}
     assert app.state.rate_limiter is first
     assert database.exists()
+
+
+
+def test_administrator_http_session_requires_mfa_proof_and_csrf(monkeypatch, tmp_path):
+    from datetime import timedelta
+
+    import pyotp
+    from cryptography.fernet import Fernet
+
+    from app import config, identity as identity_module
+
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator(
+        "admin@example.test", "a-strong-administrator-password"
+    )
+
+    # Password authentication alone cannot establish an administrator session.
+    import pytest
+    with pytest.raises(ValueError, match="MFA verification"):
+        store.create_session(admin_id)
+
+    provisioning_uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.parse_uri(provisioning_uri)
+    store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+
+    next_step = identity_module._now() + timedelta(seconds=30)
+    monkeypatch.setattr(identity_module, "_now", lambda: next_step)
+    assert store.verify_administrator_mfa(admin_id, totp.at(next_step)) is True
+    token, _session_id = store.create_session(admin_id)
+
+    client = TestClient(make_app(store))
+    accepted_read = client.get(
+        "/administrator", cookies={ADMINISTRATOR_COOKIE: token}
+    )
+    assert accepted_read.status_code == 200
+    assert accepted_read.json() == {"account_type": "administrator"}
+
+    cookies = {
+        ADMINISTRATOR_COOKIE: token,
+        CSRF_COOKIE: "admin-csrf-value",
+    }
+    denied_mutation = client.post("/administrator/change", cookies=cookies)
+    assert denied_mutation.status_code == 403
+
+    accepted_mutation = client.post(
+        "/administrator/change",
+        cookies=cookies,
+        headers={
+            "origin": "https://testserver",
+            CSRF_HEADER: "admin-csrf-value",
+        },
+    )
+    assert accepted_mutation.status_code == 200
+    assert accepted_mutation.json() == {"ok": True, "identity_id": admin_id}
+
+    # A subscriber session can never satisfy the administrator dependency.
+    subscriber_id = store.create_subscriber(
+        "subscriber@example.test", "a-strong-subscriber-password"
+    )
+    subscriber_token, _ = store.create_session(subscriber_id)
+    denied_cross_class = client.get(
+        "/administrator", cookies={ADMINISTRATOR_COOKIE: subscriber_token}
+    )
+    assert denied_cross_class.status_code == 401
+
+
+def test_inactive_identity_is_denied_at_http_dependency_boundary(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "inactive@example.test", "a-strong-inactive-password"
+    )
+    token, _session_id = store.create_session(identity_id)
+    with store.connect() as db:
+        db.execute("UPDATE identities SET is_active=0 WHERE id=?", (identity_id,))
+
+    response = TestClient(make_app(store)).get(
+        "/subscriber", cookies={SUBSCRIBER_COOKIE: token}
+    )
+    assert response.status_code == 401
