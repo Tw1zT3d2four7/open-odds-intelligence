@@ -95,6 +95,14 @@ ODDS_REFRESH_INTERVAL_SECONDS = (
 
 # Discord webhook alerts are disabled unless a URL is configured.
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+# Final-score lookups power in-place Discord GAME STARTED / FINAL edits.
+# Default on only when Discord and an active TheRundown key are both configured.
+_selected_result_providers = ODDS_PROVIDERS if ODDS_PROVIDERS_EXPLICIT else ([ODDS_PROVIDER] if ODDS_PROVIDER else [])
+_default_discord_result_sync = bool(DISCORD_WEBHOOK_URL and "therundown" in _selected_result_providers)
+DISCORD_ALERT_RESULTS_SYNC_ENABLED = os.getenv(
+    "DISCORD_ALERT_RESULTS_SYNC_ENABLED",
+    "true" if _default_discord_result_sync else "false",
+).strip().lower() in ("1", "true", "yes", "on")
 ALERT_MIN_EV_PERCENT = max(5.0, float(os.getenv("ALERT_MIN_EV_PERCENT", "5.0")))
 ALERT_MIN_ARB_PERCENT = max(1.0, float(os.getenv("ALERT_MIN_ARB_PERCENT", "1.0")))
 
