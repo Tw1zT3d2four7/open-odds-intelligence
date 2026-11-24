@@ -93,7 +93,6 @@ def test_missing_expired_or_revoked_session_is_rejected():
 
 
 def test_store_initialization_failure_fails_closed_without_leaking_details(monkeypatch):
-    import app.dependencies as dependencies
 
     app = make_app(StubStore())
     client = TestClient(app)
@@ -162,8 +161,8 @@ def test_rate_limiter_dependency_reuses_app_scoped_instance():
     app.state.rate_limiter = limiter
 
     @app.get("/limiter")
-    def inspect(request):
-        return {"same": get_rate_limiter(request) is limiter}
+    def inspect(limiter_value=Depends(get_rate_limiter)):
+        return {"same": limiter_value is limiter}
 
     response = TestClient(app).get("/limiter")
     assert response.status_code == 200
@@ -179,8 +178,8 @@ def test_rate_limiter_dependency_fails_closed_without_hash_secret(monkeypatch, t
     app = FastAPI()
 
     @app.get("/limiter")
-    def inspect(request):
-        return {"available": get_rate_limiter(request) is not None}
+    def inspect(limiter=Depends(get_rate_limiter)):
+        return {"available": limiter is not None}
 
     response = TestClient(app).get("/limiter")
     assert response.status_code == 503
