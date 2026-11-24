@@ -471,6 +471,8 @@ Each milestone must have a written design, bounded scope, implementation review,
 - [x] Added identity-session regression coverage proving that deactivating an identity immediately invalidates its existing sessions.
 - [x] Added spoof-resistant proxy-chain resolution that ignores forwarded headers unless explicit trusted CIDRs are supplied; deployment-specific proxy CIDRs remain unconfigured pending topology verification.
 - [x] Added HTTP regression tests locking down legacy Basic Auth compatibility: unset credentials preserve current behavior, configured credentials are required and case-sensitive, partial configuration fails closed, and `/api/health` remains available.
+- [x] Documented the public health endpoint exposure and Docker probe compatibility in `docs/health-endpoint-security-design.md`; design only, no route behavior changed.
+- [x] Proposed endpoint-specific authentication rate-limit defaults and activation test requirements in `docs/auth-rate-limit-policy.md`; thresholds remain inactive pending route implementation and deployment review.
 - [x] Documented the health endpoint exposure and compatibility design in `docs/health-endpoint-security-design.md`; this is design-only and does not change the current public response or health probe.
 
 **Latest verified implementation commit:** `9ea77e3da16dc52a1472c8f5d8ccf3bb71b01e23` (CI run `45498641805` passed; route-policy documentation alignment is verified).
