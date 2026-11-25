@@ -7,6 +7,7 @@ from app import config, billing_preflight
 def _configure_valid_test_environment(monkeypatch):
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_PreflightCaseSensitive")
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_LIVEMODE", False)
+    monkeypatch.setattr(config, "STRIPE_TEST_MODE_ACKNOWLEDGED", True)
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "whsec_testPreflightSecret12345")
     monkeypatch.setattr(
         config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
