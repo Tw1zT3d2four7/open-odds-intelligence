@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import config, stripe_api
-from app.dependencies import get_identity_store, require_authenticated_csrf, require_subscriber
+from app.dependencies import get_identity_store, get_rate_limiter, require_authenticated_csrf, require_subscriber
 from app.identity import IdentityStore
 from app.identity_routes import router
 from app.rate_limit import SQLiteRateLimiter
