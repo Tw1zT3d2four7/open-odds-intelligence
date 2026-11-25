@@ -136,3 +136,9 @@ def test_identity_router_security_dependencies_match_its_policy_manifest():
                 if item.call in security_dependencies
             }
             assert actual == expected, (method, route.path, actual, expected)
+
+
+
+def test_identity_auth_endpoints_are_excluded_from_general_openapi_schema():
+    paths = main.app.openapi()["paths"]
+    assert all(path not in paths for _method, path in IDENTITY_ROUTE_ACCESS_POLICY)
