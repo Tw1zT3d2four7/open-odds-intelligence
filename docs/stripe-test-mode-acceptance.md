@@ -25,6 +25,7 @@ Use only Stripe test credentials and test Price IDs. Configure these values in t
 - `STRIPE_CHECKOUT_ENABLED=true`
 - `STRIPE_CUSTOMER_PORTAL_ENABLED=true`
 - `STRIPE_WEBHOOK_LIVEMODE=false`
+- `STRIPE_TEST_MODE_ACKNOWLEDGED=true` (explicit operator acknowledgement that this isolated environment must use test mode only)
 - `STRIPE_WEBHOOK_SECRET=whsec_...` (test-mode endpoint/CLI signing secret)
 - `STRIPE_WEBHOOK_ENCRYPTION_KEY=<Fernet key>`
 - `PUBLIC_BASE_URL=https://<isolated-test-host>`
