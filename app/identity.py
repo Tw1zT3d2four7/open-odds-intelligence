@@ -716,7 +716,7 @@ class IdentityStore:
                 or len(subscription_id) > 255
                 or not isinstance(customer_id, str) or not customer_id
                 or len(customer_id) > 255
-                or status not in allowed_statuses
+                or not isinstance(status, str) or status not in allowed_statuses
                 or event_created < 0
             ):
                 db.rollback()
@@ -752,7 +752,8 @@ class IdentityStore:
                 result = "created" if existing is None else "updated"
 
             if result != "stale":
-                items = obj.get("items", {}).get("data", []) if isinstance(obj, dict) else []
+                items_container = obj.get("items", {})
+                items = items_container.get("data", []) if isinstance(items_container, dict) else []
                 first_item = items[0] if isinstance(items, list) and items else {}
                 price = first_item.get("price", {}) if isinstance(first_item, dict) else {}
                 price_id = price.get("id") if isinstance(price, dict) else None
