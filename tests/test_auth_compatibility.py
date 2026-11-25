@@ -188,3 +188,54 @@ def test_legacy_product_requests_do_not_initialize_identity_storage(monkeypatch)
     response = client.get("/api/odds")
     assert response.status_code == 200
     assert not hasattr(main.app.state, "identity_store")
+
+
+
+def test_identity_mode_admin_refresh_requires_mfa_session_and_csrf(monkeypatch, tmp_path):
+    import time
+    import pyotp
+    from cryptography.fernet import Fernet
+    from app.auth import ADMINISTRATOR_COOKIE, CSRF_COOKIE, CSRF_HEADER
+    from app.identity import IdentityStore
+
+    monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
+    monkeypatch.setattr(
+        main.config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
+    )
+    store = IdentityStore(tmp_path / "admin-refresh.sqlite3")
+    monkeypatch.setattr(main.app.state, "identity_store", store, raising=False)
+    monkeypatch.setattr(main.service, "refresh", lambda sport=None: {"refreshed": True})
+
+    admin_id = store.provision_administrator(
+        "refresh-admin@example.test", "a strong refresh admin password"
+    )
+    uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    store.verify_administrator_mfa(admin_id, totp.at(int(time.time()) + 30))
+    admin_token, _ = store.create_session(admin_id)
+
+    client = TestClient(main.app)
+    no_session = client.post(
+        "/api/refresh", headers={"origin": "https://testserver"}
+    )
+    assert no_session.status_code == 401
+
+    client.cookies.set(ADMINISTRATOR_COOKIE, admin_token)
+    no_csrf = client.post(
+        "/api/refresh", headers={"origin": "https://testserver"}
+    )
+    assert no_csrf.status_code == 403
+
+    client.cookies.set(CSRF_COOKIE, "refresh-csrf")
+    accepted = client.post(
+        "/api/refresh",
+        headers={
+            "origin": "https://testserver",
+            CSRF_HEADER: "refresh-csrf",
+        },
+    )
+    assert accepted.status_code == 200
+    assert accepted.json() == {"refreshed": True}
