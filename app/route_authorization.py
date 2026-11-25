@@ -49,6 +49,11 @@ def dependencies_for_route(
         if mutating:
             raise ValueError("Public routes cannot use state-changing methods.")
         return []
+    if access_class == "stripe_signature":
+        if normalized_method != "POST":
+            raise ValueError("Stripe signature routes must use POST.")
+        # The route handler performs cryptographic authentication on the exact raw body.
+        return []
     if access_class == "public_csrf":
         if not mutating:
             raise ValueError("Public CSRF routes must use state-changing methods.")
