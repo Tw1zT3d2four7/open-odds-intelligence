@@ -142,3 +142,33 @@ def test_identity_router_security_dependencies_match_its_policy_manifest():
 def test_identity_auth_endpoints_are_excluded_from_general_openapi_schema():
     paths = main.app.openapi()["paths"]
     assert all(path not in paths for _method, path in IDENTITY_ROUTE_ACCESS_POLICY)
+
+
+
+def test_every_subscriber_product_route_has_an_entitlement_mapping_and_dependency():
+    from app.entitlements import ROUTE_ENTITLEMENTS, require_product_entitlement, require_product_subscriber
+    from app import main
+
+    subscriber_paths = {
+        path for (method, path), access in ROUTE_ACCESS_POLICY.items()
+        if access == "subscriber_entitled"
+    }
+    assert set(ROUTE_ENTITLEMENTS) == subscriber_paths
+
+    for route in main.app.routes:
+        if getattr(route, "path", None) not in subscriber_paths:
+            continue
+        calls = {dependency.call for dependency in route.dependant.dependencies}
+        assert require_product_subscriber in calls
+        assert require_product_entitlement in calls
+
+
+def test_admin_product_mutations_have_mode_aware_admin_and_csrf_dependencies():
+    from app.entitlements import require_product_administrator, require_product_csrf
+    from app import main
+
+    for path in ("/api/limits/refresh", "/api/refresh", "/api/simulation/games/refresh"):
+        route = next(route for route in main.app.routes if getattr(route, "path", None) == path)
+        calls = {dependency.call for dependency in route.dependant.dependencies}
+        assert require_product_administrator in calls
+        assert require_product_csrf in calls
