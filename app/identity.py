@@ -24,7 +24,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 9
+_SCHEMA_VERSION = 10
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -413,6 +413,20 @@ class IdentityStore:
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (9, _timestamp(_now())),
                     )
+                if current < 10:
+                    db.execute("ALTER TABLE billing_webhook_events ADD COLUMN lease_token_hash TEXT")
+                    db.execute("ALTER TABLE billing_webhook_events ADD COLUMN lease_expires_at TEXT")
+                    db.execute("ALTER TABLE billing_webhook_events ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+                    db.execute(
+                        "UPDATE billing_webhook_events SET updated_at=received_at WHERE updated_at=''"
+                    )
+                    db.execute(
+                        "CREATE INDEX idx_billing_webhook_lease ON billing_webhook_events(processing_state, lease_expires_at)"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (10, _timestamp(_now())),
+                    )
                 db.commit()
             except Exception:
                 db.rollback()
@@ -427,6 +441,136 @@ class IdentityStore:
                 candidate.chmod(0o600)
             except FileNotFoundError:
                 pass
+
+    def record_stripe_webhook_event(
+        self, event_id: str, event_type: str, livemode: bool, payload: bytes
+    ) -> dict:
+        """Persist only a fingerprint for a verified Stripe event; never store its body."""
+        if not isinstance(event_id, str) or not event_id or len(event_id) > 255:
+            raise ValueError("A valid Stripe event ID is required.")
+        if not isinstance(event_type, str) or not event_type or len(event_type) > 128:
+            raise ValueError("A valid Stripe event type is required.")
+        if type(livemode) is not bool:
+            raise ValueError("Stripe livemode must be a Boolean.")
+        if not isinstance(payload, bytes) or not payload or len(payload) > 1_048_576:
+            raise ValueError("Stripe webhook payload must be between 1 byte and 1 MiB.")
+        digest = hashlib.sha256(payload).hexdigest()
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            cursor = db.execute(
+                """INSERT OR IGNORE INTO billing_webhook_events(
+                    stripe_event_id, event_type, livemode, payload_sha256,
+                    processing_state, attempt_count, received_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'received', 0, ?, ?)""",
+                (event_id, event_type, int(livemode), digest, now, now),
+            )
+            row = db.execute(
+                """SELECT event_type, livemode, payload_sha256, processing_state,
+                          attempt_count
+                   FROM billing_webhook_events WHERE stripe_event_id=?""",
+                (event_id,),
+            ).fetchone()
+            if (
+                row is None
+                or row["event_type"] != event_type
+                or row["livemode"] != int(livemode)
+                or not secrets.compare_digest(row["payload_sha256"], digest)
+            ):
+                db.rollback()
+                raise ValueError("Stripe event ID was reused with different event content.")
+            db.commit()
+        return {
+            "created": cursor.rowcount == 1,
+            "processing_state": row["processing_state"],
+            "attempt_count": row["attempt_count"],
+        }
+
+    def claim_stripe_webhook_event(
+        self, event_id: str, *, lease_seconds: int = 60, max_attempts: int = 8
+    ) -> str | None:
+        """Claim an event once; expired leases can be recovered after worker failure."""
+        if not isinstance(lease_seconds, int) or not 15 <= lease_seconds <= 600:
+            raise ValueError("Stripe webhook lease must be between 15 and 600 seconds.")
+        if not isinstance(max_attempts, int) or not 1 <= max_attempts <= 12:
+            raise ValueError("Stripe webhook attempts must be between 1 and 12.")
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        expires = _timestamp(now_dt + timedelta(seconds=lease_seconds))
+        token = secrets.token_urlsafe(32)
+        token_hash = _token_digest(token)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT processing_state, attempt_count, lease_expires_at
+                   FROM billing_webhook_events WHERE stripe_event_id=?""",
+                (event_id,),
+            ).fetchone()
+            if row is None or row["processing_state"] == "processed":
+                db.rollback()
+                return None
+            if row["attempt_count"] >= max_attempts:
+                db.rollback()
+                return None
+            if (
+                row["processing_state"] == "processing"
+                and row["lease_expires_at"]
+                and row["lease_expires_at"] > now
+            ):
+                db.rollback()
+                return None
+            db.execute(
+                """UPDATE billing_webhook_events
+                   SET processing_state='processing', attempt_count=attempt_count+1,
+                       lease_token_hash=?, lease_expires_at=?, updated_at=?
+                   WHERE stripe_event_id=?""",
+                (token_hash, expires, now, event_id),
+            )
+            db.commit()
+        return token
+
+    def complete_stripe_webhook_event(self, event_id: str, lease_token: str) -> bool:
+        """Complete only the currently leased attempt; stale workers cannot win."""
+        if not isinstance(lease_token, str) or not lease_token:
+            return False
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            cursor = db.execute(
+                """UPDATE billing_webhook_events
+                   SET processing_state='processed', processed_at=?, updated_at=?,
+                       lease_token_hash=NULL, lease_expires_at=NULL, last_error_code=NULL
+                   WHERE stripe_event_id=? AND processing_state='processing'
+                     AND lease_token_hash=? AND lease_expires_at>?""",
+                (now, now, event_id, _token_digest(lease_token), now),
+            )
+            db.commit()
+        return cursor.rowcount == 1
+
+    def fail_stripe_webhook_event(
+        self, event_id: str, lease_token: str, error_code: str
+    ) -> bool:
+        """Release a failed attempt with a sanitized machine-readable code."""
+        if not isinstance(lease_token, str) or not lease_token:
+            return False
+        if (
+            not isinstance(error_code, str)
+            or not re.fullmatch(r"[a-zA-Z0-9_.-]{1,64}", error_code)
+        ):
+            raise ValueError("Stripe webhook failure code is invalid.")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            cursor = db.execute(
+                """UPDATE billing_webhook_events
+                   SET processing_state='failed', updated_at=?, last_error_code=?,
+                       lease_token_hash=NULL, lease_expires_at=NULL
+                   WHERE stripe_event_id=? AND processing_state='processing'
+                     AND lease_token_hash=? AND lease_expires_at>?""",
+                (now, error_code.lower(), event_id, _token_digest(lease_token), now),
+            )
+            db.commit()
+        return cursor.rowcount == 1
 
     def create_subscriber(self, email: str, password: str) -> str:
         """Create an unverified subscriber. Public routes must call this only."""
