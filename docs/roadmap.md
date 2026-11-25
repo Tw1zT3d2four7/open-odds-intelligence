@@ -128,7 +128,7 @@ Implemented on the feature branch so far:
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
 - [x] Endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md` and integrated with identity-mode routes; conservative thresholds remain subject to deployment-traffic and proxy-topology review before public activation.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
-- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45675257066`, commit `2ad17273c88f109c4aa97ef6b8f8c82ab3d1fc18` — **865 passed, 1 warning**.
+- [x] Latest full CI verification reported for the identity/Admin Console security baseline: run `45676162939`, branch commit reported as `255b963` — **865 passed, 1 warning**. This is the latest user-confirmed green run; documentation-only changes after that run do not alter application behavior.
 
 Still required before Phase 1 is complete:
 
@@ -261,8 +261,9 @@ The Environment Configuration manager remains a separate protected-admin workstr
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `2ad17273c88f109c4aa97ef6b8f8c82ab3d1fc18`  
-**CI run:** `45675257066` — **865 passed, 1 warning**.
+**Latest user-confirmed green implementation commit:** `255b963`  
+**CI run:** `45676162939` — **865 passed, 1 warning**.  
+**Roadmap architecture update:** `007510b3696c265de506152edcc68801fafbf3a3` (documentation-only).
 
 The identity backup tooling now publishes completed encrypted backups atomically without overwriting existing files. Failure-path tests verify that an interrupted publication cannot leave a partial final backup; restore remains an explicit offline-only operation with an encrypted pre-restore snapshot. This is CI-verified tooling only: no production backup or restore has been run.
 
