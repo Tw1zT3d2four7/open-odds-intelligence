@@ -287,3 +287,64 @@ def test_route_policy_typo_fails_closed():
 def test_non_callable_entitlement_dependency_fails_closed():
     with pytest.raises(RuntimeError, match="entitlement dependency"):
         dependencies_for_route("GET", "/api/odds", entitlement_dependency=object())
+
+
+
+def _identity_dependencies(method, path):
+    from app.route_policy import IDENTITY_ROUTE_ACCESS_POLICY
+
+    return [
+        dependency.dependency
+        for dependency in dependencies_for_route(
+            method, path, policy=IDENTITY_ROUTE_ACCESS_POLICY
+        )
+    ]
+
+
+def test_public_identity_mutations_require_csrf_without_account_session():
+    assert _identity_dependencies("POST", "/auth/register") == [
+        require_authenticated_csrf
+    ]
+    assert _identity_dependencies("POST", "/admin/auth/login") == [
+        require_authenticated_csrf
+    ]
+
+
+def test_identity_logout_requires_the_correct_account_class_and_csrf():
+    assert _identity_dependencies("POST", "/auth/logout") == [
+        require_subscriber, require_authenticated_csrf
+    ]
+    assert _identity_dependencies("POST", "/admin/auth/logout") == [
+        require_administrator, require_authenticated_csrf
+    ]
+
+
+def test_identity_policy_rejects_public_mutations_without_csrf_classification():
+    from app.route_policy import IDENTITY_ROUTE_ACCESS_POLICY
+
+    IDENTITY_ROUTE_ACCESS_POLICY[("POST", "/auth/test-unsafe")] = "public_minimal"
+    try:
+        with pytest.raises(ValueError, match="state-changing"):
+            dependencies_for_route(
+                "POST", "/auth/test-unsafe", policy=IDENTITY_ROUTE_ACCESS_POLICY
+            )
+    finally:
+        IDENTITY_ROUTE_ACCESS_POLICY.pop(("POST", "/auth/test-unsafe"))
+
+
+def test_identity_public_csrf_policy_rejects_safe_methods():
+    from app.route_policy import IDENTITY_ROUTE_ACCESS_POLICY
+
+    with pytest.raises(ValueError, match="state-changing"):
+        dependencies_for_route(
+            "GET", "/auth/register", policy=IDENTITY_ROUTE_ACCESS_POLICY
+        )
+
+
+def test_identity_policy_cannot_implicitly_allow_unclassified_routes():
+    from app.route_policy import IDENTITY_ROUTE_ACCESS_POLICY
+
+    with pytest.raises(ValueError, match="explicit access policy"):
+        dependencies_for_route(
+            "POST", "/admin/unknown", policy=IDENTITY_ROUTE_ACCESS_POLICY
+        )
