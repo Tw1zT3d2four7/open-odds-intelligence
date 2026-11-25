@@ -3,11 +3,41 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request
 
-from .dependencies import get_identity_store, require_subscriber
+from . import config
+from .auth import require_same_origin_csrf
+from .dependencies import (
+    get_identity_store, require_administrator, require_subscriber,
+)
 from .identity import IdentityStore
 
 # These feature keys describe existing product capabilities, not plan names or
 # prices. Commercial plans can later grant bundles of these keys.
+def require_product_subscriber(
+    request: Request,
+    store: IdentityStore = Depends(get_identity_store),
+) -> dict:
+    """Use the legacy Basic Auth boundary unchanged until identity mode is selected."""
+    if config.AUTH_MODE == "legacy_basic":
+        return {"account_type": "legacy_operator"}
+    return require_subscriber(request, store)
+
+
+def require_product_administrator(
+    request: Request,
+    store: IdentityStore = Depends(get_identity_store),
+) -> dict:
+    """Preserve legacy operator access; require an MFA-backed admin in identity mode."""
+    if config.AUTH_MODE == "legacy_basic":
+        return {"account_type": "legacy_operator"}
+    return require_administrator(request, store)
+
+
+def require_product_csrf(request: Request) -> None:
+    """Keep legacy Basic Auth mutation behavior; enforce CSRF for cookie sessions."""
+    if config.AUTH_MODE == "identity":
+        require_same_origin_csrf(request)
+
+
 ROUTE_ENTITLEMENTS = {
     "/": "dashboard",
     "/api/limits": "market_limits",
@@ -32,10 +62,12 @@ ROUTE_ENTITLEMENTS = {
 
 def require_product_entitlement(
     request: Request,
-    session: dict = Depends(require_subscriber),
+    session: dict = Depends(require_product_subscriber),
     store: IdentityStore = Depends(get_identity_store),
 ) -> None:
     """Require an active subscriber session and an explicit matching feature grant."""
+    if config.AUTH_MODE == "legacy_basic":
+        return
     entitlement = ROUTE_ENTITLEMENTS.get(request.url.path)
     if entitlement is None:
         raise HTTPException(
