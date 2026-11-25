@@ -432,3 +432,27 @@ def test_auth_entry_pages_are_no_store_and_share_the_secure_auth_shell(
     assert "default-src" in response.headers["content-security-policy"]
     assert "Open Odds Intelligence" in response.text
     assert "__Host-ooi_csrf" in response.text
+
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://ooi.example",
+        "https://ooi.example/account",
+        "https://ooi.example?next=/",
+        "https://ooi.example:invalid",
+    ],
+)
+def test_auth_email_origin_rejects_noncanonical_base_urls(
+    tmp_path, monkeypatch, origin
+):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "PUBLIC_BASE_URL", origin)
+    response = harness.post("/auth/register", {
+        "email": "person@example.com",
+        "password": "a strong password 123",
+    })
+    assert response.status_code == 503
+    with harness.store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM identities").fetchone()[0] == 0
