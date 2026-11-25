@@ -630,6 +630,70 @@ def change_subscriber_password(
     return {"ok": True, "message": "Password updated. Please sign in again."}
 
 
+@router.get("/auth/sessions")
+def subscriber_sessions(
+    response: Response,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10_000_000),
+    session: dict = Depends(require_subscriber),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """List only the signed-in subscriber's active sessions."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        return store.list_subscriber_sessions(
+            session["identity_id"],
+            current_session_id=session["session_id"],
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Subscriber session listing failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Session information is temporarily unavailable.",
+        ) from None
+
+
+@router.post(
+    "/auth/sessions/{session_id}/revoke",
+    dependencies=[Depends(require_authenticated_csrf)],
+)
+def revoke_own_subscriber_session(
+    session_id: str,
+    response: Response,
+    session: dict = Depends(require_subscriber),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Revoke one of the signed-in subscriber's own sessions."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        revoked = store.revoke_subscriber_session_by_id(
+            session["identity_id"], session_id
+        )
+        if not revoked:
+            raise HTTPException(status_code=404, detail="Active session not found.")
+        is_current = session_id == session["session_id"]
+        if is_current:
+            clear_session_cookie(response, "subscriber")
+            clear_csrf_cookie(response)
+        return {"revoked": True, "current_session": is_current}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Subscriber session revocation failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Session revocation is temporarily unavailable.",
+        ) from None
+
+
 @router.post("/auth/logout", dependencies=[Depends(require_authenticated_csrf)])
 def subscriber_logout(
     request: Request,
