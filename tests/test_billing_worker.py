@@ -157,3 +157,14 @@ def test_worker_reconciles_invoice_payment_state_without_granting_access(tmp_pat
             "SELECT status FROM billing_invoices WHERE stripe_invoice_id='in_invoice'"
         ).fetchone()
     assert row["status"] == "open"
+
+
+    enqueue("evt_invoice_recovered", "invoice.paid", 1795657200, 2500)
+    recovered = process_pending_stripe_events(store)
+    assert recovered["updated"] == 1
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT status, payment_failed_at FROM billing_invoices WHERE stripe_invoice_id='in_invoice'"
+        ).fetchone()
+    assert row["status"] == "paid"
+    assert row["payment_failed_at"] is None
