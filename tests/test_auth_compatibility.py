@@ -239,3 +239,41 @@ def test_identity_mode_admin_refresh_requires_mfa_session_and_csrf(monkeypatch, 
     )
     assert accepted.status_code == 200
     assert accepted.json() == {"refreshed": True}
+
+
+
+def test_identity_mode_framework_docs_require_administrator_session(monkeypatch, tmp_path):
+    import time
+    import pyotp
+    from cryptography.fernet import Fernet
+    from app.auth import ADMINISTRATOR_COOKIE
+    from app.identity import IdentityStore
+
+    monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
+    monkeypatch.setattr(
+        main.config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
+    )
+    store = IdentityStore(tmp_path / "docs-admin.sqlite3")
+    monkeypatch.setattr(main.app.state, "identity_store", store, raising=False)
+
+    client = TestClient(main.app, base_url="https://testserver")
+    assert client.get("/openapi.json").status_code == 401
+    assert client.get("/docs").status_code == 401
+    assert client.get("/redoc").status_code == 401
+
+    admin_id = store.provision_administrator(
+        "docs-admin@example.test", "a strong docs admin password"
+    )
+    uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    store.verify_administrator_mfa(admin_id, totp.at(int(time.time()) + 30))
+    token, _ = store.create_session(admin_id)
+    client.cookies.set(ADMINISTRATOR_COOKIE, token)
+
+    schema = client.get("/openapi.json")
+    assert schema.status_code == 200
+    assert "/api/odds" in schema.json()["paths"]
+    assert "/auth/register" not in schema.json()["paths"]
+    assert client.get("/docs").status_code == 200
+    assert client.get("/redoc").status_code == 200
