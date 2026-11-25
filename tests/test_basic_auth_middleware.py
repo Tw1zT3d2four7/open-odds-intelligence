@@ -125,3 +125,24 @@ def test_legacy_basic_auth_health_bypass_is_limited_to_safe_methods(
         "/api/health", auth=("operator", "case-sensitive-secret")
     )
     assert authenticated.status_code == 405
+
+
+def test_identity_admin_errors_and_auth_pages_are_never_cached(client, monkeypatch, tmp_path):
+    from app.identity import IdentityStore
+    from app.dependencies import get_identity_store
+
+    monkeypatch.setattr(config, "AUTH_MODE", "identity")
+    store = IdentityStore(tmp_path / "middleware-identities.sqlite3")
+    main.app.dependency_overrides[get_identity_store] = lambda: store
+    try:
+        page = client.get("/login")
+        assert page.status_code == 200
+        assert page.headers["cache-control"] == "no-store"
+        assert page.headers["pragma"] == "no-cache"
+
+        denied = client.get("/admin")
+        assert denied.status_code == 401
+        assert denied.headers["cache-control"] == "no-store"
+        assert denied.headers["pragma"] == "no-cache"
+    finally:
+        main.app.dependency_overrides.pop(get_identity_store, None)

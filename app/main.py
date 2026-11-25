@@ -250,6 +250,21 @@ async def optional_basic_auth(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def prevent_identity_response_caching(request: Request, call_next):
+    """Prevent browsers and intermediaries from caching auth/admin responses, including errors."""
+    response = await call_next(request)
+    path = request.url.path
+    identity_page_paths = {
+        "/login", "/register", "/admin", "/admin/login",
+        "/forgot-password", "/verify-email", "/reset-password",
+    }
+    if path in identity_page_paths or path.startswith(("/auth/", "/admin/")):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @app.get("/", response_class=HTMLResponse, dependencies=dependencies_for_route("GET", "/", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def dashboard():
     return WEB.read_text(encoding="utf-8")
