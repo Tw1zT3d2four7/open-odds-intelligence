@@ -13,7 +13,7 @@
 - Keep administrator authentication stricter than subscriber authentication.
 - Do not trust X-Forwarded-For until the exact reverse-proxy peer and narrow trusted CIDR are verified.
 
-## Proposed starting thresholds
+## Active starting thresholds
 
 These are the active conservative starting values for a small self-hosted deployment, not a final capacity promise. Review them against expected signup volume, shared-NAT users, email provider quotas, and operational recovery procedures before public activation.
 
@@ -38,7 +38,7 @@ Notation: maximum requests per fixed-window duration. Both dimensions must be ch
 4. **Credential hygiene:** Never include passwords, tokens, OTPs, recovery codes, raw email/phone values, or full IPs in logs or audit events.
 5. **MFA recovery:** Recovery codes are one-time; rate-limit attempts and record only the identity and outcome in the security audit log.
 6. **Session operations:** Login success rotates to a fresh opaque session; logout/revocation is idempotent. Rate limiting must not prevent a user from clearing their local cookies.
-7. **Request bounds:** Apply body-size limits, field length limits, and strict token/OTP formats before expensive work.
+7. **Request bounds:** Identity request models enforce strict field lengths and token/OTP formats before expensive work. An application-wide request-body size limit remains a deployment hardening item and must be configured at the serving proxy/server before public activation.
 8. **No lockout-by-attacker:** Avoid permanent account lockouts. Temporary throttling should expire automatically; provide a safe recovery path and monitor repeated targeted abuse.
 9. **Shared network fairness:** IP limits are intentionally higher than account limits to reduce collateral damage for households, offices, and mobile carrier NAT.
 10. **Observability:** Record aggregate counts and policy identifiers, not raw bucket keys or secret material.
