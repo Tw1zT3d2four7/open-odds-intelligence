@@ -1654,7 +1654,7 @@ class IdentityStore:
         if (
             not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128
             or not isinstance(stripe_customer_id, str)
-            or not stripe_customer_id.startswith("cus_") or len(stripe_customer_id) > 255
+            or not re.fullmatch(r"cus_[A-Za-z0-9]+", stripe_customer_id)
         ):
             raise ValueError("Stripe customer mapping is invalid.")
         now = _timestamp(_now())
