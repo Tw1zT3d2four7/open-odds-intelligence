@@ -176,4 +176,6 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 # Stripe webhook intake is inert until a dedicated signing secret is configured.
 # The signing secret must be supplied out-of-band and must never be committed.
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+# Dedicated Fernet key for encrypted durable Stripe webhook event bodies.
+STRIPE_WEBHOOK_ENCRYPTION_KEY = os.getenv("STRIPE_WEBHOOK_ENCRYPTION_KEY", "")
 STRIPE_WEBHOOK_LIVEMODE = os.getenv("STRIPE_WEBHOOK_LIVEMODE", "false").strip().lower() in ("1", "true", "yes", "on")
