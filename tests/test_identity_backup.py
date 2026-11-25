@@ -31,7 +31,7 @@ def test_encrypted_identity_backup_and_restore_round_trip(tmp_path, monkeypatch)
 
     backup = tmp_path / "backups" / "identity.sqlite3.fernet"
     result = create_encrypted_backup(source, backup)
-    assert result["schema_version"] == 10
+    assert result["schema_version"] == 11
     assert backup.stat().st_mode & 0o777 == 0o600
     assert backup.parent.stat().st_mode & 0o777 == 0o700
     assert b"backup-user@example.test" not in backup.read_bytes()
