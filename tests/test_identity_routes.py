@@ -959,3 +959,60 @@ def test_administrator_session_cannot_access_subscriber_account(tmp_path, monkey
     assert login.status_code == 200
     assert harness.client.get("/account").status_code == 401
     assert harness.client.get("/auth/account").status_code == 401
+
+
+def test_subscriber_password_change_requires_csrf_and_revokes_all_sessions(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber(
+        "password-route@example.test", "correct horse battery"
+    )
+    challenge = harness.store.create_email_verification_challenge("password-route@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    login = harness.post("/auth/login", {
+        "email": "password-route@example.test",
+        "password": "correct horse battery",
+    })
+    assert login.status_code == 200
+    current_token = harness.client.cookies.get("__Host-ooi_subscriber")
+    second_token, _ = harness.store.create_session(identity_id)
+
+    payload = {
+        "current_password": "correct horse battery",
+        "new_password": "a completely new secure password",
+    }
+    denied = harness.post("/auth/password/change", payload, csrf=False)
+    assert denied.status_code == 403
+    assert denied.headers["cache-control"] == "no-store"
+    assert harness.store.get_session(current_token) is not None
+
+    wrong = harness.post("/auth/password/change", {
+        "current_password": "not the current password",
+        "new_password": "a completely new secure password",
+    })
+    assert wrong.status_code == 401
+    assert wrong.headers["cache-control"] == "no-store"
+    assert harness.store.get_session(current_token) is not None
+
+    changed = harness.post("/auth/password/change", payload)
+    assert changed.status_code == 200
+    assert changed.headers["cache-control"] == "no-store"
+    assert changed.json()["ok"] is True
+    assert harness.store.get_session(current_token) is None
+    assert harness.store.get_session(second_token) is None
+    assert harness.client.cookies.get("__Host-ooi_subscriber") is None
+    assert harness.client.cookies.get("__Host-ooi_csrf") is None
+    assert harness.store.authenticate(
+        "password-route@example.test", "correct horse battery", "subscriber"
+    ) is None
+    assert harness.store.authenticate(
+        "password-route@example.test", "a completely new secure password", "subscriber"
+    ) == identity_id
+    with harness.store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, metadata_json FROM security_audit_events
+               WHERE event_type='subscriber.password_changed'
+               AND subject_identity_id=?""",
+            (identity_id,),
+        ).fetchone()
+    assert event["actor_identity_id"] == identity_id
+    assert event["metadata_json"] == "{}"

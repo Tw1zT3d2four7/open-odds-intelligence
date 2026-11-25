@@ -635,6 +635,77 @@ class IdentityStore:
             db.commit()
         return True
 
+    def change_subscriber_password(
+        self,
+        identity_id: str,
+        current_password: str,
+        new_password: str,
+    ) -> bool:
+        """Change an active subscriber password and revoke every session atomically.
+
+        The old hash is verified before hashing the replacement, then rechecked
+        inside the write transaction so a concurrent reset/change cannot be
+        overwritten by a stale password-change request.
+        """
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            return False
+        if not isinstance(current_password, str) or not current_password or len(current_password) > 1024:
+            return False
+        if not isinstance(new_password, str) or len(new_password) > 1024:
+            raise ValueError("Password is too long.")
+        if current_password == new_password:
+            raise ValueError("New password must be different from the current password.")
+
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT password_hash FROM identities
+                   WHERE id=? AND account_type='subscriber' AND is_active=1
+                     AND email_verified_at IS NOT NULL""",
+                (identity_id,),
+            ).fetchone()
+        if row is None:
+            return False
+        original_hash = row["password_hash"]
+        try:
+            valid = _PASSWORD_HASHER.verify(original_hash, current_password)
+        except (VerifyMismatchError, VerificationError, InvalidHashError, TypeError):
+            return False
+        if not valid:
+            return False
+
+        replacement_hash = _password_hash(new_password)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            current = db.execute(
+                """SELECT password_hash FROM identities
+                   WHERE id=? AND account_type='subscriber' AND is_active=1
+                     AND email_verified_at IS NOT NULL""",
+                (identity_id,),
+            ).fetchone()
+            if current is None or current["password_hash"] != original_hash:
+                db.rollback()
+                return False
+            now = _timestamp(_now())
+            db.execute(
+                """UPDATE identities SET password_hash=?, password_changed_at=?,
+                   updated_at=? WHERE id=?""",
+                (replacement_hash, now, now, identity_id),
+            )
+            db.execute(
+                """UPDATE sessions SET revoked_at=?
+                   WHERE identity_id=? AND revoked_at IS NULL""",
+                (now, identity_id),
+            )
+            self._record_audit_event(
+                db,
+                "subscriber.password_changed",
+                identity_id,
+                now,
+                actor_identity_id=identity_id,
+            )
+            db.commit()
+        return True
+
 
     def email_provider_circuit_open(self, provider: str = "resend") -> bool:
         """Return whether the provider circuit is currently open."""

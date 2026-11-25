@@ -66,6 +66,7 @@ IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("POST", "/auth/verify-email"): "public_csrf",
     ("POST", "/auth/password-reset/request"): "public_csrf",
     ("POST", "/auth/password-reset/consume"): "public_csrf",
+    ("POST", "/auth/password/change"): "subscriber_only",
     ("POST", "/auth/login"): "public_csrf",
     ("POST", "/auth/logout"): "subscriber_only",
     ("POST", "/admin/auth/login"): "public_csrf",

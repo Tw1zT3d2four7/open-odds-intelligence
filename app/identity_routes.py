@@ -185,6 +185,11 @@ class PasswordResetInput(StrictModel):
     new_password: str = Field(min_length=12, max_length=1024)
 
 
+class PasswordChangeInput(StrictModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=12, max_length=1024)
+
+
 class LoginInput(StrictModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=1024)
@@ -238,6 +243,11 @@ def _rate_limit(
             (f"auth:{operation}:identity:{identifier}", account_limit, 3600),
             (f"auth:{operation}:cooldown:{identifier}", 1, 60),
             (f"auth:{operation}:daily:{identifier}", 5, 86400),
+        ]
+    elif operation == "subscriber-password-change":
+        policies = [
+            (f"auth:{operation}:ip:{ip}", 10, 900),
+            (f"auth:{operation}:identity:{identifier}", 5, 900),
         ]
     elif operation in {"email-verification-consume", "password-reset-consume"}:
         policies = [
@@ -579,6 +589,39 @@ def subscriber_login(
     set_session_cookie(response, token, "subscriber", max_age=12 * 60 * 60)
     issue_csrf_cookie(response)
     return {"ok": True}
+
+
+@router.post("/auth/password/change", dependencies=[Depends(require_authenticated_csrf)])
+def change_subscriber_password(
+    payload: PasswordChangeInput,
+    request: Request,
+    response: Response,
+    session: dict = Depends(require_subscriber),
+    store: IdentityStore = Depends(get_identity_store),
+    limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
+):
+    """Change the signed-in subscriber's password and invalidate all sessions."""
+    _rate_limit(
+        request, limiter, "subscriber-password-change", session["identity_id"]
+    )
+    try:
+        changed = store.change_subscriber_password(
+            session["identity_id"],
+            payload.current_password,
+            payload.new_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Password change is temporarily unavailable.",
+        ) from None
+    if not changed:
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+    clear_session_cookie(response, "subscriber")
+    clear_csrf_cookie(response)
+    return {"ok": True, "message": "Password updated. Please sign in again."}
 
 
 @router.post("/auth/logout", dependencies=[Depends(require_authenticated_csrf)])

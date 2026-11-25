@@ -1145,3 +1145,53 @@ def test_administrator_can_revoke_all_subscriber_sessions_atomically_and_audit(t
     assert store.revoke_subscriber_sessions(
         subscriber_id, actor_identity_id=admin_id, reason_code="other"
     ) == 0
+
+
+def test_subscriber_password_change_verifies_current_password_and_revokes_all_sessions(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("password-change@example.test", "correct horse battery")
+    _verify_subscriber(store, "password-change@example.test")
+    first_token, _ = store.create_session(identity_id)
+    second_token, _ = store.create_session(identity_id)
+
+    assert store.change_subscriber_password(
+        identity_id, "incorrect current password", "a completely new secure password"
+    ) is False
+    assert store.get_session(first_token) is not None
+    assert store.get_session(second_token) is not None
+
+    assert store.change_subscriber_password(
+        identity_id, "correct horse battery", "a completely new secure password"
+    ) is True
+    assert store.get_session(first_token) is None
+    assert store.get_session(second_token) is None
+    assert store.authenticate(
+        "password-change@example.test", "correct horse battery", "subscriber"
+    ) is None
+    assert store.authenticate(
+        "password-change@example.test", "a completely new secure password", "subscriber"
+    ) == identity_id
+
+    with store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, metadata_json FROM security_audit_events
+               WHERE event_type='subscriber.password_changed'
+               AND subject_identity_id=?""",
+            (identity_id,),
+        ).fetchone()
+        changed_at = db.execute(
+            "SELECT password_changed_at FROM identities WHERE id=?", (identity_id,)
+        ).fetchone()["password_changed_at"]
+    assert event["actor_identity_id"] == identity_id
+    assert event["metadata_json"] == "{}"
+    assert changed_at
+
+
+def test_subscriber_password_change_rejects_reusing_current_password(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("same-password@example.test", "correct horse battery")
+    _verify_subscriber(store, "same-password@example.test")
+    with pytest.raises(ValueError, match="different from the current password"):
+        store.change_subscriber_password(
+            identity_id, "correct horse battery", "correct horse battery"
+        )
