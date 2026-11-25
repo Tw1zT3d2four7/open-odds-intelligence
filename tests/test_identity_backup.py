@@ -209,6 +209,24 @@ def test_backup_rejects_incomplete_schema_even_with_current_version_marker(tmp_p
         create_encrypted_backup(incomplete, tmp_path / "invalid.fernet")
 
 
+def test_backup_rejects_malformed_optional_rate_limit_table(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    source = tmp_path / "malformed-rate-limit.sqlite3"
+    _identity_store(source)
+    connection = sqlite3.connect(source)
+    connection.execute(
+        "CREATE TABLE auth_rate_limit_buckets (bucket_hash TEXT PRIMARY KEY, window_start INTEGER NOT NULL)"
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(ValueError, match="schema is incomplete"):
+        create_encrypted_backup(source, tmp_path / "malformed-rate-limit.fernet")
+
+
 def test_backup_rejects_foreign_key_violations(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config, "IDENTITY_BACKUP_ENCRYPTION_KEY",

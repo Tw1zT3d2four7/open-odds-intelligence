@@ -154,6 +154,10 @@ def _validate_identity_schema(connection: sqlite3.Connection, version: int) -> N
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()
     }
+    if "auth_rate_limit_buckets" in available_tables:
+        required_columns["auth_rate_limit_buckets"] = {
+            "bucket_hash", "window_start", "request_count",
+        }
     for table, columns in required_columns.items():
         if table not in available_tables:
             raise ValueError("Identity database schema is incomplete.")
