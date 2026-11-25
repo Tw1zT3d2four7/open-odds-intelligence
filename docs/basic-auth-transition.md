@@ -1,6 +1,6 @@
 # Legacy Basic Auth Transition and Rollback Plan
 
-**Status:** Design documented; no authentication middleware or production behavior changed.  
+**Status:** Implemented as an explicit staged mode boundary; production remains on the unchanged legacy_basic behavior.  
 **Working branch:** `feature/admin-panel-and-subscriptions`
 
 ## Goals
