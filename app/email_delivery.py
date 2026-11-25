@@ -17,9 +17,16 @@ from typing import Callable
 class EmailDeliveryError(RuntimeError):
     """A sanitized email delivery failure safe for application-level handling."""
 
+    def __init__(self, message: str, failure_code: str = "unexpected") -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
+
 
 class EmailDeliveryConfigurationError(EmailDeliveryError):
     """Email delivery is not configured safely."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, "configuration")
 
 
 class ResendEmailSender:
@@ -122,22 +129,42 @@ class ResendEmailSender:
                 body = response.read(64 * 1024)
         except urllib.error.HTTPError as exc:
             raise EmailDeliveryError(
-                f"Transactional email provider rejected the request (HTTP {exc.code})."
+                f"Transactional email provider rejected the request (HTTP {exc.code}).",
+                (
+                    "provider_auth" if exc.code in {401, 403}
+                    else "provider_rate_limit" if exc.code == 429
+                    else "provider_unavailable" if exc.code >= 500
+                    else "provider_rejected"
+                ),
             ) from None
         except (urllib.error.URLError, TimeoutError, OSError):
-            raise EmailDeliveryError("Transactional email provider is temporarily unavailable.") from None
+            raise EmailDeliveryError(
+                "Transactional email provider is temporarily unavailable.", "transport"
+            ) from None
 
         if not 200 <= int(status) < 300:
             raise EmailDeliveryError(
-                f"Transactional email provider returned HTTP {int(status)}."
+                f"Transactional email provider returned HTTP {int(status)}.",
+                (
+                    "provider_auth" if int(status) in {401, 403}
+                    else "provider_rate_limit" if int(status) == 429
+                    else "provider_unavailable" if int(status) >= 500
+                    else "provider_rejected"
+                ),
             )
         try:
             result = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise EmailDeliveryError("Transactional email provider returned an invalid response.") from None
+            raise EmailDeliveryError(
+                "Transactional email provider returned an invalid response.",
+                "invalid_response",
+            ) from None
         message_id = result.get("id") if isinstance(result, dict) else None
         if not isinstance(message_id, str) or not message_id or len(message_id) > 256:
-            raise EmailDeliveryError("Transactional email provider response omitted its message ID.")
+            raise EmailDeliveryError(
+                "Transactional email provider response omitted its message ID.",
+                "invalid_response",
+            )
         return message_id
 
 
