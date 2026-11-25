@@ -24,7 +24,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 8
+_SCHEMA_VERSION = 9
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -360,6 +360,58 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (8, _timestamp(_now())),
+                    )
+                if current < 9:
+                    db.execute("""CREATE TABLE billing_customers (
+                        identity_id TEXT PRIMARY KEY REFERENCES identities(id) ON DELETE CASCADE,
+                        stripe_customer_id TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )""")
+                    db.execute("""CREATE TABLE billing_subscriptions (
+                        id TEXT PRIMARY KEY,
+                        identity_id TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+                        stripe_subscription_id TEXT NOT NULL UNIQUE,
+                        stripe_customer_id TEXT NOT NULL REFERENCES billing_customers(stripe_customer_id) ON DELETE RESTRICT,
+                        stripe_price_id TEXT,
+                        plan_code TEXT,
+                        billing_interval TEXT CHECK(
+                            billing_interval IS NULL OR billing_interval IN ('month', 'year')
+                        ),
+                        status TEXT NOT NULL CHECK(status IN (
+                            'incomplete', 'incomplete_expired', 'trialing', 'active',
+                            'past_due', 'canceled', 'unpaid', 'paused'
+                        )),
+                        current_period_start TEXT,
+                        current_period_end TEXT,
+                        cancel_at_period_end INTEGER NOT NULL DEFAULT 0
+                            CHECK(cancel_at_period_end IN (0, 1)),
+                        canceled_at TEXT,
+                        ended_at TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )""")
+                    db.execute(
+                        "CREATE INDEX idx_billing_subscriptions_identity ON billing_subscriptions(identity_id, status, updated_at)"
+                    )
+                    db.execute("""CREATE TABLE billing_webhook_events (
+                        stripe_event_id TEXT PRIMARY KEY,
+                        event_type TEXT NOT NULL,
+                        livemode INTEGER NOT NULL CHECK(livemode IN (0, 1)),
+                        payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256) = 64),
+                        processing_state TEXT NOT NULL DEFAULT 'received'
+                            CHECK(processing_state IN ('received', 'processing', 'processed', 'failed')),
+                        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+                        received_at TEXT NOT NULL,
+                        processed_at TEXT,
+                        last_error_code TEXT
+                    )""")
+                    db.execute(
+                        "CREATE INDEX idx_billing_webhook_pending ON billing_webhook_events(processing_state, received_at)"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (9, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
