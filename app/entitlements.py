@@ -46,7 +46,6 @@ ROUTE_ENTITLEMENTS = {
     "/api/bookmaker-board": "market_board",
     "/api/simulation/leagues": "simulation",
     "/api/simulation/games": "simulation",
-    "/api/simulation/games/refresh": "simulation",
     "/api/simulation/run": "simulation",
     "/api/player-props": "player_props",
     "/api/clv": "clv",
