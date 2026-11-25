@@ -15,7 +15,7 @@ from .service import service
 limits_monitor = service.limits_monitor
 from .markets import market_board, analyze_markets
 from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
-from .route_policy import IDENTITY_ROUTE_ACCESS_POLICY, classify_route
+from .route_policy import IDENTITY_ROUTE_ACCESS_POLICY, classify_route, matched_route_path
 from .route_policy import ROUTE_ACCESS_POLICY
 from .route_authorization import dependencies_for_route
 from .entitlements import (
@@ -178,22 +178,26 @@ async def optional_basic_auth(request: Request, call_next):
     if request.url.path == "/api/health" and request.method in {"GET", "HEAD"}:
         return await call_next(request)
 
+    # Resolve parameterized route templates before policy lookup. Middleware
+    # executes before Starlette populates scope["route"], so exact URL lookup alone
+    # would reject valid subscriber/session-specific admin endpoints.
+    policy_path = matched_route_path(request.scope, request.app.router.routes) or request.url.path
     identity_path_set = {path for _method, path in IDENTITY_ROUTE_ACCESS_POLICY}
     if config.AUTH_MODE == "identity":
         # Identity pages/endpoints are admitted by their separate policy. Existing
         # product endpoints are admitted only because each APIRoute has explicit
         # session/entitlement dependencies assembled from ROUTE_ACCESS_POLICY.
-        if classify_route(request.method, request.url.path, IDENTITY_ROUTE_ACCESS_POLICY) is not None:
+        if classify_route(request.method, policy_path, IDENTITY_ROUTE_ACCESS_POLICY) is not None:
             return await call_next(request)
         product_access = classify_route(
-            request.method, request.url.path, ROUTE_ACCESS_POLICY
+            request.method, policy_path, ROUTE_ACCESS_POLICY
         )
         if product_access == "public_minimal":
             return await call_next(request)
         if product_access in {"subscriber_entitled", "administrator_only"}:
             # Framework-generated docs routes cannot receive APIRoute dependencies;
             # protect those exact paths here with the same server-side admin session.
-            if request.url.path in {
+            if policy_path in {
                 "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"
             }:
                 try:
@@ -216,7 +220,7 @@ async def optional_basic_auth(request: Request, call_next):
 
     # The identity endpoints are not part of the legacy self-hosted experience.
     # Hide them in legacy mode even when legacy Basic Auth is intentionally unset.
-    if request.url.path in identity_path_set:
+    if policy_path in identity_path_set:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
 
     if bool(username) != bool(password):

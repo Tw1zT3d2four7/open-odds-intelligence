@@ -166,3 +166,36 @@ def test_identity_admin_errors_and_auth_pages_are_never_cached(client, monkeypat
         assert subscriber_summary.headers["pragma"] == "no-cache"
     finally:
         main.app.dependency_overrides.pop(get_identity_store, None)
+
+
+def test_parameterized_admin_routes_are_classified_in_identity_mode_and_hidden_in_legacy_mode(
+    client, monkeypatch, tmp_path
+):
+    from app.identity import IdentityStore
+    from app.dependencies import get_identity_store
+
+    store = IdentityStore(tmp_path / "parameterized-route-identities.sqlite3")
+    main.app.dependency_overrides[get_identity_store] = lambda: store
+    paths_and_payloads = (
+        ("/admin/subscribers/subscriber-123/status", {"is_active": False, "reason_code": "other"}),
+        ("/admin/subscribers/subscriber-123/sessions/revoke", {"reason_code": "other"}),
+        ("/admin/sessions/session-456/revoke", {"reason_code": "other"}),
+    )
+    try:
+        monkeypatch.setattr(config, "AUTH_MODE", "identity")
+        for path, payload in paths_and_payloads:
+            response = client.post(path, json=payload)
+            # A recognized route reaches its administrator dependency (401),
+            # rather than being rejected as an unclassified path (503).
+            assert response.status_code == 401
+            assert response.headers["cache-control"] == "no-store"
+            assert response.headers["pragma"] == "no-cache"
+
+        monkeypatch.setattr(config, "AUTH_MODE", "legacy_basic")
+        monkeypatch.setattr(config, "AUTH_USERNAME", "")
+        monkeypatch.setattr(config, "AUTH_PASSWORD", "")
+        for path, payload in paths_and_payloads:
+            response = client.post(path, json=payload)
+            assert response.status_code == 404
+    finally:
+        main.app.dependency_overrides.pop(get_identity_store, None)

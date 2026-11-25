@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from starlette.routing import BaseRoute
+from starlette.routing import BaseRoute, Match
 
 
 # Values are descriptive policy classes. They are translated into concrete
@@ -139,3 +139,20 @@ def stale_policy_entries(
         if method not in {"HEAD", "OPTIONS"}
     }
     return sorted(set(policy) - actual)
+
+
+def matched_route_path(scope: dict, routes: Iterable[BaseRoute]) -> str | None:
+    """Resolve a concrete ASGI request path to its registered route template.
+
+    Middleware runs before Starlette attaches scope["route"]. Matching the
+    declared routes here ensures parameterized endpoints use their explicit
+    access-policy entry instead of being mistaken for unknown paths.
+    """
+    for route in routes:
+        try:
+            match, _child_scope = route.matches(scope)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if match is Match.FULL:
+            return getattr(route, "path", None)
+    return None
