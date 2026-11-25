@@ -149,7 +149,8 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       data.invoices.forEach(item => {
         const row = document.createElement("li");
         const amount = item.amount_paid === null ? "Amount pending" : money(item.amount_paid, item.currency);
-        row.textContent = amount + " · " + String(item.status || "unknown").replaceAll("_", " ") + " · " + displayDate(item.updated_at);
+        const failure = item.payment_failed_at ? " · Payment failed " + displayDate(item.payment_failed_at) : "";
+        row.textContent = amount + " · " + String(item.status || "unknown").replaceAll("_", " ") + failure + " · " + displayDate(item.updated_at);
         invoices.appendChild(row);
       });
     }
