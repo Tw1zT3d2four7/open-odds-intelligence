@@ -24,7 +24,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 10
+_SCHEMA_VERSION = 11
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -427,6 +427,12 @@ class IdentityStore:
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (10, _timestamp(_now())),
                     )
+                if current < 11:
+                    db.execute("ALTER TABLE billing_webhook_events ADD COLUMN encrypted_payload TEXT")
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (11, _timestamp(_now())),
+                    )
                 db.commit()
             except Exception:
                 db.rollback()
@@ -445,7 +451,7 @@ class IdentityStore:
     def record_stripe_webhook_event(
         self, event_id: str, event_type: str, livemode: bool, payload: bytes
     ) -> dict:
-        """Persist only a fingerprint for a verified Stripe event; never store its body."""
+        """Persist a fingerprint and Fernet-encrypted verified event for durable processing."""
         if not isinstance(event_id, str) or not event_id or len(event_id) > 255:
             raise ValueError("A valid Stripe event ID is required.")
         if not isinstance(event_type, str) or not event_type or len(event_type) > 128:
@@ -454,6 +460,13 @@ class IdentityStore:
             raise ValueError("Stripe livemode must be a Boolean.")
         if not isinstance(payload, bytes) or not payload or len(payload) > 1_048_576:
             raise ValueError("Stripe webhook payload must be between 1 byte and 1 MiB.")
+        key = config.STRIPE_WEBHOOK_ENCRYPTION_KEY
+        if not isinstance(key, str) or not key:
+            raise ValueError("Stripe webhook encryption is not configured.")
+        try:
+            encrypted_payload = Fernet(key.encode("ascii")).encrypt(payload).decode("ascii")
+        except (ValueError, UnicodeEncodeError):
+            raise ValueError("Stripe webhook encryption configuration is invalid.") from None
         digest = hashlib.sha256(payload).hexdigest()
         now = _timestamp(_now())
         with self.connect() as db:
@@ -461,13 +474,14 @@ class IdentityStore:
             cursor = db.execute(
                 """INSERT OR IGNORE INTO billing_webhook_events(
                     stripe_event_id, event_type, livemode, payload_sha256,
-                    processing_state, attempt_count, received_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'received', 0, ?, ?)""",
-                (event_id, event_type, int(livemode), digest, now, now),
+                    processing_state, attempt_count, received_at, updated_at,
+                    encrypted_payload
+                ) VALUES (?, ?, ?, ?, 'received', 0, ?, ?, ?)""",
+                (event_id, event_type, int(livemode), digest, now, now, encrypted_payload),
             )
             row = db.execute(
                 """SELECT event_type, livemode, payload_sha256, processing_state,
-                          attempt_count
+                          attempt_count, encrypted_payload
                    FROM billing_webhook_events WHERE stripe_event_id=?""",
                 (event_id,),
             ).fetchone()
@@ -479,12 +493,42 @@ class IdentityStore:
             ):
                 db.rollback()
                 raise ValueError("Stripe event ID was reused with different event content.")
+            if row["encrypted_payload"] is None:
+                db.execute(
+                    "UPDATE billing_webhook_events SET encrypted_payload=?, updated_at=? "
+                    "WHERE stripe_event_id=? AND encrypted_payload IS NULL",
+                    (encrypted_payload, now, event_id),
+                )
             db.commit()
         return {
             "created": cursor.rowcount == 1,
             "processing_state": row["processing_state"],
             "attempt_count": row["attempt_count"],
         }
+
+    def get_stripe_webhook_event_payload(self, event_id: str, lease_token: str) -> bytes | None:
+        """Decrypt an event only for its current, unexpired processing lease."""
+        if not isinstance(event_id, str) or not event_id or len(event_id) > 255:
+            return None
+        if not isinstance(lease_token, str) or not lease_token:
+            return None
+        now = _timestamp(_now())
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT encrypted_payload FROM billing_webhook_events
+                   WHERE stripe_event_id=? AND processing_state='processing'
+                     AND lease_token_hash=? AND lease_expires_at>?""",
+                (event_id, _token_digest(lease_token), now),
+            ).fetchone()
+        if row is None or not row["encrypted_payload"]:
+            return None
+        key = config.STRIPE_WEBHOOK_ENCRYPTION_KEY
+        if not isinstance(key, str) or not key:
+            raise RuntimeError("Stripe webhook encryption is not configured.")
+        try:
+            return Fernet(key.encode("ascii")).decrypt(row["encrypted_payload"].encode("ascii"))
+        except (InvalidToken, ValueError, UnicodeEncodeError):
+            raise RuntimeError("Stored Stripe webhook event cannot be decrypted.") from None
 
     def claim_stripe_webhook_event(
         self, event_id: str, *, lease_seconds: int = 60, max_attempts: int = 8
