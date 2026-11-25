@@ -38,6 +38,7 @@ Use a dedicated `EMAIL_QUEUE_ENCRYPTION_KEY` Fernet key, independent from `MFA_E
 
 - Validate the Fernet key before creating or enqueueing a message.
 - Encrypt the complete delivery payload before insertion.
+- Resolve the recipient from the normalized identity record before encrypting the payload; never use the raw registration, resend, or recovery request string as the delivery address.
 - Restrict the identity database and WAL/SHM sidecars to mode 0600 as already required.
 - Never log ciphertext, plaintext payloads, keys, or decrypted challenge links.
 - If the key is missing or invalid, do not enqueue and do not send inline as a fallback.

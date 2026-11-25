@@ -71,7 +71,7 @@ class IdentityRouteHarness:
 def test_registration_creates_unverified_subscriber_and_sends_one_time_link(tmp_path, monkeypatch):
     harness = IdentityRouteHarness(tmp_path, monkeypatch)
     response = harness.post("/auth/register", {
-        "email": "Person@example.com",
+        "email": "  Person@Example.com  ",
         "password": "a strong password 123",
     })
     assert response.status_code == 202
@@ -80,7 +80,7 @@ def test_registration_creates_unverified_subscriber_and_sends_one_time_link(tmp_
     assert harness.deliver_pending() == 1
     assert len(harness.sender.messages) == 1
     message = harness.sender.messages[0]
-    assert message["recipient"] == "Person@example.com"
+    assert message["recipient"] == "person@example.com"
     assert "#token=" in message["text"]
     assert "Person@example.com" not in message["idempotency_key"]
     with harness.store.connect() as db:

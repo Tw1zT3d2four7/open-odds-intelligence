@@ -446,13 +446,19 @@ def register_subscriber(
     try:
         token = store.create_email_verification_challenge(payload.email)
         if token:
-            _deliver_or_record_failure(
-                store, sender,
-                recipient=payload.email,
-                token=token,
-                identity_id=identity_id,
-                purpose="verification",
-            )
+            with store.connect() as db:
+                row = db.execute(
+                    "SELECT email FROM identities WHERE id=? AND is_active=1",
+                    (identity_id,),
+                ).fetchone()
+            if row:
+                _deliver_or_record_failure(
+                    store, sender,
+                    recipient=row["email"],
+                    token=token,
+                    identity_id=identity_id,
+                    purpose="verification",
+                )
     except HTTPException:
         raise
     except Exception:
@@ -478,12 +484,12 @@ def resend_verification(
             # Resolve the internal ID only for an opaque idempotency namespace.
             with store.connect() as db:
                 row = db.execute(
-                    "SELECT id FROM identities WHERE email=? AND account_type='subscriber' AND is_active=1",
+                    "SELECT id, email FROM identities WHERE email=? AND account_type='subscriber' AND is_active=1",
                     (_identifier(payload.email),),
                 ).fetchone()
             if row:
                 _deliver_or_record_failure(
-                    store, sender, recipient=payload.email, token=token,
+                    store, sender, recipient=row["email"], token=token,
                     identity_id=row["id"], purpose="verification",
                 )
     except HTTPException:
@@ -526,12 +532,12 @@ def request_password_reset(
         if token:
             with store.connect() as db:
                 row = db.execute(
-                    "SELECT id FROM identities WHERE email=? AND is_active=1",
+                    "SELECT id, email FROM identities WHERE email=? AND is_active=1",
                     (_identifier(payload.email),),
                 ).fetchone()
             if row:
                 _deliver_or_record_failure(
-                    store, sender, recipient=payload.email, token=token,
+                    store, sender, recipient=row["email"], token=token,
                     identity_id=row["id"], purpose="password-reset",
                 )
     except HTTPException:
