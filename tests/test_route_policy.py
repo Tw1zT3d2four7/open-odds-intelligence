@@ -17,7 +17,7 @@ def _application_routes():
 
 def test_every_application_route_has_an_explicit_target_access_class():
     routes = _application_routes()
-    assert len(routes) == 58
+    assert len(routes) == 59
     assert unclassified_routes(routes) == []
     assert stale_policy_entries(routes) == []
 
@@ -30,7 +30,7 @@ def test_policy_inventory_covers_all_application_and_framework_http_routes():
         for method in (route.methods or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert len(actual) == 58
+    assert len(actual) == 59
     assert set(application_route_access_policy()) == actual
 
 
@@ -85,8 +85,8 @@ def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
         route for route in identity_router.routes
         if getattr(route, "methods", None)
     ]
-    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == 32
-    assert len(routes) == 32
+    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == 33
+    assert len(routes) == 33
     assert unclassified_routes(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
     assert stale_policy_entries(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
 
@@ -97,6 +97,7 @@ def test_identity_route_policy_distinguishes_public_mutations_and_session_logout
     assert classify_route("GET", "/admin/overview", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/account", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
     assert classify_route("GET", "/auth/account", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("GET", "/auth/billing", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
     assert classify_route("POST", "/auth/password/change", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
     assert classify_route("GET", "/auth/sessions", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
     assert classify_route("POST", "/auth/sessions/{session_id}/revoke", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
