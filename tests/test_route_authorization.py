@@ -335,10 +335,14 @@ def test_identity_policy_rejects_public_mutations_without_csrf_classification():
 def test_identity_public_csrf_policy_rejects_safe_methods():
     from app.route_policy import IDENTITY_ROUTE_ACCESS_POLICY
 
-    with pytest.raises(ValueError, match="state-changing"):
-        dependencies_for_route(
-            "GET", "/auth/register", policy=IDENTITY_ROUTE_ACCESS_POLICY
-        )
+    IDENTITY_ROUTE_ACCESS_POLICY[("GET", "/auth/test-safe")] = "public_csrf"
+    try:
+        with pytest.raises(ValueError, match="state-changing"):
+            dependencies_for_route(
+                "GET", "/auth/test-safe", policy=IDENTITY_ROUTE_ACCESS_POLICY
+            )
+    finally:
+        IDENTITY_ROUTE_ACCESS_POLICY.pop(("GET", "/auth/test-safe"))
 
 
 def test_identity_policy_cannot_implicitly_allow_unclassified_routes():
