@@ -259,7 +259,15 @@ async def prevent_identity_response_caching(request: Request, call_next):
         "/login", "/register", "/admin", "/admin/login", "/account",
         "/forgot-password", "/verify-email", "/reset-password",
     }
-    if path in identity_page_paths or path.startswith(("/auth/", "/admin/")):
+    protected_product = False
+    if config.AUTH_MODE == "identity":
+        access_class = classify_route(request.method, path, ROUTE_ACCESS_POLICY)
+        protected_product = access_class in {"subscriber_entitled", "administrator_only"}
+    if (
+        path in identity_page_paths
+        or path.startswith(("/auth/", "/admin/"))
+        or protected_product
+    ):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     return response

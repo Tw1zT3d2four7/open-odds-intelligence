@@ -69,7 +69,10 @@ def test_identity_mode_protects_product_routes_and_exposes_only_staged_auth_page
     client = TestClient(main.app)
     dashboard = client.get("/")
     assert dashboard.status_code == 401
-    assert client.get("/api/odds").status_code == 401
+    assert dashboard.headers["cache-control"] == "no-store"
+    odds = client.get("/api/odds")
+    assert odds.status_code == 401
+    assert odds.headers["cache-control"] == "no-store"
 
     # Only the separately protected identity entry points are enabled in this
     # staged mode; the detailed provider health payload is not public.

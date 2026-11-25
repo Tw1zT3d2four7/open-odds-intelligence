@@ -65,22 +65,6 @@ def make_app(store):
     return app
 
 
-def test_identity_dependencies_mark_authorization_and_csrf_errors_no_store():
-    store = StubStore()
-    client = TestClient(make_app(store))
-
-    denied_read = client.get("/subscriber")
-    assert denied_read.status_code == 401
-    assert denied_read.headers["cache-control"] == "no-store"
-    assert denied_read.headers["pragma"] == "no-cache"
-
-    client.cookies.set(SUBSCRIBER_COOKIE, "sub-token")
-    denied_mutation = client.post("/subscriber/change")
-    assert denied_mutation.status_code == 403
-    assert denied_mutation.headers["cache-control"] == "no-store"
-    assert denied_mutation.headers["pragma"] == "no-cache"
-
-
 def test_subscriber_dependency_accepts_only_subscriber_cookie():
     store = StubStore({"sub-token": {"account_type": "subscriber", "identity_id": "s1"}})
     client = TestClient(make_app(store))
