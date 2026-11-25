@@ -589,6 +589,7 @@ def create_subscriber_checkout(
             or recurring.get("interval_count") != 1
         ):
             raise HTTPException(status_code=503, detail="The selected recurring price is not approved.")
+        customer_id = _stripe_customer_for_subscriber(store, session)
         reservation = store.reserve_billing_checkout(
             session["identity_id"],
             payload.interval,
@@ -605,7 +606,6 @@ def create_subscriber_checkout(
                 detail="A Checkout attempt is already pending. Retry the original request or wait for its session to expire.",
             )
         attempt_token = reservation["attempt_token"]
-        customer_id = _stripe_customer_for_subscriber(store, session)
         origin = _public_origin()
         checkout_expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
         checkout = stripe_api.stripe_request(
