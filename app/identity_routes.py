@@ -522,6 +522,8 @@ def subscriber_logout(
     session: dict = Depends(require_subscriber),
     store: IdentityStore = Depends(get_identity_store),
 ):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     token = request.cookies.get(SUBSCRIBER_COOKIE)
     try:
         if token:
@@ -858,6 +860,8 @@ def administrator_logout(
     session: dict = Depends(require_administrator),
     store: IdentityStore = Depends(get_identity_store),
 ):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     token = request.cookies.get(ADMINISTRATOR_COOKIE)
     try:
         if token:

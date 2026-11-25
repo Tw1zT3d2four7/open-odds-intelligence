@@ -322,6 +322,8 @@ def test_subscriber_logout_revokes_session_and_clears_cookies(tmp_path, monkeypa
 
     logout = harness.post("/auth/logout", {})
     assert logout.status_code == 200
+    assert logout.headers["Cache-Control"] == "no-store"
+    assert logout.headers["Pragma"] == "no-cache"
     assert harness.store.get_session(token) is None
     assert harness.client.cookies.get("__Host-ooi_subscriber") is None
 
@@ -349,6 +351,8 @@ def test_administrator_logout_revokes_mfa_authenticated_session(tmp_path, monkey
 
     logout = harness.post("/admin/auth/logout", {})
     assert logout.status_code == 200
+    assert logout.headers["Cache-Control"] == "no-store"
+    assert logout.headers["Pragma"] == "no-cache"
     assert harness.store.get_session(token) is None
     assert harness.client.cookies.get("__Host-ooi_admin") is None
 
