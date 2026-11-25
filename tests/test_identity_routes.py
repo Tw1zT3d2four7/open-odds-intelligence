@@ -1040,3 +1040,113 @@ def test_subscriber_password_change_is_rate_limited_by_identity(tmp_path, monkey
     assert int(limited.headers["Retry-After"]) > 0
     active_token = harness.client.cookies.get("__Host-ooi_subscriber")
     assert harness.store.get_session(active_token) is not None
+
+
+def test_subscriber_can_list_and_revoke_only_own_sessions(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber(
+        "session-owner@example.test", "a strong session owner password"
+    )
+    challenge = harness.store.create_email_verification_challenge("session-owner@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    login = harness.post("/auth/login", {
+        "email": "session-owner@example.test",
+        "password": "a strong session owner password",
+    })
+    assert login.status_code == 200
+    current_token = harness.client.cookies.get("__Host-ooi_subscriber")
+    current_session = harness.store.get_session(current_token)
+    other_token, other_session_id = harness.store.create_session(identity_id)
+
+    listing = harness.client.get("/auth/sessions")
+    assert listing.status_code == 200
+    assert listing.headers["cache-control"] == "no-store"
+    data = listing.json()
+    assert data["total"] == 2
+    assert len(data["sessions"]) == 2
+    current = next(row for row in data["sessions"] if row["is_current"])
+    other = next(row for row in data["sessions"] if not row["is_current"])
+    assert current["session_id"] == current_session["session_id"]
+    assert other["session_id"] == other_session_id
+    assert "identity_id" not in current
+    assert "token_hash" not in str(data)
+    assert current_token not in str(data)
+
+    denied = harness.post(
+        f"/auth/sessions/{other_session_id}/revoke", {}, csrf=False
+    )
+    assert denied.status_code == 403
+    assert harness.store.get_session(other_token) is not None
+
+    revoked = harness.post(f"/auth/sessions/{other_session_id}/revoke", {})
+    assert revoked.status_code == 200
+    assert revoked.json() == {"revoked": True, "current_session": False}
+    assert harness.store.get_session(other_token) is None
+    assert harness.store.get_session(current_token) is not None
+
+    with harness.store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, subject_identity_id, metadata_json
+               FROM security_audit_events
+               WHERE event_type='subscriber.session_revoked'
+               ORDER BY occurred_at DESC LIMIT 1"""
+        ).fetchone()
+    assert event["actor_identity_id"] == identity_id
+    assert event["subject_identity_id"] == identity_id
+    assert event["metadata_json"] == '{"self_service":true}'
+
+
+def test_subscriber_session_revocation_cannot_target_another_account(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    first_id = harness.store.create_subscriber(
+        "first-session-owner@example.test", "a strong first owner password"
+    )
+    second_id = harness.store.create_subscriber(
+        "second-session-owner@example.test", "a strong second owner password"
+    )
+    first_challenge = harness.store.create_email_verification_challenge("first-session-owner@example.test")
+    second_challenge = harness.store.create_email_verification_challenge("second-session-owner@example.test")
+    assert harness.store.consume_email_verification_challenge(first_challenge) is True
+    assert harness.store.consume_email_verification_challenge(second_challenge) is True
+    first_token, _ = harness.store.create_session(first_id)
+    second_token, second_session_id = harness.store.create_session(second_id)
+    harness.client.cookies.set("__Host-ooi_subscriber", first_token, domain="ooi.example", path="/")
+    harness._csrf()
+
+    response = harness.post(f"/auth/sessions/{second_session_id}/revoke", {})
+    assert response.status_code == 404
+    assert harness.store.get_session(second_token) is not None
+
+
+def test_subscriber_can_revoke_current_session_and_is_signed_out(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber(
+        "current-session@example.test", "a strong current session password"
+    )
+    challenge = harness.store.create_email_verification_challenge("current-session@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    login = harness.post("/auth/login", {
+        "email": "current-session@example.test",
+        "password": "a strong current session password",
+    })
+    assert login.status_code == 200
+    token = harness.client.cookies.get("__Host-ooi_subscriber")
+    session = harness.store.get_session(token)
+
+    response = harness.post(f"/auth/sessions/{session['session_id']}/revoke", {})
+    assert response.status_code == 200
+    assert response.json() == {"revoked": True, "current_session": True}
+    assert harness.store.get_session(token) is None
+    assert harness.client.cookies.get("__Host-ooi_subscriber") is None
+    assert harness.client.cookies.get("__Host-ooi_csrf") is None
+    assert harness.client.get("/auth/account").status_code == 401
+    with harness.store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, subject_identity_id
+               FROM security_audit_events
+               WHERE event_type='subscriber.session_revoked'
+               AND subject_identity_id=?""",
+            (identity_id,),
+        ).fetchone()
+    assert event["actor_identity_id"] == identity_id
+    assert event["subject_identity_id"] == identity_id
