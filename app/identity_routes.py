@@ -222,7 +222,7 @@ def _deliver_or_record_failure(store: IdentityStore, sender, **kwargs) -> None:
     identity_id = kwargs["identity_id"]
     purpose = "password_reset" if kwargs["purpose"] == "password-reset" else "verification"
     try:
-        if store.email_provider_circuit_open():
+        if not store.claim_email_provider_send():
             store.record_email_delivery_event(
                 identity_id, purpose, "skipped", failure_code="circuit_open"
             )
