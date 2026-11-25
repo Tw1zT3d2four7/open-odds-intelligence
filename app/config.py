@@ -168,4 +168,6 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "")
 # Dedicated Fernet key for encrypted retry payloads; never reuse the MFA key.
 EMAIL_QUEUE_ENCRYPTION_KEY = os.getenv("EMAIL_QUEUE_ENCRYPTION_KEY", "")
+# Separate encryption key for offline identity database backups.
+IDENTITY_BACKUP_ENCRYPTION_KEY = os.getenv("IDENTITY_BACKUP_ENCRYPTION_KEY", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
