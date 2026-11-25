@@ -886,6 +886,28 @@ def administrator_subscribers(
         ) from None
 
 
+@router.get(
+    "/admin/billing",
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_billing_overview(
+    response: Response,
+    _session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Return aggregate billing operations metrics to an active MFA administrator."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        return store.administrator_billing_overview()
+    except Exception:
+        logger.exception("Administrator billing overview query failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Billing operations information is temporarily unavailable.",
+        ) from None
+
+
 @router.post(
     "/admin/subscribers/{identity_id}/status",
     dependencies=[
