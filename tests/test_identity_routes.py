@@ -337,3 +337,19 @@ def test_subscriber_session_cookie_cannot_authorize_administrator_logout(tmp_pat
     response = harness.post("/admin/auth/logout", {})
     assert response.status_code == 401
     assert harness.store.get_session(token) is not None
+
+
+
+def test_registration_storage_failure_returns_sanitized_service_error(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+
+    def fail_create(*_args, **_kwargs):
+        raise RuntimeError("private identity database path")
+
+    monkeypatch.setattr(harness.store, "create_subscriber", fail_create)
+    response = harness.post("/auth/register", {
+        "email": "person@example.com",
+        "password": "a strong password 123",
+    })
+    assert response.status_code == 503
+    assert "private identity database path" not in response.text
