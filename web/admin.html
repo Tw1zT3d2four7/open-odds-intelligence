@@ -282,14 +282,13 @@ tbody tr:last-child td{border-bottom:0}
           action.textContent = user.is_active ? "Suspend" : "Reactivate";
           action.setAttribute("aria-label", (user.is_active ? "Suspend " : "Reactivate ") + user.email);
           actionCell.appendChild(action);
-          if (item.account_type === "subscriber") {
-            const accountAction = document.createElement("button");
-            accountAction.type = "button";
-            accountAction.textContent = "Revoke all";
-            accountAction.dataset.accountIdentityId = item.identity_id;
-            accountAction.style.marginLeft = "6px";
-            actionCell.appendChild(accountAction);
-          }
+          const sessionsAction = document.createElement("button");
+          sessionsAction.type = "button";
+          sessionsAction.textContent = "Revoke sessions";
+          sessionsAction.dataset.accountIdentityId = user.identity_id;
+          sessionsAction.style.marginLeft = "6px";
+          sessionsAction.setAttribute("aria-label", "Revoke all sessions for " + user.email);
+          actionCell.appendChild(sessionsAction);
           row.appendChild(actionCell);
           subscriberRows.appendChild(row);
         });
@@ -616,6 +615,10 @@ tbody tr:last-child td{border-bottom:0}
     if (button.dataset.view === "security") { loadAdminSessions(); if (!auditLoaded) loadAudit(); }
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
+  subscriberRows.addEventListener("click", event => {
+    const action = event.target.closest("button[data-account-identity-id]");
+    if (action) revokeSubscriberSessions(action.dataset.accountIdentityId, action);
+  });
   subscriberRows.addEventListener("click", async event => {
     const action = event.target.closest("button[data-identity-id]");
     if (!action) return;
