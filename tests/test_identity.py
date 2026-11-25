@@ -929,3 +929,42 @@ def test_subscriber_entitlement_updates_reject_unapproved_feature_keys(tmp_path,
         store.set_subscriber_entitlements(
             subscriber_id, keys, actor_identity_id=admin_id
         )
+
+
+def test_subscriber_directory_storage_is_bounded_searchable_and_minimal(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "directory-user@example.com", "a strong directory password 123"
+    )
+    store.create_subscriber(
+        "another-directory@example.com", "another directory password 123"
+    )
+    admin_id = store.provision_administrator(
+        "directory-admin@example.com", "a strong directory admin password 123"
+    )
+    store.set_subscriber_entitlements(
+        subscriber_id, ["odds", "dashboard"], actor_identity_id=admin_id
+    )
+
+    result = store.list_subscribers(limit=1, offset=0)
+    assert result["total"] == 2
+    assert len(result["subscribers"]) == 1
+    page = store.list_subscribers(limit=100)
+    record = next(row for row in page["subscribers"] if row["identity_id"] == subscriber_id)
+    assert record["email"] == "directory-user@example.com"
+    assert record["is_active"] is True
+    assert record["email_verified"] is False
+    assert record["entitlements"] == ["dashboard", "odds"]
+    assert "password_hash" not in record
+    assert "session" not in record
+
+    filtered = store.list_subscribers(email_query="DIRECTORY-user")
+    assert filtered["total"] == 1
+    assert filtered["subscribers"][0]["identity_id"] == subscriber_id
+    assert store.list_subscribers(email_query="%")["total"] == 0
+    with pytest.raises(ValueError, match="page size"):
+        store.list_subscribers(limit=0)
+    with pytest.raises(ValueError, match="search"):
+        store.list_subscribers(email_query=" ")
+
+
