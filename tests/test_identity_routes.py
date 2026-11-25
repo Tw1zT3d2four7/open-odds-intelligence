@@ -1362,6 +1362,12 @@ def test_subscriber_billing_summary_is_private_bounded_and_self_only(tmp_path, m
     data = response.json()
     assert data["checkout_available"] is False
     assert data["customer_portal_available"] is False
+    assert data["price_catalog"] == {
+        "currency": "usd",
+        "monthly": {"amount_cents": 1068, "interval": "month", "recurring": True},
+        "annual": {"amount_cents": 10405, "interval": "year", "recurring": True},
+        "checkout_available": False,
+    }
     assert data["subscriptions"] == [{
         "subscription_id": "sub_private",
         "plan_code": "basic",
