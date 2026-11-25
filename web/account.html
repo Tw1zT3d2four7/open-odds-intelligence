@@ -189,9 +189,13 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
     el("checkout-monthly").hidden = !data.checkout_available;
     el("checkout-annual").hidden = !data.checkout_available;
     el("billing-portal").hidden = !data.customer_portal_available;
-    el("billing-availability").textContent = data.checkout_available
-      ? "Hosted checkout is available in the configured Stripe test environment. A completed payment does not itself grant paid feature access."
-      : "The approved monthly and yearly prices are shown above. Hosted purchases are disabled until Stripe test-mode acceptance and the access rules are complete.";
+    el("billing-availability").textContent = data.checkout_pending
+      ? "A Checkout session is already pending for this account. Complete that session or wait for its 35-minute expiry before starting another."
+      : data.subscription_exists
+        ? "A subscription is already linked to this account. Use Manage Billing to review or change it."
+        : data.checkout_available
+          ? "Hosted checkout is available in the configured Stripe test environment. A completed payment does not itself grant paid feature access."
+          : "The approved monthly and yearly prices are shown above. Hosted purchases remain disabled until Stripe test-mode acceptance and the access rules are complete.";
   }
 
   async function startCheckout(interval) {
