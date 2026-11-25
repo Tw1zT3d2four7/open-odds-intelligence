@@ -179,6 +179,7 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 # Dedicated Fernet key for encrypted durable Stripe webhook event bodies.
 STRIPE_WEBHOOK_ENCRYPTION_KEY = os.getenv("STRIPE_WEBHOOK_ENCRYPTION_KEY", "")
 STRIPE_WEBHOOK_LIVEMODE = os.getenv("STRIPE_WEBHOOK_LIVEMODE", "false").strip().lower() in ("1", "true", "yes", "on")
+STRIPE_TEST_MODE_ACKNOWLEDGED = os.getenv("STRIPE_TEST_MODE_ACKNOWLEDGED", "false").strip().lower() in ("1", "true", "yes", "on")
 # Stripe secret API key is case-sensitive; keep it out of logs and responses.
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 # Stripe recurring Price IDs are public identifiers, not secrets. Preserve them exactly.
