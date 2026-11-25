@@ -1,8 +1,8 @@
 """Lazy FastAPI dependencies for subscriber/admin session authorization.
 
-These dependencies protect the isolated identity router. Product routes remain
-behind the global fail-closed identity-mode gate until entitlement-aware route
-authorization is integrated; legacy Basic Auth behavior remains unchanged.
+Identity routes use strict subscriber/admin dependencies. Product routes use
+mode-aware wrappers so the legacy Basic Auth deployment is unchanged, while
+identity mode requires active sessions and server-side feature entitlements.
 """
 from __future__ import annotations
 
