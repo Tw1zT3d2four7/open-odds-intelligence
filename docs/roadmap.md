@@ -115,7 +115,7 @@ Implemented on the feature branch so far:
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
 - [x] Endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md` and integrated with identity-mode routes; conservative thresholds remain subject to deployment-traffic and proxy-topology review before public activation.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
-- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45663339778`, commit `041258a2e2f89f7d5e6957d3dcd7ae94e63a767a` — **844 passed, 1 warning**.
+- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45670398587`, commit `fcf721c212b77f99bb1599669687d83b0280ff6a` — **858 passed, 1 warning**.
 
 Still required before Phase 1 is complete:
 
@@ -152,7 +152,7 @@ Still required before Phase 1 is complete:
 - [x] Add a protected, paginated, searchable, read-only subscriber directory and Users view; expose only account identity, email, active/verification state, creation time, and active entitlements, never authentication material.
 - [x] Add a protected manual feature-access manager in the Admin Console using the MFA-admin-attributed, CSRF-protected entitlement API; every grant/revoke replacement requires a controlled reason code recorded with the exact grant set and expiry; plan bundles and billing remain separate work.
 - [x] Add MFA-admin-only, CSRF-protected individual session revocation and subscriber-wide session revocation; enforce subscriber-only targets, controlled reason codes, atomic revocation, current-admin session protection, and actor-attributed audit events.
-- [x] Apply `no-store` to every authentication and administrator response, including authorization failures; protect inline authentication/Admin Console scripts with a fresh per-response CSP nonce instead of `unsafe-inline` script permission.
+- [x] Apply `no-store` to authentication, subscriber-account, administrator, and protected API responses before authorization or identity-store failures; protect inline authentication/Admin Console scripts with a fresh per-response CSP nonce instead of `unsafe-inline` script permission.
 - [x] Complete the route-by-route threat review of all enabled Admin Console routes: cross-account suspension/reactivation, session revocation, and feature-access changes require an MFA-admin session, CSRF, controlled reason codes, and atomic actor-attributed audit events; logout remains self-service and audited. No other privileged write routes are exposed.
 - [ ] Define and approve an audit-retention policy before implementing retention administration or automated deletion.
 
