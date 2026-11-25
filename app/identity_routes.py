@@ -439,6 +439,22 @@ def subscriber_billing_summary(
     response.headers["Pragma"] = "no-cache"
     try:
         summary = store.subscriber_billing_summary(session["identity_id"])
+        test_mode_ready = (
+            isinstance(config.STRIPE_SECRET_KEY, str)
+            and config.STRIPE_SECRET_KEY.startswith("sk_test_")
+            and not config.STRIPE_WEBHOOK_LIVEMODE
+        )
+        checkout_ready = bool(
+            config.STRIPE_CHECKOUT_ENABLED and test_mode_ready
+            and config.STRIPE_PRICE_MONTHLY_ID.startswith("price_")
+            and config.STRIPE_PRICE_YEARLY_ID.startswith("price_")
+            and config.STRIPE_PRICE_MONTHLY_ID != config.STRIPE_PRICE_YEARLY_ID
+        )
+        portal_ready = bool(config.STRIPE_CUSTOMER_PORTAL_ENABLED and test_mode_ready)
+        summary["checkout_available"] = checkout_ready
+        summary["customer_portal_available"] = bool(
+            portal_ready and store.billing_customer_id(session["identity_id"])
+        )
         summary["price_catalog"] = {
             "currency": CURRENCY,
             "monthly": {
@@ -451,7 +467,7 @@ def subscriber_billing_summary(
                 "interval": "year",
                 "recurring": True,
             },
-            "checkout_available": False,
+            "checkout_available": checkout_ready,
         }
         return summary
     except ValueError as exc:
