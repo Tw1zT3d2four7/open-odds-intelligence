@@ -29,9 +29,10 @@ def dependencies_for_route(
 ) -> list[Depends]:
     """Return the complete dependency list for a classified route.
 
-    Unknown routes and subscriber routes without an explicit entitlement
-    dependency fail closed. State-changing authenticated routes always include
-    the same-origin CSRF guard. Public routes are restricted to safe methods.
+    Unknown routes and subscriber product routes without an explicit entitlement
+    dependency fail closed. Public mutation routes must use the explicit
+    public_csrf class; all state-changing authenticated routes include the
+    same-origin CSRF guard.
     """
     normalized_method = method.upper()
     access_class = classify_route(normalized_method, path, policy)
