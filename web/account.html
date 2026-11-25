@@ -79,6 +79,8 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       <h2 id="sessions-heading">Active sessions</h2>
       <p class="card-footer">Review where your account is signed in. You can revoke any session you do not recognize.</p>
       <ul class="session-list" id="session-list"><li class="empty">Loading active sessions…</li></ul>
+      <p id="session-count" class="card-footer" aria-live="polite"></p>
+      <button id="sessions-load-more" type="button" hidden>Load more sessions</button>
       <p id="session-message" class="card-footer" role="status" aria-live="polite"></p>
     </section>
   </div>
@@ -148,17 +150,22 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
   }
-  async function loadSessions() {
-    const response = await fetch("/auth/sessions", {credentials:"same-origin",cache:"no-store"});
+  let loadedSessionCount = 0;
+  let totalSessionCount = 0;
+  async function loadSessions({append = false} = {}) {
+    const offset = append ? loadedSessionCount : 0;
+    const response = await fetch("/auth/sessions?limit=25&offset=" + offset, {credentials:"same-origin",cache:"no-store"});
     if (response.status === 401) { window.location.replace("/login"); return; }
     if (!response.ok) throw new Error("Active sessions are temporarily unavailable.");
     const data = await response.json();
-    const list = el("session-list"); list.replaceChildren();
-    if (!Array.isArray(data.sessions) || data.sessions.length === 0) {
+    const list = el("session-list");
+    if (!append) { list.replaceChildren(); loadedSessionCount = 0; }
+    totalSessionCount = Number.isSafeInteger(data.total) ? data.total : 0;
+    if (!append && (!Array.isArray(data.sessions) || data.sessions.length === 0)) {
       const item = document.createElement("li"); item.className = "empty";
-      item.textContent = "No active sessions were found."; list.appendChild(item); return;
+      item.textContent = "No active sessions were found."; list.appendChild(item);
     }
-    data.sessions.forEach(item => {
+    (Array.isArray(data.sessions) ? data.sessions : []).forEach(item => {
       const row = document.createElement("li"); row.className = "session-row";
       const meta = document.createElement("div"); meta.className = "session-meta";
       const title = document.createElement("strong");
@@ -176,7 +183,22 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       button.setAttribute("aria-label", item.is_current ? "Sign out this device" : "Revoke this session");
       row.append(meta, button); list.appendChild(row);
     });
+    loadedSessionCount += Array.isArray(data.sessions) ? data.sessions.length : 0;
+    el("session-count").textContent = totalSessionCount
+      ? "Showing " + loadedSessionCount + " of " + totalSessionCount + " active sessions."
+      : "No active sessions.";
+    const more = el("sessions-load-more");
+    more.hidden = loadedSessionCount >= totalSessionCount;
+    more.disabled = false;
   }
+  el("sessions-load-more").addEventListener("click", async () => {
+    const button = el("sessions-load-more"); button.disabled = true;
+    try { await loadSessions({append:true}); }
+    catch (error) {
+      el("session-message").textContent = error.message || "More sessions could not be loaded.";
+      button.disabled = false;
+    }
+  });
   el("session-list").addEventListener("click", async event => {
     const button = event.target.closest("button[data-session-id]");
     if (!button) return;
