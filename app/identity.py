@@ -25,7 +25,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -257,6 +257,33 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (3, _timestamp(_now())),
+                    )
+                if current < 4:
+                    db.execute("""CREATE TABLE email_delivery_events (
+                        id TEXT PRIMARY KEY,
+                        provider TEXT NOT NULL CHECK(provider IN ('resend')),
+                        identity_id TEXT REFERENCES identities(id) ON DELETE SET NULL,
+                        purpose TEXT NOT NULL CHECK(purpose IN ('verification', 'password_reset')),
+                        status TEXT NOT NULL CHECK(status IN ('sent', 'failed', 'skipped')),
+                        provider_message_id TEXT,
+                        failure_code TEXT,
+                        attempted_at TEXT NOT NULL
+                    )""")
+                    db.execute("CREATE INDEX idx_email_delivery_identity ON email_delivery_events(identity_id, attempted_at)")
+                    db.execute("CREATE INDEX idx_email_delivery_time ON email_delivery_events(attempted_at)")
+                    db.execute("""CREATE TABLE email_provider_circuit (
+                        provider TEXT PRIMARY KEY CHECK(provider IN ('resend')),
+                        consecutive_failures INTEGER NOT NULL DEFAULT 0
+                            CHECK(consecutive_failures >= 0),
+                        opened_until TEXT,
+                        last_failure_at TEXT,
+                        last_success_at TEXT,
+                        last_error_code TEXT,
+                        updated_at TEXT NOT NULL
+                    )""")
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (4, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
@@ -532,6 +559,129 @@ class IdentityStore:
             db.commit()
         return True
 
+
+    def email_provider_circuit_open(self, provider: str = "resend") -> bool:
+        """Return whether the provider circuit is currently open."""
+        if provider != "resend":
+            raise ValueError("Unsupported email provider.")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT opened_until FROM email_provider_circuit WHERE provider=?",
+                (provider,),
+            ).fetchone()
+        return bool(row and row["opened_until"] and row["opened_until"] > now)
+
+    def record_email_delivery_event(
+        self,
+        identity_id: str,
+        purpose: str,
+        status: str,
+        *,
+        provider: str = "resend",
+        provider_message_id: str | None = None,
+        failure_code: str | None = None,
+    ) -> None:
+        """Record secret-free delivery status and update the persistent provider circuit.
+
+        Raw email addresses, challenge tokens, request bodies, and provider error
+        messages are never stored. Five consecutive provider failures within ten
+        minutes open the circuit for ten minutes; a successful send resets it.
+        """
+        if provider != "resend":
+            raise ValueError("Unsupported email provider.")
+        if purpose not in {"verification", "password_reset"}:
+            raise ValueError("Unsupported transactional email purpose.")
+        if status not in {"sent", "failed", "skipped"}:
+            raise ValueError("Unsupported email delivery status.")
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid identity reference is required.")
+        allowed_failure_codes = {
+            "configuration", "provider_auth", "provider_rate_limit",
+            "provider_unavailable", "provider_rejected", "transport",
+            "invalid_response", "circuit_open", "unexpected",
+        }
+        if failure_code is not None and failure_code not in allowed_failure_codes:
+            raise ValueError("Email failure code is not permitted.")
+        if status == "sent":
+            if (
+                not isinstance(provider_message_id, str)
+                or not provider_message_id
+                or len(provider_message_id) > 256
+                or failure_code is not None
+            ):
+                raise ValueError("A sent email requires a provider message ID only.")
+        elif provider_message_id is not None or failure_code is None:
+            raise ValueError("A failed or skipped email requires a safe failure code only.")
+        if status == "skipped" and failure_code != "circuit_open":
+            raise ValueError("Skipped email status requires an open-circuit reason.")
+
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                """INSERT INTO email_delivery_events(
+                    id, provider, identity_id, purpose, status,
+                    provider_message_id, failure_code, attempted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    secrets.token_urlsafe(18), provider, identity_id, purpose,
+                    status, provider_message_id, failure_code, now,
+                ),
+            )
+            if status == "sent":
+                db.execute(
+                    """INSERT INTO email_provider_circuit(
+                        provider, consecutive_failures, opened_until,
+                        last_failure_at, last_success_at, last_error_code, updated_at
+                    ) VALUES (?, 0, NULL, NULL, ?, NULL, ?)
+                    ON CONFLICT(provider) DO UPDATE SET
+                        consecutive_failures=0, opened_until=NULL,
+                        last_success_at=excluded.last_success_at,
+                        last_error_code=NULL, updated_at=excluded.updated_at""",
+                    (provider, now, now),
+                )
+            elif status == "failed":
+                prior = db.execute(
+                    """SELECT consecutive_failures, last_failure_at
+                       FROM email_provider_circuit WHERE provider=?""",
+                    (provider,),
+                ).fetchone()
+                within_window = False
+                if prior and prior["last_failure_at"]:
+                    try:
+                        previous_time = datetime.fromisoformat(prior["last_failure_at"])
+                        within_window = now_dt - previous_time <= timedelta(minutes=10)
+                    except ValueError:
+                        within_window = False
+                failures = (
+                    int(prior["consecutive_failures"]) + 1
+                    if prior and within_window else 1
+                )
+                opened_until = (
+                    _timestamp(now_dt + timedelta(minutes=10))
+                    if failures >= 5 else None
+                )
+                db.execute(
+                    """INSERT INTO email_provider_circuit(
+                        provider, consecutive_failures, opened_until,
+                        last_failure_at, last_success_at, last_error_code, updated_at
+                    ) VALUES (?, ?, ?, ?, NULL, ?, ?)
+                    ON CONFLICT(provider) DO UPDATE SET
+                        consecutive_failures=excluded.consecutive_failures,
+                        opened_until=excluded.opened_until,
+                        last_failure_at=excluded.last_failure_at,
+                        last_error_code=excluded.last_error_code,
+                        updated_at=excluded.updated_at""",
+                    (provider, failures, opened_until, now, failure_code, now),
+                )
+            # Delivery history is operational metadata, not a permanent audit log.
+            db.execute(
+                "DELETE FROM email_delivery_events WHERE attempted_at < ?",
+                (_timestamp(now_dt - timedelta(days=90)),),
+            )
+            db.commit()
 
     def list_security_audit_events(
         self,
