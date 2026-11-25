@@ -36,7 +36,13 @@ Generate a dedicated webhook encryption key in the isolated environment with:
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode('ascii'))"
 ```
 
-Keep the Stripe API key's case exactly as issued. Do not reuse a live signing secret, API key, Price ID, customer, or webhook endpoint. The webhook endpoint must be reachable over HTTPS in the test environment. If using Stripe CLI forwarding, use the test-mode signing secret printed by the CLI and forward only to the isolated test app.
+Keep the Stripe API key's case exactly as issued. Do not reuse a live signing secret, API key, Price ID, customer, or webhook endpoint. The webhook endpoint must be reachable over HTTPS in the test environment. If using Stripe CLI forwarding, authenticate the CLI for the Stripe test workspace, then run:
+
+```bash
+stripe listen --forward-to https://<isolated-test-host>/webhooks/stripe
+```
+
+Copy the `whsec_...` value printed by that test-mode listener into the isolated environment's `STRIPE_WEBHOOK_SECRET`. Do not pass `--live`; forward only to the isolated test app.
 
 Before enabling the subscriber actions, run the read-only catalog/configuration check:
 
