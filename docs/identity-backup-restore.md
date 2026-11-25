@@ -32,7 +32,7 @@ From the Compose directory:
 docker compose exec -T open-odds-intelligence python -m scripts.backup_identity
 ```
 
-The default destination is `data/backups/identity-<UTC timestamp>.sqlite3.fernet`. The backup directory is mode 0700 and backup files are mode 0600. Existing backup files are never overwritten.
+The default destination is `data/backups/identity-<UTC timestamp>.sqlite3.fernet`. A newly created backup directory is mode 0700 and each backup file is mode 0600. Existing caller-selected directories are not chmodded; they must not be group- or world-writable. For backup confidentiality, use a dedicated mode-0700 directory. Existing backup files are never overwritten. The encrypted file is written to a private temporary file, flushed and fsynced, then atomically published without replacing an existing destination; an interrupted write cannot leave a partial final backup.
 
 To choose a path:
 

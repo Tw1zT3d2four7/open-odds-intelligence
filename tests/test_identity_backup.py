@@ -60,6 +60,24 @@ def test_encrypted_identity_backup_and_restore_round_trip(tmp_path, monkeypatch)
     assert row["email"] == "backup-user@example.test"
 
 
+def test_backup_never_overwrites_an_existing_destination(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    source = tmp_path / "source.sqlite3"
+    _identity_store(source)
+    destination = tmp_path / "backups" / "identity.sqlite3.fernet"
+    create_encrypted_backup(source, destination)
+    original = destination.read_bytes()
+
+    with pytest.raises(FileExistsError):
+        create_encrypted_backup(source, destination)
+
+    assert destination.read_bytes() == original
+    assert list(destination.parent.glob(".identity-backup-*.tmp")) == []
+
+
 def test_backup_publication_failure_never_leaves_a_partial_final_file(
     tmp_path, monkeypatch
 ):
