@@ -261,6 +261,16 @@ def _rate_limit(
             (f"auth:{operation}:ip:{ip}", 10, 3600),
             (f"auth:{operation}:token:{identifier}", 5, 3600),
         ]
+    elif operation == "subscriber-billing-checkout":
+        policies = [
+            (f"auth:{operation}:ip:{ip}", 20, 900),
+            (f"auth:{operation}:identity:{identifier}", 5, 3600),
+        ]
+    elif operation == "subscriber-billing-portal":
+        policies = [
+            (f"auth:{operation}:ip:{ip}", 30, 900),
+            (f"auth:{operation}:identity:{identifier}", 10, 3600),
+        ]
     else:
         raise ValueError("Unsupported authentication rate-limit operation.")
 
@@ -563,11 +573,13 @@ def create_subscriber_checkout(
     response: Response,
     session: dict = Depends(require_subscriber),
     store: IdentityStore = Depends(get_identity_store),
+    limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
 ):
     """Create a hosted subscription Checkout Session using only server-owned prices."""
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     _stripe_test_billing_ready(checkout=True)
+    _rate_limit(request, limiter, "subscriber-billing-checkout", session["identity_id"])
     client_key = request.headers.get("idempotency-key", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", client_key):
         raise HTTPException(status_code=400, detail="A valid checkout idempotency key is required.")
@@ -657,11 +669,15 @@ def create_subscriber_portal(
     response: Response,
     session: dict = Depends(require_subscriber),
     store: IdentityStore = Depends(get_identity_store),
+    request: Request = None,
+    limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
 ):
     """Create a hosted Customer Portal session for the authenticated subscriber only."""
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     _stripe_test_billing_ready(portal=True)
+    if request is not None:
+        _rate_limit(request, limiter, "subscriber-billing-portal", session["identity_id"])
     try:
         customer_id = store.billing_customer_id(session["identity_id"])
         if not customer_id:
