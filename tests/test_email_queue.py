@@ -161,3 +161,40 @@ def test_expired_challenge_is_never_delivered(tmp_path, monkeypatch):
         ).fetchone()
     assert row["state"] == "expired"
     assert row["encrypted_payload"] == b""
+
+
+
+def test_consumed_challenge_is_discarded_before_provider_delivery(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        queue_module.config,
+        "EMAIL_QUEUE_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("member@example.test", "a strong password 123")
+    token = store.create_email_verification_challenge("member@example.test")
+    queue = TransactionalEmailQueue(store)
+    queue_id = queue.enqueue(
+        identity_id=identity_id,
+        purpose="verification",
+        challenge_token=token,
+        recipient="member@example.test",
+        subject="Verify account",
+        text=f"Use token {token}",
+        html=None,
+        challenge_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    assert store.consume_email_verification_challenge(token) is True
+
+    sender = FakeSender()
+    assert queue.process_one(sender) is False
+    assert sender.calls == []
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT state, encrypted_payload, last_failure_code "
+            "FROM transactional_email_queue WHERE id=?",
+            (queue_id,),
+        ).fetchone()
+    assert row["state"] == "expired"
+    assert row["encrypted_payload"] == b""
+    assert row["last_failure_code"] == "challenge_unavailable"
