@@ -132,6 +132,20 @@ def test_checkout_uses_annual_price_only_for_year_interval(billing_harness, monk
     assert checkout["line_items[0][price]"] == "price_YearlyCaseSensitive"
 
 
+def test_billing_summary_hides_actions_without_durable_test_webhook_storage(
+    billing_harness, monkeypatch
+):
+    client, store, identity_id = billing_harness
+    store.link_billing_customer(identity_id, "cus_summaryWebhook")
+    monkeypatch.setattr(config, "STRIPE_CHECKOUT_ENABLED", True)
+    monkeypatch.setattr(config, "STRIPE_CUSTOMER_PORTAL_ENABLED", True)
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "")
+    response = client.get("/auth/billing")
+    assert response.status_code == 200
+    assert response.json()["checkout_available"] is False
+    assert response.json()["customer_portal_available"] is False
+
+
 def test_checkout_fails_closed_for_live_key_or_live_webhook_mode(billing_harness, monkeypatch):
     client, _store, _identity_id = billing_harness
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_live_never-use")
