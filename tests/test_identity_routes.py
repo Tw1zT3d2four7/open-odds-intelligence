@@ -660,7 +660,7 @@ def test_admin_subscriber_status_api_requires_mfa_csrf_and_records_actor(tmp_pat
     )
     path = f"/admin/subscribers/{subscriber_id}/status"
     assert harness.post(path, {
-        "is_active": False, "reason": "Support approved temporary suspension"
+        "is_active": False, "reason_code": "support_request"
     }).status_code == 401
 
     uri = harness.store.start_administrator_mfa_enrollment(admin_id)
@@ -685,10 +685,10 @@ def test_admin_subscriber_status_api_requires_mfa_csrf_and_records_actor(tmp_pat
     assert changed.json()["is_active"] is False
     assert harness.client.get("/admin/subscribers").json()["subscribers"][0]["is_active"] is False
 
-    invalid = harness.post(path, {"is_active": True, "reason": "short"})
+    invalid = harness.post(path, {"is_active": True, "reason_code": "bad_code"})
     assert invalid.status_code == 422
     reactivated = harness.post(path, {
-        "is_active": True, "reason": "Support approved account reactivation"
+        "is_active": True, "reason_code": "support_request"
     })
     assert reactivated.status_code == 200
     assert reactivated.json()["is_active"] is True
