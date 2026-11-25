@@ -8,6 +8,7 @@ from app import config, stripe_api
 from app.dependencies import get_identity_store, require_authenticated_csrf, require_subscriber
 from app.identity import IdentityStore
 from app.identity_routes import router
+from app.rate_limit import SQLiteRateLimiter
 
 
 @pytest.fixture
@@ -26,6 +27,8 @@ def billing_harness(tmp_path, monkeypatch):
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_identity_store] = lambda: store
+    limiter = SQLiteRateLimiter(tmp_path / "rate-limit.sqlite3", hash_key=b"test-rate-limit-key-material-32bytes")
+    app.dependency_overrides[get_rate_limiter] = lambda: limiter
     app.dependency_overrides[require_subscriber] = lambda: {
         "identity_id": identity_id, "email": "buyer@example.com"
     }
