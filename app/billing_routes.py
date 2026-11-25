@@ -22,13 +22,13 @@ async def receive_stripe_webhook(
     response: Response,
     store: IdentityStore = Depends(get_identity_store),
 ):
-    """Verify and persist a Stripe event fingerprint; never persist raw JSON."""
+    """Verify and persist a fingerprint plus encrypted event data for durable processing."""
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    if not config.STRIPE_WEBHOOK_SECRET:
+    if not config.STRIPE_WEBHOOK_SECRET or not config.STRIPE_WEBHOOK_ENCRYPTION_KEY:
         raise HTTPException(
             status_code=503,
-            detail="Stripe webhook intake is not configured.",
+            detail="Stripe webhook intake or encrypted event storage is not configured.",
         )
     content_length = request.headers.get("content-length")
     if content_length is not None:
