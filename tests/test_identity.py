@@ -1365,6 +1365,131 @@ def test_stripe_webhook_leases_prevent_double_processing_and_recover_expired_wor
     assert row["processed_at"] is not None
 
 
+
+def test_stripe_subscription_event_atomically_creates_snapshot_and_finishes_lease(tmp_path):
+    import json
+
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "stripe-reconcile@example.test", "a strong stripe reconciliation password"
+    )
+    now = "2026-11-25T00:00:00+00:00"
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at) "
+            "VALUES (?, 'cus_reconcile', ?, ?)",
+            (subscriber_id, now, now),
+        )
+    event = {
+        "id": "evt_sub_created",
+        "type": "customer.subscription.created",
+        "created": 1795600000,
+        "data": {"object": {
+            "id": "sub_reconcile", "customer": "cus_reconcile", "status": "active",
+            "current_period_start": 1795600000, "current_period_end": 1798192000,
+            "cancel_at_period_end": False, "canceled_at": None, "ended_at": None,
+            "items": {"data": [{"price": {"id": "price_month", "recurring": {"interval": "month"}}}]},
+        }},
+    }
+    payload = json.dumps(event, separators=(",", ":")).encode()
+    store.record_stripe_webhook_event(
+        "evt_sub_created", "customer.subscription.created", False, payload
+    )
+    lease = store.claim_stripe_webhook_event("evt_sub_created")
+    assert lease
+    assert store.process_stripe_subscription_event("evt_sub_created", lease) == "created"
+    with store.connect() as db:
+        sub = db.execute(
+            "SELECT identity_id, stripe_customer_id, stripe_price_id, billing_interval, "
+            "status, last_event_created_at FROM billing_subscriptions "
+            "WHERE stripe_subscription_id='sub_reconcile'"
+        ).fetchone()
+        inbox = db.execute(
+            "SELECT processing_state, lease_token_hash FROM billing_webhook_events "
+            "WHERE stripe_event_id='evt_sub_created'"
+        ).fetchone()
+    assert sub["identity_id"] == subscriber_id
+    assert sub["stripe_customer_id"] == "cus_reconcile"
+    assert sub["stripe_price_id"] == "price_month"
+    assert sub["billing_interval"] == "month"
+    assert sub["status"] == "active"
+    assert sub["last_event_created_at"] is not None
+    assert inbox["processing_state"] == "processed"
+    assert inbox["lease_token_hash"] is None
+
+
+def test_stripe_subscription_event_ignores_out_of_order_snapshot(tmp_path):
+    import json
+
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "stripe-order@example.test", "a strong stripe ordering password"
+    )
+    now = "2026-11-25T00:00:00+00:00"
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at) "
+            "VALUES (?, 'cus_order', ?, ?)",
+            (subscriber_id, now, now),
+        )
+        db.execute(
+            """INSERT INTO billing_subscriptions(
+                id, identity_id, stripe_subscription_id, stripe_customer_id,
+                status, created_at, updated_at, last_event_created_at
+            ) VALUES ('local_order', ?, 'sub_order', 'cus_order', 'active', ?, ?, ?)""",
+            (subscriber_id, now, now, "2026-11-25T12:00:00+00:00"),
+        )
+    event = {
+        "id": "evt_old", "type": "customer.subscription.updated", "created": 1795600000,
+        "data": {"object": {"id": "sub_order", "customer": "cus_order", "status": "past_due"}},
+    }
+    store.record_stripe_webhook_event(
+        "evt_old", event["type"], False,
+        json.dumps(event, separators=(",", ":")).encode(),
+    )
+    lease = store.claim_stripe_webhook_event("evt_old")
+    assert lease
+    assert store.process_stripe_subscription_event("evt_old", lease) == "stale"
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT status FROM billing_subscriptions WHERE stripe_subscription_id='sub_order'"
+        ).fetchone()
+    assert row["status"] == "active"
+
+
+def test_stripe_subscription_event_never_grants_entitlements(tmp_path):
+    import json
+
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "stripe-no-grant@example.test", "a strong stripe no grant password"
+    )
+    now = "2026-11-25T00:00:00+00:00"
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at) "
+            "VALUES (?, 'cus_no_grant', ?, ?)",
+            (subscriber_id, now, now),
+        )
+    event = {
+        "id": "evt_no_grant", "type": "customer.subscription.created", "created": 1795600000,
+        "data": {"object": {"id": "sub_no_grant", "customer": "cus_no_grant", "status": "active"}},
+    }
+    store.record_stripe_webhook_event(
+        "evt_no_grant", event["type"], False,
+        json.dumps(event, separators=(",", ":")).encode(),
+    )
+    lease = store.claim_stripe_webhook_event("evt_no_grant")
+    assert lease
+    assert store.process_stripe_subscription_event("evt_no_grant", lease) == "created"
+    with store.connect() as db:
+        grants = db.execute(
+            "SELECT COUNT(*) AS count FROM subscriber_entitlements WHERE identity_id=?",
+            (subscriber_id,),
+        ).fetchone()["count"]
+    assert grants == 0
+
+
 def test_stripe_webhook_failure_releases_lease_and_sanitizes_error_code(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     store.record_stripe_webhook_event(
