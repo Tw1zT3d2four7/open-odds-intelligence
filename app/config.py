@@ -171,3 +171,9 @@ EMAIL_QUEUE_ENCRYPTION_KEY = os.getenv("EMAIL_QUEUE_ENCRYPTION_KEY", "")
 # Separate encryption key for offline identity database backups.
 IDENTITY_BACKUP_ENCRYPTION_KEY = os.getenv("IDENTITY_BACKUP_ENCRYPTION_KEY", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+
+
+# Stripe webhook intake is inert until a dedicated signing secret is configured.
+# The signing secret must be supplied out-of-band and must never be committed.
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_WEBHOOK_LIVEMODE = os.getenv("STRIPE_WEBHOOK_LIVEMODE", "false").strip().lower() in ("1", "true", "yes", "on")
