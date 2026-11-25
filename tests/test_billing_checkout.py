@@ -92,6 +92,8 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
     billing = client.get("/auth/billing")
     assert billing.status_code == 200
     assert billing.json()["checkout_available"] is False
+    assert billing.json()["checkout_pending"] is True
+    assert billing.json()["subscription_exists"] is False
     assert billing.json()["customer_portal_available"] is True
 
 
@@ -162,6 +164,10 @@ def test_checkout_blocks_duplicate_nonterminal_subscription(billing_harness, mon
     )
     assert response.status_code == 409
     assert "existing subscription" in response.json()["detail"]
+    billing = client.get("/auth/billing")
+    assert billing.status_code == 200
+    assert billing.json()["subscription_exists"] is True
+    assert billing.json()["checkout_available"] is False
 
 
 def test_checkout_requires_idempotency_key_and_enabled_flag(billing_harness, monkeypatch):
