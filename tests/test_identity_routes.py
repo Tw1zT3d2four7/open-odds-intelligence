@@ -164,7 +164,9 @@ def test_admin_login_requires_password_and_totp_before_session(tmp_path, monkeyp
     )
     uri = harness.store.start_administrator_mfa_enrollment(identity_id)
     secret = pyotp.parse_uri(uri).secret
-    code = pyotp.TOTP(secret).at(int(time.time()) + 30)
+    totp = pyotp.TOTP(secret)
+    harness.store.confirm_administrator_mfa_enrollment(identity_id, totp.now())
+    code = totp.at(int(time.time()) + 30)
     response = harness.post("/admin/auth/login", {
         "email": "admin@example.com",
         "password": "an administrator password 123",
