@@ -219,6 +219,7 @@ Build subscriber settings for channels, categories, sports/leagues, thresholds, 
 - [x] Add an opt-in bounded billing worker for subscription and invoice inbox processing; it is not automatically started by the web application.
 - [x] Add a private subscriber billing summary API and account-page section for local subscription status and invoice history. The endpoint is subscriber-only, self-scoped, bounded, and no-store; Checkout and Customer Portal remain unavailable.
 - [ ] Complete Stripe hosted Checkout and Customer Portal after final plan/price/entitlement decisions; retain the existing signed webhook and reconciliation foundation, then add payment-failure notification, retry/grace-period policy, refund/adjustment handling, plan changes, and complete test-mode/staging acceptance. No live charges or production activation without explicit approval.
+- [x] Add case-preserving Stripe secret-key and monthly/yearly recurring Price ID configuration, with independent Checkout and Customer Portal switches defaulting off. No credentials or actual Price IDs are committed; configuration alone cannot enable a payment flow.
 
 ### Phase 10 — Security, reliability, and launch readiness
 
