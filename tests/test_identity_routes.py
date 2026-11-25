@@ -456,3 +456,60 @@ def test_auth_email_origin_rejects_noncanonical_base_urls(
     assert response.status_code == 503
     with harness.store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM identities").fetchone()[0] == 0
+
+
+
+def test_admin_entitlement_api_requires_mfa_session_and_csrf(tmp_path, monkeypatch):
+    import time
+
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    subscriber_id = harness.store.create_subscriber(
+        "subscriber-entitlement@example.test", "a strong subscriber password"
+    )
+    admin_id = harness.store.provision_administrator(
+        "entitlement-admin@example.test", "an administrator password 123"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+
+    denied = harness.client.get(
+        "/admin/subscriber-entitlements",
+        params={"identity_id": subscriber_id},
+    )
+    assert denied.status_code == 401
+
+    login = harness.post("/admin/auth/login", {
+        "email": "entitlement-admin@example.test",
+        "password": "an administrator password 123",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+
+    payload = {"identity_id": subscriber_id, "entitlements": ["dashboard", "odds"]}
+    missing_csrf = harness.client.put("/admin/subscriber-entitlements", json=payload)
+    assert missing_csrf.status_code == 403
+
+    csrf = harness.client.cookies.get("__Host-ooi_csrf")
+    updated = harness.client.put(
+        "/admin/subscriber-entitlements",
+        json=payload,
+        headers={
+            "origin": "https://ooi.example",
+            "x-ooi-csrf-token": csrf,
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json() == {
+        "identity_id": subscriber_id,
+        "entitlements": ["dashboard", "odds"],
+    }
+
+    readback = harness.client.get(
+        "/admin/subscriber-entitlements",
+        params={"identity_id": subscriber_id},
+    )
+    assert readback.status_code == 200
+    assert readback.json()["entitlements"] == ["dashboard", "odds"]
+    assert "subscriber-entitlement@example.test" not in readback.text
