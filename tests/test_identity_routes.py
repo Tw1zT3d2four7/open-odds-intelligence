@@ -906,9 +906,7 @@ def test_subscriber_account_page_and_summary_are_private_and_minimal(tmp_path, m
     unauthorized_page = harness.client.get("/account")
     unauthorized_summary = harness.client.get("/auth/account")
     assert unauthorized_page.status_code == 401
-    assert unauthorized_page.headers["cache-control"] == "no-store"
     assert unauthorized_summary.status_code == 401
-    assert unauthorized_summary.headers["cache-control"] == "no-store"
 
     harness.store.create_subscriber("account-user@example.test", "a strong account password")
     challenge = harness.store.create_email_verification_challenge("account-user@example.test")

@@ -144,5 +144,15 @@ def test_identity_admin_errors_and_auth_pages_are_never_cached(client, monkeypat
         assert denied.status_code == 401
         assert denied.headers["cache-control"] == "no-store"
         assert denied.headers["pragma"] == "no-cache"
+
+        subscriber_page = client.get("/account")
+        assert subscriber_page.status_code == 401
+        assert subscriber_page.headers["cache-control"] == "no-store"
+        assert subscriber_page.headers["pragma"] == "no-cache"
+
+        subscriber_summary = client.get("/auth/account")
+        assert subscriber_summary.status_code == 401
+        assert subscriber_summary.headers["cache-control"] == "no-store"
+        assert subscriber_summary.headers["pragma"] == "no-cache"
     finally:
         main.app.dependency_overrides.pop(get_identity_store, None)
