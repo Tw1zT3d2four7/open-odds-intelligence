@@ -387,6 +387,9 @@ def subscriber_login(
         identity_id = store.authenticate(payload.email, payload.password, "subscriber")
         if identity_id is None:
             raise HTTPException(status_code=401, detail="Email or password is incorrect.")
+        previous_token = request.cookies.get(SUBSCRIBER_COOKIE)
+        if previous_token:
+            store.revoke_session(previous_token)
         token, _session_id = store.create_session(identity_id)
     except HTTPException:
         raise
@@ -436,6 +439,9 @@ def administrator_login(
             verified = store.consume_administrator_recovery_code(identity_id, payload.recovery_code)
         if not verified:
             raise HTTPException(status_code=401, detail="Administrator authentication failed.")
+        previous_token = request.cookies.get(ADMINISTRATOR_COOKIE)
+        if previous_token:
+            store.revoke_session(previous_token)
         token, _session_id = store.create_session(identity_id, timedelta(hours=4))
     except HTTPException:
         raise
