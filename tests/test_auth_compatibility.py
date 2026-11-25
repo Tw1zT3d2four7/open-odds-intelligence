@@ -72,3 +72,18 @@ def test_identity_mode_never_falls_back_to_configured_legacy_basic_credentials(m
     response = client.get("/", auth=("operator", "legacy-secret"))
     assert response.status_code == 503
     assert "not ready" in response.json()["detail"].lower()
+
+
+
+def test_unknown_authentication_mode_is_rejected_during_configuration_load(monkeypatch):
+    import importlib
+    import pytest
+    from app import config
+
+    monkeypatch.setenv("AUTH_MODE", "open")
+    with pytest.raises(ValueError, match="AUTH_MODE"):
+        importlib.reload(config)
+
+    # Restore the shared config module for the remaining application tests.
+    monkeypatch.setenv("AUTH_MODE", "legacy_basic")
+    importlib.reload(config)
