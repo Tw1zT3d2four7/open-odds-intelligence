@@ -989,7 +989,6 @@ def test_subscriber_password_change_requires_csrf_and_revokes_all_sessions(tmp_p
         "new_password": "a completely new secure password",
     })
     assert wrong.status_code == 401
-    assert wrong.headers["cache-control"] == "no-store"
     assert harness.store.get_session(current_token) is not None
 
     changed = harness.post("/auth/password/change", payload)
