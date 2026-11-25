@@ -14,22 +14,20 @@ from .identity import IdentityStore
 # prices. Commercial plans can later grant bundles of these keys.
 def require_product_subscriber(
     request: Request,
-    store: IdentityStore = Depends(get_identity_store),
 ) -> dict:
     """Use the legacy Basic Auth boundary unchanged until identity mode is selected."""
     if config.AUTH_MODE == "legacy_basic":
         return {"account_type": "legacy_operator"}
-    return require_subscriber(request, store)
+    return require_subscriber(request, get_identity_store(request))
 
 
 def require_product_administrator(
     request: Request,
-    store: IdentityStore = Depends(get_identity_store),
 ) -> dict:
     """Preserve legacy operator access; require an MFA-backed admin in identity mode."""
     if config.AUTH_MODE == "legacy_basic":
         return {"account_type": "legacy_operator"}
-    return require_administrator(request, store)
+    return require_administrator(request, get_identity_store(request))
 
 
 def require_product_csrf(request: Request) -> None:
@@ -63,7 +61,6 @@ ROUTE_ENTITLEMENTS = {
 def require_product_entitlement(
     request: Request,
     session: dict = Depends(require_product_subscriber),
-    store: IdentityStore = Depends(get_identity_store),
 ) -> None:
     """Require an active subscriber session and an explicit matching feature grant."""
     if config.AUTH_MODE == "legacy_basic":
@@ -75,6 +72,7 @@ def require_product_entitlement(
             detail="This product feature is not enabled for the account.",
         )
     try:
+        store = get_identity_store(request)
         allowed = store.has_subscriber_entitlement(
             session["identity_id"], entitlement
         )
