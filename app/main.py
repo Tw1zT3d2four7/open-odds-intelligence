@@ -599,8 +599,10 @@ def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), of
 # registration deterministic even when the identity modules are imported by
 # test harnesses or future application factories first.
 from .identity_routes import router as identity_router
+from .billing_routes import router as billing_router
 
 app.include_router(identity_router)
+app.include_router(billing_router)
 _registered_identity_route_keys = {
     (method, route.path)
     for route in app.router.routes
