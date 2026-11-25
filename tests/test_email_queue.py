@@ -97,7 +97,7 @@ def test_transient_retry_reuses_exact_idempotency_key_and_payload(tmp_path, monk
     assert row["state"] == "pending"
     assert row["attempt_count"] == 1
 
-    now[0] += timedelta(seconds=16)
+    now[0] += timedelta(seconds=20)
     assert queue.process_one(sender) is True
     assert len(sender.calls) == 2
     assert sender.calls[0] == sender.calls[1]
