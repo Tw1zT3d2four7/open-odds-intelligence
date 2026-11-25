@@ -87,6 +87,7 @@ def _validate_database_bytes(data: bytes) -> int:
     connection = sqlite3.connect(":memory:")
     try:
         connection.deserialize(data)
+        connection.execute("PRAGMA journal_mode=MEMORY")
         integrity = connection.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("Identity backup integrity check failed.")
