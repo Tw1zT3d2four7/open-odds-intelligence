@@ -1,13 +1,15 @@
 # Existing HTTP Route Inventory and Target Access Policy
 
 **Reviewed against:** `app/main.py` on `feature/admin-panel-and-subscriptions`  
-**Purpose:** Establish a route-by-route authorization baseline before introducing subscriber or administrator sessions.
+**Purpose:** Define and verify the route-by-route authorization boundary for subscriber and administrator sessions.
 
-This is a design artifact only. It does not change middleware, endpoint behavior, or the existing HTTP Basic Auth compatibility layer.
+The policy is active in staged `AUTH_MODE=identity`. Default `legacy_basic` behavior remains unchanged; no production mode switch or deployment has occurred.
 
-## Current authentication behavior
+## Authentication behavior by mode
 
-The current `optional_basic_auth` middleware protects application routes only when both `AUTH_USERNAME` and `AUTH_PASSWORD` are configured. Only safe GET/HEAD requests to the exact `/api/health` path bypass Basic Auth for container liveness; POST/PUT/PATCH/DELETE/OPTIONS requests to that path remain protected. If both credentials are unset, the current middleware permits requests. This behavior must not be silently changed during identity integration.
+- `legacy_basic` (default): preserves the existing `optional_basic_auth` contract exactly. Both configured credentials protect application routes; both blank values preserve the existing open self-hosted behavior; partial configuration fails closed with HTTP 503. Identity pages and identity APIs are hidden with 404, even when Basic Auth is configured.
+- `identity`: subscriber/admin entry points are admitted by their separate policy. Product routes are protected by explicit FastAPI dependencies. Subscriber routes require an active subscriber session plus a matching server-side feature entitlement; admin refresh routes require an MFA-backed administrator session; all state-changing cookie-authenticated requests require CSRF. Missing sessions return 401, missing entitlements return 403, and identity-storage failures fail closed with 503.
+- Safe GET/HEAD health requests remain independent of browser sessions and Basic Auth. The detailed health payload is retained in legacy mode; identity mode returns minimal liveness only. Framework OpenAPI/Swagger/ReDoc routes require an administrator session in identity mode.
 
 ## Route inventory and intended future access
 
@@ -57,23 +59,23 @@ The current `optional_basic_auth` middleware protects application routes only wh
 6. Test every route class, direct API access, wrong account class, inactive accounts, expired/revoked sessions, missing MFA, and entitlement denial.
 7. Update this inventory whenever routes are added, removed, or change purpose.
 
-## Explicit non-goals
+## Current safeguards
 
-- No authentication middleware changes.
-- No new login, registration, admin, or account HTTP routes.
-- No endpoint behavior or dashboard changes.
-- No production configuration, deployment, Compose, or persistent-data changes.
+- Product-route dependencies are mode-aware and bypass identity storage entirely in `legacy_basic`, preserving existing Basic Auth behavior.
+- Subscriber entitlements default to deny. Only an active MFA-enrolled administrator session can update them through the protected admin API; changes are actor-attributed in the security audit log.
+- The existing odds-history database and provider/alert pipeline remain separate from the identity database.
+- No production configuration, deployment, Compose, or persistent-data changes have been made.
 
-## Reusable dependency boundary (implemented, not yet wired)
+## Reusable dependency boundary (implemented and wired in identity mode)
 
-The isolated dependencies in `app/dependencies.py` provide:
+The dependencies in `app/dependencies.py` and `app/entitlements.py` provide:
 
 - `require_subscriber` — only an active subscriber session from the subscriber cookie.
 - `require_administrator` — only an active administrator session from the administrator cookie.
 - `require_authenticated_csrf` — HTTPS same-origin double-submit validation for state-changing browser requests.
 - `get_identity_store` — lazy app-scoped identity storage; initialization/session lookup failures fail closed with generic HTTP 503.
 
-The identity store creates administrator sessions only after consuming a recent, one-time TOTP or recovery-code proof. The session cookie itself does not grant administrator privileges without a matching active administrator record in the identity store.
+The identity store creates administrator sessions only after consuming a recent, one-time TOTP or recovery-code proof. The session cookie itself does not grant administrator privileges without a matching active administrator record in the identity store. Mode-aware wrappers preserve legacy behavior without opening the identity database; identity mode attaches explicit session, entitlement, administrator, and CSRF dependencies to all 21 product application routes.
 
 HTTP dependency tests now cover:
 - Subscriber/admin cookie separation and cross-class rejection.
@@ -85,13 +87,13 @@ HTTP dependency tests now cover:
 
 The latest authentication and route-policy suite passed **738 tests** in CI run `45514078101`. Coverage includes server-enforced subscriber email verification, rejection of sessions if verification is revoked, atomic session resolution with revocation, and the legacy Basic Auth compatibility contract (including fail-closed partial configuration and protection of framework documentation routes). The isolated identity dependencies are still not attached to live application routes; Basic Auth, dashboard, provider refresh behavior, and production deployment remain unchanged.
 
-## Machine-checked policy inventory (implemented, not active middleware)
+## Machine-checked policy inventory (implemented and active in identity mode)
 
-`app/route_policy.py` records an explicit target access class for all 25 registered HTTP routes: 21 application endpoints plus four framework-generated schema/documentation endpoints. Classes include `public_minimal` (only health), `subscriber_entitled` (product/data routes), and `administrator_only` (manual shared provider/schedule refresh routes).
+`app/route_policy.py` records an explicit access class for all 25 product/framework HTTP routes: 21 application endpoints plus four framework-generated schema/documentation endpoints. The separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies 18 identity entry, authentication, and admin entitlement routes; the combined application manifest contains 43 routes. Classes include `public_minimal` (only health), `subscriber_entitled` (product/data routes), and `administrator_only` (manual shared provider/schedule refresh routes).
 
 CI compares the manifest with FastAPI's route registry, including framework-generated Starlette routes such as OpenAPI, Swagger UI, its OAuth redirect, and ReDoc (not only APIRoute endpoints). New routes cannot silently inherit public access, and removed/renamed routes cannot leave stale policy entries. Unknown method/path pairs return no classification; they are never implicitly public.
 
-This is an inventory/test guardrail only. It is not attached to middleware or routes.
+The manifest drives explicit dependencies on all product APIRoutes in identity mode. Framework-generated docs routes are protected in middleware because they do not expose the same FastAPI dependency hooks. The separate identity manifest gates the identity router and is also covered by dependency-conformance tests.
 
 The isolated helper in `app/route_authorization.py` assembles FastAPI dependencies from this manifest without wiring them to live routes. It requires an explicit server-side entitlement dependency for every `subscriber_entitled` route, adds CSRF protection to every authenticated non-safe HTTP method, refuses public mutation routes, rejects unknown policy classes, and requires the entitlement dependency to be callable. It deliberately has no default entitlement allow path. HEAD requests inherit their corresponding GET access class, preventing a method-based access-policy gap; an HTTP-level test verifies subscriber authentication and entitlement are enforced on an actual HEAD endpoint. Tests verify dependency assembly for every route in the 25-route manifest and cover uncommon non-safe verbs. HTTP integration tests exercise subscriber entitlement denial, administrator session/CSRF enforcement, and the public health route. Legacy Basic Auth HTTP regression tests cover the dashboard, product API, and framework documentation routes, including malformed authorization headers, case-insensitive scheme parsing, and method-scoped health-path exemptions.
 
