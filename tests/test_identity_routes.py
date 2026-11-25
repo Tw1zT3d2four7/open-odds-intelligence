@@ -1192,3 +1192,47 @@ def test_subscriber_session_listing_is_bounded_and_paginated(tmp_path, monkeypat
         harness.store.get_session(current_token)["session_id"]
     }
     assert harness.client.get("/auth/sessions?limit=101").status_code == 422
+
+
+def test_subscriber_can_sign_out_all_devices(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber(
+        "signout-all@example.test", "a strong sign out all password"
+    )
+    challenge = harness.store.create_email_verification_challenge("signout-all@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    login = harness.post("/auth/login", {
+        "email": "signout-all@example.test",
+        "password": "a strong sign out all password",
+    })
+    assert login.status_code == 200
+    current_token = harness.client.cookies.get("__Host-ooi_subscriber")
+    other_token, _ = harness.store.create_session(identity_id)
+
+    denied = harness.post("/auth/sessions/revoke-all", {}, csrf=False)
+    assert denied.status_code == 403
+    assert harness.store.get_session(current_token) is not None
+    assert harness.store.get_session(other_token) is not None
+
+    response = harness.post("/auth/sessions/revoke-all", {})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {"revoked_sessions": 2, "signed_out": True}
+    assert harness.store.get_session(current_token) is None
+    assert harness.store.get_session(other_token) is None
+    assert harness.client.cookies.get("__Host-ooi_subscriber") is None
+    assert harness.client.cookies.get("__Host-ooi_csrf") is None
+    assert harness.client.get("/auth/account").status_code == 401
+
+    with harness.store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, subject_identity_id, metadata_json
+               FROM security_audit_events
+               WHERE event_type='identity.sessions_revoked'
+               AND subject_identity_id=?
+               ORDER BY occurred_at DESC LIMIT 1""",
+            (identity_id,),
+        ).fetchone()
+    assert event["actor_identity_id"] == identity_id
+    assert event["subject_identity_id"] == identity_id
+    assert '"revoked_count":2' in event["metadata_json"]
