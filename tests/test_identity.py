@@ -1108,7 +1108,7 @@ def test_administrator_can_revoke_all_subscriber_sessions_atomically_and_audit(t
     _verify_subscriber(store, "bulk-sessions@example.test")
     tokens = [store.create_session(subscriber_id) for _ in range(3)]
     admin_id = _mfa_admin(store, monkeypatch, "bulk-session-admin@example.test")
-    with pytest.raises(ValueError, match="subscriber identity"):
+    with pytest.raises(ValueError, match="administrator actor"):
         store.revoke_subscriber_sessions(admin_id, actor_identity_id=admin_id, reason_code="security_review")
     with pytest.raises(ValueError, match="reason code"):
         store.revoke_subscriber_sessions(subscriber_id, actor_identity_id=admin_id, reason_code="free text")
