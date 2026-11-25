@@ -25,6 +25,8 @@
 | POST | `/auth/logout` | Subscriber + CSRF | Revokes only the subscriber session and clears its cookie. |
 | POST | `/admin/auth/login` | Public + CSRF | Administrator password plus TOTP or single-use recovery code. |
 | POST | `/admin/auth/logout` | Administrator + CSRF | Revokes only the administrator session and clears its cookie. |
+| GET | `/admin/subscriber-entitlements` | Administrator only | Reads feature grants for one subscriber identity; never returns account email. |
+| PUT | `/admin/subscriber-entitlements` | Administrator + CSRF | Replaces a subscriber's feature grants; requires an active MFA-backed administrator session and records an audit event. |
 
 Public registration can create only a subscriber. Administrator provisioning remains exclusively in the private interactive bootstrap command.
 
@@ -57,18 +59,18 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Current activation boundary
 
-The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits only the classified authentication endpoints in staged `identity` mode. In identity mode, all existing product/dashboard routes return 503 and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all sixteen routes, and dependency-assembly tests verify that the router's actual security dependencies match that policy.
+The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all eighteen routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy.
 
 Verification and password-reset requests now enqueue messages in the versioned identity database. Recipient addresses and challenge links are encrypted with a dedicated Fernet key. A background worker claims messages with atomic leases, reuses stable Resend idempotency keys, retries only transient failures with bounded backoff, and discards messages whose one-time challenge has expired or already been consumed. The worker runs only in identity mode. Tests use a fake sender and never contact Resend.
 
-Before enabling product access:
+Before enabling subscriber access publicly:
 
 1. Keep the combined product/identity route manifest complete and verify no route is unclassified or stale.
-2. Attach the route-policy dependency assembly and explicit entitlement checks to all existing subscriber product routes.
-3. Complete the subscriber/admin frontend entry points and ensure they bootstrap CSRF before any mutation.
+2. Complete the route-by-route review of all 21 product routes, especially manual refresh and simulation mutations.
+3. Define plan bundles, limits, trials, and billing lifecycle separately; the current feature-grant API is a secure foundation, not a commercial plan system.
 4. Test the exact Caddy-to-app peer topology and configure only the narrow trusted proxy CIDR.
 5. Run the complete non-production flow with a verified sender domain, dedicated sending-only API key, queue encryption key, and operator-controlled mailbox.
 6. Complete queue recovery, backup/restore, and key-rotation tests before enabling public registration.
-7. Keep `AUTH_MODE=identity` fail-closed for product routes until the complete route set is integrated and rollback gates pass.
+7. Verify the existing dashboard, odds history, scheduled provider work, and alerts against a preserved test database, then complete the documented rollback drill.
 
-The default `legacy_basic` mode remains the live compatibility boundary and hides these routes. Selecting `AUTH_MODE=identity` explicitly enables only these authentication endpoints; it does not enable odds/product access and is not a production cutover. No deployment or mode switch has been performed.
+The default `legacy_basic` mode remains the production compatibility boundary and hides identity routes. Selecting `AUTH_MODE=identity` exposes authentication and protected admin entitlement endpoints and activates subscriber/admin session checks on product routes; subscriber product access remains default-deny until an MFA administrator grants the required feature keys. This staged mode is not a public launch or production cutover. No deployment or mode switch has been performed.
