@@ -513,8 +513,9 @@ def _stripe_redirect_url(payload: dict, *, host: str) -> str:
         parsed = urlsplit(value) if isinstance(value, str) else None
         valid = (
             parsed is not None and parsed.scheme == "https"
-            and parsed.hostname == host and parsed.username is None
-            and parsed.password is None and not parsed.fragment
+            and parsed.hostname == host and parsed.netloc == host
+            and parsed.username is None and parsed.password is None
+            and not parsed.fragment
         )
     except ValueError:
         valid = False
