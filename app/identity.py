@@ -903,6 +903,70 @@ class IdentityStore:
             ).fetchone()
         return row is not None
 
+    def list_subscribers(
+        self, *, limit: int = 25, offset: int = 0, email_query: str | None = None
+    ) -> dict:
+        """Return a bounded subscriber directory without authentication material."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("Subscriber page size must be between 1 and 100.")
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or not 0 <= offset <= 10_000_000
+        ):
+            raise ValueError("Subscriber offset must be between 0 and 10000000.")
+        where = " WHERE i.account_type='subscriber'"
+        values: list[str | int] = []
+        if email_query is not None:
+            if not isinstance(email_query, str) or not email_query.strip() or len(email_query) > 254:
+                raise ValueError("Subscriber email search must be a non-empty bounded string.")
+            escaped = email_query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            where += " AND i.email LIKE ? ESCAPE '\\'"
+            values.append("%" + escaped + "%")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN")
+            try:
+                total = db.execute(
+                    "SELECT COUNT(*) AS count FROM identities i" + where, values
+                ).fetchone()["count"]
+                rows = db.execute(
+                    """SELECT i.id, i.email, i.is_active, i.email_verified_at,
+                              i.created_at,
+                              COALESCE(GROUP_CONCAT(e.entitlement_key, ','), '') AS entitlements
+                       FROM identities i
+                       LEFT JOIN subscriber_entitlements e
+                         ON e.identity_id=i.id AND e.starts_at<=?
+                        AND (e.expires_at IS NULL OR e.expires_at>?)"""
+                    + where
+                    + """ GROUP BY i.id
+                       ORDER BY i.created_at DESC, i.id DESC LIMIT ? OFFSET ?""",
+                    [now, now, *values, limit, offset],
+                ).fetchall()
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+        subscribers = [
+            {
+                "identity_id": row["id"],
+                "email": row["email"],
+                "is_active": bool(row["is_active"]),
+                "email_verified": row["email_verified_at"] is not None,
+                "created_at": row["created_at"],
+                "entitlements": sorted(
+                    key for key in row["entitlements"].split(",") if key
+                ),
+            }
+            for row in rows
+        ]
+        return {
+            "subscribers": subscribers,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
     def list_security_audit_events(
         self,
         *,
