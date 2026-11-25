@@ -841,7 +841,7 @@ def _mfa_admin(store, monkeypatch, email="entitlement-admin@example.com"):
     return admin_id
 
 
-def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_path):
+def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_path, monkeypatch):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     subscriber_id = store.create_subscriber(
         "entitled@example.com", "a strong subscriber password"
@@ -885,7 +885,7 @@ def test_subscriber_entitlement_expiry_and_replacement_are_enforced(tmp_path, mo
     from app import identity as identity_module
     import pyotp
 
-    now = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+    now = [datetime.now(timezone.utc)]
     monkeypatch.setattr(identity_module, "_now", lambda: now[0])
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     subscriber_id = store.create_subscriber(
@@ -916,7 +916,7 @@ def test_subscriber_entitlement_expiry_and_replacement_are_enforced(tmp_path, mo
         ["odds", "x" * 300],
     ],
 )
-def test_subscriber_entitlement_updates_reject_unapproved_feature_keys(tmp_path, keys):
+def test_subscriber_entitlement_updates_reject_unapproved_feature_keys(tmp_path, monkeypatch, keys):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     subscriber_id = store.create_subscriber(
         "invalid-entitlement@example.com", "a strong invalid entitlement password"
