@@ -83,7 +83,7 @@ tbody tr:last-child td{border-bottom:0}
   <div class="workspace-label">Workspace</div>
   <nav aria-label="Administrator sections">
     <button type="button" data-view="overview" aria-current="page">Overview</button>
-    <button type="button" data-view="users">Users <span class="tag">Planned</span></button>
+    <button type="button" data-view="users">Users</button>
     <button type="button" data-view="subscriptions">Subscriptions <span class="tag">Planned</span></button>
     <button type="button" data-view="billing">Billing <span class="tag">Planned</span></button>
     <button type="button" data-view="notifications">Notifications <span class="tag">Planned</span></button>
@@ -113,7 +113,23 @@ tbody tr:last-child td{border-bottom:0}
       </div>
       <div class="panel"><h2>Security baseline</h2><p>The console is served only after server-side administrator session validation. State-changing operations will require CSRF protection and will be recorded in the security audit trail.</p><div class="checks"><div class="check"><strong>✓ Separate admin session</strong>Subscriber cookies cannot authorize this workspace.</div><div class="check"><strong>✓ MFA-gated sign-in</strong>Administrator sessions require a fresh second factor.</div><div class="check"><strong>✓ Protected page response</strong>No-store, no-referrer, and frame-denial headers are applied.</div></div></div>
     </section>
-    <section class="view" id="view-users" hidden><span class="planned">Planned module</span><div class="panel"><h2>User management</h2><p>Subscriber search, account status, verification state, suspension, and account lifecycle controls will appear here after the protected APIs and audit workflow are complete.</p></div></section>
+    <section class="view" id="view-users" hidden>
+      <div class="panel">
+        <h2>Subscriber directory</h2>
+        <p>Read-only account overview. Account lifecycle changes will be added only with explicit safeguards and audit coverage.</p>
+        <div class="audit-controls">
+          <label for="subscriber-search">Email search</label>
+          <input id="subscriber-search" type="search" maxlength="254" placeholder="Search subscriber email">
+          <button id="subscriber-search-button" type="button">Search</button>
+        </div>
+        <div class="audit-status" id="subscriber-status" role="status" aria-live="polite">Subscriber directory has not been loaded.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Email</th><th>Status</th><th>Verified</th><th>Created</th><th>Entitlements</th><th>Identity</th></tr></thead>
+          <tbody id="subscriber-rows"><tr><td colspan="6">Select Users to load subscribers.</td></tr></tbody>
+        </table></div>
+        <div class="audit-pagination"><button id="subscriber-previous" type="button" disabled>Previous</button><span id="subscriber-page">Page 1</span><button id="subscriber-next" type="button" disabled>Next</button></div>
+      </div>
+    </section>
     <section class="view" id="view-subscriptions" hidden><span class="planned">Planned module</span><div class="panel"><h2>Subscriptions and access</h2><p>Plan bundles, trials, renewals, and subscriber entitlements will be managed through server-enforced subscription rules. No plan or billing state is fabricated in this shell.</p></div></section>
     <section class="view" id="view-billing" hidden><span class="planned">Planned module</span><div class="panel"><h2>Billing</h2><p>Payment provider selection and billing lifecycle rules remain a separate roadmap milestone.</p></div></section>
     <section class="view" id="view-notifications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Notification operations</h2><p>Queue health, delivery history, channel status, retry controls, and global pause controls will be backed by dedicated administrative APIs.</p></div></section>
@@ -165,6 +181,57 @@ tbody tr:last-child td{border-bottom:0}
     views.forEach(view => { view.hidden = view.id !== "view-" + name; });
     document.getElementById("page-title").textContent = labels[name][0];
     document.getElementById("page-subtitle").textContent = labels[name][1];
+  }
+
+
+  let subscriberOffset = 0;
+  const subscriberLimit = 25;
+  let subscriberTotal = 0;
+  let subscribersLoaded = false;
+  const subscriberStatus = document.getElementById("subscriber-status");
+  const subscriberRows = document.getElementById("subscriber-rows");
+  const subscriberPage = document.getElementById("subscriber-page");
+  const subscriberSearch = document.getElementById("subscriber-search");
+  async function loadSubscribers() {
+    subscriberStatus.textContent = "Loading subscriber directory…";
+    const params = new URLSearchParams({limit:String(subscriberLimit),offset:String(subscriberOffset)});
+    const query = subscriberSearch.value.trim();
+    if (query) params.set("email_query", query);
+    try {
+      const response = await fetch("/admin/subscribers?" + params.toString(), {
+        credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Subscriber directory unavailable");
+      const data = await response.json();
+      subscriberTotal = Number(data.total) || 0;
+      subscriberRows.replaceChildren();
+      if (!data.subscribers.length) {
+        const row = document.createElement("tr");
+        const empty = document.createElement("td");
+        empty.colSpan = 6;
+        empty.textContent = "No matching subscribers.";
+        row.appendChild(empty);
+        subscriberRows.appendChild(row);
+      } else {
+        data.subscribers.forEach(user => {
+          const row = document.createElement("tr");
+          cell(row, user.email);
+          cell(row, user.is_active ? "Active" : "Suspended");
+          cell(row, user.email_verified ? "Verified" : "Unverified");
+          cell(row, user.created_at);
+          cell(row, (user.entitlements || []).join(", ") || "None");
+          cell(row, user.identity_id);
+          subscriberRows.appendChild(row);
+        });
+      }
+      subscriberPage.textContent = subscriberTotal ? `Page ${Math.floor(subscriberOffset / subscriberLimit) + 1} of ${Math.max(1, Math.ceil(subscriberTotal / subscriberLimit))}` : "Page 1";
+      document.getElementById("subscriber-previous").disabled = subscriberOffset === 0;
+      document.getElementById("subscriber-next").disabled = subscriberOffset + subscriberLimit >= subscriberTotal;
+      subscriberStatus.textContent = `${subscriberTotal} subscriber(s)`;
+      subscribersLoaded = true;
+    } catch (_error) {
+      subscriberStatus.textContent = "Subscriber directory could not be loaded. Refresh the page or sign in again.";
+    }
   }
 
   let auditOffset = 0;
@@ -223,7 +290,14 @@ tbody tr:last-child td{border-bottom:0}
   buttons.forEach(button => button.addEventListener("click", () => {
     selectView(button.dataset.view);
     if (button.dataset.view === "security" && !auditLoaded) loadAudit();
+    if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
+  document.getElementById("subscriber-search-button").addEventListener("click", () => { subscriberOffset = 0; loadSubscribers(); });
+  document.getElementById("subscriber-previous").addEventListener("click", () => { subscriberOffset = Math.max(0, subscriberOffset - subscriberLimit); loadSubscribers(); });
+  document.getElementById("subscriber-next").addEventListener("click", () => { subscriberOffset += subscriberLimit; loadSubscribers(); });
+  subscriberSearch.addEventListener("keydown", event => {
+    if (event.key === "Enter") { subscriberOffset = 0; loadSubscribers(); }
+  });
   document.getElementById("audit-refresh").addEventListener("click", () => { auditOffset = 0; loadAudit(); });
   document.getElementById("audit-previous").addEventListener("click", () => { auditOffset = Math.max(0, auditOffset - auditLimit); loadAudit(); });
   document.getElementById("audit-next").addEventListener("click", () => { auditOffset += auditLimit; loadAudit(); });
