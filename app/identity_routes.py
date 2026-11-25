@@ -571,6 +571,16 @@ def create_subscriber_checkout(
     client_key = request.headers.get("idempotency-key", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", client_key):
         raise HTTPException(status_code=400, detail="A valid checkout idempotency key is required.")
+    try:
+        if store.subscriber_has_open_subscription(session["identity_id"]):
+            raise HTTPException(
+                status_code=409,
+                detail="An existing subscription is already active or awaiting payment. Manage it through the Customer Portal.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="Subscription status is temporarily unavailable.") from None
     price_id = (
         config.STRIPE_PRICE_MONTHLY_ID
         if payload.interval == "month" else config.STRIPE_PRICE_YEARLY_ID
