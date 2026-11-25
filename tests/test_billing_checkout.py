@@ -1,10 +1,12 @@
 """Security and server-side price selection tests for hosted Stripe billing."""
+import json
 import pytest
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import config, stripe_api
+from app.billing_worker import process_pending_stripe_events
 from app.dependencies import get_identity_store, get_rate_limiter, require_authenticated_csrf, require_subscriber
 from app.identity import IdentityStore
 from app.identity_routes import router
@@ -103,6 +105,82 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
     assert billing.json()["checkout_pending"] is True
     assert billing.json()["subscription_exists"] is False
     assert billing.json()["customer_portal_available"] is True
+
+
+def test_checkout_to_subscription_webhook_reconciliation_never_grants_entitlements(
+    billing_harness, monkeypatch
+):
+    client, store, identity_id = billing_harness
+
+    def fake_stripe(method, path, *, params=None, idempotency_key=None):
+        if path.startswith("/prices/"):
+            return {
+                "id": "price_MonthlyCaseSensitive", "active": True, "livemode": False,
+                "currency": "usd", "unit_amount": 1068,
+                "recurring": {"interval": "month", "interval_count": 1},
+            }
+        if path == "/customers":
+            return {"id": "cus_checkoutE2E"}
+        if path == "/checkout/sessions":
+            return {
+                "id": "cs_test_checkoutE2E",
+                "url": "https://checkout.stripe.com/c/pay/cs_test_checkoutE2E",
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr(stripe_api, "stripe_request", fake_stripe)
+    checkout = client.post(
+        "/auth/billing/checkout", json={"interval": "month"},
+        headers={"Idempotency-Key": "checkout-e2e-idempotency-key"},
+    )
+    assert checkout.status_code == 200
+
+    event = {
+        "id": "evt_checkout_e2e",
+        "type": "customer.subscription.created",
+        "created": 1795600000,
+        "data": {"object": {
+            "id": "sub_checkoutE2E",
+            "customer": "cus_checkoutE2E",
+            "status": "active",
+            "current_period_start": 1795600000,
+            "current_period_end": 1798192000,
+            "cancel_at_period_end": False,
+            "canceled_at": None,
+            "ended_at": None,
+            "items": {"data": [{
+                "price": {
+                    "id": "price_MonthlyCaseSensitive",
+                    "recurring": {"interval": "month", "interval_count": 1},
+                }
+            }]},
+        }},
+    }
+    store.record_stripe_webhook_event(
+        event["id"], event["type"], False,
+        json.dumps(event, separators=(",", ":")).encode("utf-8"),
+    )
+    worker_result = process_pending_stripe_events(store, limit=10)
+    assert worker_result["created"] == 1
+    assert store.billing_checkout_pending(identity_id) is False
+    assert store.active_subscriber_entitlements(identity_id) == []
+
+    billing = client.get("/auth/billing")
+    assert billing.status_code == 200
+    assert billing.json()["subscription_exists"] is True
+    assert billing.json()["checkout_pending"] is False
+    assert billing.json()["checkout_available"] is False
+    assert billing.json()["customer_portal_available"] is True
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT stripe_customer_id, stripe_subscription_id, billing_interval, status "
+            "FROM billing_subscriptions WHERE identity_id=?",
+            (identity_id,),
+        ).fetchone()
+    assert row["stripe_customer_id"] == "cus_checkoutE2E"
+    assert row["stripe_subscription_id"] == "sub_checkoutE2E"
+    assert row["billing_interval"] == "month"
+    assert row["status"] == "active"
 
 
 def test_checkout_uses_annual_price_only_for_year_interval(billing_harness, monkeypatch):
