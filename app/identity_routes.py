@@ -11,10 +11,12 @@ import hashlib
 import html
 import logging
 import sqlite3
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import config
@@ -44,6 +46,47 @@ from .rate_limit import SQLiteRateLimiter, request_peer_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter(include_in_schema=False)
+
+_AUTH_PAGE = Path(__file__).resolve().parent.parent / "web" / "auth.html"
+
+
+def _render_auth_page() -> HTMLResponse:
+    response = HTMLResponse(_AUTH_PAGE.read_text(encoding="utf-8"))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@router.get("/login", response_class=HTMLResponse)
+def subscriber_login_page():
+    return _render_auth_page()
+
+
+@router.get("/register", response_class=HTMLResponse)
+def subscriber_registration_page():
+    return _render_auth_page()
+
+
+@router.get("/admin/login", response_class=HTMLResponse)
+def administrator_login_page():
+    return _render_auth_page()
+
+
+@router.get("/forgot-password", response_class=HTMLResponse)
+def password_recovery_page():
+    return _render_auth_page()
+
+
+@router.get("/verify-email", response_class=HTMLResponse)
+def email_verification_page():
+    return _render_auth_page()
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+def password_reset_page():
+    return _render_auth_page()
 
 
 class StrictModel(BaseModel):
