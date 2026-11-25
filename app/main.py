@@ -165,10 +165,12 @@ WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
 @app.middleware("http")
 async def optional_basic_auth(request: Request, call_next):
-    """Protect the dashboard and API when an operator configures credentials.
+    """Enforce the selected legacy Basic Auth or staged identity boundary.
 
-    /api/health remains public for Docker health checks and orchestrators.
-    Credentials are compared in constant time and are never logged.
+    Legacy mode preserves the original optional Basic Auth contract. Identity
+    mode admits only classified identity/product routes; product route
+    dependencies enforce subscriber entitlements, admin sessions, and CSRF.
+    The safe health probe remains independent of browser authentication.
     """
     username = config.AUTH_USERNAME
     password = config.AUTH_PASSWORD
