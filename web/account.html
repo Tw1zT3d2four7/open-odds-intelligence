@@ -67,7 +67,12 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       <div class="label">Invoices</div>
       <ul class="feature-list" id="billing-invoices"><li class="empty">Loading invoices…</li></ul>
       <div class="feature-list" id="billing-price-catalog" aria-label="Subscription prices"><p>Loading subscription prices…</p></div>
-      <p class="card-footer" id="billing-availability">Subscription checkout is not enabled yet. Prices are configured; purchases will open after Stripe test-mode acceptance.</p>
+      <div class="actions" id="billing-actions" hidden>
+        <button id="checkout-monthly" type="button">Subscribe monthly</button>
+        <button id="checkout-annual" type="button">Subscribe yearly</button>
+        <button id="billing-portal" type="button" hidden>Manage billing</button>
+      </div>
+      <p class="card-footer" id="billing-availability" role="status" aria-live="polite">Hosted billing is disabled until Stripe test-mode acceptance and access rules are complete.</p>
       <p class="card-footer">Payments are processed by Stripe. This account page never collects or stores card details.</p>
     </section>
     <section class="card" aria-labelledby="password-heading">
@@ -180,8 +185,53 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
         invoices.appendChild(row);
       });
     }
-    if (!data.checkout_available || !data.customer_portal_available) {
-      el("billing-availability").textContent = "The approved monthly and yearly prices are shown above. Subscription purchases and self-service billing changes remain disabled until Stripe test-mode acceptance and the access rules are complete.";
+    el("billing-actions").hidden = !data.checkout_available && !data.customer_portal_available;
+    el("checkout-monthly").hidden = !data.checkout_available;
+    el("checkout-annual").hidden = !data.checkout_available;
+    el("billing-portal").hidden = !data.customer_portal_available;
+    el("billing-availability").textContent = data.checkout_available
+      ? "Hosted checkout is available in the configured Stripe test environment. A completed payment does not itself grant paid feature access."
+      : "The approved monthly and yearly prices are shown above. Hosted purchases are disabled until Stripe test-mode acceptance and the access rules are complete.";
+  }
+
+  async function startCheckout(interval) {
+    const button = el(interval === "year" ? "checkout-annual" : "checkout-monthly");
+    button.disabled = true;
+    el("billing-availability").textContent = "Opening secure Stripe Checkout…";
+    try {
+      const response = await fetch("/auth/billing/checkout", {
+        method:"POST", credentials:"same-origin", cache:"no-store",
+        headers:{"Content-Type":"application/json","X-Ooi-Csrf-Token":csrfToken(),"Idempotency-Key":crypto.randomUUID()},
+        body:JSON.stringify({interval})
+      });
+      const data = await response.json();
+      if (!response.ok || typeof data.url !== "string" || !data.url.startsWith("https://checkout.stripe.com/")) {
+        throw new Error(data.detail || "Checkout is temporarily unavailable.");
+      }
+      window.location.assign(data.url);
+    } catch (error) {
+      el("billing-availability").textContent = error.message || "Checkout is temporarily unavailable.";
+      button.disabled = false;
+    }
+  }
+
+  async function openBillingPortal() {
+    const button = el("billing-portal");
+    button.disabled = true;
+    el("billing-availability").textContent = "Opening secure Stripe billing…";
+    try {
+      const response = await fetch("/auth/billing/portal", {
+        method:"POST", credentials:"same-origin", cache:"no-store",
+        headers:{"X-Ooi-Csrf-Token":csrfToken()}
+      });
+      const data = await response.json();
+      if (!response.ok || typeof data.url !== "string" || !data.url.startsWith("https://billing.stripe.com/")) {
+        throw new Error(data.detail || "Billing management is temporarily unavailable.");
+      }
+      window.location.assign(data.url);
+    } catch (error) {
+      el("billing-availability").textContent = error.message || "Billing management is temporarily unavailable.";
+      button.disabled = false;
     }
   }
   async function loadAccount() {
@@ -337,6 +387,9 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       window.location.replace("/login");
     } catch (error) { notice(error.message || "Sign-out could not be completed."); button.disabled = false; }
   });
+  el("checkout-monthly").addEventListener("click", () => startCheckout("month"));
+  el("checkout-annual").addEventListener("click", () => startCheckout("year"));
+  el("billing-portal").addEventListener("click", openBillingPortal);
   Promise.all([
     fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"}).then(response => { if (!response.ok) throw new Error("Secure session initialization failed."); }),
     loadAccount(),
