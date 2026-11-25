@@ -1396,3 +1396,37 @@ def test_stripe_webhook_event_input_validation_is_bounded(tmp_path):
         store.claim_stripe_webhook_event("evt_bad", lease_seconds=1)
     with pytest.raises(ValueError, match="attempts"):
         store.claim_stripe_webhook_event("evt_bad", max_attempts=99)
+
+
+def test_billing_subscriptions_support_monthly_and_yearly_intervals_only(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "billing-intervals@example.test", "a strong billing interval password"
+    )
+    now = "2026-11-25T00:00:00+00:00"
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at) "
+            "VALUES (?, 'cus_intervals', ?, ?)",
+            (subscriber_id, now, now),
+        )
+        for interval in ("month", "year"):
+            db.execute(
+                """INSERT INTO billing_subscriptions(
+                    id, identity_id, stripe_subscription_id, stripe_customer_id,
+                    billing_interval, status, created_at, updated_at
+                ) VALUES (?, ?, ?, 'cus_intervals', ?, 'active', ?, ?)""",
+                (f"local_{interval}", subscriber_id, f"sub_{interval}", interval, now, now),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                """INSERT INTO billing_subscriptions(
+                    id, identity_id, stripe_subscription_id, stripe_customer_id,
+                    billing_interval, status, created_at, updated_at
+                ) VALUES ('local_week', ?, 'sub_week', 'cus_intervals', 'week', 'active', ?, ?)""",
+                (subscriber_id, now, now),
+            )
+        rows = db.execute(
+            "SELECT billing_interval FROM billing_subscriptions ORDER BY billing_interval"
+        ).fetchall()
+    assert [row["billing_interval"] for row in rows] == ["month", "year"]
