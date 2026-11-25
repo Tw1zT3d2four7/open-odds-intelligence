@@ -563,16 +563,6 @@ def create_subscriber_checkout(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     _stripe_test_billing_ready(checkout=True)
-    try:
-        if store.subscriber_has_open_subscription(session["identity_id"]):
-            raise HTTPException(
-                status_code=409,
-                detail="An existing subscription is already active or awaiting payment. Manage it through the Customer Portal.",
-            )
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=503, detail="Subscription status is temporarily unavailable.") from None
     client_key = request.headers.get("idempotency-key", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", client_key):
         raise HTTPException(status_code=400, detail="A valid checkout idempotency key is required.")
@@ -594,12 +584,30 @@ def create_subscriber_checkout(
             or recurring.get("interval_count") != 1
         ):
             raise HTTPException(status_code=503, detail="The selected recurring price is not approved.")
+        reservation = store.reserve_billing_checkout(
+            session["identity_id"],
+            payload.interval,
+            hashlib.sha256(client_key.encode("ascii")).hexdigest(),
+        )
+        if reservation["state"] == "existing_subscription":
+            raise HTTPException(
+                status_code=409,
+                detail="An existing subscription is already active or awaiting payment. Manage it through the Customer Portal.",
+            )
+        if reservation["state"] == "checkout_pending":
+            raise HTTPException(
+                status_code=409,
+                detail="A Checkout attempt is already pending. Retry the original request or wait for its session to expire.",
+            )
+        attempt_token = reservation["attempt_token"]
         customer_id = _stripe_customer_for_subscriber(store, session)
         origin = _public_origin()
+        checkout_expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
         checkout = stripe_api.stripe_request(
             "POST", "/checkout/sessions",
             params={
                 "mode": "subscription",
+                "expires_at": str(int(checkout_expires_at.timestamp())),
                 "customer": customer_id,
                 "client_reference_id": session["identity_id"],
                 "line_items[0][price]": price_id,
@@ -610,10 +618,15 @@ def create_subscriber_checkout(
                 "subscription_data[metadata][identity_id]": session["identity_id"],
             },
             idempotency_key="ooi-checkout-" + hashlib.sha256(
-                (session["identity_id"] + ":" + payload.interval + ":" + client_key).encode("utf-8")
+                (session["identity_id"] + ":" + attempt_token).encode("utf-8")
             ).hexdigest(),
         )
         url = _stripe_redirect_url(checkout, host="checkout.stripe.com")
+        checkout_session_id = checkout.get("id")
+        if not store.mark_billing_checkout_session(
+            session["identity_id"], attempt_token, checkout_session_id
+        ):
+            raise HTTPException(status_code=503, detail="Checkout reservation expired. Please start again.")
         return {"url": url}
     except HTTPException:
         raise
