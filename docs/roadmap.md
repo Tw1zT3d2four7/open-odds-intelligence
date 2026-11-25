@@ -140,9 +140,10 @@ Still required before Phase 1 is complete:
 - [ ] Build protected overview APIs and operational diagnostics.
 - [ ] Add Users, Subscriptions, Notifications, Platform, System Configuration, Communications, and Security views backed by reviewed admin APIs.
 - [x] Add a protected, bounded, paginated, no-store administrator audit API and a Security view that renders audit events without account email addresses.
+- [x] Expose bounded event-type, actor-identity, and subject-identity filters in the Security view; audit records remain free of account email addresses and credentials.
 - [x] Add MFA-admin-only, CSRF-protected subscriber suspension/reactivation with required bounded reasons, atomic session revocation on suspension, and actor-attributed audit events; expose guarded controls in the Users directory.
 - [x] Add a protected, paginated, searchable, read-only subscriber directory and Users view; expose only account identity, email, active/verification state, creation time, and active entitlements, never authentication material.
-- [ ] Add remaining privileged-action security controls and audit filters/retention administration.
+- [ ] Add remaining privileged-action security controls and audit-retention administration.
 
 The initial shell now includes working Security and Users views backed by bounded, no-store, administrator-only read APIs. The subscriber directory is searchable and exposes only the minimum account fields needed for operator support; subscriber suspension/reactivation is now backed by audited, MFA-admin-only mutations; other account lifecycle writes remain unavailable until their safeguards and audit flows are implemented. Other unimplemented sections remain labeled as planned and do not display fabricated metrics or offer nonfunctional write controls. It is exposed only in staged `AUTH_MODE=identity`; production remains on `legacy_basic` until Phase 1 deployment gates and rollback drills pass.
 
