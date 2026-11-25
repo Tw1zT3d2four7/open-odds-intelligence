@@ -266,3 +266,33 @@ def test_terminal_queue_rows_are_pruned_after_operational_retention(tmp_path, mo
             (queue_id,),
         ).fetchone()
     assert row is None
+
+
+
+def test_queue_key_rotation_mismatch_preserves_pending_ciphertext(tmp_path, monkeypatch):
+    store, queue, _identity_id, queue_id, _clock = _setup(tmp_path, monkeypatch)
+    with store.connect() as db:
+        before = db.execute(
+            "SELECT encrypted_payload FROM transactional_email_queue WHERE id=?",
+            (queue_id,),
+        ).fetchone()["encrypted_payload"]
+
+    monkeypatch.setattr(
+        queue_module.config,
+        "EMAIL_QUEUE_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    sender = FakeSender()
+    assert queue.process_one(sender) is True
+    assert sender.calls == []
+
+    with store.connect() as db:
+        paused = db.execute(
+            "SELECT state, attempt_count, encrypted_payload, last_failure_code "
+            "FROM transactional_email_queue WHERE id=?",
+            (queue_id,),
+        ).fetchone()
+    assert paused["state"] == "pending"
+    assert paused["attempt_count"] == 0
+    assert paused["encrypted_payload"] == before
+    assert paused["last_failure_code"] == "payload_decryption_failed"
