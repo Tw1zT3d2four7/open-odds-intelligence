@@ -2,8 +2,8 @@
 
 **Implementation:** `app/identity_routes.py`  
 **Tests:** `tests/test_identity_routes.py`, `tests/test_route_policy.py`, `tests/test_route_authorization.py`  
-**Status:** Implemented, separately policy-classified, and CI-tested, but deliberately not mounted by `app.main`.  
-**Production impact:** None.
+**Status:** Implemented, separately policy-classified, and CI-tested. Registered in FastAPI but exposed only when `AUTH_MODE=identity`.  
+**Production impact:** No behavior change in default `legacy_basic` mode; identity mode remains authentication-only staging.
 
 ## Route inventory
 
@@ -51,9 +51,9 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Not ready to mount
 
-The router is intentionally not included in the live FastAPI application. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all ten routes, and dependency-assembly tests verify that the router's actual security dependencies match that policy. Before mounting it:
+The router is registered in FastAPI, while middleware hides all identity paths with 404 in `legacy_basic` and exposes only the classified auth paths in staged `identity` mode. In identity mode, all existing product/dashboard routes return 503 and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all ten routes, and dependency-assembly tests verify that the router's actual security dependencies match that policy. Before enabling product access:
 
-1. Merge the separately tested identity route policy into the live route manifest and verify no route is unclassified or stale.
+1. Keep the combined product/identity route manifest complete and verify no route is unclassified or stale.
 2. Attach the route-policy dependency assembly and explicit entitlement checks to all existing subscriber product routes.
 3. Add a durable send queue and safe retry workflow. Delivery history and the persistent provider circuit breaker are implemented, but a provider failure currently leaves a valid challenge available only for a later user-requested resend; raw challenge tokens are not retained for background retries.
 4. Test the exact Caddy-to-app peer topology and configure only the narrow trusted proxy CIDR.
@@ -61,4 +61,4 @@ The router is intentionally not included in the live FastAPI application. A sepa
 6. Run the complete non-production flow with a verified sender domain and operator-controlled mailbox.
 7. Keep `AUTH_MODE=identity` fail-closed until the complete route set is integrated and rollback gates pass.
 
-The existing Basic Auth middleware remains the live boundary. No authentication endpoint described here is reachable through the production app until the router is explicitly mounted in a later reviewed change.
+The default `legacy_basic` mode remains the live compatibility boundary and hides these routes. Selecting `AUTH_MODE=identity` explicitly enables only these authentication endpoints; it does not enable odds/product access and is not a production cutover. No deployment or mode switch has been performed.
