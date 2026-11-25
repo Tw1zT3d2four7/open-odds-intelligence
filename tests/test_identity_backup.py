@@ -60,6 +60,32 @@ def test_encrypted_identity_backup_and_restore_round_trip(tmp_path, monkeypatch)
     assert row["email"] == "backup-user@example.test"
 
 
+def test_backup_preserves_existing_parent_permissions_and_rejects_shared_writable_dirs(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    source = tmp_path / "source.sqlite3"
+    _identity_store(source)
+
+    shared = tmp_path / "shared-backups"
+    shared.mkdir(mode=0o755)
+    shared.chmod(0o755)
+    backup = shared / "identity.sqlite3.fernet"
+    create_encrypted_backup(source, backup)
+    assert shared.stat().st_mode & 0o777 == 0o755
+    assert backup.stat().st_mode & 0o777 == 0o600
+
+    unsafe = tmp_path / "unsafe-backups"
+    unsafe.mkdir(mode=0o777)
+    unsafe.chmod(0o777)
+    with pytest.raises(PermissionError, match="group- or world-writable"):
+        create_encrypted_backup(source, unsafe / "identity.sqlite3.fernet")
+    assert unsafe.stat().st_mode & 0o777 == 0o777
+
+
 def test_restore_creates_encrypted_pre_restore_snapshot(tmp_path, monkeypatch):
     key = Fernet.generate_key().decode("ascii")
     monkeypatch.setattr(config, "IDENTITY_BACKUP_ENCRYPTION_KEY", key)
@@ -89,6 +115,28 @@ def test_restore_creates_encrypted_pre_restore_snapshot(tmp_path, monkeypatch):
             row[0] for row in db.execute("SELECT id FROM identities").fetchall()
         }
     assert old_identity_id not in ids
+
+
+def test_restore_preserves_existing_target_parent_permissions(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    source = tmp_path / "source.sqlite3"
+    _identity_store(source)
+    backup = tmp_path / "backup.sqlite3.fernet"
+    create_encrypted_backup(source, backup)
+
+    target_parent = tmp_path / "shared-target"
+    target_parent.mkdir(mode=0o755)
+    target_parent.chmod(0o755)
+    target = target_parent / "accounts.sqlite3"
+    restore_encrypted_backup(
+        backup, target, backup_directory=tmp_path / "pre-restore", apply=True,
+        confirm_offline=True,
+    )
+    assert target_parent.stat().st_mode & 0o777 == 0o755
+    assert target.stat().st_mode & 0o777 == 0o600
 
 
 def test_restore_requires_both_explicit_confirmation_flags(tmp_path, monkeypatch):

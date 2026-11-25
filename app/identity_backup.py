@@ -55,6 +55,21 @@ def _normalize_journal_header(data: bytes) -> bytes:
     return bytes(normalized)
 
 
+def _prepare_directory(path: Path) -> None:
+    """Create a private leaf directory without changing caller-owned permissions."""
+    if path.is_symlink():
+        raise ValueError("Identity backup directories cannot be symlinks.")
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if path.is_symlink() or not path.is_dir():
+        raise ValueError("Identity backup and restore parents must be directories.")
+    # Never chmod an existing caller-selected directory (for example /tmp or
+    # a shared application directory). Refuse directories where others can
+    # create, remove, or replace entries; the backup file itself is always 0600.
+    if path.stat().st_mode & 0o022:
+        raise PermissionError("Identity backup and restore directories must not be group- or world-writable.")
+
+
 def _regular_file(path: Path, *, must_exist: bool = True) -> None:
     if path.is_symlink():
         raise ValueError("Symlink paths are not permitted for identity backups.")
@@ -144,10 +159,7 @@ def create_encrypted_backup(
     encrypted = _MAGIC + cipher.encrypt(data)
 
     parent = destination.parent
-    parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if parent.is_symlink():
-        raise ValueError("Identity backup directory cannot be a symlink.")
-    os.chmod(parent, 0o700)
+    _prepare_directory(parent)
     if destination.exists() or destination.is_symlink():
         raise FileExistsError("Identity backup destination already exists.")
 
@@ -231,10 +243,7 @@ def restore_encrypted_backup(
     if target.is_symlink():
         raise ValueError("Identity restore target cannot be a symlink.")
     parent = target.parent
-    parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if parent.is_symlink():
-        raise ValueError("Identity restore directory cannot be a symlink.")
-    os.chmod(parent, 0o700)
+    _prepare_directory(parent)
 
     if backup.stat().st_size <= len(_MAGIC) or backup.stat().st_size > _MAX_BACKUP_BYTES + 1024 * 1024:
         raise ValueError("Identity backup file size is invalid.")
