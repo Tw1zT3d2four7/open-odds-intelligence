@@ -27,7 +27,7 @@ Use `EMAIL_PROVIDER=disabled` to disable delivery intentionally. Do not silently
 - No SDK or new runtime dependency.
 - Recipient, subject, body-size, header-injection, timeout, and idempotency-key validation.
 - Provider response bodies and transport exception details are not propagated into application errors or logs.
-- No blind automatic retry after a network timeout. The provider may have accepted the message before the connection failed; retry orchestration must use a stable idempotency key to avoid duplicate sends.
+- Resend idempotency keys are supported for `POST /emails`; keys may be up to 256 characters and are retained by the provider for 24 hours. Retry orchestration must reuse the exact same key and identical request payload. The adapter accepts printable ASCII keys and does not retry automatically.
 - Provider message ID is returned to the caller for later delivery tracking.
 - API keys remain case-sensitive and are preserved byte-for-byte from configuration.
 - Tests use a fake HTTP transport; CI never contacts the real provider.
