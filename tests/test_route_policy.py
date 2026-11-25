@@ -101,3 +101,35 @@ def test_identity_route_policy_distinguishes_public_mutations_and_session_logout
         assert classify_route("POST", path, IDENTITY_ROUTE_ACCESS_POLICY) == "public_csrf"
     assert classify_route("POST", "/auth/logout", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
     assert classify_route("POST", "/admin/auth/logout", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+
+
+
+def test_identity_router_security_dependencies_match_its_policy_manifest():
+    from app.dependencies import (
+        require_administrator,
+        require_authenticated_csrf,
+        require_subscriber,
+    )
+    from app.identity_routes import router as identity_router
+    from app.route_authorization import dependencies_for_route
+
+    security_dependencies = {
+        require_administrator,
+        require_authenticated_csrf,
+        require_subscriber,
+    }
+    for route in identity_router.routes:
+        for method in (getattr(route, "methods", None) or set()):
+            if method in {"HEAD", "OPTIONS"}:
+                continue
+            expected = {
+                item.dependency
+                for item in dependencies_for_route(
+                    method, route.path, policy=IDENTITY_ROUTE_ACCESS_POLICY
+                )
+            }
+            actual = {
+                item.call for item in route.dependant.dependencies
+                if item.call in security_dependencies
+            }
+            assert actual == expected, (method, route.path, actual, expected)
