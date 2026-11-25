@@ -696,6 +696,83 @@ def test_admin_subscriber_directory_requires_mfa_and_is_paginated(tmp_path, monk
 
 
 
+def test_admin_billing_overview_is_mfa_protected_aggregate_only_and_no_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    subscriber_id = harness.store.create_subscriber(
+        "billing-ops-user@example.test", "a strong billing ops password"
+    )
+    admin_id = harness.store.provision_administrator(
+        "billing-ops-admin@example.test", "a strong billing ops admin password"
+    )
+    assert harness.client.get("/admin/billing").status_code == 401
+
+    now = "2026-11-25T00:00:00+00:00"
+    with harness.store.connect() as db:
+        db.execute(
+            """INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at)
+               VALUES (?, 'cus_ops_private', ?, ?)""", (subscriber_id, now, now)
+        )
+        db.execute(
+            """INSERT INTO billing_subscriptions(
+                id, identity_id, stripe_subscription_id, stripe_customer_id,
+                plan_code, billing_interval, status, cancel_at_period_end,
+                created_at, updated_at, last_event_created_at
+            ) VALUES ('ops-sub', ?, 'sub_ops_private', 'cus_ops_private',
+                      'basic', 'month', 'past_due', 0, ?, ?, ?)""",
+            (subscriber_id, now, now, now)
+        )
+        db.execute(
+            """INSERT INTO billing_invoices(
+                id, identity_id, stripe_invoice_id, stripe_customer_id,
+                stripe_subscription_id, status, amount_due, amount_paid, currency,
+                payment_failed_at, last_event_created_at, created_at, updated_at
+            ) VALUES ('ops-invoice', ?, 'in_ops_private', 'cus_ops_private',
+                      'sub_ops_private', 'open', 2500, 0, 'usd', ?, ?, ?, ?)""",
+            (subscriber_id, now, now, now, now)
+        )
+        db.execute(
+            """INSERT INTO billing_webhook_events(
+                stripe_event_id, event_type, livemode, payload_sha256,
+                processing_state, attempt_count, received_at, updated_at
+            ) VALUES ('evt_ops_private', 'invoice.payment_failed', 0, ?, 'failed', 1, ?, ?)""",
+            ("a" * 64, now, now)
+        )
+
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "billing-ops-admin@example.test",
+        "password": "a strong billing ops admin password",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+
+    response = harness.client.get("/admin/billing")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    data = response.json()
+    assert data["customer_count"] == 1
+    assert data["subscription_count"] == 1
+    assert data["invoice_count"] == 1
+    assert data["failed_webhook_count"] == 1
+    assert data["subscriptions_by_status_and_interval"] == [
+        {"status": "past_due", "billing_interval": "month", "count": 1}
+    ]
+    assert data["invoices_by_status"] == [
+        {"status": "open", "count": 1, "payment_failures": 1}
+    ]
+    assert data["checkout_available"] is False
+    assert data["customer_portal_available"] is False
+    assert data["live_billing_enabled"] is False
+    for private_value in ("billing-ops-user@example.test", "cus_ops_private",
+                          "sub_ops_private", "in_ops_private", "evt_ops_private",
+                          "encrypted_payload", "lease_token"):
+        assert private_value not in response.text
+
+
 def test_admin_subscriber_status_api_requires_mfa_csrf_and_records_actor(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
     harness = IdentityRouteHarness(tmp_path, monkeypatch)
