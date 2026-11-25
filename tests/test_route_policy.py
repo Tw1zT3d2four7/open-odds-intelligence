@@ -180,3 +180,19 @@ def test_admin_product_mutations_have_mode_aware_admin_and_csrf_dependencies():
         calls = {dependency.call for dependency in route.dependant.dependencies}
         assert require_product_administrator in calls
         assert require_product_csrf in calls
+
+
+def test_head_request_resolves_to_get_route_template_for_policy_lookup():
+    from app.route_policy import matched_route_path
+
+    path = "/login"
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "HEAD", "scheme": "https", "path": path,
+        "raw_path": path.encode(), "query_string": b"", "root_path": "",
+        "headers": [], "client": ("127.0.0.1", 12345),
+        "server": ("example.test", 443),
+    }
+    matched = matched_route_path(scope, _application_routes())
+    assert matched == "/login"
+    assert classify_route("HEAD", matched, IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
