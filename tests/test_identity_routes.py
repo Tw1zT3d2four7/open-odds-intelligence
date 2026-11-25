@@ -409,3 +409,24 @@ def test_open_email_circuit_skips_provider_and_records_delivery_state(tmp_path, 
     assert queued["state"] == "pending"
     assert queued["attempt_count"] == 0
     assert queued["last_failure_code"] == "circuit_open"
+
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/login", "/register", "/admin/login",
+        "/forgot-password", "/verify-email", "/reset-password",
+    ],
+)
+def test_auth_entry_pages_are_no_store_and_share_the_secure_auth_shell(
+    tmp_path, monkeypatch, path
+):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    response = harness.client.get(path)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "Open Odds Intelligence" in response.text
+    assert "__Host-ooi_csrf" in response.text
