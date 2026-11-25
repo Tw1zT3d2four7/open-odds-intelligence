@@ -66,7 +66,7 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       <div id="billing-subscriptions"><p class="empty">Loading subscription details…</p></div>
       <div class="label">Invoices</div>
       <ul class="feature-list" id="billing-invoices"><li class="empty">Loading invoices…</li></ul>
-      <div class="feature-list" aria-label="Subscription prices"><p><strong>Monthly:</strong> $10.68 per month, recurring.</p><p><strong>Yearly:</strong> $104.05 per year, recurring. Save $24.11 compared with 12 monthly payments.</p></div>
+      <div class="feature-list" id="billing-price-catalog" aria-label="Subscription prices"><p>Loading subscription prices…</p></div>
       <p class="card-footer" id="billing-availability">Subscription checkout is not enabled yet. Prices are configured; purchases will open after Stripe test-mode acceptance.</p>
       <p class="card-footer">Payments are processed by Stripe. This account page never collects or stores card details.</p>
     </section>
@@ -122,6 +122,27 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
     if (response.status === 401) { window.location.replace("/login"); return; }
     if (!response.ok) throw new Error("Billing information is temporarily unavailable.");
     const data = await response.json();
+    const catalog = data.price_catalog || {};
+    const monthly = catalog.monthly;
+    const annual = catalog.annual;
+    const priceList = el("billing-price-catalog");
+    priceList.replaceChildren();
+    const formatPrice = cents => new Intl.NumberFormat("en-US", {
+      style:"currency", currency:String(catalog.currency || "usd").toUpperCase()
+    }).format(Number(cents || 0) / 100);
+    if (monthly && annual) {
+      const monthlyRow = document.createElement("p");
+      monthlyRow.textContent = "Monthly: " + formatPrice(monthly.amount_cents) + " per month, automatically recurring.";
+      const annualRow = document.createElement("p");
+      annualRow.textContent = "Yearly: " + formatPrice(annual.amount_cents) + " per year, automatically recurring.";
+      const savings = document.createElement("p");
+      savings.textContent = "Save " + formatPrice(Number(monthly.amount_cents) * 12 - Number(annual.amount_cents)) + " compared with 12 monthly payments.";
+      priceList.append(monthlyRow, annualRow, savings);
+    } else {
+      const unavailable = document.createElement("p");
+      unavailable.textContent = "Subscription prices are temporarily unavailable.";
+      priceList.appendChild(unavailable);
+    }
     const subscriptions = el("billing-subscriptions");
     subscriptions.replaceChildren();
     if (!Array.isArray(data.subscriptions) || data.subscriptions.length === 0) {
