@@ -35,7 +35,7 @@ def test_post_uses_case_preserved_test_key_form_body_and_idempotency(monkeypatch
         seen["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr(stripe_api, "urlopen", fake_urlopen)
+    monkeypatch.setattr(stripe_api, "_open_stripe_url", fake_urlopen)
     result = stripe_api.stripe_request(
         "POST", "/customers",
         params={"email": "buyer@example.test", "metadata[identity_id]": "identity-123"},
@@ -103,6 +103,17 @@ def test_provider_http_error_is_sanitized(monkeypatch):
     with pytest.raises(stripe_api.StripeAPIError) as error:
         stripe_api.stripe_request("POST", "/customers")
     assert "secret customer details" not in str(error.value)
+
+
+def test_redirect_handler_never_follows_or_forwards_bearer_credentials():
+    handler = stripe_api._RejectRedirects()
+    request = __import__("urllib.request", fromlist=["Request"]).Request(
+        "https://api.stripe.com/v1/customers",
+        headers={"Authorization": "Bearer sk_test_never_forward"},
+    )
+    assert handler.redirect_request(
+        request, None, 302, "Found", {}, "https://attacker.example/collect"
+    ) is None
 
 
 def test_unexpected_response_host_is_rejected(monkeypatch):
