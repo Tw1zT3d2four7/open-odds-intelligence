@@ -1,6 +1,6 @@
 # Durable Transactional Email Queue
 
-**Status:** Implementation design for the next Phase 1 reliability milestone  
+**Status:** Implemented in identity schema v7; CI-tested with the isolated identity routes  
 **Working branch:** `feature/admin-panel-and-subscriptions`  
 **Scope:** Subscriber verification and password-recovery email only  
 **Production impact:** None. This design does not enable public registration or change the live odds pipeline.
@@ -16,6 +16,7 @@ The queue must survive process/container restarts, tolerate concurrent workers, 
 Add an additive identity-database migration for `transactional_email_queue` with:
 
 - opaque queue ID primary key;
+- SHA-256 challenge-token digest used only to verify that the corresponding one-time challenge is still active (never the raw token);
 - provider constrained to the configured transactional provider;
 - identity foreign key with `ON DELETE CASCADE`;
 - purpose constrained to `verification` or `password_reset`;
@@ -28,7 +29,7 @@ Add an additive identity-database migration for `transactional_email_queue` with
 - created, updated, sent, and expired timestamps;
 - last safe failure code only (never provider response text).
 
-Indexes should support due-message claiming, identity cleanup, and retention. Do not store raw challenge tokens, recipient addresses, email bodies, provider credentials, or provider exception text in searchable columns.
+Indexes support due-message claiming, challenge validation, identity cleanup, and retention. Terminal queue rows are pruned after 30 days. Do not store raw challenge tokens, recipient addresses, email bodies, provider credentials, or provider exception text in searchable columns.
 
 ## Encryption boundary
 
@@ -43,14 +44,15 @@ Use a dedicated `EMAIL_QUEUE_ENCRYPTION_KEY` Fernet key, independent from `MFA_E
 
 ## Claiming and delivery
 
-Workers claim due messages in a short `BEGIN IMMEDIATE` transaction:
+Workers claim due messages in a short `BEGIN IMMEDIATE` transaction. The worker validates the dedicated Fernet key before claiming any job, so a missing/invalid key cannot consume or permanently fail pending messages:
 
 1. Expire messages whose challenge expiry has passed.
 2. Select one due pending message or a message whose lease expired.
-3. Assign a cryptographically random lease token (store only its hash), increment attempts, and set a short lease expiry.
-4. Commit before making network requests.
-5. Decrypt and validate the payload, then call the provider outside the database transaction.
-6. Mark sent or schedule a retry only when the worker still owns the lease.
+3. Discard queued messages whose challenge digest no longer matches an active, unconsumed challenge.
+4. Assign a cryptographically random lease token (store only its hash), increment attempts, and set a short lease expiry.
+5. Commit before making network requests.
+6. Decrypt and validate the payload, then call the provider outside the database transaction.
+7. Mark sent or schedule a retry only when the worker still owns an unexpired lease.
 
 A crashed worker must not hold a message indefinitely. Lease expiry makes the message claimable by another worker.
 
@@ -60,7 +62,7 @@ A crashed worker must not hold a message indefinitely. Lease expiry makes the me
 - Use the same payload on every retry for that idempotency key.
 - Retry only transient transport, provider rate-limit, and provider 5xx failures.
 - Treat invalid configuration, authentication/authorization failures, malformed requests, and permanent provider rejection as terminal failures that require operator action.
-- Use bounded exponential backoff with jitter and a small maximum attempt count; never retry beyond challenge expiry.
+- Use bounded exponential backoff with jitter and a small maximum attempt count; never retry beyond challenge expiry. The implementation uses eight maximum attempts and a 23-hour idempotency window.
 - Do not automatically retry an uncertain outcome after the provider's idempotency retention window. Mark it for operator review instead of risking duplicate delivery.
 - Continue using the existing persistent provider circuit breaker. A closed circuit permits normal delivery; an open circuit defers messages; only one worker may perform the half-open probe.
 - A provider success followed by a database failure is recovered by retrying with the exact same idempotency key and identical payload.
@@ -104,4 +106,4 @@ Keep the existing 90-day secret-free delivery history and circuit state. Queue r
 
 ## Rollout boundary
 
-The queue is not permission to switch production to identity mode. Keep the existing global identity-mode fail-closed guard until all account routes, product-route authorization, entitlements, proxy trust, and rollback gates pass. Do not deploy, restart production, or change the operator's `.env` without explicit approval.
+The encrypted queue, worker, and account endpoints are now available only in staged `AUTH_MODE=identity`; default `legacy_basic` behavior remains unchanged. Existing product/dashboard routes still return 503 in identity mode until server-side subscriber/admin authorization and entitlements are integrated. Challenge creation and queue insertion are currently sequential rather than one SQLite transaction; a queue insert failure leaves the account/challenge in place and can be recovered by requesting a fresh verification/recovery email. Close this small reliability gap before public launch. The queue is not permission to switch production to identity mode. Keep product access fail-closed until all route authorization, entitlements, proxy trust, and rollback gates pass. Do not deploy, restart production, or change the operator's `.env` without explicit approval.
