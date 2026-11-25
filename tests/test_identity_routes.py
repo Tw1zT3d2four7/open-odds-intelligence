@@ -1249,9 +1249,11 @@ def test_subscriber_billing_summary_is_private_bounded_and_self_only(tmp_path, m
     })
     assert login.status_code == 200
 
-    identity_id = harness.store.get_identity_id_by_email("billing-user@example.test")
     now = "2026-11-25T00:00:00+00:00"
     with harness.store.connect() as db:
+        identity_id = db.execute(
+            "SELECT id FROM identities WHERE email='billing-user@example.test'"
+        ).fetchone()["id"]
         db.execute(
             """INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at)
                VALUES (?, 'cus_private_billing', ?, ?)""",
@@ -1301,5 +1303,5 @@ def test_subscriber_billing_summary_is_private_bounded_and_self_only(tmp_path, m
     assert "encrypted_payload" not in response.text
     assert "lease_token" not in response.text
 
-    harness.client.post("/auth/logout", headers=harness.csrf_headers())
+    harness.post("/auth/logout", {})
     assert harness.client.get("/auth/billing").status_code == 401
