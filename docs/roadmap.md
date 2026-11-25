@@ -296,3 +296,8 @@ No Stripe SDK, API calls, Checkout/Portal routes, webhook endpoint, production s
 ### Stripe webhook verification boundary
 
 A framework-neutral Stripe webhook verifier now validates the exact raw request bytes with Stripe's timestamped HMAC-SHA256 signature format, constant-time digest comparison, a bounded replay window, bounded body/header sizes, duplicate JSON-key rejection, strict event-shape checks, and explicit test/live mode matching. The verifier does not log, store, or transform the signing secret or raw body. The HTTP route and environment secret wiring remain a separate integration step; no webhook endpoint is exposed by this module alone.
+
+
+### Stripe webhook HTTP intake
+
+The same-domain `POST /webhooks/stripe` endpoint now accepts only bounded raw request bodies with a valid Stripe signature and an explicit configured test/live mode. It stores an idempotent event ID, type, mode, and SHA-256 fingerprint in the durable inbox; it never stores the raw payload or exposes payment data. Invalid signatures, mode mismatches, malformed bodies, missing configuration, and storage outages fail closed. Intake acknowledges the event but does not yet mutate subscriptions or entitlements; reconciliation remains the next gated implementation milestone. Monthly and yearly billing intervals remain first-class choices (`month` / `year`) without setting prices or plan bundles.
