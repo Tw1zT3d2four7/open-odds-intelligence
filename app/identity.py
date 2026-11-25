@@ -1976,6 +1976,7 @@ class IdentityStore:
         test_mode_ready = bool(
             re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
             and not config.STRIPE_WEBHOOK_LIVEMODE
+            and config.STRIPE_TEST_MODE_ACKNOWLEDGED
             and webhook_ready and public_origin_ready
         )
         return {
