@@ -25,7 +25,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -290,6 +290,38 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (5, _timestamp(_now())),
+                    )
+                if current < 6:
+                    db.execute("""CREATE TABLE transactional_email_queue (
+                        id TEXT PRIMARY KEY,
+                        provider TEXT NOT NULL CHECK(provider IN ('resend')),
+                        identity_id TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+                        purpose TEXT NOT NULL CHECK(purpose IN ('verification', 'password_reset')),
+                        encrypted_payload BLOB NOT NULL,
+                        idempotency_key TEXT NOT NULL UNIQUE,
+                        state TEXT NOT NULL DEFAULT 'pending'
+                            CHECK(state IN ('pending', 'leased', 'sent', 'failed', 'expired')),
+                        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+                        max_attempts INTEGER NOT NULL DEFAULT 8 CHECK(max_attempts BETWEEN 1 AND 12),
+                        next_attempt_at TEXT NOT NULL,
+                        lease_token_hash TEXT,
+                        lease_expires_at TEXT,
+                        challenge_expires_at TEXT NOT NULL,
+                        idempotency_expires_at TEXT NOT NULL,
+                        last_failure_code TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        sent_at TEXT
+                    )""")
+                    db.execute(
+                        "CREATE INDEX idx_email_queue_due ON transactional_email_queue(state, next_attempt_at, lease_expires_at)"
+                    )
+                    db.execute(
+                        "CREATE INDEX idx_email_queue_identity ON transactional_email_queue(identity_id, created_at)"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (6, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
