@@ -61,6 +61,11 @@ IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
 
 
 
+def application_route_access_policy() -> dict[tuple[str, str], str]:
+    """Return the current combined policy, including separately managed auth routes."""
+    return {**ROUTE_ACCESS_POLICY, **IDENTITY_ROUTE_ACCESS_POLICY}
+
+
 def route_key(method: str, path: str) -> tuple[str, str]:
     """Normalize an HTTP method/path pair for policy lookup."""
     return method.upper(), path
@@ -69,13 +74,14 @@ def route_key(method: str, path: str) -> tuple[str, str]:
 def classify_route(
     method: str,
     path: str,
-    policy: dict[tuple[str, str], str] = ROUTE_ACCESS_POLICY,
+    policy: dict[tuple[str, str], str] | None = None,
 ) -> str | None:
     """Return the declared target class, or None for an unclassified route.
 
     HEAD requests inherit the corresponding GET policy so they cannot bypass
     authentication merely because Starlette handles HEAD through a GET route.
     """
+    policy = application_route_access_policy() if policy is None else policy
     normalized_method = method.upper()
     if normalized_method == "HEAD":
         return policy.get(("GET", path))
@@ -84,9 +90,10 @@ def classify_route(
 
 def unclassified_routes(
     routes: Iterable[BaseRoute],
-    policy: dict[tuple[str, str], str] = ROUTE_ACCESS_POLICY,
+    policy: dict[tuple[str, str], str] | None = None,
 ) -> list[tuple[str, str]]:
     """List application routes without an explicit policy entry."""
+    policy = application_route_access_policy() if policy is None else policy
     missing = {
         route_key(method, route.path)
         for route in routes
@@ -99,9 +106,10 @@ def unclassified_routes(
 
 def stale_policy_entries(
     routes: Iterable[BaseRoute],
-    policy: dict[tuple[str, str], str] = ROUTE_ACCESS_POLICY,
+    policy: dict[tuple[str, str], str] | None = None,
 ) -> list[tuple[str, str]]:
     """List policy entries that no longer correspond to a live application route."""
+    policy = application_route_access_policy() if policy is None else policy
     actual = {
         route_key(method, route.path)
         for route in routes
