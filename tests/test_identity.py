@@ -41,7 +41,7 @@ def test_identity_schema_initialization_is_idempotent(tmp_path):
     first.initialize()
     with first.connect() as db:
         versions = db.execute("SELECT version FROM schema_migrations").fetchall()
-    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 def test_schema_refuses_a_newer_database_version(tmp_path):
@@ -1288,3 +1288,107 @@ def test_billing_schema_foreign_keys_prevent_orphan_customer_and_subscription(tm
                 ) VALUES ('orphan', ?, 'sub_orphan', 'cus_missing', 'active', 'now', 'now')""",
                 (subscriber_id,),
             )
+
+
+def test_stripe_webhook_event_ingestion_is_idempotent_and_payload_fingerprinted(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    payload = b'{"id":"evt_one","type":"invoice.paid"}'
+    first = store.record_stripe_webhook_event(
+        "evt_one", "invoice.paid", False, payload
+    )
+    duplicate = store.record_stripe_webhook_event(
+        "evt_one", "invoice.paid", False, payload
+    )
+    assert first == {
+        "created": True, "processing_state": "received", "attempt_count": 0
+    }
+    assert duplicate == {
+        "created": False, "processing_state": "received", "attempt_count": 0
+    }
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT payload_sha256 FROM billing_webhook_events WHERE stripe_event_id='evt_one'"
+        ).fetchone()
+    assert row["payload_sha256"] == __import__("hashlib").sha256(payload).hexdigest()
+    with pytest.raises(ValueError, match="reused with different"):
+        store.record_stripe_webhook_event(
+            "evt_one", "invoice.paid", False, b'{"different":true}'
+        )
+    with pytest.raises(ValueError, match="reused with different"):
+        store.record_stripe_webhook_event(
+            "evt_one", "invoice.paid", True, payload
+        )
+
+
+def test_stripe_webhook_leases_prevent_double_processing_and_recover_expired_worker(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    store.record_stripe_webhook_event(
+        "evt_lease", "customer.subscription.updated", False, b'{"id":"evt_lease"}'
+    )
+    first = store.claim_stripe_webhook_event("evt_lease", lease_seconds=60)
+    assert first
+    assert store.claim_stripe_webhook_event("evt_lease") is None
+    assert store.complete_stripe_webhook_event("evt_lease", "wrong-token") is False
+    with store.connect() as db:
+        db.execute(
+            "UPDATE billing_webhook_events SET lease_expires_at='2000-01-01T00:00:00+00:00' "
+            "WHERE stripe_event_id='evt_lease'"
+        )
+    second = store.claim_stripe_webhook_event("evt_lease", lease_seconds=60)
+    assert second and second != first
+    assert store.complete_stripe_webhook_event("evt_lease", first) is False
+    assert store.complete_stripe_webhook_event("evt_lease", second) is True
+    assert store.claim_stripe_webhook_event("evt_lease") is None
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT processing_state, attempt_count, lease_token_hash, processed_at "
+            "FROM billing_webhook_events WHERE stripe_event_id='evt_lease'"
+        ).fetchone()
+    assert row["processing_state"] == "processed"
+    assert row["attempt_count"] == 2
+    assert row["lease_token_hash"] is None
+    assert row["processed_at"] is not None
+
+
+def test_stripe_webhook_failure_releases_lease_and_sanitizes_error_code(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    store.record_stripe_webhook_event(
+        "evt_failure", "invoice.payment_failed", False, b'{"id":"evt_failure"}'
+    )
+    token = store.claim_stripe_webhook_event("evt_failure")
+    assert token
+    with pytest.raises(ValueError, match="failure code"):
+        store.fail_stripe_webhook_event("evt_failure", token, "raw provider error with PII")
+    assert store.fail_stripe_webhook_event(
+        "evt_failure", token, "temporary_provider_error"
+    ) is True
+    retry = store.claim_stripe_webhook_event("evt_failure")
+    assert retry and retry != token
+    assert store.fail_stripe_webhook_event(
+        "evt_failure", retry, "another_error"
+    ) is True
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT processing_state, attempt_count, last_error_code, lease_token_hash "
+            "FROM billing_webhook_events WHERE stripe_event_id='evt_failure'"
+        ).fetchone()
+    assert row["processing_state"] == "failed"
+    assert row["attempt_count"] == 2
+    assert row["last_error_code"] == "another_error"
+    assert row["lease_token_hash"] is None
+
+
+def test_stripe_webhook_event_input_validation_is_bounded(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    with pytest.raises(ValueError, match="event ID"):
+        store.record_stripe_webhook_event("", "invoice.paid", False, b"x")
+    with pytest.raises(ValueError, match="event type"):
+        store.record_stripe_webhook_event("evt_bad", "", False, b"x")
+    with pytest.raises(ValueError, match="Boolean"):
+        store.record_stripe_webhook_event("evt_bad", "invoice.paid", 0, b"x")
+    with pytest.raises(ValueError, match="1 MiB"):
+        store.record_stripe_webhook_event("evt_bad", "invoice.paid", False, b"x" * 1_048_577)
+    with pytest.raises(ValueError, match="lease"):
+        store.claim_stripe_webhook_event("evt_bad", lease_seconds=1)
+    with pytest.raises(ValueError, match="attempts"):
+        store.claim_stripe_webhook_event("evt_bad", max_attempts=99)
