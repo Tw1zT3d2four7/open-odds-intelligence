@@ -232,6 +232,8 @@ def _deliver_or_record_failure(sender, **kwargs) -> None:
 @router.get("/auth/csrf")
 def csrf_bootstrap(response: Response):
     """Set the readable double-submit CSRF cookie before public auth mutations."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     issue_csrf_cookie(response)
     return {"ok": True}
 
