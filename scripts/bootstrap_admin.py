@@ -43,7 +43,7 @@ def main() -> int:
     print(provisioning_uri)
     print("\nEnter the current six-digit code from the authenticator app to finish setup.")
     while True:
-        code = input("Authenticator code: ").strip()
+        code = getpass("Authenticator code: ").strip()
         try:
             recovery_codes = store.confirm_administrator_mfa_enrollment(identity_id, code)
             break

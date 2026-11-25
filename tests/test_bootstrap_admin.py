@@ -20,8 +20,17 @@ def test_initial_admin_bootstrap_can_resume_after_mfa_enrollment_interruption(
     identity_id = store.provision_initial_administrator(email, password)
 
     monkeypatch.setattr(bootstrap_admin, "IdentityStore", lambda: store)
-    monkeypatch.setattr(bootstrap_admin, "getpass", lambda _prompt: password)
     provisioning = {}
+    hidden_prompts = []
+
+    def hidden_answer(prompt):
+        hidden_prompts.append(prompt)
+        if prompt.startswith("Authenticator code:"):
+            secret = pyotp.parse_uri(provisioning["uri"]).secret
+            return pyotp.TOTP(secret).now()
+        return password
+
+    monkeypatch.setattr(bootstrap_admin, "getpass", hidden_answer)
     original_start = store.start_administrator_mfa_enrollment
 
     def capture_provisioning_uri(target_identity_id):
@@ -34,13 +43,11 @@ def test_initial_admin_bootstrap_can_resume_after_mfa_enrollment_interruption(
     def answer(prompt):
         if prompt.startswith("Administrator email:"):
             return email
-        if prompt.startswith("Authenticator code:"):
-            secret = pyotp.parse_uri(provisioning["uri"]).secret
-            return pyotp.TOTP(secret).now()
-        raise AssertionError(f"Unexpected bootstrap prompt: {prompt}")
+        raise AssertionError(f"Unexpected visible bootstrap prompt: {prompt}")
 
     monkeypatch.setattr("builtins.input", answer)
     assert bootstrap_admin.main() == 0
+    assert any(prompt.startswith("Authenticator code:") for prompt in hidden_prompts)
     output = capsys.readouterr().out
     assert "Administrator MFA is enrolled." in output
     assert "Bootstrap complete." in output
