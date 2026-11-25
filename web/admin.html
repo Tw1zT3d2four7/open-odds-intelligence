@@ -113,6 +113,7 @@ tbody tr:last-child td{border-bottom:0}
       </div>
       <div class="panel">
         <h2>Operational snapshot</h2>
+        <div class="audit-controls"><button id="overview-refresh" type="button">Refresh diagnostics</button></div>
         <p id="overview-status" class="audit-status" role="status" aria-live="polite">Loading live platform diagnostics…</p>
         <div class="table-wrap"><table>
           <thead><tr><th>Sport / League</th><th>Freshness</th><th>Events</th><th>Last snapshot</th></tr></thead>
@@ -402,6 +403,7 @@ tbody tr:last-child td{border-bottom:0}
       entitlementSave.disabled = false;
     }
   }
+  document.getElementById("overview-refresh").addEventListener("click", () => { overviewLoaded = false; loadOverview(); });
   document.getElementById("entitlement-load").addEventListener("click", loadEntitlements);
   document.getElementById("entitlement-save").addEventListener("click", saveEntitlements);
   entitlementIdentity.addEventListener("keydown", event => {
