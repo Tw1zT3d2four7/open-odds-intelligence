@@ -64,7 +64,11 @@ def stripe_request(method: str, path: str, *, params: dict | None = None,
     try:
         with _open_stripe_url(request, timeout=12) as response:
             final_url = urlsplit(response.geturl())
-            if final_url.scheme != "https" or final_url.hostname != "api.stripe.com":
+            if (
+                final_url.scheme != "https" or final_url.hostname != "api.stripe.com"
+                or final_url.netloc != "api.stripe.com"
+                or final_url.username is not None or final_url.password is not None
+            ):
                 raise StripeAPIError("Stripe returned an unexpected API destination.")
             raw = response.read(1_048_577)
             if len(raw) > 1_048_576:
