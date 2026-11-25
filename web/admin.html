@@ -84,13 +84,13 @@ tbody tr:last-child td{border-bottom:0}
   <nav aria-label="Administrator sections">
     <button type="button" data-view="overview" aria-current="page">Overview</button>
     <button type="button" data-view="users">Users</button>
-    <button type="button" data-view="subscriptions">Subscriptions <span class="tag">Planned</span></button>
+    <button type="button" data-view="subscriptions">Feature Access</button>
     <button type="button" data-view="billing">Billing <span class="tag">Planned</span></button>
     <button type="button" data-view="notifications">Notifications <span class="tag">Planned</span></button>
     <button type="button" data-view="platform">Platform <span class="tag">Planned</span></button>
     <button type="button" data-view="configuration">System Configuration <span class="tag">Planned</span></button>
     <button type="button" data-view="communications">Communications <span class="tag">Planned</span></button>
-    <button type="button" data-view="security">Security <span class="tag">Planned</span></button>
+    <button type="button" data-view="security">Security</button>
   </nav>
   <div class="sidebar-bottom">
     <div class="admin-identity"><span class="avatar" aria-hidden="true">A</span><span>Administrator<br><strong>MFA session</strong></span></div>
@@ -116,7 +116,7 @@ tbody tr:last-child td{border-bottom:0}
     <section class="view" id="view-users" hidden>
       <div class="panel">
         <h2>Subscriber directory</h2>
-        <p>Read-only account overview. Account lifecycle changes will be added only with explicit safeguards and audit coverage.</p>
+        <p>Subscriber accounts, verification state, and entitlements. Suspend/reactivate actions require confirmation and an audited reason code.</p>
         <div class="audit-controls">
           <label for="subscriber-search">Email search</label>
           <input id="subscriber-search" type="search" maxlength="254" placeholder="Search subscriber email">
@@ -130,7 +130,36 @@ tbody tr:last-child td{border-bottom:0}
         <div class="audit-pagination"><button id="subscriber-previous" type="button" disabled>Previous</button><span id="subscriber-page">Page 1</span><button id="subscriber-next" type="button" disabled>Next</button></div>
       </div>
     </section>
-    <section class="view" id="view-subscriptions" hidden><span class="planned">Planned module</span><div class="panel"><h2>Subscriptions and access</h2><p>Plan bundles, trials, renewals, and subscriber entitlements will be managed through server-enforced subscription rules. No plan or billing state is fabricated in this shell.</p></div></section>
+    <section class="view" id="view-subscriptions" hidden>
+      <div class="panel">
+        <h2>Manual feature access</h2>
+        <p>Grant or revoke individual feature entitlements for an active subscriber. These are operator-managed feature grants, not subscription plans or billing records.</p>
+        <div class="audit-controls">
+          <label for="entitlement-identity">Subscriber identity ID</label>
+          <input id="entitlement-identity" type="text" maxlength="128" autocomplete="off" placeholder="Copy from the Users directory">
+          <button id="entitlement-load" type="button">Load access</button>
+        </div>
+        <div class="audit-status" id="entitlement-status" role="status" aria-live="polite">Load a subscriber before editing feature access.</div>
+        <div class="checks" id="entitlement-options">
+          <label class="check"><input type="checkbox" value="dashboard"> <strong>Dashboard</strong>dashboard</label>
+          <label class="check"><input type="checkbox" value="odds"> <strong>Odds</strong>odds</label>
+          <label class="check"><input type="checkbox" value="market_limits"> <strong>Market limits</strong>market_limits</label>
+          <label class="check"><input type="checkbox" value="market_board"> <strong>Market board</strong>market_board</label>
+          <label class="check"><input type="checkbox" value="simulation"> <strong>Simulation</strong>simulation</label>
+          <label class="check"><input type="checkbox" value="player_props"> <strong>Player props</strong>player_props</label>
+          <label class="check"><input type="checkbox" value="clv"> <strong>Closing line value</strong>clv</label>
+          <label class="check"><input type="checkbox" value="market_movement"> <strong>Market movement</strong>market_movement</label>
+          <label class="check"><input type="checkbox" value="history"> <strong>History</strong>history</label>
+          <label class="check"><input type="checkbox" value="opportunities"> <strong>Opportunities</strong>opportunities</label>
+          <label class="check"><input type="checkbox" value="arbitrage"> <strong>Arbitrage</strong>arbitrage</label>
+        </div>
+        <div class="audit-controls">
+          <label for="entitlement-expiry">Optional expiration</label>
+          <input id="entitlement-expiry" type="datetime-local">
+          <button id="entitlement-save" type="button" disabled>Save feature access</button>
+        </div>
+      </div>
+    </section>
     <section class="view" id="view-billing" hidden><span class="planned">Planned module</span><div class="panel"><h2>Billing</h2><p>Payment provider selection and billing lifecycle rules remain a separate roadmap milestone.</p></div></section>
     <section class="view" id="view-notifications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Notification operations</h2><p>Queue health, delivery history, channel status, retry controls, and global pause controls will be backed by dedicated administrative APIs.</p></div></section>
     <section class="view" id="view-platform" hidden><span class="planned">Planned module</span><div class="panel"><h2>Platform operations</h2><p>Provider health, refresh scheduling, and operational diagnostics will be exposed only through reviewed administrator endpoints.</p></div></section>
@@ -247,6 +276,83 @@ tbody tr:last-child td{border-bottom:0}
       subscriberStatus.textContent = "Subscriber directory could not be loaded. Refresh the page or sign in again.";
     }
   }
+
+  let entitlementLoadedIdentity = "";
+  const entitlementIdentity = document.getElementById("entitlement-identity");
+  const entitlementStatus = document.getElementById("entitlement-status");
+  const entitlementOptions = [...document.querySelectorAll("#entitlement-options input[type=checkbox]")];
+  const entitlementSave = document.getElementById("entitlement-save");
+  async function loadEntitlements() {
+    const identityId = entitlementIdentity.value.trim();
+    if (!identityId || identityId.length > 128) {
+      entitlementStatus.textContent = "Enter a valid subscriber identity ID.";
+      return;
+    }
+    entitlementStatus.textContent = "Loading feature access…";
+    entitlementSave.disabled = true;
+    try {
+      const params = new URLSearchParams({identity_id:identityId});
+      const response = await fetch("/admin/subscriber-entitlements?" + params.toString(), {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Feature access lookup failed");
+      const data = await response.json();
+      const active = new Set(data.entitlements || []);
+      entitlementOptions.forEach(input => { input.checked = active.has(input.value); });
+      entitlementLoadedIdentity = identityId;
+      entitlementSave.disabled = false;
+      entitlementStatus.textContent = "Loaded " + active.size + " active feature grant(s).";
+    } catch (_error) {
+      entitlementLoadedIdentity = "";
+      entitlementOptions.forEach(input => { input.checked = false; });
+      entitlementStatus.textContent = "Feature access could not be loaded. Confirm the identity ID and account status.";
+    }
+  }
+  async function saveEntitlements() {
+    const identityId = entitlementIdentity.value.trim();
+    if (!identityId || identityId !== entitlementLoadedIdentity) {
+      entitlementStatus.textContent = "Load the current subscriber before saving changes.";
+      return;
+    }
+    const grants = entitlementOptions.filter(input => input.checked).map(input => input.value);
+    if (!window.confirm("Save " + grants.length + " feature grant(s) for this subscriber? An empty selection revokes all feature access.")) return;
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    let token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      entitlementSave.disabled = true;
+      const expiryValue = document.getElementById("entitlement-expiry").value;
+      const expiresAt = expiryValue ? new Date(expiryValue).toISOString() : null;
+      const response = await fetch("/admin/subscriber-entitlements", {
+        method:"PUT",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({identity_id:identityId,entitlements:grants,expires_at:expiresAt})
+      });
+      if (!response.ok) throw new Error("Feature access update rejected");
+      entitlementLoadedIdentity = identityId;
+      entitlementStatus.textContent = "Feature access saved and recorded in the security audit history.";
+      subscribersLoaded = false;
+      auditLoaded = false;
+    } catch (_error) {
+      entitlementStatus.textContent = "Feature access could not be saved. Refresh and verify the subscriber session.";
+    } finally {
+      entitlementSave.disabled = false;
+    }
+  }
+  document.getElementById("entitlement-load").addEventListener("click", loadEntitlements);
+  document.getElementById("entitlement-save").addEventListener("click", saveEntitlements);
+  entitlementIdentity.addEventListener("keydown", event => {
+    if (event.key === "Enter") loadEntitlements();
+  });
+  entitlementIdentity.addEventListener("input", () => {
+    if (entitlementIdentity.value.trim() !== entitlementLoadedIdentity) entitlementSave.disabled = true;
+  });
 
   let auditOffset = 0;
   const auditLimit = 25;
