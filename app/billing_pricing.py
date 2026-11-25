@@ -21,6 +21,8 @@ def estimated_stripe_fee_cents(amount_cents: int) -> int:
     """Estimate domestic card + Stripe Billing PAYG fees for one recurring charge."""
     if type(amount_cents) is not int or amount_cents < 0:
         raise ValueError("A non-negative integer amount in cents is required.")
+    if amount_cents == 0:
+        return 0
     card_fee = _rounded_percent_cents(amount_cents, STRIPE_DOMESTIC_CARD_RATE)
     billing_fee = _rounded_percent_cents(amount_cents, STRIPE_BILLING_PAYG_RATE)
     return card_fee + billing_fee + STRIPE_FIXED_CARD_FEE_CENTS
@@ -30,6 +32,8 @@ def gross_price_cents_for_net(target_net_cents: int) -> int:
     """Find the smallest cent-denominated price whose estimated net meets target."""
     if type(target_net_cents) is not int or target_net_cents < 0:
         raise ValueError("A non-negative integer target in cents is required.")
+    if target_net_cents == 0:
+        return 0
     gross = target_net_cents
     while gross - estimated_stripe_fee_cents(gross) < target_net_cents:
         gross += 1
