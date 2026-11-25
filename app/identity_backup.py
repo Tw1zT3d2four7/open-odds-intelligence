@@ -132,10 +132,17 @@ def create_encrypted_backup(
         0o600,
     )
     try:
-        with os.fdopen(descriptor, "wb", closefd=False) as stream:
-            stream.write(encrypted)
-            stream.flush()
-            os.fsync(stream.fileno())
+        try:
+            with os.fdopen(descriptor, "wb", closefd=False) as stream:
+                stream.write(encrypted)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except Exception:
+            try:
+                destination.unlink()
+            except FileNotFoundError:
+                pass
+            raise
     finally:
         os.close(descriptor)
     directory_fd = os.open(parent, os.O_RDONLY)
