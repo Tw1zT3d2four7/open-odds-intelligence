@@ -24,7 +24,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 13
+_SCHEMA_VERSION = 14
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -479,6 +479,14 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (13, _timestamp(_now())),
+                    )
+                if current < 14:
+                    db.execute(
+                        "ALTER TABLE billing_invoices ADD COLUMN payment_failed_at TEXT"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (14, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
@@ -1011,20 +1019,24 @@ class IdentityStore:
                             id, identity_id, stripe_invoice_id, stripe_customer_id,
                             stripe_subscription_id, status, amount_due, amount_paid,
                             currency, period_start, period_end, last_event_created_at,
-                            created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            created_at, updated_at, payment_failed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (secrets.token_urlsafe(24), customer["identity_id"], invoice_id,
                          customer_id, subscription_id, status, amount_due, amount_paid,
-                         currency, period_start, period_end, occurred_at, now, now),
+                         currency, period_start, period_end, occurred_at, now, now,
+                         occurred_at if event_type == "invoice.payment_failed" else None),
                     )
                     result = "created"
                 else:
                     db.execute(
                         """UPDATE billing_invoices SET status=?, amount_due=?, amount_paid=?,
                            currency=?, period_start=?, period_end=?, last_event_created_at=?,
-                           updated_at=? WHERE stripe_invoice_id=?""",
+                           updated_at=?, payment_failed_at=? WHERE stripe_invoice_id=?""",
                         (status, amount_due, amount_paid, currency, period_start, period_end,
-                         occurred_at, now, invoice_id),
+                         occurred_at, now,
+                         None if event_type == "invoice.paid" else (
+                             occurred_at if event_type == "invoice.payment_failed" else existing["last_event_created_at"]
+                         ), invoice_id),
                     )
                     result = "updated"
 
@@ -1645,7 +1657,7 @@ class IdentityStore:
             invoices = db.execute(
                 """SELECT stripe_invoice_id, stripe_subscription_id, status,
                           amount_due, amount_paid, currency, period_start, period_end,
-                          updated_at
+                          payment_failed_at, updated_at
                    FROM billing_invoices WHERE identity_id=?
                    ORDER BY updated_at DESC, stripe_invoice_id LIMIT 20""",
                 (identity_id,),
@@ -1676,6 +1688,7 @@ class IdentityStore:
                     "currency": row["currency"],
                     "period_start": row["period_start"],
                     "period_end": row["period_end"],
+                    "payment_failed_at": row["payment_failed_at"],
                     "updated_at": row["updated_at"],
                 }
                 for row in invoices
