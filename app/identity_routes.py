@@ -45,7 +45,9 @@ from .email_delivery import (
 )
 from .identity import IdentityStore
 from . import stripe_api
-from .billing_pricing import CURRENCY, MONTHLY_PRICE_CENTS, ANNUAL_PRICE_CENTS
+from .billing_pricing import (
+    CURRENCY, MONTHLY_PRICE_CENTS, ANNUAL_PRICE_CENTS, validate_recurring_price,
+)
 from .email_queue import TransactionalEmailQueue, validate_email_queue_configuration
 from .rate_limit import SQLiteRateLimiter, request_peer_ip
 
@@ -620,16 +622,7 @@ def create_subscriber_checkout(
     expected_amount = MONTHLY_PRICE_CENTS if payload.interval == "month" else ANNUAL_PRICE_CENTS
     try:
         price = stripe_api.stripe_request("GET", f"/prices/{price_id}")
-        recurring = price.get("recurring") if isinstance(price.get("recurring"), dict) else {}
-        if (
-            price.get("id") != price_id
-            or price.get("active") is not True
-            or price.get("livemode") is not False
-            or price.get("currency") != CURRENCY
-            or price.get("unit_amount") != expected_amount
-            or recurring.get("interval") != payload.interval
-            or recurring.get("interval_count") != 1
-        ):
+        if not validate_recurring_price(price, payload.interval, price_id):
             raise HTTPException(status_code=503, detail="The selected recurring price is not approved.")
         customer_id = _stripe_customer_for_subscriber(store, session)
         reservation = store.reserve_billing_checkout(
