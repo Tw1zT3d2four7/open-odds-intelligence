@@ -9,6 +9,12 @@
 
 | Method | Path | Target access class | Behavior |
 |---|---|---|---|
+| GET | `/login` | Public safe | Subscriber sign-in page. |
+| GET | `/register` | Public safe | Subscriber registration page. |
+| GET | `/admin/login` | Public safe | Separate private administrator sign-in page. |
+| GET | `/forgot-password` | Public safe | Password-recovery request page. |
+| GET | `/verify-email` | Public safe | Reads the challenge token from the URL fragment and submits it in the request body. |
+| GET | `/reset-password` | Public safe | Reads the recovery token from the URL fragment and submits it in the request body. |
 | GET | `/auth/csrf` | Public safe | Issues the double-submit CSRF cookie. |
 | POST | `/auth/register` | Public + CSRF | Creates an unverified subscriber and queues an encrypted verification email for asynchronous delivery. |
 | POST | `/auth/verification/resend` | Public + CSRF | Issues a replacement verification challenge when an active unverified subscriber exists. |
@@ -51,7 +57,7 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Current activation boundary
 
-The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits only the classified authentication endpoints in staged `identity` mode. In identity mode, all existing product/dashboard routes return 503 and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all ten routes, and dependency-assembly tests verify that the router's actual security dependencies match that policy.
+The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits only the classified authentication endpoints in staged `identity` mode. In identity mode, all existing product/dashboard routes return 503 and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all sixteen routes, and dependency-assembly tests verify that the router's actual security dependencies match that policy.
 
 Verification and password-reset requests now enqueue messages in the versioned identity database. Recipient addresses and challenge links are encrypted with a dedicated Fernet key. A background worker claims messages with atomic leases, reuses stable Resend idempotency keys, retries only transient failures with bounded backoff, and discards messages whose one-time challenge has expired or already been consumed. The worker runs only in identity mode. Tests use a fake sender and never contact Resend.
 
