@@ -138,6 +138,10 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       const savings = document.createElement("p");
       savings.textContent = "Save " + formatPrice(Number(monthly.amount_cents) * 12 - Number(annual.amount_cents)) + " compared with 12 monthly payments.";
       priceList.append(monthlyRow, annualRow, savings);
+      const disclosure = document.createElement("p");
+      disclosure.className = "card-footer";
+      disclosure.textContent = "Displayed subscription prices include an allowance for standard payment-processing and subscription-billing costs. The total price is shown before checkout; no separate processing surcharge will be added. Subscriptions renew automatically at the selected interval. Cancellation terms will be shown before purchase.";
+      priceList.appendChild(disclosure);
     } else {
       const unavailable = document.createElement("p");
       unavailable.textContent = "Subscription prices are temporarily unavailable.";
