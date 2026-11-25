@@ -33,9 +33,11 @@ def _setup(tmp_path, monkeypatch, *, now=None):
     identity_id = store.create_subscriber("member@example.test", "a strong password 123")
     queue = TransactionalEmailQueue(store)
     clock = now or datetime.now(timezone.utc)
+    challenge_token = store.create_email_verification_challenge("member@example.test")
     queue_id = queue.enqueue(
         identity_id=identity_id,
         purpose="verification",
+        challenge_token=challenge_token,
         recipient="member@example.test",
         subject="Verify account",
         text="Use challenge secret-token-987",
@@ -124,6 +126,7 @@ def test_missing_or_invalid_queue_encryption_key_fails_closed(tmp_path, monkeypa
         queue.enqueue(
             identity_id="identity",
             purpose="verification",
+            challenge_token="token",
             recipient="member@example.test",
             subject="Verify",
             text="secret-token",
