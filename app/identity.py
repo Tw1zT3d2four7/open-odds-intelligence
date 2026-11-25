@@ -872,6 +872,13 @@ class IdentityStore:
                         ),
                     )
 
+            # Once Stripe has confirmed a subscription lifecycle event, the
+            # short-lived Checkout reservation is no longer needed. Subscription
+            # state itself now prevents duplicate purchases.
+            db.execute(
+                "DELETE FROM billing_checkout_attempts WHERE identity_id=?",
+                (customer["identity_id"],),
+            )
             completed = db.execute(
                 """UPDATE billing_webhook_events
                    SET processing_state='processed', processed_at=?, updated_at=?,
