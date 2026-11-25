@@ -85,7 +85,7 @@ tbody tr:last-child td{border-bottom:0}
     <button type="button" data-view="overview" aria-current="page">Overview</button>
     <button type="button" data-view="users">Users</button>
     <button type="button" data-view="subscriptions">Feature Access</button>
-    <button type="button" data-view="billing">Billing <span class="tag">Planned</span></button>
+    <button type="button" data-view="billing">Billing</button>
     <button type="button" data-view="notifications">Notifications <span class="tag">Planned</span></button>
     <button type="button" data-view="platform">Platform <span class="tag">Planned</span></button>
     <button type="button" data-view="configuration">System Configuration <span class="tag">Planned</span></button>
@@ -178,7 +178,29 @@ tbody tr:last-child td{border-bottom:0}
         </div>
       </div>
     </section>
-    <section class="view" id="view-billing" hidden><span class="planned">Planned module</span><div class="panel"><h2>Billing</h2><p>Payment provider selection and billing lifecycle rules remain a separate roadmap milestone.</p></div></section>
+    <section class="view" id="view-billing" hidden>
+      <div class="welcome"><h2>Billing operations</h2><p>Read-only visibility into Stripe customer links, subscription lifecycle, invoice payment failures, and webhook processing. Checkout, customer portal, and live charges remain disabled.</p></div>
+      <div class="cards">
+        <article class="card"><div class="card-label">Linked customers</div><div class="card-value" id="billing-customers">—</div><div class="card-note">Local subscriber-to-Stripe mappings</div></article>
+        <article class="card"><div class="card-label">Subscriptions</div><div class="card-value" id="billing-subscriptions">—</div><div class="card-note">Reconciled subscription snapshots</div></article>
+        <article class="card"><div class="card-label">Invoices</div><div class="card-value" id="billing-invoices">—</div><div class="card-note">Reconciled invoice snapshots</div></article>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Lifecycle breakdown</h2>
+        <div class="audit-controls"><button id="billing-refresh" type="button">Refresh billing status</button></div>
+        <p class="audit-status" id="billing-status" role="status" aria-live="polite">Billing overview has not been loaded.</p>
+        <div class="table-wrap"><table><thead><tr><th>Subscription status</th><th>Interval</th><th>Count</th></tr></thead><tbody id="billing-subscription-rows"><tr><td colspan="3">Select Billing to load.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Invoice health</h2>
+        <div class="table-wrap"><table><thead><tr><th>Invoice status</th><th>Count</th><th>Payment failures</th></tr></thead><tbody id="billing-invoice-rows"><tr><td colspan="3">Waiting for billing data.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h2>Webhook processing</h2>
+        <div class="table-wrap"><table><thead><tr><th>Processing state</th><th>Count</th><th>Last updated</th></tr></thead><tbody id="billing-webhook-rows"><tr><td colspan="3">Waiting for billing data.</td></tr></tbody></table></div>
+        <p class="audit-status" id="billing-boundary">Checkout and Customer Portal are disabled. No live billing actions are available.</p>
+      </div>
+    </section>
     <section class="view" id="view-notifications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Notification operations</h2><p>Queue health, delivery history, channel status, retry controls, and global pause controls will be backed by dedicated administrative APIs.</p></div></section>
     <section class="view" id="view-platform" hidden><span class="planned">Planned module</span><div class="panel"><h2>Platform operations</h2><p>Provider health, refresh scheduling, and operational diagnostics will be exposed only through reviewed administrator endpoints.</p></div></section>
     <section class="view" id="view-configuration" hidden><span class="planned">Planned module</span><div class="panel"><h2>System configuration</h2><p>Environment configuration remains disabled until its allowlist, validation, atomic apply, backup, rollback, and restart design is approved.</p></div></section>
@@ -244,6 +266,55 @@ tbody tr:last-child td{border-bottom:0}
     document.getElementById("page-subtitle").textContent = labels[name][1];
   }
 
+
+  let billingLoaded = false;
+  async function loadBilling() {
+    const status = document.getElementById("billing-status");
+    status.textContent = "Loading protected billing operations…";
+    try {
+      const response = await fetch("/admin/billing", {
+        credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Billing overview unavailable");
+      const data = await response.json();
+      document.getElementById("billing-customers").textContent = Number(data.customer_count || 0).toLocaleString();
+      document.getElementById("billing-subscriptions").textContent = Number(data.subscription_count || 0).toLocaleString();
+      document.getElementById("billing-invoices").textContent = Number(data.invoice_count || 0).toLocaleString();
+      const fill = (target, rows, fields, empty) => {
+        target.replaceChildren();
+        if (!rows.length) {
+          const row = document.createElement("tr");
+          const item = document.createElement("td");
+          item.colSpan = fields.length;
+          item.textContent = empty;
+          row.appendChild(item);
+          target.appendChild(row);
+          return;
+        }
+        rows.forEach(record => {
+          const row = document.createElement("tr");
+          fields.forEach(field => cell(row, record[field] == null ? "—" : String(record[field])));
+          target.appendChild(row);
+        });
+      };
+      fill(document.getElementById("billing-subscription-rows"), data.subscriptions_by_status_and_interval || [],
+        ["status","billing_interval","count"], "No subscription records.");
+      fill(document.getElementById("billing-invoice-rows"), data.invoices_by_status || [],
+        ["status","count","payment_failures"], "No invoice records.");
+      fill(document.getElementById("billing-webhook-rows"), data.webhook_events_by_state || [],
+        ["processing_state","count","latest_updated"], "No webhook events recorded.");
+      document.getElementById("billing-boundary").textContent =
+        "Webhook events in failed state: " + Number(data.failed_webhook_count || 0).toLocaleString() +
+        ". Checkout: " + (data.checkout_available ? "enabled" : "disabled") +
+        ". Customer Portal: " + (data.customer_portal_available ? "enabled" : "disabled") +
+        ". Live billing: " + (data.live_billing_enabled ? "enabled" : "disabled") + ".";
+      status.textContent = "Billing operations data refreshed. This view contains aggregate counts only; no subscriber identifiers or payment credentials are exposed.";
+      billingLoaded = true;
+    } catch (_error) {
+      status.textContent = "Billing operations could not be loaded. Refresh the page or verify the administrator session.";
+    }
+  }
+  document.getElementById("billing-refresh").addEventListener("click", () => { billingLoaded = false; loadBilling(); });
 
   let subscriberOffset = 0;
   const subscriberLimit = 25;
@@ -629,6 +700,7 @@ tbody tr:last-child td{border-bottom:0}
   buttons.forEach(button => button.addEventListener("click", () => {
     selectView(button.dataset.view);
     if (button.dataset.view === "overview" && !overviewLoaded) loadOverview();
+    if (button.dataset.view === "billing" && !billingLoaded) loadBilling();
     if (button.dataset.view === "security") { loadAdminSessions(); if (!auditLoaded) loadAudit(); }
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
