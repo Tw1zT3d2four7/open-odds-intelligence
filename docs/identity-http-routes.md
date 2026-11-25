@@ -10,7 +10,7 @@
 | Method | Path | Target access class | Behavior |
 |---|---|---|---|
 | GET | `/auth/csrf` | Public safe | Issues the double-submit CSRF cookie. |
-| POST | `/auth/register` | Public + CSRF | Creates an unverified subscriber and sends a verification email. |
+| POST | `/auth/register` | Public + CSRF | Creates an unverified subscriber and queues an encrypted verification email for asynchronous delivery. |
 | POST | `/auth/verification/resend` | Public + CSRF | Issues a replacement verification challenge when an active unverified subscriber exists. |
 | POST | `/auth/verify-email` | Public + CSRF | Consumes a one-time email verification challenge. |
 | POST | `/auth/password-reset/request` | Public + CSRF | Requests a recovery email with a generic response. |
@@ -49,16 +49,20 @@ Public registration can create only a subscriber. Administrator provisioning rem
 
 Email resend operations additionally allow at most one request per destination per 60 seconds and five per destination per 24 hours. These are initial policy values and remain subject to load, provider quota, shared-NAT, and abuse review before public launch.
 
-## Not ready to mount
+## Current activation boundary
 
-The router is registered in FastAPI, while middleware hides all identity paths with 404 in `legacy_basic` and exposes only the classified auth paths in staged `identity` mode. In identity mode, all existing product/dashboard routes return 503 and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all ten routes, and dependency-assembly tests verify that the router's actual security dependencies match that policy. Before enabling product access:
+The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits only the classified authentication endpoints in staged `identity` mode. In identity mode, all existing product/dashboard routes return 503 and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all ten routes, and dependency-assembly tests verify that the router's actual security dependencies match that policy.
+
+Verification and password-reset requests now enqueue messages in the versioned identity database. Recipient addresses and challenge links are encrypted with a dedicated Fernet key. A background worker claims messages with atomic leases, reuses stable Resend idempotency keys, retries only transient failures with bounded backoff, and discards messages whose one-time challenge has expired or already been consumed. The worker runs only in identity mode. Tests use a fake sender and never contact Resend.
+
+Before enabling product access:
 
 1. Keep the combined product/identity route manifest complete and verify no route is unclassified or stale.
 2. Attach the route-policy dependency assembly and explicit entitlement checks to all existing subscriber product routes.
-3. Add a durable send queue and safe retry workflow. Delivery history and the persistent provider circuit breaker are implemented, but a provider failure currently leaves a valid challenge available only for a later user-requested resend; raw challenge tokens are not retained for background retries.
+3. Complete the subscriber/admin frontend entry points and ensure they bootstrap CSRF before any mutation.
 4. Test the exact Caddy-to-app peer topology and configure only the narrow trusted proxy CIDR.
-5. Build subscriber/admin frontend entry points and ensure they bootstrap CSRF before any mutation.
-6. Run the complete non-production flow with a verified sender domain and operator-controlled mailbox.
-7. Keep `AUTH_MODE=identity` fail-closed until the complete route set is integrated and rollback gates pass.
+5. Run the complete non-production flow with a verified sender domain, dedicated sending-only API key, queue encryption key, and operator-controlled mailbox.
+6. Complete queue recovery, backup/restore, and key-rotation tests before enabling public registration.
+7. Keep `AUTH_MODE=identity` fail-closed for product routes until the complete route set is integrated and rollback gates pass.
 
 The default `legacy_basic` mode remains the live compatibility boundary and hides these routes. Selecting `AUTH_MODE=identity` explicitly enables only these authentication endpoints; it does not enable odds/product access and is not a production cutover. No deployment or mode switch has been performed.
