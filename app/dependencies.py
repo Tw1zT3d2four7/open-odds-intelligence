@@ -6,7 +6,7 @@ identity mode requires active sessions and server-side feature entitlements.
 """
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 
 from .auth import require_same_origin_csrf, resolve_session
 from .identity import IdentityStore
@@ -47,24 +47,35 @@ def _resolve_session_fail_closed(request: Request, store: IdentityStore, account
         ) from None
 
 
+def _set_no_store(response: Response) -> None:
+    """Mark identity/auth responses non-cacheable before authorization can fail."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
 def require_subscriber(
     request: Request,
+    response: Response,
     store: IdentityStore = Depends(get_identity_store),
 ) -> dict:
     """Require an active subscriber session; admin cookies never satisfy it."""
+    _set_no_store(response)
     return _resolve_session_fail_closed(request, store, "subscriber")
 
 
 def require_administrator(
     request: Request,
+    response: Response,
     store: IdentityStore = Depends(get_identity_store),
 ) -> dict:
     """Require an active administrator session established after MFA."""
+    _set_no_store(response)
     return _resolve_session_fail_closed(request, store, "administrator")
 
 
-def require_authenticated_csrf(request: Request) -> None:
-    """Require the HTTPS same-origin double-submit CSRF check for mutations."""
+def require_authenticated_csrf(request: Request, response: Response) -> None:
+    """Require same-origin CSRF and prevent caching even when validation rejects."""
+    _set_no_store(response)
     require_same_origin_csrf(request)
 
 
