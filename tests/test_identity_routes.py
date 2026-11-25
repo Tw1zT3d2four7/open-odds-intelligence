@@ -604,3 +604,45 @@ def test_admin_audit_api_is_mfa_protected_paginated_and_non_cacheable(tmp_path, 
                for event in filtered.json()["events"])
     assert harness.client.get("/admin/audit-events", params={"limit": 0}).status_code == 422
     assert subscriber_id
+
+
+def test_admin_subscriber_directory_requires_mfa_and_is_paginated(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    subscriber_id = harness.store.create_subscriber(
+        "directory-user@example.test", "a strong directory password 123"
+    )
+    admin_id = harness.store.provision_administrator(
+        "directory-admin@example.test", "a strong directory admin password 123"
+    )
+    assert harness.client.get("/admin/subscribers").status_code == 401
+
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "directory-admin@example.test",
+        "password": "a strong directory admin password 123",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+
+    response = harness.client.get("/admin/subscribers", params={"limit": 1})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["total"] == 1
+    assert len(payload["subscribers"]) == 1
+    subscriber = payload["subscribers"][0]
+    assert subscriber["identity_id"] == subscriber_id
+    assert subscriber["email"] == "directory-user@example.test"
+    assert subscriber["email_verified"] is False
+    assert "password_hash" not in subscriber
+    assert "session" not in subscriber
+
+    filtered = harness.client.get(
+        "/admin/subscribers", params={"email_query": "directory-user"}
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert harness.client.get("/admin/subscribers", params={"limit": 0}).status_code == 422
