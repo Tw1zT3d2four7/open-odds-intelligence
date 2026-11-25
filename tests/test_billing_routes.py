@@ -146,3 +146,23 @@ def test_identity_mode_routes_stripe_webhook_to_signature_verifier(tmp_path, mon
     # 400 proves middleware admitted the request to cryptographic verification;
     # a middleware policy failure would return 503 before the handler.
     assert response.status_code == 400
+
+
+def test_webhook_uses_stripe_signature_instead_of_legacy_browser_basic_auth(tmp_path, monkeypatch):
+    from app import main
+    store = IdentityStore(tmp_path / "legacy-middleware-accounts.sqlite3")
+    monkeypatch.setattr(config, "AUTH_MODE", "legacy_basic")
+    monkeypatch.setattr(config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "legacy-browser-password")
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", SECRET)
+    import app.stripe_webhooks as verifier
+    monkeypatch.setattr(verifier.time, "time", lambda: TIMESTAMP)
+    main.app.dependency_overrides[get_identity_store] = lambda: store
+    try:
+        response = TestClient(main.app).post(
+            "/webhooks/stripe", content=_payload(),
+            headers={"stripe-signature": "t=1,v1=" + "0" * 64},
+        )
+    finally:
+        main.app.dependency_overrides.pop(get_identity_store, None)
+    assert response.status_code == 400
