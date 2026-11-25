@@ -24,11 +24,16 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _ACCOUNT_TYPES = frozenset({"subscriber", "administrator"})
+_ENTITLEMENT_KEYS = frozenset({
+    "dashboard", "odds", "market_limits", "market_board", "simulation",
+    "player_props", "clv", "market_movement", "history",
+    "opportunities", "arbitrage",
+})
 
 
 def _now() -> datetime:
@@ -330,6 +335,25 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (7, _timestamp(_now())),
+                    )
+                if current < 8:
+                    db.execute("""CREATE TABLE subscriber_entitlements (
+                        id TEXT PRIMARY KEY,
+                        identity_id TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+                        entitlement_key TEXT NOT NULL,
+                        starts_at TEXT NOT NULL,
+                        expires_at TEXT,
+                        granted_by TEXT REFERENCES identities(id) ON DELETE SET NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(identity_id, entitlement_key)
+                    )""")
+                    db.execute(
+                        "CREATE INDEX idx_subscriber_entitlements_active ON subscriber_entitlements(identity_id, entitlement_key, starts_at, expires_at)"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (8, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
