@@ -26,6 +26,7 @@ The manager must not provide arbitrary file browsing, upload/download, path sele
 - Require fresh MFA for secret replacement, reveal (if approved), apply, rollback, and restart.
 - The browser receives only variable metadata, validation results, masked values, and change status.
 - Store staged proposals separately from the live .env file.
+- Any staged secret values must be encrypted at rest with a dedicated key stored outside the identity database and outside the managed .env file. Decrypt only in memory for validation/apply; never persist plaintext secret drafts or expose the encryption key through the manager.
 - Responses use Cache-Control: no-store; secrets are never placed in HTML, JavaScript, URLs, or client-side persistent storage.
 
 ### Application container
@@ -69,7 +70,7 @@ If the host-side apply mechanism is approved:
 - Open the fixed target without following symlinks and verify it is a regular file owned by the expected host identity.
 - Create a temporary file in the same directory with restrictive permissions (0600).
 - Write the complete validated candidate, flush and fsync it, and verify its hash.
-- Create a recoverable backup of the current live file first. Backups contain secrets and need restrictive permissions and a protected directory.
+- Create a recoverable backup of the current live file first. Backups contain secrets and must be encrypted at rest with a host-protected key, as well as kept in a protected directory with restrictive permissions.
 - Atomically replace the target with os.replace (or equivalent same-filesystem operation), then fsync the parent directory.
 - Re-read and verify the published file and hash before reporting success.
 - On failure, leave the previous file intact or restore the verified backup.

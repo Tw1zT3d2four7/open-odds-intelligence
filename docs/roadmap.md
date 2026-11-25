@@ -115,7 +115,7 @@ Implemented on the feature branch so far:
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
 - [x] Endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md` and integrated with identity-mode routes; conservative thresholds remain subject to deployment-traffic and proxy-topology review before public activation.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
-- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45674116197`, commit `3d0f17dfd812b722ddbc98d255b9ddad54c6b546` — **864 passed, 1 warning**.
+- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45675432532`, commit `f8b20df2e939ffa615af50e5d79c177b173df8a8` — **865 passed, 1 warning**.
 
 Still required before Phase 1 is complete:
 
@@ -231,8 +231,8 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `3d0f17dfd812b722ddbc98d255b9ddad54c6b546`  
-**CI run:** `45674116197` — **864 passed, 1 warning**.
+**Latest verified implementation commit:** `f8b20df2e939ffa615af50e5d79c177b173df8a8`  
+**CI run:** `45675432532` — **865 passed, 1 warning**.
 
 The identity backup tooling now publishes completed encrypted backups atomically without overwriting existing files. Failure-path tests verify that an interrupted publication cannot leave a partial final backup; restore remains an explicit offline-only operation with an encrypted pre-restore snapshot. This is CI-verified tooling only: no production backup or restore has been run.
 
