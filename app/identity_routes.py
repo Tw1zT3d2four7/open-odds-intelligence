@@ -494,9 +494,9 @@ def _stripe_test_billing_ready(*, checkout: bool = False, portal: bool = False) 
     if checkout:
         if (
             not isinstance(config.STRIPE_PRICE_MONTHLY_ID, str)
-            or not config.STRIPE_PRICE_MONTHLY_ID.startswith("price_")
+            or not re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_MONTHLY_ID)
             or not isinstance(config.STRIPE_PRICE_YEARLY_ID, str)
-            or not config.STRIPE_PRICE_YEARLY_ID.startswith("price_")
+            or not re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_YEARLY_ID)
             or config.STRIPE_PRICE_MONTHLY_ID == config.STRIPE_PRICE_YEARLY_ID
         ):
             raise HTTPException(status_code=503, detail="Recurring Stripe prices are not configured.")
