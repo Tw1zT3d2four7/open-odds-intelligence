@@ -43,7 +43,18 @@ def process_pending_stripe_events(
             continue
         totals["claimed"] += 1
         try:
-            result = store.process_stripe_subscription_event(event_id, lease)
+            with store.connect() as db:
+                event_row = db.execute(
+                    "SELECT event_type FROM billing_webhook_events WHERE stripe_event_id=?",
+                    (event_id,),
+                ).fetchone()
+            if event_row is None:
+                totals["lease_lost"] += 1
+                continue
+            if event_row["event_type"].startswith("invoice."):
+                result = store.process_stripe_invoice_event(event_id, lease)
+            else:
+                result = store.process_stripe_subscription_event(event_id, lease)
             if result in {"created", "updated", "stale", "ignored"}:
                 totals[result] += 1
             else:
@@ -54,7 +65,7 @@ def process_pending_stripe_events(
             else:
                 totals["lease_lost"] += 1
         except ValueError:
-            if store.fail_stripe_webhook_event(event_id, lease, "invalid_subscription_event"):
+            if store.fail_stripe_webhook_event(event_id, lease, "invalid_billing_event"):
                 totals["failed"] += 1
             else:
                 totals["lease_lost"] += 1
