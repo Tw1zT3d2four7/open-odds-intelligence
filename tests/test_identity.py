@@ -1534,6 +1534,69 @@ def test_stripe_webhook_event_input_validation_is_bounded(tmp_path):
         store.claim_stripe_webhook_event("evt_bad", max_attempts=99)
 
 
+
+def test_checkout_reservation_is_atomic_idempotent_and_expires(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "checkout-reservation@example.test", "a strong checkout reservation password"
+    )
+    first_hash = __import__("hashlib").sha256(b"client-key-one").hexdigest()
+    second_hash = __import__("hashlib").sha256(b"client-key-two").hexdigest()
+
+    first = store.reserve_billing_checkout(subscriber_id, "month", first_hash)
+    assert first["state"] == "reserved"
+    assert first["checkout_session_id"] is None
+
+    retry = store.reserve_billing_checkout(subscriber_id, "month", first_hash)
+    assert retry["state"] == "reserved"
+    assert retry["attempt_token"] == first["attempt_token"]
+
+    different_key = store.reserve_billing_checkout(subscriber_id, "month", second_hash)
+    assert different_key["state"] == "checkout_pending"
+    different_interval = store.reserve_billing_checkout(subscriber_id, "year", first_hash)
+    assert different_interval["state"] == "checkout_pending"
+
+    assert store.mark_billing_checkout_session(
+        subscriber_id, first["attempt_token"], "cs_test_reservation123"
+    ) is True
+    assert store.mark_billing_checkout_session(
+        subscriber_id, "stale_attempt_token_123456789012", "cs_test_other123"
+    ) is False
+    assert store.billing_checkout_pending(subscriber_id) is True
+
+    with store.connect() as db:
+        db.execute(
+            "UPDATE billing_checkout_attempts SET expires_at='2000-01-01T00:00:00+00:00' WHERE identity_id=?",
+            (subscriber_id,),
+        )
+    replacement = store.reserve_billing_checkout(subscriber_id, "year", second_hash)
+    assert replacement["state"] == "reserved"
+    assert replacement["attempt_token"] != first["attempt_token"]
+    assert store.billing_checkout_pending(subscriber_id) is True
+
+
+def test_checkout_reservation_refuses_existing_subscription(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "checkout-existing@example.test", "a strong checkout existing password"
+    )
+    now = "2026-11-25T00:00:00+00:00"
+    store.link_billing_customer(subscriber_id, "cus_checkoutExisting")
+    with store.connect() as db:
+        db.execute(
+            """INSERT INTO billing_subscriptions(
+                id, identity_id, stripe_subscription_id, stripe_customer_id,
+                status, created_at, updated_at
+            ) VALUES ('local-active', ?, 'sub_checkoutActive', 'cus_checkoutExisting',
+                      'active', ?, ?)""",
+            (subscriber_id, now, now),
+        )
+    result = store.reserve_billing_checkout(
+        subscriber_id, "month", __import__("hashlib").sha256(b"client-key").hexdigest()
+    )
+    assert result == {"state": "existing_subscription"}
+
+
 def test_billing_subscriptions_support_monthly_and_yearly_intervals_only(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     subscriber_id = store.create_subscriber(
