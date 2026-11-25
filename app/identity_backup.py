@@ -256,31 +256,31 @@ def create_encrypted_backup(
     if destination.exists() or destination.is_symlink():
         raise FileExistsError("Identity backup destination already exists.")
 
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(
-        destination,
-        os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow,
-        0o600,
+    # Write only to a private temporary file. Publish the completed backup with
+    # an atomic, no-overwrite hard link so readers never observe a partial file
+    # and a concurrent writer cannot replace an existing backup.
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".identity-backup-", suffix=".tmp", dir=parent
     )
+    temporary = Path(temporary_name)
     try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb", closefd=True) as stream:
+            stream.write(encrypted)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, destination, follow_symlinks=False)
+        temporary.unlink()
+        directory_fd = os.open(parent, os.O_RDONLY)
         try:
-            with os.fdopen(descriptor, "wb", closefd=False) as stream:
-                stream.write(encrypted)
-                stream.flush()
-                os.fsync(stream.fileno())
-        except Exception:
-            try:
-                destination.unlink()
-            except FileNotFoundError:
-                pass
-            raise
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
     finally:
-        os.close(descriptor)
-    directory_fd = os.open(parent, os.O_RDONLY)
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
     return {
         "path": str(destination),

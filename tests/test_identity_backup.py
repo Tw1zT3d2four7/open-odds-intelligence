@@ -60,6 +60,36 @@ def test_encrypted_identity_backup_and_restore_round_trip(tmp_path, monkeypatch)
     assert row["email"] == "backup-user@example.test"
 
 
+def test_backup_publication_failure_never_leaves_a_partial_final_file(
+    tmp_path, monkeypatch
+):
+    from app import identity_backup
+
+    monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    source = tmp_path / "source.sqlite3"
+    _identity_store(source)
+    destination = tmp_path / "backups" / "identity.sqlite3.fernet"
+    original_link = identity_backup.os.link
+
+    def fail_publish(*_args, **_kwargs):
+        raise OSError("simulated atomic publication failure")
+
+    monkeypatch.setattr(identity_backup.os, "link", fail_publish)
+    with pytest.raises(OSError, match="simulated atomic publication failure"):
+        create_encrypted_backup(source, destination)
+
+    assert not destination.exists()
+    assert list(destination.parent.glob(".identity-backup-*.tmp")) == []
+
+    monkeypatch.setattr(identity_backup.os, "link", original_link)
+    result = create_encrypted_backup(source, destination)
+    assert result["schema_version"] == 8
+    assert inspect_encrypted_backup(destination)["schema_version"] == 8
+
+
 def test_backup_preserves_existing_parent_permissions_and_rejects_shared_writable_dirs(
     tmp_path, monkeypatch
 ):
