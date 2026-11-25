@@ -17,6 +17,8 @@ from starlette.routing import BaseRoute
 ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/"): "subscriber_entitled",
     ("GET", "/api/health"): "public_minimal",
+    # Public transport endpoint, but the handler requires a valid Stripe HMAC signature.
+    ("POST", "/webhooks/stripe"): "public_minimal",
     # FastAPI's built-in schema and interactive docs are not APIRoute objects,
     # but must still receive an explicit access policy during identity cutover.
     ("GET", "/openapi.json"): "administrator_only",
