@@ -6,7 +6,7 @@ routes; there is no permissive default.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from fastapi import Depends
 
@@ -15,7 +15,7 @@ from .dependencies import (
     require_authenticated_csrf,
     require_subscriber,
 )
-from .route_policy import classify_route
+from .route_policy import ROUTE_ACCESS_POLICY, classify_route
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -25,6 +25,7 @@ def dependencies_for_route(
     path: str,
     *,
     entitlement_dependency: Callable | None = None,
+    policy: Mapping[tuple[str, str], str] = ROUTE_ACCESS_POLICY,
 ) -> list[Depends]:
     """Return the complete dependency list for a classified route.
 
@@ -33,7 +34,7 @@ def dependencies_for_route(
     the same-origin CSRF guard. Public routes are restricted to safe methods.
     """
     normalized_method = method.upper()
-    access_class = classify_route(normalized_method, path)
+    access_class = classify_route(normalized_method, path, policy)
     if access_class is None:
         raise ValueError("Route has no explicit access policy.")
 
@@ -44,9 +45,15 @@ def dependencies_for_route(
         if mutating:
             raise ValueError("Public routes cannot use state-changing methods.")
         return []
+    if access_class == "public_csrf":
+        if not mutating:
+            raise ValueError("Public CSRF routes must use state-changing methods.")
+        return [Depends(require_authenticated_csrf)]
 
     if access_class == "administrator_only":
         dependencies = [Depends(require_administrator)]
+    elif access_class == "subscriber_only":
+        dependencies = [Depends(require_subscriber)]
     elif access_class == "subscriber_entitled":
         if entitlement_dependency is None or not callable(entitlement_dependency):
             raise RuntimeError(
