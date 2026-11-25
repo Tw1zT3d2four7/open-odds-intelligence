@@ -859,7 +859,7 @@ def test_subscriber_suspension_atomically_revokes_sessions_and_preserves_account
 
     suspended = store.set_subscriber_status(
         subscriber_id, is_active=False, actor_identity_id=admin_id,
-        reason="Customer requested temporary account suspension",
+        reason_code="support_request",
     )
     assert suspended == {
         "identity_id": subscriber_id, "is_active": False,
@@ -889,7 +889,7 @@ def test_subscriber_suspension_atomically_revokes_sessions_and_preserves_account
 
     reactivated = store.set_subscriber_status(
         subscriber_id, is_active=True, actor_identity_id=admin_id,
-        reason="Support approved account reactivation",
+        reason_code="support_request",
     )
     assert reactivated["changed"] is True
     assert reactivated["is_active"] is True
@@ -915,12 +915,12 @@ def test_subscriber_status_change_rejects_unauthorized_actor_and_invalid_reason(
     with pytest.raises(ValueError, match="MFA-enrolled administrator"):
         store.set_subscriber_status(
             subscriber_id, is_active=False, actor_identity_id=other_subscriber,
-            reason="Support requested suspension",
+            reason_code="support_request",
         )
-    with pytest.raises(ValueError, match="reason"):
+    with pytest.raises(ValueError, match="reason code"):
         store.set_subscriber_status(
             subscriber_id, is_active=False, actor_identity_id="some-admin",
-            reason="short",
+            reason_code="not_a_valid_code",
         )
     with store.connect() as db:
         row = db.execute("SELECT is_active FROM identities WHERE id=?", (subscriber_id,)).fetchone()
