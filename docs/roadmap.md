@@ -180,7 +180,10 @@ Define plans, entitlements, lifecycle, and limits; enforce access server-side in
 
 ### Phase 6 — Centralized Notification Engine
 
-Define alert events and subscriber preferences; add durable queueing, idempotency, retries, delivery history, entitlement checks, test mode, and global/channel pause. Preserve existing alert lifecycle behavior.
+- [x] Draft the provider-neutral outbox/dispatcher architecture, official Open Odds-owned Discord bot linking flow, SMS consent requirements, and admin operations model.
+- [x] Document recommended defaults for Discord DM/server destinations, real-time/digest delivery, quiet hours, alert categories, multi-channel behavior, and explicit fallback consent.
+- [ ] Approve the notification data model, channel defaults, provider evaluation, and subscriber preference UX before implementation.
+- [ ] Define alert events and subscriber preferences; add durable queueing, idempotency, retries, delivery history, entitlement checks, test mode, and global/channel pause. Preserve existing alert lifecycle behavior.
 
 ### Phase 7 — Discord, SMS, and email integrations
 

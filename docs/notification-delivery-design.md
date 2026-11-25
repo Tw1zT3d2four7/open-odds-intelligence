@@ -133,3 +133,20 @@ Administrative actions that pause providers, retry deliveries, or change global 
 - Which alert categories should be independently selectable?
 
 Until those decisions are approved, this remains a design document only. No bot, SMS provider, notification queue, or subscriber messaging integration is activated by this draft.
+
+
+## 10. Recommended defaults for approval
+
+These are proposed product defaults, not approved behavior and not implemented:
+
+| Decision | Recommended default |
+|---|---|
+| Discord destination | Let subscribers link a direct message, one server channel, or both. Offer DM first during setup; server-channel linking remains an explicit choice with permission checks. |
+| Delivery timing | Real-time delivery by default, with optional daily digest. Never silently move an enabled real-time alert into a digest. |
+| Quiet hours | Disabled until the subscriber opts in. Require an explicit IANA timezone when quiet hours are enabled; do not infer it from IP address. |
+| Alert categories | Separate opt-in controls for market movement, odds opportunities, arbitrage, and closing-line alerts. New categories start disabled. |
+| Multiple channels | Allow multiple enabled channels. Do not fail over from one channel to another unless the subscriber explicitly enables that fallback. |
+| SMS | Disabled until phone ownership is verified and explicit consent is recorded. Evaluate Twilio and Telnyx side by side before selecting a provider. |
+| Initial state | No optional alert channel is enabled automatically. Authentication/transactional email remains separate from optional alert delivery. |
+
+This keeps the default behavior quiet and consent-based while allowing subscribers to combine Discord, email, and SMS later. The provider choice, quiet-hour defaults, and preference UX still require explicit approval before implementation.
