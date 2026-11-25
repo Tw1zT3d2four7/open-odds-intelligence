@@ -1689,6 +1689,25 @@ class IdentityStore:
             db.commit()
         return stripe_customer_id
 
+    def subscriber_has_open_subscription(self, identity_id: str) -> bool:
+        """Prevent starting a second checkout while a nonterminal subscription exists."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        with self.connect() as db:
+            account = db.execute(
+                "SELECT id FROM identities WHERE id=? AND account_type='subscriber' AND is_active=1",
+                (identity_id,),
+            ).fetchone()
+            if account is None:
+                raise ValueError("An active subscriber account is required.")
+            row = db.execute(
+                """SELECT 1 FROM billing_subscriptions
+                   WHERE identity_id=? AND status NOT IN ('canceled', 'incomplete_expired')
+                   LIMIT 1""",
+                (identity_id,),
+            ).fetchone()
+        return row is not None
+
     def subscriber_billing_summary(self, identity_id: str) -> dict:
         """Return a bounded, read-only billing summary for the signed-in subscriber."""
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
