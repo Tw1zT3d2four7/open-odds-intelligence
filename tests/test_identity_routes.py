@@ -903,8 +903,12 @@ def test_admin_bulk_subscriber_session_revocation_requires_csrf_and_is_audited(t
 
 def test_subscriber_account_page_and_summary_are_private_and_minimal(tmp_path, monkeypatch):
     harness = IdentityRouteHarness(tmp_path, monkeypatch)
-    assert harness.client.get("/account").status_code == 401
-    assert harness.client.get("/auth/account").status_code == 401
+    unauthorized_page = harness.client.get("/account")
+    unauthorized_summary = harness.client.get("/auth/account")
+    assert unauthorized_page.status_code == 401
+    assert unauthorized_page.headers["cache-control"] == "no-store"
+    assert unauthorized_summary.status_code == 401
+    assert unauthorized_summary.headers["cache-control"] == "no-store"
 
     harness.store.create_subscriber("account-user@example.test", "a strong account password")
     challenge = harness.store.create_email_verification_challenge("account-user@example.test")
@@ -921,6 +925,10 @@ def test_subscriber_account_page_and_summary_are_private_and_minimal(tmp_path, m
     assert page.headers["pragma"] == "no-cache"
     nonce = page.headers["content-security-policy"].split("script-src 'nonce-", 1)[1].split("'", 1)[0]
     assert f'<script nonce="{nonce}">' in page.text
+    assert "innerHTML" not in page.text
+    second_page = harness.client.get("/account")
+    second_nonce = second_page.headers["content-security-policy"].split("script-src 'nonce-", 1)[1].split("'", 1)[0]
+    assert second_nonce != nonce
 
     response = harness.client.get("/auth/account")
     assert response.status_code == 200
