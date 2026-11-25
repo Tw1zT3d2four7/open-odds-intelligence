@@ -377,7 +377,7 @@ def request_password_reset(
                 ).fetchone()
             if row:
                 _deliver_or_record_failure(
-                    sender, recipient=payload.email, token=token,
+                    store, sender, recipient=payload.email, token=token,
                     identity_id=row["id"], purpose="password-reset",
                 )
     except HTTPException:
