@@ -41,7 +41,7 @@ def test_identity_schema_initialization_is_idempotent(tmp_path):
     first.initialize()
     with first.connect() as db:
         versions = db.execute("SELECT version FROM schema_migrations").fetchall()
-    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
 def test_schema_refuses_a_newer_database_version(tmp_path):
@@ -1203,3 +1203,88 @@ def test_subscriber_password_change_rejects_reusing_current_password(tmp_path):
         store.change_subscriber_password(
             identity_id, "correct horse battery", "correct horse battery"
         )
+
+
+def test_billing_schema_is_additive_idempotent_and_stores_no_payment_card_data(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "billing-schema@example.test", "a strong billing schema password"
+    )
+    with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            "INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at) "
+            "VALUES (?, ?, 'now', 'now')",
+            (subscriber_id, "cus_test_123"),
+        )
+        db.execute(
+            """INSERT INTO billing_subscriptions(
+                id, identity_id, stripe_subscription_id, stripe_customer_id,
+                stripe_price_id, plan_code, billing_interval, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'now', 'now')""",
+            ("local-sub-1", subscriber_id, "sub_test_123", "cus_test_123",
+             "price_configured_later", None, "month", "incomplete"),
+        )
+        db.execute(
+            """INSERT INTO billing_webhook_events(
+                stripe_event_id, event_type, livemode, payload_sha256, received_at
+            ) VALUES (?, ?, ?, ?, ?)""",
+            ("evt_test_123", "customer.subscription.created", 0, "a" * 64, "now"),
+        )
+        db.commit()
+        columns = {
+            row["name"] for row in db.execute(
+                "PRAGMA table_info(billing_subscriptions)"
+            ).fetchall()
+        }
+        assert not columns.intersection({
+            "card_number", "pan", "cvc", "cvv", "payment_method_details",
+            "card_fingerprint",
+        })
+        assert db.execute(
+            "SELECT status FROM billing_subscriptions WHERE id='local-sub-1'"
+        ).fetchone()["status"] == "incomplete"
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO billing_webhook_events VALUES "
+                "('evt_test_123', 'customer.subscription.created', 0, ?, 'received', 0, 'now', NULL, NULL)",
+                ("b" * 64,),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                """INSERT INTO billing_subscriptions(
+                    id, identity_id, stripe_subscription_id, stripe_customer_id,
+                    status, created_at, updated_at
+                ) VALUES ('bad-status', ?, 'sub_bad', 'cus_test_123', 'unknown', 'now', 'now')""",
+                (subscriber_id,),
+            )
+    store.initialize()
+    with store.connect() as db:
+        assert db.execute(
+            "SELECT stripe_event_id FROM billing_webhook_events"
+        ).fetchone()["stripe_event_id"] == "evt_test_123"
+        assert db.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version=9"
+        ).fetchone()[0] == 1
+
+
+def test_billing_schema_foreign_keys_prevent_orphan_customer_and_subscription(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "billing-orphan@example.test", "a strong billing orphan password"
+    )
+    with store.connect() as db:
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at) "
+                "VALUES (?, 'cus_orphan', 'now', 'now')",
+                ("missing-identity",),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                """INSERT INTO billing_subscriptions(
+                    id, identity_id, stripe_subscription_id, stripe_customer_id,
+                    status, created_at, updated_at
+                ) VALUES ('orphan', ?, 'sub_orphan', 'cus_missing', 'active', 'now', 'now')""",
+                (subscriber_id,),
+            )
