@@ -44,13 +44,33 @@ ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/api/arbitrage"): "subscriber_entitled",
 }
 
+# The identity router is maintained as a separately testable route set until
+# it is mounted behind AUTH_MODE=identity. Keep its policy complete meanwhile.
+IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
+    ("GET", "/auth/csrf"): "public_minimal",
+    ("POST", "/auth/register"): "public_csrf",
+    ("POST", "/auth/verification/resend"): "public_csrf",
+    ("POST", "/auth/verify-email"): "public_csrf",
+    ("POST", "/auth/password-reset/request"): "public_csrf",
+    ("POST", "/auth/password-reset/consume"): "public_csrf",
+    ("POST", "/auth/login"): "public_csrf",
+    ("POST", "/auth/logout"): "subscriber_only",
+    ("POST", "/admin/auth/login"): "public_csrf",
+    ("POST", "/admin/auth/logout"): "administrator_only",
+}
+
+
 
 def route_key(method: str, path: str) -> tuple[str, str]:
     """Normalize an HTTP method/path pair for policy lookup."""
     return method.upper(), path
 
 
-def classify_route(method: str, path: str) -> str | None:
+def classify_route(
+    method: str,
+    path: str,
+    policy: dict[tuple[str, str], str] = ROUTE_ACCESS_POLICY,
+) -> str | None:
     """Return the declared target class, or None for an unclassified route.
 
     HEAD requests inherit the corresponding GET policy so they cannot bypass
@@ -58,23 +78,29 @@ def classify_route(method: str, path: str) -> str | None:
     """
     normalized_method = method.upper()
     if normalized_method == "HEAD":
-        return ROUTE_ACCESS_POLICY.get(("GET", path))
-    return ROUTE_ACCESS_POLICY.get((normalized_method, path))
+        return policy.get(("GET", path))
+    return policy.get((normalized_method, path))
 
 
-def unclassified_routes(routes: Iterable[BaseRoute]) -> list[tuple[str, str]]:
+def unclassified_routes(
+    routes: Iterable[BaseRoute],
+    policy: dict[tuple[str, str], str] = ROUTE_ACCESS_POLICY,
+) -> list[tuple[str, str]]:
     """List application routes without an explicit policy entry."""
     missing = {
         route_key(method, route.path)
         for route in routes
         for method in (getattr(route, "methods", None) or set())
         if method not in {"HEAD", "OPTIONS"}
-        and classify_route(method, route.path) is None
+        and classify_route(method, route.path, policy) is None
     }
     return sorted(missing)
 
 
-def stale_policy_entries(routes: Iterable[BaseRoute]) -> list[tuple[str, str]]:
+def stale_policy_entries(
+    routes: Iterable[BaseRoute],
+    policy: dict[tuple[str, str], str] = ROUTE_ACCESS_POLICY,
+) -> list[tuple[str, str]]:
     """List policy entries that no longer correspond to a live application route."""
     actual = {
         route_key(method, route.path)
@@ -82,4 +108,4 @@ def stale_policy_entries(routes: Iterable[BaseRoute]) -> list[tuple[str, str]]:
         for method in (getattr(route, "methods", None) or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    return sorted(set(ROUTE_ACCESS_POLICY) - actual)
+    return sorted(set(policy) - actual)
