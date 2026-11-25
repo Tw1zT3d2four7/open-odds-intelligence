@@ -96,7 +96,7 @@ The shell establishes separate navigation for Overview, Users, Feature Access, B
 
 ### Subscriber account overview
 
-The subscriber sign-in flow now redirects to `/account`. The protected, read-only account overview displays the signed-in email address, active account and email-verification state, and current feature grants through `GET /auth/account`. Both the page and summary API require a subscriber session; administrator cookies cannot authorize them. The page uses a fresh per-response CSP script nonce and no-store headers. It does not imply a paid plan, billing status, or entitlement bundle, and it does not yet expose profile, password, or notification-preference mutations. The shell is available only in staged `AUTH_MODE=identity`; the default `legacy_basic` experience is unchanged.
+The subscriber sign-in flow now redirects to `/account`. The protected, read-only account overview displays the signed-in email address, active account and email-verification state, and current feature grants through `GET /auth/account`. Both the page and summary API require a subscriber session; administrator cookies cannot authorize them. The page uses a fresh per-response CSP script nonce and no-store headers. It does not imply a paid plan, billing status, or entitlement bundle. The account page supports current-password-confirmed password changes; profile, email-change, and notification-preference mutations remain unavailable pending their own reviewed designs. The shell is available only in staged `AUTH_MODE=identity`; the default `legacy_basic` experience is unchanged.
 
 
 ### Administrator subscriber directory

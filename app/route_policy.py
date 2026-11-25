@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from starlette.routing import BaseRoute, Match
+from starlette.routing import BaseRoute
 
 
 # Values are descriptive policy classes. They are translated into concrete
