@@ -15,6 +15,7 @@ import sqlite3
 import stat
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -1809,6 +1810,21 @@ class IdentityStore:
              "latest_updated": row["latest_updated"]}
             for row in event_rows
         ]
+        try:
+            public_origin = urlsplit(config.PUBLIC_BASE_URL)
+            public_origin.port
+            public_origin_ready = bool(
+                public_origin.scheme == "https" and public_origin.hostname
+                and public_origin.username is None and public_origin.password is None
+                and public_origin.path in {"", "/"}
+                and not public_origin.query and not public_origin.fragment
+            )
+        except (TypeError, ValueError):
+            public_origin_ready = False
+        test_mode_ready = bool(
+            re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
+            and not config.STRIPE_WEBHOOK_LIVEMODE and public_origin_ready
+        )
         return {
             "customer_count": customer_count,
             "subscription_count": sum(row["count"] for row in subscriptions),
@@ -1819,16 +1835,14 @@ class IdentityStore:
             "webhook_events_by_state": events,
             "checkout_available": bool(
                 config.STRIPE_CHECKOUT_ENABLED
-                and re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
-                and not config.STRIPE_WEBHOOK_LIVEMODE
+                and test_mode_ready
                 and re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_MONTHLY_ID)
                 and re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_YEARLY_ID)
                 and config.STRIPE_PRICE_MONTHLY_ID != config.STRIPE_PRICE_YEARLY_ID
             ),
             "customer_portal_available": bool(
                 config.STRIPE_CUSTOMER_PORTAL_ENABLED
-                and config.STRIPE_SECRET_KEY.startswith("sk_test_")
-                and not config.STRIPE_WEBHOOK_LIVEMODE
+                and test_mode_ready
             ),
             "live_billing_enabled": False,
         }
