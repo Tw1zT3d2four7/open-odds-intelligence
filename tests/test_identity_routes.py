@@ -427,6 +427,20 @@ def test_open_email_circuit_skips_provider_and_records_delivery_state(tmp_path, 
         "/forgot-password", "/verify-email", "/reset-password",
     ],
 )
+
+
+def test_auth_page_uses_a_fresh_csp_script_nonce_for_each_response(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    first = harness.client.get("/login")
+    second = harness.client.get("/login")
+
+    first_nonce = first.text.split('<script nonce="', 1)[1].split('"', 1)[0]
+    second_nonce = second.text.split('<script nonce="', 1)[1].split('"', 1)[0]
+    assert first_nonce != second_nonce
+    assert f"script-src 'nonce-{first_nonce}'" in first.headers["content-security-policy"]
+    assert f"script-src 'nonce-{second_nonce}'" in second.headers["content-security-policy"]
+
+
 def test_auth_entry_pages_are_no_store_and_share_the_secure_auth_shell(
     tmp_path, monkeypatch, path
 ):

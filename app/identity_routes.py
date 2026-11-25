@@ -1,9 +1,8 @@
 """Subscriber and administrator authentication routes.
 
-The router is registered in app.main but exposed only through the explicit
-AUTH_MODE=identity allowlist. In legacy_basic mode its paths remain hidden;
-identity mode still blocks all product routes until authorization and
-entitlement wiring is complete.
+The router is registered in app.main and exposed only through the explicit
+AUTH_MODE=identity allowlist. Product routes use a separate access policy and
+mode-aware session, entitlement, and CSRF dependencies.
 """
 from __future__ import annotations
 

@@ -1058,8 +1058,8 @@ class IdentityStore:
     ) -> dict:
         """Return a bounded, paginated audit view without credential material.
 
-        This is a storage primitive for the future administrator-only audit API;
-        it is not exposed over HTTP and does not return identity email addresses.
+        The administrator-only audit API uses this storage primitive. Results
+        omit identity email addresses and authentication material.
         """
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
             raise ValueError("Audit page size must be between 1 and 500.")

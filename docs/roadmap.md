@@ -114,7 +114,7 @@ Implemented on the feature branch so far:
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
 - [x] Proposed endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md`; thresholds remain inactive pending route integration and deployment review.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
-- [x] Latest full CI verification: run `45509207698`, commit `2bed46d946076508006bceac017eec57b28c9676` — **719 passed**.
+- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45662005190`, commit `1b1bf9342c67be65453c284258a548b735812489` — **843 passed, 1 warning**.
 
 Still required before Phase 1 is complete:
 
@@ -145,6 +145,7 @@ Still required before Phase 1 is complete:
 - [x] Add a protected, paginated, searchable, read-only subscriber directory and Users view; expose only account identity, email, active/verification state, creation time, and active entitlements, never authentication material.
 - [x] Add a protected manual feature-access manager in the Admin Console using the existing MFA-admin-attributed, CSRF-protected entitlement API; plan bundles and billing remain separate work.
 - [x] Add MFA-admin-only, CSRF-protected individual session revocation and subscriber-wide session revocation; enforce subscriber-only targets, controlled reason codes, atomic revocation, current-admin session protection, and actor-attributed audit events.
+- [x] Apply `no-store` to every authentication and administrator response, including authorization failures; protect inline authentication/Admin Console scripts with a fresh per-response CSP nonce instead of `unsafe-inline` script permission.
 - [ ] Review and implement any remaining privileged-action security controls after route-by-route threat review.
 - [ ] Define and approve an audit-retention policy before implementing retention administration or automated deletion.
 

@@ -1,4 +1,4 @@
-"""HTTP authentication boundary helpers; intentionally not wired to routes yet."""
+"""HTTP authentication boundary helpers for identity-mode sessions and CSRF protection."""
 from __future__ import annotations
 
 import hmac
