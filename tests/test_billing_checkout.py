@@ -74,6 +74,10 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
     assert checkout[2]["mode"] == "subscription"
     assert checkout[2]["subscription_data[metadata][identity_id]"] == identity_id
     assert "sk_test" not in response.text
+    billing = client.get("/auth/billing")
+    assert billing.status_code == 200
+    assert billing.json()["checkout_available"] is False
+    assert billing.json()["customer_portal_available"] is True
 
 
 def test_checkout_uses_annual_price_only_for_year_interval(billing_harness, monkeypatch):
