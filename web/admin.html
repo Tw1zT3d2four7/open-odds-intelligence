@@ -107,9 +107,17 @@ tbody tr:last-child td{border-bottom:0}
     <section class="view" id="view-overview">
       <div class="welcome"><h2>Welcome to the control center.</h2><p>This is the private administration workspace for Open Odds Intelligence. Subscriber access, platform operations, and privileged settings will be managed here through dedicated, audited controls.</p></div>
       <div class="cards">
-        <article class="card"><div class="card-label">Access boundary</div><div class="card-value">Administrator only</div><div class="card-note">Separate from subscriber sessions</div></article>
-        <article class="card"><div class="card-label">Sign-in protection</div><div class="card-value">Multi-factor required</div><div class="card-note">Password plus TOTP or recovery code</div></article>
-        <article class="card"><div class="card-label">Workspace status</div><div class="card-value">Foundation active</div><div class="card-note">Operational modules are being added in phases</div></article>
+        <article class="card"><div class="card-label">Configured providers</div><div class="card-value" id="overview-providers">Loading…</div><div class="card-note">Selected odds data sources</div></article>
+        <article class="card"><div class="card-label">Data freshness</div><div class="card-value" id="overview-freshness">Loading…</div><div class="card-note">Based on stored provider snapshots</div></article>
+        <article class="card"><div class="card-label">Stored events</div><div class="card-value" id="overview-events">Loading…</div><div class="card-note">Events in the odds archive</div></article>
+      </div>
+      <div class="panel">
+        <h2>Operational snapshot</h2>
+        <p id="overview-status" class="audit-status" role="status" aria-live="polite">Loading live platform diagnostics…</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Sport / League</th><th>Freshness</th><th>Events</th><th>Last snapshot</th></tr></thead>
+          <tbody id="overview-sports"><tr><td colspan="4">Waiting for operational data.</td></tr></tbody>
+        </table></div>
       </div>
       <div class="panel"><h2>Security baseline</h2><p>The console is served only after server-side administrator session validation. State-changing operations will require CSRF protection and will be recorded in the security audit trail.</p><div class="checks"><div class="check"><strong>✓ Separate admin session</strong>Subscriber cookies cannot authorize this workspace.</div><div class="check"><strong>✓ MFA-gated sign-in</strong>Administrator sessions require a fresh second factor.</div><div class="check"><strong>✓ Protected page response</strong>No-store, no-referrer, and frame-denial headers are applied.</div></div></div>
     </section>
@@ -277,6 +285,54 @@ tbody tr:last-child td{border-bottom:0}
     }
   }
 
+  let overviewLoaded = false;
+  async function loadOverview() {
+    const status = document.getElementById("overview-status");
+    status.textContent = "Loading live platform diagnostics…";
+    try {
+      const response = await fetch("/admin/overview", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Overview unavailable");
+      const data = await response.json();
+      document.getElementById("overview-providers").textContent =
+        data.configured && data.providers.length ? data.providers.join(", ") : "Not configured";
+      document.getElementById("overview-freshness").textContent =
+        String(data.data_freshness || "unknown").replaceAll("_"," ").toUpperCase();
+      document.getElementById("overview-events").textContent = Number(data.stored_events || 0).toLocaleString();
+      const alertText = data.alerts.enabled
+        ? "Alerts enabled · " + Number(data.alerts.sent || 0).toLocaleString() + " recorded sends"
+        : "Alerts disabled";
+      status.textContent = Number(data.stored_snapshots || 0).toLocaleString() + " snapshots · " +
+        Number(data.stored_bookmakers || 0).toLocaleString() + " active bookmakers · " + alertText +
+        (data.provider_error_present ? " · Provider error recorded" : "") +
+        (data.alert_error_present ? " · Alert error recorded" : "") +
+        (data.last_updated ? " · Last data update: " + data.last_updated : "");
+      const rows = document.getElementById("overview-sports");
+      rows.replaceChildren();
+      if (!data.sports.length) {
+        const row = document.createElement("tr");
+        cell(row, "No configured sports.");
+        const filler = document.createElement("td");
+        filler.colSpan = 3;
+        row.appendChild(filler);
+        rows.appendChild(row);
+      } else {
+        data.sports.forEach(sport => {
+          const row = document.createElement("tr");
+          cell(row, sport.sport);
+          cell(row, sport.freshness);
+          cell(row, Number(sport.event_count || 0).toLocaleString());
+          cell(row, sport.last_updated);
+          rows.appendChild(row);
+        });
+      }
+      overviewLoaded = true;
+    } catch (_error) {
+      status.textContent = "Live platform diagnostics could not be loaded. Refresh the page or sign in again.";
+    }
+  }
+
   let entitlementLoadedIdentity = "";
   const entitlementIdentity = document.getElementById("entitlement-identity");
   const entitlementStatus = document.getElementById("entitlement-status");
@@ -420,6 +476,7 @@ tbody tr:last-child td{border-bottom:0}
   }
   buttons.forEach(button => button.addEventListener("click", () => {
     selectView(button.dataset.view);
+    if (button.dataset.view === "overview" && !overviewLoaded) loadOverview();
     if (button.dataset.view === "security" && !auditLoaded) loadAudit();
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
@@ -475,6 +532,8 @@ tbody tr:last-child td{border-bottom:0}
   [auditFilter, auditActorFilter, auditSubjectFilter].forEach(input => input.addEventListener("keydown", event => {
     if (event.key === "Enter") { auditOffset = 0; loadAudit(); }
   }));
+
+  loadOverview();
 
   document.getElementById("logout").addEventListener("click", async () => {
     const message = document.getElementById("message");
