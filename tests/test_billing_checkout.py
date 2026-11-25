@@ -73,6 +73,21 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
     assert checkout[2]["customer"] == "cus_test123"
     assert checkout[2]["mode"] == "subscription"
     assert checkout[2]["subscription_data[metadata][identity_id]"] == identity_id
+    assert int(checkout[2]["expires_at"]) > 0
+    checkout_key = checkout[3]
+    retry = client.post(
+        "/auth/billing/checkout", json={"interval": "month"},
+        headers={"Idempotency-Key": "client-key-1234567890"},
+    )
+    assert retry.status_code == 200
+    retry_checkout = [call for call in calls if call[1] == "/checkout/sessions"][-1]
+    assert retry_checkout[3] == checkout_key
+    blocked = client.post(
+        "/auth/billing/checkout", json={"interval": "month"},
+        headers={"Idempotency-Key": "different-client-key-12345"},
+    )
+    assert blocked.status_code == 409
+    assert len([call for call in calls if call[1] == "/checkout/sessions"]) == 2
     assert "sk_test" not in response.text
     billing = client.get("/auth/billing")
     assert billing.status_code == 200
