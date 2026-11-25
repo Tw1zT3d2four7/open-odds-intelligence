@@ -104,7 +104,7 @@ Implemented on the feature branch so far:
 - [x] Make first-admin bootstrap resumable after an interrupted pre-MFA setup only when the existing admin password verifies; already-enrolled MFA cannot be reset through bootstrap, and TOTP codes are entered without terminal echo.
 - [x] Separate subscriber/admin Secure host-only cookies, CSRF/origin helpers, and lazy FastAPI session dependencies.
 - [x] Persistent atomic rate-limit primitives using HMAC-hashed bucket identifiers and fail-closed behavior; integrated with identity-mode login, registration, verification, and password-reset routes.
-- [x] Explicit access policy for all 25 registered HTTP routes (21 application endpoints plus four framework-generated schema/documentation routes); CI detects unclassified or stale entries. Manual refresh and framework documentation routes are administrator-only in the target policy.
+- [x] Explicit access policy for all 54 registered HTTP routes (25 product/application and framework-generated routes plus 29 identity/account/admin routes); CI detects unclassified or stale entries. Manual refresh and framework documentation routes are administrator-only in the target policy.
 - [x] Fail-closed route dependency assembly: subscriber routes require a supplied server-side entitlement dependency; every authenticated non-safe HTTP method requires CSRF; public mutation and unclassified routes are rejected. The helper is wired to all product APIRoutes in `app/main.py`; identity mode enforces server-side session, entitlement, and CSRF dependencies while legacy Basic Auth remains unchanged.
 - [x] Legacy Basic Auth behavior covered by HTTP regression tests (including malformed base64, missing separators, invalid UTF-8, mixed-case scheme handling, and product API protection) and left unchanged.
 - [x] Subscriber email verification enforced in authentication, session creation, and session resolution; unverified accounts cannot establish usable sessions.
@@ -115,7 +115,7 @@ Implemented on the feature branch so far:
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
 - [x] Endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md` and integrated with identity-mode routes; conservative thresholds remain subject to deployment-traffic and proxy-topology review before public activation.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
-- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45671099424`, commit `81207b4384ac404bca3b540f20efbc269c14fa38` — **858 passed, 1 warning**.
+- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45674116197`, commit `3d0f17dfd812b722ddbc98d255b9ddad54c6b546` — **864 passed, 1 warning**.
 
 Still required before Phase 1 is complete:
 
