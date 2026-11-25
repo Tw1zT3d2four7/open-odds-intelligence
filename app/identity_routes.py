@@ -694,6 +694,36 @@ def revoke_own_subscriber_session(
         ) from None
 
 
+@router.post(
+    "/auth/sessions/revoke-all",
+    dependencies=[Depends(require_authenticated_csrf)],
+)
+def revoke_all_own_subscriber_sessions(
+    response: Response,
+    session: dict = Depends(require_subscriber),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Sign out every device for the authenticated subscriber."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    identity_id = session["identity_id"]
+    try:
+        revoked_count = store.revoke_all_sessions(
+            identity_id, actor_identity_id=identity_id
+        )
+        clear_session_cookie(response, "subscriber")
+        clear_csrf_cookie(response)
+        return {"revoked_sessions": revoked_count, "signed_out": True}
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Subscriber sign-out-everywhere failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Signing out all devices is temporarily unavailable.",
+        ) from None
+
+
 @router.post("/auth/logout", dependencies=[Depends(require_authenticated_csrf)])
 def subscriber_logout(
     request: Request,
