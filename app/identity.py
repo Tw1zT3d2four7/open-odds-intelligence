@@ -25,7 +25,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -322,6 +322,15 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (6, _timestamp(_now())),
+                    )
+                if current < 7:
+                    db.execute("ALTER TABLE transactional_email_queue ADD COLUMN challenge_token_hash TEXT")
+                    db.execute(
+                        "CREATE INDEX idx_email_queue_challenge ON transactional_email_queue(purpose, identity_id, challenge_token_hash)"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (7, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
