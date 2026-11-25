@@ -767,6 +767,19 @@ def test_admin_billing_overview_is_mfa_protected_aggregate_only_and_no_store(tmp
     assert data["checkout_available"] is False
     assert data["customer_portal_available"] is False
     assert data["live_billing_enabled"] is False
+
+    monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_AdminReadinessCase")
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_LIVEMODE", False)
+    monkeypatch.setattr(config, "STRIPE_CHECKOUT_ENABLED", True)
+    monkeypatch.setattr(config, "STRIPE_CUSTOMER_PORTAL_ENABLED", True)
+    monkeypatch.setattr(config, "STRIPE_PRICE_MONTHLY_ID", "price_MonthlyReadiness")
+    monkeypatch.setattr(config, "STRIPE_PRICE_YEARLY_ID", "price_YearlyReadiness")
+    enabled = harness.client.get("/admin/billing")
+    assert enabled.status_code == 200
+    assert enabled.json()["checkout_available"] is True
+    assert enabled.json()["customer_portal_available"] is True
+    assert enabled.json()["live_billing_enabled"] is False
+
     for private_value in ("billing-ops-user@example.test", "cus_ops_private",
                           "sub_ops_private", "in_ops_private", "evt_ops_private",
                           "encrypted_payload", "lease_token"):
