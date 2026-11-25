@@ -666,18 +666,17 @@ def create_subscriber_checkout(
 
 @router.post("/auth/billing/portal", dependencies=[Depends(require_authenticated_csrf)])
 def create_subscriber_portal(
+    request: Request,
     response: Response,
     session: dict = Depends(require_subscriber),
     store: IdentityStore = Depends(get_identity_store),
-    request: Request = None,
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
 ):
     """Create a hosted Customer Portal session for the authenticated subscriber only."""
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     _stripe_test_billing_ready(portal=True)
-    if request is not None:
-        _rate_limit(request, limiter, "subscriber-billing-portal", session["identity_id"])
+    _rate_limit(request, limiter, "subscriber-billing-portal", session["identity_id"])
     try:
         customer_id = store.billing_customer_id(session["identity_id"])
         if not customer_id:
