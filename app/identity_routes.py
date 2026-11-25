@@ -128,6 +128,12 @@ class AdministratorLoginInput(LoginInput):
     recovery_code: str | None = Field(default=None, min_length=1, max_length=128)
 
 
+class EntitlementUpdateInput(StrictModel):
+    identity_id: str = Field(min_length=1, max_length=128)
+    entitlements: list[str] = Field(max_length=32)
+    expires_at: datetime | None = None
+
+
 def _rate_limit(
     request: Request,
     limiter: SQLiteRateLimiter,
@@ -522,6 +528,50 @@ def administrator_login(
     set_session_cookie(response, token, "administrator", max_age=4 * 60 * 60)
     issue_csrf_cookie(response)
     return {"ok": True}
+
+
+@router.get(
+    "/admin/subscriber-entitlements",
+    dependencies=[Depends(require_administrator)],
+)
+def get_subscriber_entitlements(
+    identity_id: str,
+    _session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    try:
+        entitlements = store.active_subscriber_entitlements(identity_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        raise HTTPException(status_code=503, detail="Entitlement lookup is temporarily unavailable.") from None
+    return {"identity_id": identity_id, "entitlements": entitlements}
+
+
+@router.put(
+    "/admin/subscriber-entitlements",
+    dependencies=[
+        Depends(require_administrator),
+        Depends(require_authenticated_csrf),
+    ],
+)
+def update_subscriber_entitlements(
+    payload: EntitlementUpdateInput,
+    session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    try:
+        entitlements = store.set_subscriber_entitlements(
+            payload.identity_id,
+            payload.entitlements,
+            actor_identity_id=session["identity_id"],
+            expires_at=payload.expires_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        raise HTTPException(status_code=503, detail="Entitlement update is temporarily unavailable.") from None
+    return {"identity_id": payload.identity_id, "entitlements": entitlements}
 
 
 @router.post("/admin/auth/logout", dependencies=[Depends(require_authenticated_csrf)])
