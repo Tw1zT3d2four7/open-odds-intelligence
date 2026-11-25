@@ -179,6 +179,9 @@ class TransactionalEmailQueue:
                 """UPDATE transactional_email_queue
                    SET state=?, next_attempt_at=?, lease_token_hash=NULL,
                        lease_expires_at=NULL, last_failure_code=?,
+                       attempt_count=CASE
+                           WHEN ? IN ('circuit_open','circuit_state_unavailable')
+                           THEN MAX(0, attempt_count-1) ELSE attempt_count END,
                        encrypted_payload=CASE WHEN ? IN ('sent','failed','expired')
                                                THEN X'' ELSE encrypted_payload END,
                        sent_at=CASE WHEN ?='sent' THEN ? ELSE sent_at END,
@@ -186,7 +189,7 @@ class TransactionalEmailQueue:
                    WHERE id=? AND state='leased' AND lease_token_hash=?""",
                 (
                     state, _timestamp(now + timedelta(seconds=max(0, delay_seconds))),
-                    failure_code, state, state, _timestamp(now),
+                    failure_code, failure_code, state, state, _timestamp(now),
                     _timestamp(now), item["id"], lease_hash,
                 ),
             )
