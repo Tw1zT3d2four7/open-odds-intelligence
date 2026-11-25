@@ -446,6 +446,14 @@ class IdentityStore:
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (11, _timestamp(_now())),
                     )
+                if current < 12:
+                    db.execute(
+                        "ALTER TABLE billing_subscriptions ADD COLUMN last_event_created_at TEXT"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (12, _timestamp(_now())),
+                    )
                 db.commit()
             except Exception:
                 db.rollback()
@@ -628,6 +636,195 @@ class IdentityStore:
             )
             db.commit()
         return cursor.rowcount == 1
+
+    def process_stripe_subscription_event(self, event_id: str, lease_token: str) -> str:
+        """Apply a verified subscription snapshot and finish its inbox lease atomically.
+
+        Only Stripe subscription lifecycle events are interpreted here. Invoice events
+        remain recorded for a later reconciliation pass; subscription state alone never
+        grants application entitlements.
+        """
+        if not isinstance(event_id, str) or not event_id or len(event_id) > 255:
+            return "invalid"
+        if not isinstance(lease_token, str) or not lease_token:
+            return "invalid"
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        key = config.STRIPE_WEBHOOK_ENCRYPTION_KEY
+        if not isinstance(key, str) or not key:
+            raise RuntimeError("Stripe webhook encryption is not configured.")
+        try:
+            cipher = Fernet(key.encode("ascii"))
+        except (ValueError, UnicodeEncodeError):
+            raise RuntimeError("Stripe webhook encryption configuration is invalid.") from None
+
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            inbox = db.execute(
+                """SELECT event_type, livemode, encrypted_payload
+                   FROM billing_webhook_events
+                   WHERE stripe_event_id=? AND processing_state='processing'
+                     AND lease_token_hash=? AND lease_expires_at>?""",
+                (event_id, _token_digest(lease_token), now),
+            ).fetchone()
+            if inbox is None:
+                db.rollback()
+                return "lease_lost"
+            if not inbox["encrypted_payload"]:
+                db.rollback()
+                raise RuntimeError("Stripe webhook event payload is unavailable.")
+            try:
+                raw = cipher.decrypt(inbox["encrypted_payload"].encode("ascii"))
+                event = json.loads(raw)
+            except (InvalidToken, ValueError, UnicodeEncodeError, json.JSONDecodeError):
+                db.rollback()
+                raise RuntimeError("Stored Stripe webhook event cannot be decoded.") from None
+
+            event_type = inbox["event_type"]
+            if event_type not in {
+                "customer.subscription.created",
+                "customer.subscription.updated",
+                "customer.subscription.deleted",
+            }:
+                db.execute(
+                    """UPDATE billing_webhook_events
+                       SET processing_state='processed', processed_at=?, updated_at=?,
+                           lease_token_hash=NULL, lease_expires_at=NULL,
+                           last_error_code=NULL
+                       WHERE stripe_event_id=? AND processing_state='processing'
+                         AND lease_token_hash=? AND lease_expires_at>?""",
+                    (now, now, event_id, _token_digest(lease_token), now),
+                )
+                db.commit()
+                return "ignored"
+
+            try:
+                event_created = int(event["created"])
+                obj = event["data"]["object"]
+                subscription_id = obj["id"]
+                customer_id = obj["customer"]
+                status = "canceled" if event_type.endswith(".deleted") else obj["status"]
+            except (KeyError, TypeError, ValueError, OverflowError):
+                db.rollback()
+                raise ValueError("Stripe subscription event shape is invalid.") from None
+            allowed_statuses = {
+                "incomplete", "incomplete_expired", "trialing", "active",
+                "past_due", "canceled", "unpaid", "paused",
+            }
+            if (
+                not isinstance(subscription_id, str) or not subscription_id
+                or len(subscription_id) > 255
+                or not isinstance(customer_id, str) or not customer_id
+                or len(customer_id) > 255
+                or status not in allowed_statuses
+                or event_created < 0
+            ):
+                db.rollback()
+                raise ValueError("Stripe subscription event contains invalid identifiers or status.")
+
+            customer = db.execute(
+                "SELECT identity_id FROM billing_customers WHERE stripe_customer_id=?",
+                (customer_id,),
+            ).fetchone()
+            if customer is None:
+                db.rollback()
+                raise LookupError("Stripe customer is not linked to a local subscriber.")
+
+            occurred_at = _timestamp(datetime.fromtimestamp(event_created, tz=timezone.utc))
+            existing = db.execute(
+                """SELECT identity_id, stripe_customer_id, last_event_created_at
+                   FROM billing_subscriptions WHERE stripe_subscription_id=?""",
+                (subscription_id,),
+            ).fetchone()
+            if existing is not None and (
+                existing["identity_id"] != customer["identity_id"]
+                or existing["stripe_customer_id"] != customer_id
+            ):
+                db.rollback()
+                raise ValueError("Stripe subscription customer mapping conflicts with local data.")
+
+            if existing is not None and existing["last_event_created_at"]:
+                if existing["last_event_created_at"] >= occurred_at:
+                    result = "stale"
+                else:
+                    result = "updated"
+            else:
+                result = "created" if existing is None else "updated"
+
+            if result != "stale":
+                items = obj.get("items", {}).get("data", []) if isinstance(obj, dict) else []
+                first_item = items[0] if isinstance(items, list) and items else {}
+                price = first_item.get("price", {}) if isinstance(first_item, dict) else {}
+                price_id = price.get("id") if isinstance(price, dict) else None
+                recurring = price.get("recurring", {}) if isinstance(price, dict) else {}
+                interval = recurring.get("interval") if isinstance(recurring, dict) else None
+                if interval not in {"month", "year"}:
+                    interval = None
+                if not isinstance(price_id, str):
+                    price_id = None
+
+                def period_timestamp(value):
+                    if value is None:
+                        return None
+                    if not isinstance(value, int) or value < 0:
+                        raise ValueError("Stripe subscription period is invalid.")
+                    return _timestamp(datetime.fromtimestamp(value, tz=timezone.utc))
+
+                try:
+                    period_start = period_timestamp(obj.get("current_period_start"))
+                    period_end = period_timestamp(obj.get("current_period_end"))
+                    canceled_at = period_timestamp(obj.get("canceled_at"))
+                    ended_at = period_timestamp(obj.get("ended_at"))
+                except (ValueError, OverflowError, OSError):
+                    db.rollback()
+                    raise ValueError("Stripe subscription period is invalid.") from None
+                cancel_at_period_end = obj.get("cancel_at_period_end", False)
+                if type(cancel_at_period_end) is not bool:
+                    db.rollback()
+                    raise ValueError("Stripe cancellation flag is invalid.")
+                if existing is None:
+                    db.execute(
+                        """INSERT INTO billing_subscriptions(
+                            id, identity_id, stripe_subscription_id, stripe_customer_id,
+                            stripe_price_id, billing_interval, status, current_period_start,
+                            current_period_end, cancel_at_period_end, canceled_at, ended_at,
+                            created_at, updated_at, last_event_created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            secrets.token_urlsafe(24), customer["identity_id"],
+                            subscription_id, customer_id, price_id, interval, status,
+                            period_start, period_end, int(cancel_at_period_end),
+                            canceled_at, ended_at, now, now, occurred_at,
+                        ),
+                    )
+                else:
+                    db.execute(
+                        """UPDATE billing_subscriptions SET
+                            stripe_price_id=?, billing_interval=?, status=?,
+                            current_period_start=?, current_period_end=?,
+                            cancel_at_period_end=?, canceled_at=?, ended_at=?,
+                            updated_at=?, last_event_created_at=?
+                           WHERE stripe_subscription_id=?""",
+                        (
+                            price_id, interval, status, period_start, period_end,
+                            int(cancel_at_period_end), canceled_at, ended_at,
+                            now, occurred_at, subscription_id,
+                        ),
+                    )
+
+            completed = db.execute(
+                """UPDATE billing_webhook_events
+                   SET processing_state='processed', processed_at=?, updated_at=?,
+                       lease_token_hash=NULL, lease_expires_at=NULL, last_error_code=NULL
+                   WHERE stripe_event_id=? AND processing_state='processing'
+                     AND lease_token_hash=? AND lease_expires_at>?""",
+                (now, now, event_id, _token_digest(lease_token), now),
+            )
+            if completed.rowcount != 1:
+                db.rollback()
+                return "lease_lost"
+            db.commit()
+            return result
 
     def create_subscriber(self, email: str, password: str) -> str:
         """Create an unverified subscriber. Public routes must call this only."""
