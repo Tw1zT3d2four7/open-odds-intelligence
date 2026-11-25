@@ -18,7 +18,12 @@ from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMUL
 from .route_policy import IDENTITY_ROUTE_ACCESS_POLICY, classify_route
 from .route_policy import ROUTE_ACCESS_POLICY
 from .route_authorization import dependencies_for_route
-from .entitlements import require_product_entitlement
+from .entitlements import (
+    require_product_administrator,
+    require_product_csrf,
+    require_product_entitlement,
+    require_product_subscriber,
+)
 from .dependencies import get_identity_store
 from .auth import resolve_session
 from fastapi import HTTPException, Request
@@ -243,7 +248,7 @@ async def optional_basic_auth(request: Request, call_next):
     return await call_next(request)
 
 
-@app.get("/", response_class=HTMLResponse, dependencies=dependencies_for_route("GET", "/", entitlement_dependency=require_product_entitlement))
+@app.get("/", response_class=HTMLResponse, dependencies=dependencies_for_route("GET", "/", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def dashboard():
     return WEB.read_text(encoding="utf-8")
 
@@ -260,7 +265,7 @@ def health():
 
 
 
-@app.post("/api/limits/refresh", dependencies=dependencies_for_route("POST", "/api/limits/refresh"))
+@app.post("/api/limits/refresh", dependencies=dependencies_for_route("POST", "/api/limits/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh_limits():
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
@@ -283,7 +288,7 @@ def refresh_limits():
     return service.limits_monitor.refresh()
 
 
-@app.get("/api/limits", dependencies=dependencies_for_route("GET", "/api/limits", entitlement_dependency=require_product_entitlement))
+@app.get("/api/limits", dependencies=dependencies_for_route("GET", "/api/limits", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def market_limits(sport: str | None = None,
                   limit: int = Query(25, ge=1, le=100),
                   offset: int = Query(0, ge=0)):
@@ -295,7 +300,7 @@ def market_limits(sport: str | None = None,
             "note": "Only provider-reported posted market limits are shown. Missing values are not inferred; limits are not account-specific betting caps."}
 
 
-@app.get("/api/limits/changes", dependencies=dependencies_for_route("GET", "/api/limits/changes", entitlement_dependency=require_product_entitlement))
+@app.get("/api/limits/changes", dependencies=dependencies_for_route("GET", "/api/limits/changes", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def market_limits_changes(sport: str | None = None,
                           direction: str = Query("increased", pattern="^(increased|decreased|all)$"),
                           limit: int = Query(25, ge=1, le=100),
@@ -307,7 +312,7 @@ def market_limits_changes(sport: str | None = None,
             "note": "Changes are calculated from successive stored provider-reported posted-limit snapshots. Observation time is when this application received the snapshot, not a claimed sportsbook publication time."}
 
 
-@app.get("/api/limits/history", dependencies=dependencies_for_route("GET", "/api/limits/history", entitlement_dependency=require_product_entitlement))
+@app.get("/api/limits/history", dependencies=dependencies_for_route("GET", "/api/limits/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def market_limits_history(event_id: str, bookmaker: str, market: str,
                           outcome: str, point: float | None = None,
                           limit: int = Query(500, ge=1, le=2000)):
@@ -315,12 +320,12 @@ def market_limits_history(event_id: str, bookmaker: str, market: str,
         event_id, bookmaker, market, outcome, point, limit
     )}
 
-@app.get("/api/odds", dependencies=dependencies_for_route("GET", "/api/odds", entitlement_dependency=require_product_entitlement))
+@app.get("/api/odds", dependencies=dependencies_for_route("GET", "/api/odds", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def odds(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
     return {"events": service.events(sport, limit=limit, offset=offset), "limit": limit, "offset": offset, "status": service.status()}
 
 
-@app.post("/api/refresh", dependencies=dependencies_for_route("POST", "/api/refresh"))
+@app.post("/api/refresh", dependencies=dependencies_for_route("POST", "/api/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh(sport: str | None = None):
     if sport is not None and sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league or omit sport to refresh all configured leagues.")
@@ -336,14 +341,14 @@ def _page_results(items, limit, offset):
             "limit": size, "offset": start}
 
 
-@app.get("/api/market-board", dependencies=dependencies_for_route("GET", "/api/market-board", entitlement_dependency=require_product_entitlement))
+@app.get("/api/market-board", dependencies=dependencies_for_route("GET", "/api/market-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def market_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
     page = _page_results(market_board(service.events(sport)), limit, offset)
     return {"quotes": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"]}
 
 
-@app.get("/api/bookmaker-board", dependencies=dependencies_for_route("GET", "/api/bookmaker-board", entitlement_dependency=require_product_entitlement))
+@app.get("/api/bookmaker-board", dependencies=dependencies_for_route("GET", "/api/bookmaker-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def bookmaker_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
     """Return every valid quote, paginated as 25 rendered sportsbook rows."""
     page = _page_results(market_board(service.events(sport), best_only=False), limit, offset)
@@ -351,7 +356,7 @@ def bookmaker_board_api(sport: str | None = None, limit: int = Query(25, ge=1, l
             "limit": page["limit"], "offset": page["offset"]}
 
 
-@app.get("/api/simulation/leagues", dependencies=dependencies_for_route("GET", "/api/simulation/leagues", entitlement_dependency=require_product_entitlement))
+@app.get("/api/simulation/leagues", dependencies=dependencies_for_route("GET", "/api/simulation/leagues", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def simulation_leagues():
     return {"leagues": [
         {"sport": sport, "label": sport.replace("_", " ").upper()}
@@ -409,7 +414,7 @@ def _simulation_games_for_sport(sport: str):
     return games
 
 
-@app.get("/api/simulation/games", dependencies=dependencies_for_route("GET", "/api/simulation/games", entitlement_dependency=require_product_entitlement))
+@app.get("/api/simulation/games", dependencies=dependencies_for_route("GET", "/api/simulation/games", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def simulation_games(sport: str):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
@@ -417,7 +422,7 @@ def simulation_games(sport: str):
     return {"games": games, "note": "Games come from the latest locally stored odds snapshot; this read-only request makes no provider call."}
 
 
-@app.post("/api/simulation/games/refresh", dependencies=dependencies_for_route("POST", "/api/simulation/games/refresh"))
+@app.post("/api/simulation/games/refresh", dependencies=dependencies_for_route("POST", "/api/simulation/games/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh_simulation_games(sport: str):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
@@ -433,7 +438,7 @@ def refresh_simulation_games(sport: str):
     }
 
 
-@app.post("/api/simulation/run", dependencies=dependencies_for_route("POST", "/api/simulation/run", entitlement_dependency=require_product_entitlement))
+@app.post("/api/simulation/run", dependencies=dependencies_for_route("POST", "/api/simulation/run", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
@@ -466,7 +471,7 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
     return result
 
 
-@app.get("/api/player-props", dependencies=dependencies_for_route("GET", "/api/player-props", entitlement_dependency=require_product_entitlement))
+@app.get("/api/player-props", dependencies=dependencies_for_route("GET", "/api/player-props", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
     events = service.events(sport)
     quotes = []
@@ -498,7 +503,7 @@ def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
             "note": "Player props are fetched only when explicitly enabled and only from supported provider event-odds endpoints. Each event-level request can consume provider quota."}
 
 
-@app.get("/api/clv", dependencies=dependencies_for_route("GET", "/api/clv", entitlement_dependency=require_product_entitlement))
+@app.get("/api/clv", dependencies=dependencies_for_route("GET", "/api/clv", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def closing_line_value(sport: str | None = None,
                        limit: int = Query(25, ge=1, le=100),
                        offset: int = Query(0, ge=0)):
@@ -508,7 +513,7 @@ def closing_line_value(sport: str | None = None,
             "limit": page["limit"], "offset": page["offset"]}
 
 
-@app.get("/api/movement", dependencies=dependencies_for_route("GET", "/api/movement", entitlement_dependency=require_product_entitlement))
+@app.get("/api/movement", dependencies=dependencies_for_route("GET", "/api/movement", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def movement(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
              offset: int = Query(0, ge=0)):
     rows = service.movement(sport, 1000)
@@ -518,7 +523,7 @@ def movement(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
             "note": "Movement reports meaningful changes across consecutive stored snapshots, with opening baselines at the first observed exact line. It is not proof of sharp-money activity."}
 
 
-@app.get("/api/movement/history", dependencies=dependencies_for_route("GET", "/api/movement/history", entitlement_dependency=require_product_entitlement))
+@app.get("/api/movement/history", dependencies=dependencies_for_route("GET", "/api/movement/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def movement_history(event_id: str, market: str, outcome: str, bookmaker: str,
                      limit: int = Query(500, ge=1, le=1000),
                      description: str | None = None):
@@ -528,7 +533,7 @@ def movement_history(event_id: str, market: str, outcome: str, bookmaker: str,
     return {"quotes": quotes}
 
 
-@app.get("/api/history", dependencies=dependencies_for_route("GET", "/api/history", entitlement_dependency=require_product_entitlement))
+@app.get("/api/history", dependencies=dependencies_for_route("GET", "/api/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def history(event_id: str, market: str, outcome: str,
             bookmaker: str | None = None, point: float | None = None,
             limit: int = Query(100, ge=1, le=500),
@@ -539,7 +544,7 @@ def history(event_id: str, market: str, outcome: str,
     return {"quotes": quotes}
 
 
-@app.get("/api/opportunities", dependencies=dependencies_for_route("GET", "/api/opportunities", entitlement_dependency=require_product_entitlement))
+@app.get("/api/opportunities", dependencies=dependencies_for_route("GET", "/api/opportunities", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def opportunities(sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20),
@@ -551,7 +556,7 @@ def opportunities(sport: str | None = None,
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
 
-@app.get("/api/arbitrage", dependencies=dependencies_for_route("GET", "/api/arbitrage", entitlement_dependency=require_product_entitlement))
+@app.get("/api/arbitrage", dependencies=dependencies_for_route("GET", "/api/arbitrage", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
     result = analyze_markets(service.events(sport), min_ev=101, arbitrage_only=True)
     page = _page_results(result["arbitrage"], limit, offset)
