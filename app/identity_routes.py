@@ -619,7 +619,6 @@ def create_subscriber_checkout(
         config.STRIPE_PRICE_MONTHLY_ID
         if payload.interval == "month" else config.STRIPE_PRICE_YEARLY_ID
     )
-    expected_amount = MONTHLY_PRICE_CENTS if payload.interval == "month" else ANNUAL_PRICE_CENTS
     try:
         price = stripe_api.stripe_request("GET", f"/prices/{price_id}")
         if not validate_recurring_price(price, payload.interval, price_id):
