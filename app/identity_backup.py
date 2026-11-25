@@ -37,6 +37,24 @@ def _cipher(key: str | bytes | None = None) -> Fernet:
         raise ValueError("IDENTITY_BACKUP_ENCRYPTION_KEY is invalid.") from None
 
 
+def _normalize_journal_header(data: bytes) -> bytes:
+    """Convert a consistent SQLite backup image from WAL to rollback mode.
+
+    SQLite header bytes 18 and 19 encode write/read journal versions. The
+    online backup API returns a self-contained consistent image; marking that
+    image as rollback-journal mode prevents :memory: deserialization from
+    attempting to open WAL sidecars for a special in-memory database name.
+    """
+    if not isinstance(data, bytes) or len(data) < 100 or not data.startswith(b"SQLite format 3\x00"):
+        raise ValueError("Identity backup is not a valid SQLite database image.")
+    normalized = bytearray(data)
+    if normalized[18] not in (1, 2) or normalized[19] not in (1, 2):
+        raise ValueError("Identity backup SQLite journal header is invalid.")
+    normalized[18] = 1
+    normalized[19] = 1
+    return bytes(normalized)
+
+
 def _regular_file(path: Path, *, must_exist: bool = True) -> None:
     if path.is_symlink():
         raise ValueError("Symlink paths are not permitted for identity backups.")
@@ -73,7 +91,7 @@ def _snapshot_database(path: Path) -> tuple[bytes, int]:
         version = int(row[0] or 0) if row else 0
         if version < 1 or version > _SCHEMA_VERSION:
             raise ValueError("Identity database schema version is unsupported.")
-        return snapshot.serialize(), version
+        return _normalize_journal_header(snapshot.serialize()), version
     except sqlite3.Error:
         raise ValueError("Identity database could not be backed up safely.") from None
     finally:
@@ -84,6 +102,7 @@ def _snapshot_database(path: Path) -> tuple[bytes, int]:
 def _validate_database_bytes(data: bytes) -> int:
     if not isinstance(data, bytes) or not data or len(data) > _MAX_BACKUP_BYTES:
         raise ValueError("Identity backup payload size is invalid.")
+    data = _normalize_journal_header(data)
     connection = sqlite3.connect(":memory:")
     try:
         connection.deserialize(data)
@@ -184,6 +203,7 @@ def inspect_encrypted_backup(
         data = cipher.decrypt(encrypted[len(_MAGIC):])
     except InvalidToken:
         raise ValueError("Identity backup could not be authenticated with this key.") from None
+    data = _normalize_journal_header(data)
     version = _validate_database_bytes(data)
     return {"schema_version": version, "database_bytes": len(data)}
 
