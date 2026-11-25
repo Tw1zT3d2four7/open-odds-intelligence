@@ -17,6 +17,7 @@ def _application_routes():
 
 def test_every_application_route_has_an_explicit_target_access_class():
     routes = _application_routes()
+    assert len(routes) == 35
     assert unclassified_routes(routes) == []
     assert stale_policy_entries(routes) == []
 
@@ -84,6 +85,7 @@ def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
         if getattr(route, "methods", None)
     ]
     assert len(IDENTITY_ROUTE_ACCESS_POLICY) == 10
+    assert len(routes) == 10
     assert unclassified_routes(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
     assert stale_policy_entries(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
 
