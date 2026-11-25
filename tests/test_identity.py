@@ -892,9 +892,12 @@ def test_subscriber_entitlement_expiry_and_replacement_are_enforced(tmp_path, mo
         "expiry@example.com", "a strong expiry password"
     )
     admin_id = _mfa_admin(store, monkeypatch, "expiry-admin@example.com")
+    local_expiry = (now[0] + timedelta(hours=1)).astimezone(
+        timezone(timedelta(hours=-8))
+    )
     store.set_subscriber_entitlements(
         subscriber_id, ["odds"], actor_identity_id=admin_id,
-        expires_at=now[0] + timedelta(hours=1),
+        expires_at=local_expiry,
     )
     assert store.has_subscriber_entitlement(subscriber_id, "odds") is True
 
