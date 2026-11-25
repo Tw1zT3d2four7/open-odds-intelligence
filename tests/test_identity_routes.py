@@ -437,7 +437,11 @@ def test_auth_entry_pages_are_no_store_and_share_the_secure_auth_shell(
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
-    assert "default-src" in response.headers["content-security-policy"]
+    csp = response.headers["content-security-policy"]
+    nonce = response.text.split('<script nonce="', 1)[1].split('"', 1)[0]
+    assert f"script-src 'nonce-{nonce}'" in csp
+    assert "'unsafe-inline'" not in csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert '<script nonce="' in response.text
     assert "Open Odds Intelligence" in response.text
     assert "__Host-ooi_csrf" in response.text
 
@@ -567,7 +571,12 @@ def test_admin_console_is_private_no_store_and_separate_from_subscriber_access(t
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-frame-options"] == "DENY"
-    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    csp = response.headers["content-security-policy"]
+    nonce = response.text.split('<script nonce="', 1)[1].split('"', 1)[0]
+    assert f"script-src 'nonce-{nonce}'" in csp
+    assert "'unsafe-inline'" not in csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert '<script nonce="' in response.text
+    assert "frame-ancestors 'none'" in csp
 
 
 

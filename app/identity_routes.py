@@ -11,6 +11,7 @@ import hashlib
 import html
 import logging
 import sqlite3
+import secrets
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
@@ -53,14 +54,19 @@ _ADMIN_PAGE = Path(__file__).resolve().parent.parent / "web" / "admin.html"
 
 
 def _render_auth_page() -> HTMLResponse:
-    response = HTMLResponse(_AUTH_PAGE.read_text(encoding="utf-8"))
+    nonce = secrets.token_urlsafe(18)
+    content = _AUTH_PAGE.read_text(encoding="utf-8")
+    if content.count("<script>") != 1:
+        raise RuntimeError("Authentication page must contain exactly one nonceable script block.")
+    content = content.replace("<script>", f'<script nonce="{nonce}">', 1)
+    response = HTMLResponse(content)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+        f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; "
         "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
         "form-action 'self'; frame-ancestors 'none'"
     )
@@ -69,15 +75,20 @@ def _render_auth_page() -> HTMLResponse:
 
 
 def _render_admin_page() -> HTMLResponse:
-    """Render the private console with non-cacheable, same-origin-only headers."""
-    response = HTMLResponse(_ADMIN_PAGE.read_text(encoding="utf-8"))
+    """Render the private console with a per-response script nonce and safe headers."""
+    nonce = secrets.token_urlsafe(18)
+    content = _ADMIN_PAGE.read_text(encoding="utf-8")
+    if content.count("<script>") != 1:
+        raise RuntimeError("Administrator page must contain exactly one nonceable script block.")
+    content = content.replace("<script>", f'<script nonce="{nonce}">', 1)
+    response = HTMLResponse(content)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+        f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; "
         "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
         "form-action 'self'; frame-ancestors 'none'"
     )
