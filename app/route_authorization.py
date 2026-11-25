@@ -1,8 +1,8 @@
-"""Fail-closed dependency assembly for the future identity route integration.
+"""Fail-closed dependency assembly for product and identity HTTP routes.
 
-This module deliberately does not attach dependencies to live routes. Callers
-must provide a real server-side entitlement dependency for subscriber product
-routes; there is no permissive default.
+Product APIRoutes use mode-aware dependencies that preserve legacy Basic Auth
+behavior while enforcing sessions, entitlements, administrator access, and
+CSRF in identity mode. No subscriber route has a permissive entitlement default.
 """
 from __future__ import annotations
 
