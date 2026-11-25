@@ -77,7 +77,7 @@ Before enabling subscriber access publicly:
 6. Complete queue recovery, backup/restore, and key-rotation tests before enabling public registration.
 7. Verify the existing dashboard, odds history, scheduled provider work, and alerts against a preserved test database, then complete the documented rollback drill.
 
-The default `legacy_basic` mode remains the production compatibility boundary and hides identity routes. Selecting `AUTH_MODE=identity` exposes authentication and protected admin entitlement endpoints and activates subscriber/admin session checks on product routes; subscriber product access remains default-deny until an MFA administrator grants the required feature keys. This staged mode is not a public launch or production cutover. No deployment or mode switch has been performed.
+The default `legacy_basic` mode remains the production compatibility boundary and hides identity routes. Selecting `AUTH_MODE=identity` exposes authentication, the protected Admin Console, subscriber directory, audited account lifecycle, audit history, and entitlement endpoints, and activates subscriber/admin session checks on product routes; subscriber product access remains default-deny until an MFA administrator grants the required feature keys. This staged mode is not a public launch or production cutover. No deployment or mode switch has been performed.
 
 
 ## Admin Console foundation
