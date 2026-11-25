@@ -148,6 +148,21 @@ def _validate_identity_schema(connection: sqlite3.Connection, version: int) -> N
             "id", "identity_id", "entitlement_key", "starts_at", "expires_at",
             "granted_by", "created_at", "updated_at",
         }
+    if version >= 9:
+        required_columns["billing_customers"] = {
+            "identity_id", "stripe_customer_id", "created_at", "updated_at",
+        }
+        required_columns["billing_subscriptions"] = {
+            "id", "identity_id", "stripe_subscription_id", "stripe_customer_id",
+            "stripe_price_id", "plan_code", "billing_interval", "status",
+            "current_period_start", "current_period_end", "cancel_at_period_end",
+            "canceled_at", "ended_at", "created_at", "updated_at",
+        }
+        required_columns["billing_webhook_events"] = {
+            "stripe_event_id", "event_type", "livemode", "payload_sha256",
+            "processing_state", "attempt_count", "received_at", "processed_at",
+            "last_error_code",
+        }
 
     available_tables = {
         row[0] for row in connection.execute(
