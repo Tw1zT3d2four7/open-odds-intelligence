@@ -429,6 +429,19 @@ class IdentityStore:
                     )
                 if current < 11:
                     db.execute("ALTER TABLE billing_webhook_events ADD COLUMN encrypted_payload TEXT")
+                    # Pre-v11 inbox rows have no recoverable event body. Mark them
+                    # retryable and lease-free; a Stripe redelivery will safely attach
+                    # the newly verified encrypted body before processing.
+                    db.execute(
+                        """UPDATE billing_webhook_events
+                           SET processing_state='failed',
+                               last_error_code='payload_unavailable',
+                               lease_token_hash=NULL, lease_expires_at=NULL,
+                               updated_at=?
+                           WHERE encrypted_payload IS NULL
+                             AND processing_state != 'processed'""",
+                        (_timestamp(_now()),),
+                    )
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (11, _timestamp(_now())),
