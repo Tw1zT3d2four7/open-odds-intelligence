@@ -158,3 +158,10 @@ MFA_ENCRYPTION_KEY = os.getenv("MFA_ENCRYPTION_KEY", "")
 
 # Required keyed-hash secret before persistent authentication rate limits are enabled.
 RATE_LIMIT_HASH_KEY = os.getenv("RATE_LIMIT_HASH_KEY", "")
+
+# Transactional email provider settings. API keys are case-sensitive; preserve exactly.
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "resend").strip().lower()
+if EMAIL_PROVIDER not in {"resend", "disabled"}:
+    raise ValueError("EMAIL_PROVIDER must be either 'resend' or 'disabled'.")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "")
