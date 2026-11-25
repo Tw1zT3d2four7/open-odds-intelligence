@@ -1457,6 +1457,43 @@ class IdentityStore:
             db.commit()
         return True
 
+    def revoke_subscriber_sessions(
+        self, identity_id: str, *, actor_identity_id: str, reason_code: str,
+    ) -> int:
+        """Revoke every active session for one subscriber with MFA-admin audit attribution."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        if (
+            not isinstance(actor_identity_id, str) or not actor_identity_id
+            or len(actor_identity_id) > 128 or actor_identity_id == identity_id
+        ):
+            raise ValueError("A separate administrator actor is required.")
+        if reason_code not in {"security_review", "support_request", "account_request", "other"}:
+            raise ValueError("A supported session revocation reason code is required.")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            subject = db.execute(
+                "SELECT account_type FROM identities WHERE id=?", (identity_id,)
+            ).fetchone()
+            if subject is None or subject["account_type"] != "subscriber":
+                db.rollback()
+                raise ValueError("A subscriber identity was not found.")
+            audit_actor = self._resolve_audit_actor(db, identity_id, actor_identity_id)
+            now = _timestamp(_now())
+            cursor = db.execute(
+                """UPDATE sessions SET revoked_at=?
+                   WHERE identity_id=? AND revoked_at IS NULL""",
+                (now, identity_id),
+            )
+            revoked_count = cursor.rowcount
+            self._record_audit_event(
+                db, "administrator.subscriber_sessions_revoked", identity_id, now,
+                {"reason_code": reason_code, "revoked_count": revoked_count},
+                actor_identity_id=audit_actor,
+            )
+            db.commit()
+        return revoked_count
+
     def list_active_sessions(
         self, *, actor_identity_id: str, current_session_id: str,
         limit: int = 25, offset: int = 0,

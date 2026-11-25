@@ -815,3 +815,42 @@ def test_admin_session_api_requires_mfa_csrf_and_protects_current_session(tmp_pa
                AND subject_identity_id=?""", (subscriber_id,)
         ).fetchone()
     assert event["actor_identity_id"] == admin_id
+
+
+def test_admin_bulk_subscriber_session_revocation_requires_csrf_and_is_audited(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    subscriber_id = harness.store.create_subscriber(
+        "bulk-session-user@example.test", "a strong bulk session user password"
+    )
+    challenge = harness.store.create_email_verification_challenge("bulk-session-user@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    tokens = [harness.store.create_session(subscriber_id) for _ in range(2)]
+    admin_id = harness.store.provision_administrator(
+        "bulk-session-admin@example.test", "a strong bulk session admin password"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "bulk-session-admin@example.test",
+        "password": "a strong bulk session admin password",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+    path = f"/admin/subscribers/{subscriber_id}/sessions/revoke"
+    assert harness.post(path, {"reason_code": "security_review"}, csrf=False).status_code == 403
+    response = harness.post(path, {"reason_code": "security_review"})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {"identity_id": subscriber_id, "revoked_sessions": 2}
+    assert all(harness.store.get_session(token) is None for token, _sid in tokens)
+    with harness.store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, metadata_json FROM security_audit_events
+               WHERE event_type='administrator.subscriber_sessions_revoked'
+               AND subject_identity_id=?""", (subscriber_id,)
+        ).fetchone()
+    assert event["actor_identity_id"] == admin_id
+    assert '"revoked_count":2' in event["metadata_json"]
+    assert "bulk-session-user@example.test" not in event["metadata_json"]

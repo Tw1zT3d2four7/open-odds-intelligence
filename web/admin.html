@@ -282,6 +282,14 @@ tbody tr:last-child td{border-bottom:0}
           action.textContent = user.is_active ? "Suspend" : "Reactivate";
           action.setAttribute("aria-label", (user.is_active ? "Suspend " : "Reactivate ") + user.email);
           actionCell.appendChild(action);
+          if (item.account_type === "subscriber") {
+            const accountAction = document.createElement("button");
+            accountAction.type = "button";
+            accountAction.textContent = "Revoke all";
+            accountAction.dataset.accountIdentityId = item.identity_id;
+            accountAction.style.marginLeft = "6px";
+            actionCell.appendChild(accountAction);
+          }
           row.appendChild(actionCell);
           subscriberRows.appendChild(row);
         });
@@ -513,6 +521,39 @@ tbody tr:last-child td{border-bottom:0}
       button.disabled = false;
     }
   }
+  async function revokeSubscriberSessions(identityId, button) {
+    if (!window.confirm("Revoke every active session for this subscriber? All of their devices will need to sign in again.")) return;
+    const reasonCode = window.prompt("Choose reason code: security_review, support_request, account_request, or other.");
+    if (reasonCode === null) return;
+    const allowed = ["security_review","support_request","account_request","other"];
+    if (!allowed.includes(reasonCode.trim())) { sessionsStatus.textContent = "Choose one of the supported session revocation reason codes."; return; }
+    try {
+      let token = "";
+      const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+      token = match ? decodeURIComponent(match[1]) : "";
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      button.disabled = true;
+      const response = await fetch("/admin/subscribers/" + encodeURIComponent(identityId) + "/sessions/revoke", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({reason_code:reasonCode.trim()})
+      });
+      if (!response.ok) throw new Error("Account session revocation rejected");
+      const data = await response.json();
+      sessionsStatus.textContent = String(data.revoked_sessions) + " session(s) revoked for subscriber and recorded in the security audit history.";
+      auditLoaded = false;
+      await loadAdminSessions();
+    } catch (_error) {
+      sessionsStatus.textContent = "Subscriber sessions could not be revoked. Refresh and verify the administrator session.";
+      button.disabled = false;
+    }
+  }
   function cell(row, value) {
     const td = document.createElement("td");
     td.textContent = value == null || value === "" ? "—" : String(value);
@@ -566,6 +607,8 @@ tbody tr:last-child td{border-bottom:0}
   sessionRows.addEventListener("click", event => {
     const action = event.target.closest("button[data-session-id]");
     if (action) revokeAdminVisibleSession(action.dataset.sessionId, action);
+    const accountAction = event.target.closest("button[data-account-identity-id]");
+    if (accountAction) revokeSubscriberSessions(accountAction.dataset.accountIdentityId, accountAction);
   });
   buttons.forEach(button => button.addEventListener("click", () => {
     selectView(button.dataset.view);

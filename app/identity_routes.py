@@ -686,6 +686,31 @@ def update_subscriber_status(
         ) from None
 
 
+@router.post(
+    "/admin/subscribers/{identity_id}/sessions/revoke",
+    dependencies=[Depends(require_administrator), Depends(require_authenticated_csrf)],
+)
+def revoke_subscriber_account_sessions(
+    identity_id: str, payload: SessionRevokeInput, response: Response,
+    session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Revoke all sessions for one subscriber with MFA-admin attribution and CSRF."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        count = store.revoke_subscriber_sessions(
+            identity_id, actor_identity_id=session["identity_id"],
+            reason_code=payload.reason_code,
+        )
+        return {"identity_id": identity_id, "revoked_sessions": count}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Administrator subscriber session revocation failed.")
+        raise HTTPException(status_code=503, detail="Account session revocation is temporarily unavailable.") from None
+
+
 @router.get(
     "/admin/sessions",
     dependencies=[Depends(require_administrator)],

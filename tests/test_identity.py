@@ -1100,3 +1100,33 @@ def test_administrator_session_directory_and_revocation_are_bounded_and_audited(
     assert event["event_type"] == "administrator.session_revoked"
     assert '"reason_code":"security_review"' in event["metadata_json"]
     assert "session-target@example.test" not in event["metadata_json"]
+
+
+def test_administrator_can_revoke_all_subscriber_sessions_atomically_and_audit(tmp_path, monkeypatch):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber("bulk-sessions@example.test", "a strong bulk session password")
+    _verify_subscriber(store, "bulk-sessions@example.test")
+    tokens = [store.create_session(subscriber_id) for _ in range(3)]
+    admin_id = _mfa_admin(store, monkeypatch, "bulk-session-admin@example.test")
+    with pytest.raises(ValueError, match="subscriber identity"):
+        store.revoke_subscriber_sessions(admin_id, actor_identity_id=admin_id, reason_code="security_review")
+    with pytest.raises(ValueError, match="reason code"):
+        store.revoke_subscriber_sessions(subscriber_id, actor_identity_id=admin_id, reason_code="free text")
+    count = store.revoke_subscriber_sessions(
+        subscriber_id, actor_identity_id=admin_id, reason_code="security_review"
+    )
+    assert count == 3
+    assert all(store.get_session(token) is None for token, _session_id in tokens)
+    with store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, event_type, metadata_json FROM security_audit_events
+               WHERE subject_identity_id=? AND event_type='administrator.subscriber_sessions_revoked'""",
+            (subscriber_id,),
+        ).fetchone()
+    assert event["actor_identity_id"] == admin_id
+    assert '"revoked_count":3' in event["metadata_json"]
+    assert '"reason_code":"security_review"' in event["metadata_json"]
+    assert "bulk-sessions@example.test" not in event["metadata_json"]
+    assert store.revoke_subscriber_sessions(
+        subscriber_id, actor_identity_id=admin_id, reason_code="other"
+    ) == 0
