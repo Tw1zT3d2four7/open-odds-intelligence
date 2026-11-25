@@ -276,8 +276,8 @@ The Environment Configuration manager remains a separate protected-admin workstr
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `e8307d2a6d75ccc7efdc7347c19b2cd833c2f6dc`  
-**CI run:** `45723639186` — **966 passed, 1 warning**.  
+**Latest verified implementation commit:** `e6832b55acf7db4789f004c649c738c8d6a82522`  
+**CI run:** `45723928834` — **966 passed, 1 warning**.  
 **Working branch:** `feature/admin-panel-and-subscriptions` (no merge or production deployment).
 
 The identity backup tooling now publishes completed encrypted backups atomically without overwriting existing files. Failure-path tests verify that an interrupted publication cannot leave a partial final backup; restore remains an explicit offline-only operation with an encrypted pre-restore snapshot. This is CI-verified tooling only: no production backup or restore has been run.
