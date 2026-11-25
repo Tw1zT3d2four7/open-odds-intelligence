@@ -230,8 +230,8 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `db8cc80ca250dbe50c35a2e862e052fb4a6c2e37`  
-**CI run:** `45673514308` — **863 passed, 1 warning**.
+**Latest verified implementation commit:** `3d0f17dfd812b722ddbc98d255b9ddad54c6b546`  
+**CI run:** `45674116197` — **864 passed, 1 warning**.
 
 The identity backup tooling now publishes completed encrypted backups atomically without overwriting existing files. Failure-path tests verify that an interrupted publication cannot leave a partial final backup; restore remains an explicit offline-only operation with an encrypted pre-restore snapshot. This is CI-verified tooling only: no production backup or restore has been run.
 
