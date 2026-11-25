@@ -62,7 +62,7 @@ def test_get_encodes_query_without_request_body(monkeypatch):
         seen["request"] = request
         return FakeResponse(b'{"id":"price_123"}', "https://api.stripe.com/v1/prices/price_123")
 
-    monkeypatch.setattr(stripe_api, "urlopen", fake_urlopen)
+    monkeypatch.setattr(stripe_api, "_open_stripe_url", fake_urlopen)
     result = stripe_api.stripe_request("GET", "/prices/price_123", params={"expand[]": ["product"]})
     request = seen["request"]
     parsed = urlsplit(request.full_url)
@@ -86,7 +86,7 @@ def test_get_encodes_query_without_request_body(monkeypatch):
 def test_invalid_key_method_or_path_fails_before_network(monkeypatch, secret, method, path):
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", secret)
     monkeypatch.setattr(
-        stripe_api, "urlopen",
+        stripe_api, "_open_stripe_url",
         lambda *_args, **_kwargs: pytest.fail("invalid Stripe request must not reach the network"),
     )
     with pytest.raises(stripe_api.StripeAPIError):
@@ -100,7 +100,7 @@ def test_provider_http_error_is_sanitized(monkeypatch):
             "https://api.stripe.com/v1/customers", 400, "bad request", {},
             io.BytesIO(b'{"error":{"message":"secret customer details"}}'),
         )
-    monkeypatch.setattr(stripe_api, "urlopen", fail)
+    monkeypatch.setattr(stripe_api, "_open_stripe_url", fail)
     with pytest.raises(stripe_api.StripeAPIError) as error:
         stripe_api.stripe_request("POST", "/customers")
     assert "secret customer details" not in str(error.value)
@@ -120,7 +120,7 @@ def test_redirect_handler_never_follows_or_forwards_bearer_credentials():
 def test_unexpected_response_host_is_rejected(monkeypatch):
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_RedirectGuard")
     monkeypatch.setattr(
-        stripe_api, "urlopen",
+        stripe_api, "_open_stripe_url",
         lambda *_args, **_kwargs: FakeResponse(url="https://attacker.example/steal"),
     )
     with pytest.raises(stripe_api.StripeAPIError, match="destination"):
@@ -130,14 +130,14 @@ def test_unexpected_response_host_is_rejected(monkeypatch):
 def test_oversized_and_invalid_json_responses_are_rejected(monkeypatch):
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_ResponseBounds")
     monkeypatch.setattr(
-        stripe_api, "urlopen",
+        stripe_api, "_open_stripe_url",
         lambda *_args, **_kwargs: FakeResponse(b"x" * 1_048_577),
     )
     with pytest.raises(stripe_api.StripeAPIError, match="oversized"):
         stripe_api.stripe_request("GET", "/prices/price_123")
 
     monkeypatch.setattr(
-        stripe_api, "urlopen",
+        stripe_api, "_open_stripe_url",
         lambda *_args, **_kwargs: FakeResponse(b"not-json"),
     )
     with pytest.raises(stripe_api.StripeAPIError, match="invalid response"):
