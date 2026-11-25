@@ -115,7 +115,7 @@ Implemented on the feature branch so far:
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
 - [x] Endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md` and integrated with identity-mode routes; conservative thresholds remain subject to deployment-traffic and proxy-topology review before public activation.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
-- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45670398587`, commit `fcf721c212b77f99bb1599669687d83b0280ff6a` — **858 passed, 1 warning**.
+- [x] Latest full CI verification of the identity/Admin Console security baseline: run `45671099424`, commit `81207b4384ac404bca3b540f20efbc269c14fa38` — **858 passed, 1 warning**.
 
 Still required before Phase 1 is complete:
 
