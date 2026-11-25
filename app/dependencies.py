@@ -83,3 +83,15 @@ def get_rate_limiter(request: Request) -> SQLiteRateLimiter:
         ) from None
     request.app.state.rate_limiter = limiter
     return limiter
+
+
+def get_odds_service():
+    """Return the shared odds service without creating an import-time cycle."""
+    try:
+        from .service import service
+        return service
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Platform diagnostics are temporarily unavailable.",
+        ) from None
