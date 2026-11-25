@@ -81,6 +81,94 @@ def _regular_file(path: Path, *, must_exist: bool = True) -> None:
             raise PermissionError("Identity database and backup files must not be accessible by group or others.")
 
 
+def _validate_identity_schema(connection: sqlite3.Connection, version: int) -> None:
+    """Reject incomplete or referentially corrupt identity database images."""
+    if version < 1 or version > _SCHEMA_VERSION:
+        raise ValueError("Identity database schema version is unsupported.")
+
+    required_columns = {
+        "schema_migrations": {"version", "applied_at"},
+        "identities": {
+            "id", "email", "account_type", "password_hash", "is_active",
+            "email_verified_at", "created_at", "updated_at", "password_changed_at",
+        },
+        "sessions": {
+            "id", "identity_id", "token_hash", "created_at", "last_seen_at",
+            "expires_at", "revoked_at",
+        },
+        "email_verification_challenges": {
+            "id", "identity_id", "token_hash", "created_at", "expires_at", "consumed_at",
+        },
+        "password_reset_challenges": {
+            "id", "identity_id", "token_hash", "created_at", "expires_at", "consumed_at",
+        },
+        "administrator_mfa": {
+            "identity_id", "encrypted_secret", "enrolled_at", "last_verified_at",
+        },
+        "security_audit_events": {
+            "id", "actor_identity_id", "event_type", "subject_identity_id",
+            "occurred_at", "metadata_json",
+        },
+    }
+    if version >= 2:
+        required_columns["administrator_mfa"].add("last_totp_counter")
+        required_columns["administrator_mfa_recovery_codes"] = {
+            "id", "identity_id", "code_hash", "created_at", "consumed_at",
+        }
+    if version >= 3:
+        required_columns["administrator_mfa"].add("mfa_login_verified_at")
+    if version >= 4:
+        required_columns["email_delivery_events"] = {
+            "id", "provider", "identity_id", "purpose", "status",
+            "provider_message_id", "failure_code", "attempted_at",
+        }
+        required_columns["email_provider_circuit"] = {
+            "provider", "consecutive_failures", "opened_until", "last_failure_at",
+            "last_success_at", "last_error_code", "updated_at",
+        }
+    if version >= 5:
+        required_columns["email_provider_circuit"].add("probe_until")
+    if version >= 6:
+        required_columns["transactional_email_queue"] = {
+            "id", "provider", "identity_id", "purpose", "encrypted_payload",
+            "idempotency_key", "state", "attempt_count", "max_attempts",
+            "next_attempt_at", "lease_token_hash", "lease_expires_at",
+            "challenge_expires_at", "idempotency_expires_at", "last_failure_code",
+            "created_at", "updated_at", "sent_at",
+        }
+    if version >= 7:
+        required_columns["transactional_email_queue"].add("challenge_token_hash")
+    if version >= 8:
+        required_columns["subscriber_entitlements"] = {
+            "id", "identity_id", "entitlement_key", "starts_at", "expires_at",
+            "granted_by", "created_at", "updated_at",
+        }
+
+    available_tables = {
+        row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    for table, columns in required_columns.items():
+        if table not in available_tables:
+            raise ValueError("Identity database schema is incomplete.")
+        available_columns = {
+            row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if not columns.issubset(available_columns):
+            raise ValueError("Identity database schema is incomplete.")
+
+    applied_versions = {
+        row[0] for row in connection.execute(
+            "SELECT version FROM schema_migrations"
+        ).fetchall()
+    }
+    if not set(range(1, version + 1)).issubset(applied_versions):
+        raise ValueError("Identity database migration history is incomplete.")
+    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise ValueError("Identity database foreign-key integrity check failed.")
+
+
 def _snapshot_database(path: Path) -> tuple[bytes, int]:
     _regular_file(path)
     uri = path.resolve().as_uri() + "?mode=ro"
@@ -104,8 +192,7 @@ def _snapshot_database(path: Path) -> tuple[bytes, int]:
             "SELECT MAX(version) FROM schema_migrations"
         ).fetchone()
         version = int(row[0] or 0) if row else 0
-        if version < 1 or version > _SCHEMA_VERSION:
-            raise ValueError("Identity database schema version is unsupported.")
+        _validate_identity_schema(snapshot, version)
         return _normalize_journal_header(snapshot.serialize()), version
     except sqlite3.Error:
         raise ValueError("Identity database could not be backed up safely.") from None
@@ -125,17 +212,11 @@ def _validate_database_bytes(data: bytes) -> int:
         integrity = connection.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("Identity backup integrity check failed.")
-        identity_table = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='identities'"
-        ).fetchone()
-        if identity_table is None:
-            raise ValueError("Backup does not contain an identity database.")
         row = connection.execute(
             "SELECT MAX(version) FROM schema_migrations"
         ).fetchone()
         version = int(row[0] or 0) if row else 0
-        if version < 1 or version > _SCHEMA_VERSION:
-            raise ValueError("Identity backup schema version is unsupported.")
+        _validate_identity_schema(connection, version)
         return version
     except sqlite3.Error as exc:
         raise ValueError(

@@ -174,6 +174,47 @@ def test_wrong_backup_key_and_symlink_sources_fail_closed(tmp_path, monkeypatch)
         create_encrypted_backup(link, tmp_path / "link-backup.fernet")
 
 
+def test_backup_rejects_incomplete_schema_even_with_current_version_marker(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    incomplete = tmp_path / "incomplete.sqlite3"
+    connection = sqlite3.connect(incomplete)
+    connection.execute(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    connection.execute("INSERT INTO schema_migrations(version, applied_at) VALUES(8, 'now')")
+    connection.execute("CREATE TABLE identities (id TEXT PRIMARY KEY)")
+    connection.commit()
+    connection.close()
+    incomplete.chmod(0o600)
+
+    with pytest.raises(ValueError, match="schema is incomplete"):
+        create_encrypted_backup(incomplete, tmp_path / "invalid.fernet")
+
+
+def test_backup_rejects_foreign_key_violations(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    source = tmp_path / "broken-relations.sqlite3"
+    _identity_store(source)
+    connection = sqlite3.connect(source)
+    connection.execute("PRAGMA foreign_keys=OFF")
+    connection.execute(
+        """INSERT INTO sessions(
+            id, identity_id, token_hash, created_at, last_seen_at, expires_at
+        ) VALUES ('orphan-session', 'missing-identity', 'orphan-token-hash', 'now', 'now', 'later')"""
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(ValueError, match="foreign-key integrity check failed"):
+        create_encrypted_backup(source, tmp_path / "invalid-relations.fernet")
+
+
 def test_backup_refuses_odds_history_database(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
