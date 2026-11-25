@@ -528,19 +528,3 @@ def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), of
 from .identity_routes import router as identity_router
 
 app.include_router(identity_router)
-# Defensive registration check: the route objects are already fully constructed,
-# so this fallback also covers a partially initialized router import without
-# duplicating any method/path pair.
-_registered_identity_keys = {
-    (route.path, frozenset(route.methods or set()))
-    for route in app.router.routes
-    if getattr(route, "methods", None)
-}
-for _identity_route in identity_router.routes:
-    _identity_key = (
-        _identity_route.path,
-        frozenset(_identity_route.methods or set()),
-    )
-    if _identity_key not in _registered_identity_keys:
-        app.router.routes.append(_identity_route)
-        _registered_identity_keys.add(_identity_key)
