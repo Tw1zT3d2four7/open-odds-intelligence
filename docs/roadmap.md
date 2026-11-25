@@ -227,10 +227,12 @@ Complete tenant isolation, secret/configuration security review, notification ab
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `da819418a833abcc07db22ba7b4a338e941c56bf`  
-**CI run:** `45673010106` — **862 passed, 1 warning**.
+**Latest verified implementation commit:** `db8cc80ca250dbe50c35a2e862e052fb4a6c2e37`  
+**CI run:** `45673514308` — **863 passed, 1 warning**.
 
 The identity backup tooling now publishes completed encrypted backups atomically without overwriting existing files. Failure-path tests verify that an interrupted publication cannot leave a partial final backup; restore remains an explicit offline-only operation with an encrypted pre-restore snapshot. This is CI-verified tooling only: no production backup or restore has been run.
+
+Middleware now resolves parameterized URLs to their registered FastAPI route template and HTTP method before applying the identity access policy; regression tests cover subscriber suspension, subscriber-wide session revocation, and individual session revocation in both identity and legacy modes.
 
 The subscriber account foundation now includes a protected read-only `/account` page and `/auth/account` API. Subscriber login redirects to the account overview, while administrator login redirects to the separate Admin Console. Account data is subscriber-only, minimal, non-cacheable on success and authorization failure, and rendered with a fresh CSP script nonce. The account page now also supports subscriber-initiated password change: the current password is verified, the update is atomic, outstanding reset links and all sessions are invalidated, the local cookies are cleared, and a secret-free self-attributed audit event is recorded.
 
