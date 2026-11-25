@@ -297,3 +297,43 @@ def test_subscriber_logout_revokes_session_and_clears_cookies(tmp_path, monkeypa
     assert logout.status_code == 200
     assert harness.store.get_session(token) is None
     assert harness.client.cookies.get("__Host-ooi_subscriber") is None
+
+
+
+def test_administrator_logout_revokes_mfa_authenticated_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.provision_administrator(
+        "admin@example.com", "an administrator password 123"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(identity_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(identity_id, totp.now())
+    code = totp.at(int(time.time()) + 30)
+
+    login = harness.post("/admin/auth/login", {
+        "email": "admin@example.com",
+        "password": "an administrator password 123",
+        "totp_code": code,
+    })
+    assert login.status_code == 200
+    token = harness.client.cookies.get("__Host-ooi_admin")
+    assert token and harness.store.get_session(token)
+
+    logout = harness.post("/admin/auth/logout", {})
+    assert logout.status_code == 200
+    assert harness.store.get_session(token) is None
+    assert harness.client.cookies.get("__Host-ooi_admin") is None
+
+
+def test_subscriber_session_cookie_cannot_authorize_administrator_logout(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber("person@example.com", "a strong password 123")
+    verification = harness.store.create_email_verification_challenge("person@example.com")
+    harness.store.consume_email_verification_challenge(verification)
+    token, _ = harness.store.create_session(identity_id)
+    harness.client.cookies.set("__Host-ooi_admin", token, domain="ooi.example", path="/")
+
+    response = harness.post("/admin/auth/logout", {})
+    assert response.status_code == 401
+    assert harness.store.get_session(token) is not None
