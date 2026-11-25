@@ -1798,8 +1798,19 @@ class IdentityStore:
             "subscriptions_by_status_and_interval": subscriptions,
             "invoices_by_status": invoices,
             "webhook_events_by_state": events,
-            "checkout_available": False,
-            "customer_portal_available": False,
+            "checkout_available": bool(
+                config.STRIPE_CHECKOUT_ENABLED
+                and config.STRIPE_SECRET_KEY.startswith("sk_test_")
+                and not config.STRIPE_WEBHOOK_LIVEMODE
+                and re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_MONTHLY_ID)
+                and re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_YEARLY_ID)
+                and config.STRIPE_PRICE_MONTHLY_ID != config.STRIPE_PRICE_YEARLY_ID
+            ),
+            "customer_portal_available": bool(
+                config.STRIPE_CUSTOMER_PORTAL_ENABLED
+                and config.STRIPE_SECRET_KEY.startswith("sk_test_")
+                and not config.STRIPE_WEBHOOK_LIVEMODE
+            ),
             "live_billing_enabled": False,
         }
 
