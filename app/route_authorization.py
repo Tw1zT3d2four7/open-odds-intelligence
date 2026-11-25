@@ -15,7 +15,7 @@ from .dependencies import (
     require_authenticated_csrf,
     require_subscriber,
 )
-from .route_policy import ROUTE_ACCESS_POLICY, classify_route
+from .route_policy import classify_route
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -25,7 +25,7 @@ def dependencies_for_route(
     path: str,
     *,
     entitlement_dependency: Callable | None = None,
-    policy: Mapping[tuple[str, str], str] = ROUTE_ACCESS_POLICY,
+    policy: Mapping[tuple[str, str], str] | None = None,
 ) -> list[Depends]:
     """Return the complete dependency list for a classified route.
 
