@@ -20,6 +20,7 @@ Add an additive identity-database migration for `transactional_email_queue` with
 - provider constrained to the configured transactional provider;
 - identity foreign key with `ON DELETE CASCADE`;
 - purpose constrained to `verification` or `password_reset`;
+- SHA-256 digest of the associated one-time challenge token, used only to confirm the challenge is still active before delivery;
 - encrypted payload BLOB containing recipient, subject, plain-text body, optional HTML body, and challenge expiry;
 - stable provider idempotency key;
 - state constrained to `pending`, `leased`, `sent`, `failed`, or `expired`;
@@ -96,6 +97,7 @@ Keep the existing 90-day secret-free delivery history and circuit state. Queue r
 - Missing, malformed, and rotated encryption keys fail closed.
 - Concurrent workers cannot claim the same active lease.
 - Expired leases are reclaimable; stale workers cannot complete a lease they no longer own.
+- A wrong/missing queue key never clears or permanently fails pending ciphertext; the worker pauses safely until the original key is restored.
 - Challenge expiry prevents delivery.
 - Restart/recovery preserves pending messages and attempt state.
 - Transient retry backoff, maximum attempts, permanent failure, and circuit-open deferral.
