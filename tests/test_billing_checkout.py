@@ -43,7 +43,7 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
         calls.append((method, path, params, idempotency_key))
         if path.startswith("/prices/"):
             return {
-                "id": "price_MonthlyCaseSensitive", "active": True, "livemode": False, "livemode": False,
+                "id": "price_MonthlyCaseSensitive", "active": True, "livemode": False,
                 "currency": "usd", "unit_amount": 1068,
                 "recurring": {"interval": "month", "interval_count": 1},
             }
@@ -164,7 +164,7 @@ def test_checkout_rejects_price_with_wrong_amount_or_interval(billing_harness, m
     def fake_stripe(method, path, *, params=None, idempotency_key=None):
         calls.append(path)
         return {
-            "id": "price_MonthlyCaseSensitive", "active": True,
+            "id": "price_MonthlyCaseSensitive", "active": True, "livemode": False,
             "currency": "usd", "unit_amount": 999,
             "recurring": {"interval": "month", "interval_count": 1},
         }
