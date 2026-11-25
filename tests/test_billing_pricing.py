@@ -46,3 +46,40 @@ def test_gross_up_returns_minimum_cent_price():
         gross = gross_price_cents_for_net(target)
         assert gross - estimated_stripe_fee_cents(gross) >= target
         assert gross - 1 - estimated_stripe_fee_cents(gross - 1) < target
+
+
+
+@pytest.mark.parametrize(
+    ("interval", "price_id", "amount", "stripe_interval", "livemode", "active", "expected"),
+    [
+        ("month", "price_MonthlyExact", 1068, "month", False, True, True),
+        ("year", "price_YearlyExact", 10405, "year", False, True, True),
+        ("month", "price_MonthlyExact", 1067, "month", False, True, False),
+        ("year", "price_YearlyExact", 10405, "month", False, True, False),
+        ("month", "price_MonthlyExact", 1068, "month", True, True, False),
+        ("month", "price_MonthlyExact", 1068, "month", False, False, False),
+    ],
+)
+def test_recurring_price_validation_is_exact(
+    interval, price_id, amount, stripe_interval, livemode, active, expected
+):
+    from app.billing_pricing import validate_recurring_price
+
+    price = {
+        "id": price_id,
+        "active": active,
+        "livemode": livemode,
+        "currency": "usd",
+        "unit_amount": amount,
+        "recurring": {"interval": stripe_interval, "interval_count": 1},
+    }
+    assert validate_recurring_price(price, interval, price_id) is expected
+
+
+def test_recurring_price_validation_rejects_untrusted_or_malformed_objects():
+    from app.billing_pricing import validate_recurring_price
+
+    assert validate_recurring_price({}, "month", "price_MonthlyExact") is False
+    assert validate_recurring_price([], "month", "price_MonthlyExact") is False
+    assert validate_recurring_price({}, [], "price_MonthlyExact") is False
+    assert validate_recurring_price({}, "month", "price_bad!") is False
