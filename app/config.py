@@ -165,3 +165,4 @@ if EMAIL_PROVIDER not in {"resend", "disabled"}:
     raise ValueError("EMAIL_PROVIDER must be either 'resend' or 'disabled'.")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
