@@ -222,7 +222,7 @@ Build subscriber settings for channels, categories, sports/leagues, thresholds, 
 - [x] Add atomic per-subscriber Checkout reservations (schema v15) to prevent parallel or repeated requests from creating multiple pending subscription sessions. A same-key retry reuses the same Stripe idempotency key; a different attempt is blocked until the 35-minute Checkout session expires. Reservation state is included in encrypted backup schema validation.
 - [x] Add an isolated Stripe test-mode acceptance runbook covering test catalog setup, secret handling, signed webhook delivery, opt-in worker operation, monthly/annual Checkout, idempotency/concurrency, Portal self-scoping, recovery, and explicit shutdown boundaries.
 - [x] Add a read-only `python -m app.billing_preflight` command to validate test credentials, durable webhook configuration, HTTPS origin, and both approved recurring Stripe Prices using GET-only API calls. It creates no provider objects or payments.
-- [x] Add an end-to-end automated flow test from subscriber Checkout through encrypted subscription webhook storage and worker reconciliation; it verifies customer/subscription mapping, pending-reservation cleanup, and that no paid entitlement is granted automatically.
+- [x] Add an end-to-end automated flow test from subscriber Checkout through signed HTTP webhook intake, encrypted event storage, and worker reconciliation; it verifies customer/subscription mapping, pending-reservation cleanup, and that no paid entitlement is granted automatically.
 - [x] Draft a non-binding subscription lifecycle policy proposal covering paid-tier shape, trials, failed-payment grace period, cancellation, refunds, disputes, and entitlement mapping. No policy or automatic access behavior is activated by this proposal.
 - [ ] Complete end-to-end Stripe test-mode/staging acceptance with real test credentials and verified webhook delivery. Then define payment-failure notification, retry/grace-period policy, refund/adjustment handling, plan changes, and access lifecycle. No live charges or production activation without explicit approval.
 - [x] Add case-preserving Stripe secret-key and monthly/yearly recurring Price ID configuration, with independent Checkout and Customer Portal switches defaulting off. No credentials or actual Price IDs are committed; configuration alone cannot enable a payment flow.
@@ -276,8 +276,8 @@ The Environment Configuration manager remains a separate protected-admin workstr
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `e6832b55acf7db4789f004c649c738c8d6a82522`  
-**CI run:** `45723928834` — **966 passed, 1 warning**.  
+**Latest verified implementation commit:** `3b99dd056a035fe93f721509834dbd7d4d4985d9`  
+**CI run:** `45724181889` — **966 passed, 1 warning**.  
 **Working branch:** `feature/admin-panel-and-subscriptions` (no merge or production deployment).
 
 The identity backup tooling now publishes completed encrypted backups atomically without overwriting existing files. Failure-path tests verify that an interrupted publication cannot leave a partial final backup; restore remains an explicit offline-only operation with an encrypted pre-restore snapshot. This is CI-verified tooling only: no production backup or restore has been run.
