@@ -217,7 +217,7 @@ def test_identity_mode_admin_refresh_requires_mfa_session_and_csrf(monkeypatch, 
     store.verify_administrator_mfa(admin_id, totp.at(int(time.time()) + 30))
     admin_token, _ = store.create_session(admin_id)
 
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="https://testserver")
     no_session = client.post(
         "/api/refresh", headers={"origin": "https://testserver"}
     )
