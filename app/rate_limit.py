@@ -1,7 +1,7 @@
-"""Persistent, privacy-preserving rate-limit primitives for future auth routes.
+"""Persistent, privacy-preserving rate limiting for identity-mode auth routes.
 
-Not wired to HTTP routes yet. Uses the separate accounts database, never the
-odds-history database. Caller must enforce each returned bucket dimension.
+Uses the separate accounts database, never the odds-history database. Caller
+must enforce each returned bucket dimension.
 """
 from __future__ import annotations
 

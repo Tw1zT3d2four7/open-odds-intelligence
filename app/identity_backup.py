@@ -22,6 +22,11 @@ _MAGIC = b"OOI-IDENTITY-BACKUP-V1\n"
 _MAX_BACKUP_BYTES = 512 * 1024 * 1024
 
 
+def _max_encrypted_backup_bytes() -> int:
+    """Upper bound for Fernet base64 expansion plus framing and padding."""
+    return len(_MAGIC) + 4 * ((_MAX_BACKUP_BYTES + 73 + 2) // 3)
+
+
 def _cipher(key: str | bytes | None = None) -> Fernet:
     value = key if key is not None else config.IDENTITY_BACKUP_ENCRYPTION_KEY
     if isinstance(value, str):
@@ -56,7 +61,7 @@ def _normalize_journal_header(data: bytes) -> bytes:
 
 
 def _prepare_directory(path: Path) -> None:
-    """Create a private leaf directory without changing caller-owned permissions."""
+    """Create or validate a leaf directory without changing caller-owned permissions."""
     if path.is_symlink():
         raise ValueError("Identity backup directories cannot be symlinks.")
     if not path.exists():
@@ -193,7 +198,10 @@ def _snapshot_database(path: Path) -> tuple[bytes, int]:
         ).fetchone()
         version = int(row[0] or 0) if row else 0
         _validate_identity_schema(snapshot, version)
-        return _normalize_journal_header(snapshot.serialize()), version
+        data = _normalize_journal_header(snapshot.serialize())
+        if len(data) > _MAX_BACKUP_BYTES:
+            raise ValueError("Identity backup payload size is invalid.")
+        return data, version
     except sqlite3.Error:
         raise ValueError("Identity database could not be backed up safely.") from None
     finally:
@@ -287,7 +295,7 @@ def inspect_encrypted_backup(
     path = Path(backup_path)
     _regular_file(path)
     size = path.stat().st_size
-    if size <= len(_MAGIC) or size > _MAX_BACKUP_BYTES + 1024 * 1024:
+    if size <= len(_MAGIC) or size > _max_encrypted_backup_bytes():
         raise ValueError("Identity backup file size is invalid.")
     encrypted = path.read_bytes()
     if not encrypted.startswith(_MAGIC):
@@ -326,7 +334,7 @@ def restore_encrypted_backup(
     parent = target.parent
     _prepare_directory(parent)
 
-    if backup.stat().st_size <= len(_MAGIC) or backup.stat().st_size > _MAX_BACKUP_BYTES + 1024 * 1024:
+    if backup.stat().st_size <= len(_MAGIC) or backup.stat().st_size > _max_encrypted_backup_bytes():
         raise ValueError("Identity backup file size is invalid.")
     encrypted = backup.read_bytes()
     if not encrypted.startswith(_MAGIC):

@@ -174,6 +174,21 @@ def test_wrong_backup_key_and_symlink_sources_fail_closed(tmp_path, monkeypatch)
         create_encrypted_backup(link, tmp_path / "link-backup.fernet")
 
 
+def test_backup_rejects_snapshot_above_configured_size_limit(tmp_path, monkeypatch):
+    from app import identity_backup
+
+    monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    monkeypatch.setattr(identity_backup, "_MAX_BACKUP_BYTES", 1024)
+    source = tmp_path / "oversized.sqlite3"
+    _identity_store(source)
+
+    with pytest.raises(ValueError, match="payload size"):
+        create_encrypted_backup(source, tmp_path / "oversized.fernet")
+
+
 def test_backup_rejects_incomplete_schema_even_with_current_version_marker(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
