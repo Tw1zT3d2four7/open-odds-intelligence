@@ -145,6 +145,16 @@ def test_identity_admin_errors_and_auth_pages_are_never_cached(client, monkeypat
         assert denied.headers["cache-control"] == "no-store"
         assert denied.headers["pragma"] == "no-cache"
 
+        docs = client.get("/docs")
+        assert docs.status_code == 401
+        assert docs.headers["cache-control"] == "no-store"
+        assert docs.headers["pragma"] == "no-cache"
+
+        schema = client.get("/openapi.json")
+        assert schema.status_code == 401
+        assert schema.headers["cache-control"] == "no-store"
+        assert schema.headers["pragma"] == "no-cache"
+
         subscriber_page = client.get("/account")
         assert subscriber_page.status_code == 401
         assert subscriber_page.headers["cache-control"] == "no-store"
