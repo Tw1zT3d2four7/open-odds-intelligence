@@ -17,15 +17,16 @@ jobs:
           python - <<'PY'
           import re
           from pathlib import Path
-          for page in ("index", "admin"):
+          for page in ("index", "admin", "auth", "account"):
               html = Path(f"web/{page}.html").read_text(encoding="utf-8")
               scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S)
               if not scripts:
                   raise SystemExit(f"No inline JavaScript found in web/{page}.html")
               Path(f"/tmp/open-odds-{page}.js").write_text("\n".join(scripts), encoding="utf-8")
           PY
-          node --check /tmp/open-odds-index.js
-          node --check /tmp/open-odds-admin.js
+          for page in index admin auth account; do
+            node --check "/tmp/open-odds-$page.js"
+          done
       - name: Validate Docker Compose configuration
         run: |
           cp .env.example .env
