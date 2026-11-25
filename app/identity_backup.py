@@ -98,8 +98,10 @@ def _validate_database_bytes(data: bytes) -> int:
         if version < 1 or version > _SCHEMA_VERSION:
             raise ValueError("Identity backup schema version is unsupported.")
         return version
-    except sqlite3.Error:
-        raise ValueError("Identity backup is not a valid identity database.") from None
+    except sqlite3.Error as exc:
+        raise ValueError(
+            f"Identity backup is not a valid identity database: {type(exc).__name__}: {exc}"
+        ) from None
     finally:
         connection.close()
 
