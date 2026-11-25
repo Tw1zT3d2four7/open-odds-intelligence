@@ -138,6 +138,7 @@ def test_missing_or_invalid_queue_encryption_key_fails_closed(tmp_path, monkeypa
         queue.enqueue(
             identity_id="identity",
             purpose="verification",
+            challenge_token="token",
             recipient="member@example.test",
             subject="Verify",
             text="secret-token",
