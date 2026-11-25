@@ -826,9 +826,14 @@ def test_email_provider_half_open_probe_is_exclusive_across_workers(tmp_path, mo
 
 
 
-def _mfa_admin(store, email="entitlement-admin@example.com"):
+def _mfa_admin(store, monkeypatch, email="entitlement-admin@example.com"):
     import pyotp
+    from cryptography.fernet import Fernet
+    from app import config
 
+    monkeypatch.setattr(
+        config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
+    )
     admin_id = store.provision_administrator(email, "an entitlement admin password")
     uri = store.start_administrator_mfa_enrollment(admin_id)
     totp = pyotp.parse_uri(uri)
@@ -852,7 +857,7 @@ def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_pa
             subscriber_id, ["odds"], actor_identity_id=other_subscriber
         )
 
-    admin_id = _mfa_admin(store)
+    admin_id = _mfa_admin(store, monkeypatch)
     grants = store.set_subscriber_entitlements(
         subscriber_id, ["odds", "dashboard"], actor_identity_id=admin_id
     )
@@ -886,7 +891,7 @@ def test_subscriber_entitlement_expiry_and_replacement_are_enforced(tmp_path, mo
     subscriber_id = store.create_subscriber(
         "expiry@example.com", "a strong expiry password"
     )
-    admin_id = _mfa_admin(store, "expiry-admin@example.com")
+    admin_id = _mfa_admin(store, monkeypatch, "expiry-admin@example.com")
     store.set_subscriber_entitlements(
         subscriber_id, ["odds"], actor_identity_id=admin_id,
         expires_at=now[0] + timedelta(hours=1),
@@ -916,7 +921,7 @@ def test_subscriber_entitlement_updates_reject_unapproved_feature_keys(tmp_path,
     subscriber_id = store.create_subscriber(
         "invalid-entitlement@example.com", "a strong invalid entitlement password"
     )
-    admin_id = _mfa_admin(store, "invalid-entitlement-admin@example.com")
+    admin_id = _mfa_admin(store, monkeypatch, "invalid-entitlement-admin@example.com")
     with pytest.raises(ValueError, match="entitlement"):
         store.set_subscriber_entitlements(
             subscriber_id, keys, actor_identity_id=admin_id
