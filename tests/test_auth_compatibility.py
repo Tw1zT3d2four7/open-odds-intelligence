@@ -42,3 +42,33 @@ def test_legacy_basic_auth_partial_configuration_fails_closed_but_health_stays_p
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
+
+
+
+def test_identity_mode_fails_closed_until_full_route_cutover_is_enabled(monkeypatch):
+    monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
+    monkeypatch.setattr(main.service, "status", lambda: {"status": "ok"})
+    monkeypatch.setattr(main.limits_monitor, "status", lambda: {"status": "ok"})
+
+    client = TestClient(main.app)
+    dashboard = client.get("/")
+    assert dashboard.status_code == 503
+    assert "not ready" in dashboard.json()["detail"].lower()
+
+    # The Docker liveness contract remains independent of browser authentication.
+    health = client.get("/api/health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+
+
+def test_identity_mode_never_falls_back_to_configured_legacy_basic_credentials(monkeypatch):
+    monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "legacy-secret")
+
+    client = TestClient(main.app)
+    response = client.get("/", auth=("operator", "legacy-secret"))
+    assert response.status_code == 503
+    assert "not ready" in response.json()["detail"].lower()
