@@ -10,7 +10,7 @@ import hashlib
 import html
 import logging
 import sqlite3
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -38,6 +38,7 @@ from .email_delivery import (
     create_email_sender,
 )
 from .identity import IdentityStore
+from .email_queue import TransactionalEmailQueue, validate_email_queue_configuration
 from .rate_limit import SQLiteRateLimiter, request_peer_ip
 
 logger = logging.getLogger(__name__)
@@ -158,26 +159,30 @@ def _public_link(path: str, token: str) -> str:
 def _send_challenge_email(
     sender,
     *,
+    store: IdentityStore,
     recipient: str,
     token: str,
     identity_id: str,
     purpose: str,
-) -> None:
+) -> str:
+    """Encrypt and enqueue a one-time challenge; provider I/O runs in a worker."""
     if purpose == "verification":
         path = "verify-email"
         subject = "Verify your Open Odds Intelligence email"
         action = "verify your email address"
-        event = "subscriber-verification"
+        lifetime = timedelta(hours=24)
+        queue_purpose = "verification"
     else:
         path = "reset-password"
         subject = "Reset your Open Odds Intelligence password"
         action = "reset your password"
-        event = "subscriber-password-reset"
+        lifetime = timedelta(minutes=30)
+        queue_purpose = "password_reset"
 
     link = _public_link(path, token)
     safe_link = html.escape(link, quote=True)
     text_body = (
-        f"Use this link to {action}:\n\n{link}\n\n"
+        f"Use this link to {action}:\\n\\n{link}\\n\\n"
         "If you did not request this message, you can ignore it."
     )
     html_body = (
@@ -185,24 +190,23 @@ def _send_challenge_email(
         f'<p><a href="{safe_link}">{html.escape(subject)}</a></p>'
         "<p>If you did not request this message, you can ignore it.</p>"
     )
-    token_fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    return sender.send(
-        recipient,
-        subject,
+    return TransactionalEmailQueue(store).enqueue(
+        identity_id=identity_id,
+        purpose=queue_purpose,
+        recipient=recipient,
+        subject=subject,
         text=text_body,
         html=html_body,
-        idempotency_key=f"{event}:{identity_id}:{token_fingerprint}",
+        challenge_expires_at=datetime.now(timezone.utc) + lifetime,
     )
 
 
 def get_email_sender(request: Request):
-    """Resolve a sender lazily; tests can inject a fake sender on app.state."""
+    """Validate provider and encrypted-queue configuration before accepting a challenge."""
     configured = getattr(request.app.state, "email_sender", None)
-    if configured is not None:
-        _public_origin()
-        return configured
     try:
-        sender = create_email_sender()
+        validate_email_queue_configuration()
+        sender = configured if configured is not None else create_email_sender()
     except EmailDeliveryConfigurationError:
         raise HTTPException(
             status_code=503,
@@ -214,48 +218,23 @@ def get_email_sender(request: Request):
             detail="Authentication email delivery is not configured.",
         )
     _public_origin()
-    request.app.state.email_sender = sender
+    if configured is None:
+        request.app.state.email_sender = sender
     return sender
 
 
 def _deliver_or_record_failure(store: IdentityStore, sender, **kwargs) -> None:
-    identity_id = kwargs["identity_id"]
-    purpose = "password_reset" if kwargs["purpose"] == "password-reset" else "verification"
     try:
-        if not store.claim_email_provider_send():
-            store.record_email_delivery_event(
-                identity_id, purpose, "skipped", failure_code="circuit_open"
-            )
-            logger.warning("Transactional authentication email delivery is paused.")
-            return
-    except Exception:
-        # Fail closed: do not send when persistent circuit state cannot be checked.
-        logger.warning("Transactional email protection is temporarily unavailable.")
-        return
-
-    try:
-        provider_message_id = _send_challenge_email(sender, **kwargs)
+        queue_id = _send_challenge_email(sender, store=store, **kwargs)
     except HTTPException:
         raise
-    except EmailDeliveryError as exc:
-        try:
-            store.record_email_delivery_event(
-                identity_id, purpose, "failed", failure_code=exc.failure_code
-            )
-        except Exception:
-            logger.warning("Transactional email failure status could not be recorded.")
-        # Never log destination addresses, challenge tokens, provider responses,
-        # or credentials. A resend request can issue a fresh challenge.
-        logger.warning("Transactional authentication email delivery failed.")
-        return
-
-    try:
-        store.record_email_delivery_event(
-            identity_id, purpose, "sent", provider_message_id=provider_message_id
-        )
     except Exception:
-        # Do not cause a duplicate send by returning an error after provider success.
-        logger.warning("Transactional email success status could not be recorded.")
+        logger.warning("Transactional authentication email could not be queued.")
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication email delivery is temporarily unavailable.",
+        ) from None
+    logger.info("Transactional authentication email queued (reference=%s).", queue_id)
 
 
 @router.get("/auth/csrf")
