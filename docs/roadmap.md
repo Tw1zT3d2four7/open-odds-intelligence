@@ -139,9 +139,10 @@ Still required before Phase 1 is complete:
 - [x] Protect the shell with an active administrator session; subscriber sessions and unauthenticated requests are rejected.
 - [ ] Build protected overview APIs and operational diagnostics.
 - [ ] Add Users, Subscriptions, Notifications, Platform, System Configuration, Communications, and Security views backed by reviewed admin APIs.
-- [ ] Add privileged-action audit views and security controls.
+- [x] Add a protected, bounded, paginated, no-store administrator audit API and a Security view that renders audit events without account email addresses.
+- [ ] Add remaining privileged-action security controls and audit filters/retention administration.
 
-The initial shell is intentionally navigation-first. Unimplemented sections are labeled as planned and do not display fabricated metrics or offer nonfunctional write controls. It is exposed only in staged `AUTH_MODE=identity`; production remains on `legacy_basic` until Phase 1 deployment gates and rollback drills pass.
+The initial shell is navigation-first. The Security section now reads the existing secret-free audit store through a bounded administrator-only API; other unimplemented sections remain labeled as planned and do not display fabricated metrics or offer nonfunctional write controls. It is exposed only in staged `AUTH_MODE=identity`; production remains on `legacy_basic` until Phase 1 deployment gates and rollback drills pass.
 
 ### Phase 3 — Subscriber account foundation
 

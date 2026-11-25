@@ -558,3 +558,49 @@ def test_admin_console_is_private_no_store_and_separate_from_subscriber_access(t
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+
+def test_admin_audit_api_is_mfa_protected_paginated_and_non_cacheable(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    subscriber_id = harness.store.create_subscriber(
+        "audit-private@example.test", "a strong subscriber password"
+    )
+    admin_id = harness.store.provision_administrator(
+        "audit-admin@example.test", "an administrator password 123"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+
+    denied = harness.client.get("/admin/audit-events")
+    assert denied.status_code == 401
+
+    login = harness.post("/admin/auth/login", {
+        "email": "audit-admin@example.test",
+        "password": "an administrator password 123",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+
+    response = harness.client.get("/admin/audit-events", params={"limit": 2})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["limit"] == 2
+    assert payload["total"] >= 2
+    assert len(payload["events"]) == 2
+    assert all("event_type" in event and "occurred_at" in event for event in payload["events"])
+    assert "audit-private@example.test" not in response.text
+    assert "audit-admin@example.test" not in response.text
+
+    filtered = harness.client.get(
+        "/admin/audit-events",
+        params={"event_type": "administrator_provisioned"},
+    )
+    assert filtered.status_code == 200
+    assert all(event["event_type"] == "administrator_provisioned"
+               for event in filtered.json()["events"])
+    assert harness.client.get("/admin/audit-events", params={"limit": 0}).status_code == 422
+    assert subscriber_id

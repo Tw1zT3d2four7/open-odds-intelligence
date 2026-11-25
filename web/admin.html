@@ -54,6 +54,21 @@ h1{font-size:clamp(25px,3vw,34px);line-height:1.15;letter-spacing:-.035em;margin
 .view[hidden]{display:none}
 .planned{display:inline-block;margin-bottom:12px;padding:4px 8px;border-radius:20px;background:#342b1c;border:1px solid #655234;color:var(--amber);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
 .message{min-height:20px;color:#ffb9b9;font-size:12px;margin-top:10px}
+.audit-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:18px 0 10px}
+.audit-controls label{color:var(--muted);font-size:12px}
+.audit-controls input{min-width:220px;max-width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#0b1626;color:var(--text)}
+.audit-controls button,.audit-pagination button{padding:9px 12px;border:1px solid #40536b;border-radius:8px;background:#17263c;color:var(--text);cursor:pointer}
+.audit-controls button:hover,.audit-pagination button:hover:not(:disabled){border-color:var(--accent)}
+.audit-status{min-height:22px;color:var(--muted);font-size:12px;margin:8px 0}
+.table-wrap{width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:9px}
+table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}
+th,td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:#9fb2c9;background:#101b2b;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+td{color:#c7d4e3;max-width:300px;overflow-wrap:anywhere}
+tbody tr:last-child td{border-bottom:0}
+.audit-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:12px;color:var(--muted);font-size:12px}
+.audit-pagination button:disabled{opacity:.4;cursor:not-allowed}
+
 @media(max-width:900px){.layout{grid-template-columns:210px minmax(0,1fr)}.cards,.checks{grid-template-columns:1fr}}
 @media(max-width:650px){.layout{display:block}.sidebar{padding:14px;border-right:0;border-bottom:1px solid var(--line)}.brand{padding-bottom:12px}.workspace-label,.sidebar-bottom{display:none}nav{display:flex;overflow-x:auto;padding-bottom:3px}nav button{width:auto;white-space:nowrap}.tag{display:none}main{padding:22px 16px 40px}.topbar{align-items:flex-start;flex-direction:column}.secure-pill{align-self:flex-start}}
 </style>
@@ -105,7 +120,23 @@ h1{font-size:clamp(25px,3vw,34px);line-height:1.15;letter-spacing:-.035em;margin
     <section class="view" id="view-platform" hidden><span class="planned">Planned module</span><div class="panel"><h2>Platform operations</h2><p>Provider health, refresh scheduling, and operational diagnostics will be exposed only through reviewed administrator endpoints.</p></div></section>
     <section class="view" id="view-configuration" hidden><span class="planned">Planned module</span><div class="panel"><h2>System configuration</h2><p>Environment configuration remains disabled until its allowlist, validation, atomic apply, backup, rollback, and restart design is approved.</p></div></section>
     <section class="view" id="view-communications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Communications</h2><p>Platform announcements and subscriber communications will be introduced with consent, targeting, and delivery safeguards.</p></div></section>
-    <section class="view" id="view-security" hidden><span class="planned">Planned module</span><div class="panel"><h2>Security and audit</h2><p>Administrator security controls and the paginated, secret-free audit event viewer are the next security-focused console capabilities.</p></div></section>
+    <section class="view" id="view-security" hidden>
+      <div class="panel">
+        <h2>Security audit history</h2>
+        <p>Recent authentication, account, MFA, and session events. Results are paginated and omit account email addresses and credential material.</p>
+        <div class="audit-controls">
+          <label for="audit-filter">Event type</label>
+          <input id="audit-filter" type="text" maxlength="128" placeholder="All event types">
+          <button id="audit-refresh" type="button">Refresh history</button>
+        </div>
+        <div class="audit-status" id="audit-status" role="status" aria-live="polite">Audit history has not been loaded.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Subject</th><th>Details</th></tr></thead>
+          <tbody id="audit-rows"><tr><td colspan="5">Select Security to load recent events.</td></tr></tbody>
+        </table></div>
+        <div class="audit-pagination"><button id="audit-previous" type="button" disabled>Previous</button><span id="audit-page">Page 1</span><button id="audit-next" type="button" disabled>Next</button></div>
+      </div>
+    </section>
   </div>
 </main>
 </div>
@@ -135,7 +166,71 @@ h1{font-size:clamp(25px,3vw,34px);line-height:1.15;letter-spacing:-.035em;margin
     document.getElementById("page-title").textContent = labels[name][0];
     document.getElementById("page-subtitle").textContent = labels[name][1];
   }
-  buttons.forEach(button => button.addEventListener("click", () => selectView(button.dataset.view)));
+
+  let auditOffset = 0;
+  const auditLimit = 25;
+  let auditTotal = 0;
+  let auditLoaded = false;
+  const auditStatus = document.getElementById("audit-status");
+  const auditRows = document.getElementById("audit-rows");
+  const auditPage = document.getElementById("audit-page");
+  const auditFilter = document.getElementById("audit-filter");
+  function cell(row, value) {
+    const td = document.createElement("td");
+    td.textContent = value == null || value === "" ? "—" : String(value);
+    row.appendChild(td);
+  }
+  async function loadAudit() {
+    auditStatus.textContent = "Loading security audit history…";
+    const params = new URLSearchParams({limit:String(auditLimit),offset:String(auditOffset)});
+    const eventType = auditFilter.value.trim();
+    if (eventType) params.set("event_type", eventType);
+    try {
+      const response = await fetch("/admin/audit-events?" + params.toString(), {
+        credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Audit history unavailable");
+      const data = await response.json();
+      auditTotal = Number(data.total) || 0;
+      auditRows.replaceChildren();
+      if (!data.events.length) {
+        const row = document.createElement("tr");
+        cell(row, "No matching audit events.");
+        const filler = document.createElement("td");
+        filler.colSpan = 4;
+        row.appendChild(filler);
+        auditRows.appendChild(row);
+      } else {
+        data.events.forEach(event => {
+          const row = document.createElement("tr");
+          cell(row, event.occurred_at);
+          cell(row, event.event_type);
+          cell(row, event.actor_identity_id);
+          cell(row, event.subject_identity_id);
+          cell(row, JSON.stringify(event.metadata || {}));
+          auditRows.appendChild(row);
+        });
+      }
+      auditPage.textContent = auditTotal ? `Page ${Math.floor(auditOffset / auditLimit) + 1} of ${Math.max(1, Math.ceil(auditTotal / auditLimit))}` : "Page 1";
+      document.getElementById("audit-previous").disabled = auditOffset === 0;
+      document.getElementById("audit-next").disabled = auditOffset + auditLimit >= auditTotal;
+      auditStatus.textContent = `${auditTotal} matching event(s)`;
+      auditLoaded = true;
+    } catch (_error) {
+      auditStatus.textContent = "Audit history could not be loaded. Refresh the page or sign in again.";
+    }
+  }
+  buttons.forEach(button => button.addEventListener("click", () => {
+    selectView(button.dataset.view);
+    if (button.dataset.view === "security" && !auditLoaded) loadAudit();
+  }));
+  document.getElementById("audit-refresh").addEventListener("click", () => { auditOffset = 0; loadAudit(); });
+  document.getElementById("audit-previous").addEventListener("click", () => { auditOffset = Math.max(0, auditOffset - auditLimit); loadAudit(); });
+  document.getElementById("audit-next").addEventListener("click", () => { auditOffset += auditLimit; loadAudit(); });
+  auditFilter.addEventListener("keydown", event => {
+    if (event.key === "Enter") { auditOffset = 0; loadAudit(); }
+  });
+
   document.getElementById("logout").addEventListener("click", async () => {
     const message = document.getElementById("message");
     const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);

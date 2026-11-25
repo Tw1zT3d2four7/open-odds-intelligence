@@ -15,7 +15,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -555,6 +555,41 @@ def administrator_login(
     set_session_cookie(response, token, "administrator", max_age=4 * 60 * 60)
     issue_csrf_cookie(response)
     return {"ok": True}
+
+
+@router.get(
+    "/admin/audit-events",
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_audit_events(
+    response: Response,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10_000_000),
+    event_type: str | None = Query(None, min_length=1, max_length=128),
+    actor_identity_id: str | None = Query(None, min_length=1, max_length=128),
+    subject_identity_id: str | None = Query(None, min_length=1, max_length=128),
+    _session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Return a bounded, secret-free audit page to an active MFA administrator."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        return store.list_security_audit_events(
+            limit=limit,
+            offset=offset,
+            event_type=event_type,
+            actor_identity_id=actor_identity_id,
+            subject_identity_id=subject_identity_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Administrator audit query failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Security audit history is temporarily unavailable.",
+        ) from None
 
 
 @router.get(
