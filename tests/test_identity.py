@@ -1382,6 +1382,10 @@ def test_stripe_subscription_event_atomically_creates_snapshot_and_finishes_leas
             "VALUES (?, 'cus_reconcile', ?, ?)",
             (subscriber_id, now, now),
         )
+    reservation = store.reserve_billing_checkout(
+        subscriber_id, "month", hashlib.sha256(b"checkout-before-webhook").hexdigest()
+    )
+    assert reservation["state"] == "reserved"
     event = {
         "id": "evt_sub_created",
         "type": "customer.subscription.created",
@@ -1418,6 +1422,7 @@ def test_stripe_subscription_event_atomically_creates_snapshot_and_finishes_leas
     assert sub["last_event_created_at"] is not None
     assert inbox["processing_state"] == "processed"
     assert inbox["lease_token_hash"] is None
+    assert store.billing_checkout_pending(subscriber_id) is False
 
 
 def test_stripe_subscription_event_ignores_out_of_order_snapshot(tmp_path):
