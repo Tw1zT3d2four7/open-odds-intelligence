@@ -1,9 +1,9 @@
 # Identity & Access Architecture
 
-**Status:** Proposed implementation baseline  
+**Status:** Staged implementation baseline; identity endpoints and product-route authorization are implemented on the feature branch.  
 **Working branch:** `feature/admin-panel-and-subscriptions`  
 **Scope:** Authentication, account storage, sessions, authorization, and route protection  
-**Production impact:** None. This document records design only.
+**Production impact:** None. Production remains on the unchanged `legacy_basic` mode; no deployment or mode switch has occurred.
 
 ## 1. Existing application constraints
 
@@ -111,12 +111,12 @@ Add negative tests proving that subscriber A cannot read or mutate subscriber B'
 
 ## 9. Compatibility and migration from Basic Auth
 
-Do not remove the existing Basic Auth behavior in the first identity commit. First introduce and test the new identity components in isolation. Then design a controlled transition:
+The existing Basic Auth behavior remains the default compatibility mode. The explicit `identity` mode is staged and uses the new session/entitlement boundary. A production transition still requires a controlled operator-approved process:
 
 1. Identify current deployments and how Basic Auth is configured.
 2. Define an explicit migration/compatibility period and operator bootstrap procedure.
-3. Add the new routes and test coverage without weakening protection on existing routes.
-4. Move routes to the explicit access matrix in small groups.
+3. Add the new routes and test coverage without weakening protection on existing routes. (Implemented on the feature branch.)
+4. Apply explicit session, administrator, CSRF, and entitlement dependencies to product routes only in `identity` mode. (Implemented; feature grants default to deny.)
 5. Keep a safe operator recovery path that does not expose a public privilege-escalation endpoint.
 6. Remove legacy Basic Auth only in a separately reviewed change after the new authentication boundary is proven.
 
@@ -141,5 +141,5 @@ No production restart, Compose change, or deployment action is part of this desi
 
 ## 11. Explicit non-goals for the first milestone
 
-The first implementation milestone is not billing, notification delivery, the Admin Console dashboard, the environment editor, or a production migration. It is a small, isolated identity foundation plus tests. Subscriber registration and admin login UI should follow only after the identity and authorization contracts are reviewed.
+The current identity milestone does not include billing, the full Admin Console workspace, the environment editor, public subscriber launch, or production migration. Subscriber/admin entry pages, account endpoints, encrypted email queueing, and default-deny feature entitlement enforcement are implemented on the feature branch. Remaining launch gates include proxy-topology verification, non-production end-to-end testing, queue/database recovery, key rotation, and rollback rehearsal.
 
