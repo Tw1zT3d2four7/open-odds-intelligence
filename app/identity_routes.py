@@ -461,6 +461,7 @@ def subscriber_billing_summary(
             isinstance(config.STRIPE_SECRET_KEY, str)
             and re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
             and not config.STRIPE_WEBHOOK_LIVEMODE
+            and config.STRIPE_TEST_MODE_ACKNOWLEDGED
             and _stripe_test_webhook_ready()
             and public_origin_ready
         )
@@ -531,6 +532,7 @@ def _stripe_test_billing_ready(*, checkout: bool = False, portal: bool = False) 
         not isinstance(config.STRIPE_SECRET_KEY, str)
         or not re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
         or config.STRIPE_WEBHOOK_LIVEMODE
+        or not config.STRIPE_TEST_MODE_ACKNOWLEDGED
         or not _stripe_test_webhook_ready()
     ):
         raise HTTPException(status_code=503, detail="Stripe test-mode billing is not configured.")
