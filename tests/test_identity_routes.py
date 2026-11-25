@@ -257,3 +257,43 @@ def test_password_reset_request_is_account_enumeration_resistant(tmp_path, monke
     assert unknown.status_code == known.status_code == 202
     assert unknown.json() == known.json()
     assert len(harness.sender.messages) == 1
+
+
+
+def test_successful_subscriber_login_revokes_previous_session(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber("person@example.com", "a strong password 123")
+    verification = harness.store.create_email_verification_challenge("person@example.com")
+    harness.store.consume_email_verification_challenge(verification)
+    previous_token, _ = harness.store.create_session(identity_id)
+    harness.client.cookies.set(
+        "__Host-ooi_subscriber", previous_token,
+        domain="ooi.example", path="/", secure=True,
+    )
+
+    response = harness.post("/auth/login", {
+        "email": "person@example.com",
+        "password": "a strong password 123",
+    })
+    assert response.status_code == 200
+    assert harness.store.get_session(previous_token) is None
+    assert harness.client.cookies.get("__Host-ooi_subscriber") != previous_token
+
+
+def test_subscriber_logout_revokes_session_and_clears_cookies(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber("person@example.com", "a strong password 123")
+    verification = harness.store.create_email_verification_challenge("person@example.com")
+    harness.store.consume_email_verification_challenge(verification)
+    response = harness.post("/auth/login", {
+        "email": "person@example.com",
+        "password": "a strong password 123",
+    })
+    assert response.status_code == 200
+    token = harness.client.cookies.get("__Host-ooi_subscriber")
+    assert token and harness.store.get_session(token)
+
+    logout = harness.post("/auth/logout", {})
+    assert logout.status_code == 200
+    assert harness.store.get_session(token) is None
+    assert harness.client.cookies.get("__Host-ooi_subscriber") is None
