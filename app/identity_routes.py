@@ -11,6 +11,7 @@ import html
 import logging
 import sqlite3
 import secrets
+import re
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
@@ -42,6 +43,7 @@ from .email_delivery import (
     create_email_sender,
 )
 from .identity import IdentityStore
+from . import stripe_api
 from .billing_pricing import CURRENCY, MONTHLY_PRICE_CENTS, ANNUAL_PRICE_CENTS
 from .email_queue import TransactionalEmailQueue, validate_email_queue_configuration
 from .rate_limit import SQLiteRateLimiter, request_peer_ip
@@ -210,6 +212,10 @@ class EntitlementUpdateInput(StrictModel):
     entitlements: list[str] = Field(max_length=32)
     reason_code: str = Field(pattern="^(support_request|trial_grant|promotional_access|billing_adjustment|other)$")
     expires_at: datetime | None = None
+
+
+class CheckoutInput(StrictModel):
+    interval: str = Field(pattern="^(month|year)$")
 
 
 class SubscriberStatusInput(StrictModel):
@@ -456,6 +462,163 @@ def subscriber_billing_summary(
             status_code=503,
             detail="Billing information is temporarily unavailable.",
         ) from None
+
+
+def _stripe_test_billing_ready(*, checkout: bool = False, portal: bool = False) -> None:
+    """Fail closed unless the explicitly enabled Stripe test-mode path is configured."""
+    enabled = config.STRIPE_CHECKOUT_ENABLED if checkout else config.STRIPE_CUSTOMER_PORTAL_ENABLED
+    if not enabled:
+        raise HTTPException(status_code=503, detail="Hosted billing is not enabled.")
+    if (
+        not isinstance(config.STRIPE_SECRET_KEY, str)
+        or not config.STRIPE_SECRET_KEY.startswith("sk_test_")
+        or config.STRIPE_WEBHOOK_LIVEMODE
+    ):
+        raise HTTPException(status_code=503, detail="Stripe test-mode billing is not configured.")
+    if checkout:
+        if (
+            not isinstance(config.STRIPE_PRICE_MONTHLY_ID, str)
+            or not config.STRIPE_PRICE_MONTHLY_ID.startswith("price_")
+            or not isinstance(config.STRIPE_PRICE_YEARLY_ID, str)
+            or not config.STRIPE_PRICE_YEARLY_ID.startswith("price_")
+            or config.STRIPE_PRICE_MONTHLY_ID == config.STRIPE_PRICE_YEARLY_ID
+        ):
+            raise HTTPException(status_code=503, detail="Recurring Stripe prices are not configured.")
+    try:
+        _public_origin()
+    except HTTPException:
+        raise HTTPException(status_code=503, detail="The public HTTPS application URL is not configured.") from None
+
+
+def _stripe_redirect_url(payload: dict, *, host: str) -> str:
+    """Accept only the expected HTTPS Stripe-hosted redirect URL."""
+    value = payload.get("url")
+    try:
+        parsed = urlsplit(value) if isinstance(value, str) else None
+        valid = (
+            parsed is not None and parsed.scheme == "https"
+            and parsed.hostname == host and parsed.username is None
+            and parsed.password is None and not parsed.fragment
+        )
+    except ValueError:
+        valid = False
+    if not valid:
+        raise HTTPException(status_code=502, detail="Stripe returned an invalid hosted billing URL.")
+    return value
+
+
+def _stripe_customer_for_subscriber(store: IdentityStore, session: dict) -> str:
+    """Create/reuse a Stripe customer and establish the trusted local identity mapping."""
+    identity_id = session["identity_id"]
+    customer_id = store.billing_customer_id(identity_id)
+    if customer_id:
+        return customer_id
+    key = "ooi-customer-" + hashlib.sha256(identity_id.encode("utf-8")).hexdigest()
+    customer = stripe_api.stripe_request(
+        "POST", "/customers",
+        params={
+            "email": session["email"],
+            "metadata[identity_id]": identity_id,
+        },
+        idempotency_key=key,
+    )
+    customer_id = customer.get("id")
+    if not isinstance(customer_id, str) or not customer_id.startswith("cus_"):
+        raise stripe_api.StripeAPIError("Stripe returned an invalid customer reference.")
+    return store.link_billing_customer(identity_id, customer_id)
+
+
+@router.post("/auth/billing/checkout", dependencies=[Depends(require_authenticated_csrf)])
+def create_subscriber_checkout(
+    payload: CheckoutInput,
+    request: Request,
+    response: Response,
+    session: dict = Depends(require_subscriber),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Create a hosted subscription Checkout Session using only server-owned prices."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    _stripe_test_billing_ready(checkout=True)
+    client_key = request.headers.get("idempotency-key", "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", client_key):
+        raise HTTPException(status_code=400, detail="A valid checkout idempotency key is required.")
+    price_id = (
+        config.STRIPE_PRICE_MONTHLY_ID
+        if payload.interval == "month" else config.STRIPE_PRICE_YEARLY_ID
+    )
+    expected_amount = MONTHLY_PRICE_CENTS if payload.interval == "month" else ANNUAL_PRICE_CENTS
+    try:
+        price = stripe_api.stripe_request("GET", f"/prices/{price_id}")
+        recurring = price.get("recurring") if isinstance(price.get("recurring"), dict) else {}
+        if (
+            price.get("id") != price_id
+            or price.get("active") is not True
+            or price.get("currency") != CURRENCY
+            or price.get("unit_amount") != expected_amount
+            or recurring.get("interval") != payload.interval
+            or recurring.get("interval_count") != 1
+        ):
+            raise HTTPException(status_code=503, detail="The selected recurring price is not approved.")
+        customer_id = _stripe_customer_for_subscriber(store, session)
+        origin = _public_origin()
+        checkout = stripe_api.stripe_request(
+            "POST", "/checkout/sessions",
+            params={
+                "mode": "subscription",
+                "customer": customer_id,
+                "client_reference_id": session["identity_id"],
+                "line_items[0][price]": price_id,
+                "line_items[0][quantity]": "1",
+                "success_url": origin + "/account?checkout=success&session_id={CHECKOUT_SESSION_ID}",
+                "cancel_url": origin + "/account?checkout=cancelled",
+                "metadata[identity_id]": session["identity_id"],
+                "subscription_data[metadata][identity_id]": session["identity_id"],
+            },
+            idempotency_key="ooi-checkout-" + hashlib.sha256(
+                (session["identity_id"] + ":" + payload.interval + ":" + client_key).encode("utf-8")
+            ).hexdigest(),
+        )
+        url = _stripe_redirect_url(checkout, host="checkout.stripe.com")
+        return {"url": url}
+    except HTTPException:
+        raise
+    except stripe_api.StripeAPIError:
+        raise HTTPException(status_code=502, detail="Hosted checkout is temporarily unavailable.") from None
+    except Exception:
+        logger.warning("Stripe Checkout session creation failed.")
+        raise HTTPException(status_code=503, detail="Hosted checkout is temporarily unavailable.") from None
+
+
+@router.post("/auth/billing/portal", dependencies=[Depends(require_authenticated_csrf)])
+def create_subscriber_portal(
+    response: Response,
+    session: dict = Depends(require_subscriber),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Create a hosted Customer Portal session for the authenticated subscriber only."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    _stripe_test_billing_ready(portal=True)
+    try:
+        customer_id = store.billing_customer_id(session["identity_id"])
+        if not customer_id:
+            raise HTTPException(status_code=409, detail="No billing customer is linked to this account.")
+        portal = stripe_api.stripe_request(
+            "POST", "/billing_portal/sessions",
+            params={"customer": customer_id, "return_url": _public_origin() + "/account"},
+            idempotency_key="ooi-portal-" + hashlib.sha256(
+                (session["identity_id"] + ":" + secrets.token_urlsafe(18)).encode("utf-8")
+            ).hexdigest(),
+        )
+        return {"url": _stripe_redirect_url(portal, host="billing.stripe.com")}
+    except HTTPException:
+        raise
+    except stripe_api.StripeAPIError:
+        raise HTTPException(status_code=502, detail="Customer Portal is temporarily unavailable.") from None
+    except Exception:
+        logger.warning("Stripe Customer Portal session creation failed.")
+        raise HTTPException(status_code=503, detail="Customer Portal is temporarily unavailable.") from None
 
 
 @router.post("/auth/register", status_code=202, dependencies=[Depends(require_authenticated_csrf)])
