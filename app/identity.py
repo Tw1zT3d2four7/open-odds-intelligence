@@ -1620,8 +1620,13 @@ class IdentityStore:
                    LIMIT ? OFFSET ?""",
                 (current_session_id, identity_id, now, current_session_id, limit, offset),
             ).fetchall()
+        sessions = []
+        for row in rows:
+            item = dict(row)
+            item["is_current"] = bool(item["is_current"])
+            sessions.append(item)
         return {
-            "sessions": [dict(row) for row in rows],
+            "sessions": sessions,
             "total": total,
             "limit": limit,
             "offset": offset,
