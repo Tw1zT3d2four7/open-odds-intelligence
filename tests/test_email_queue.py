@@ -228,3 +228,41 @@ def test_expired_worker_lease_cannot_complete_after_reclaim(tmp_path, monkeypatc
             (queue_id,),
         ).fetchone()
     assert row["state"] == "sent"
+
+
+
+def test_replaced_one_time_challenge_expires_its_queued_email(tmp_path, monkeypatch):
+    store, queue, _identity_id, queue_id, _clock = _setup(tmp_path, monkeypatch)
+    # Issuing a replacement invalidates the previous token in the identity store.
+    store.create_email_verification_challenge("member@example.test")
+    sender = FakeSender()
+
+    assert queue.process_one(sender) is False
+    assert sender.calls == []
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT state, encrypted_payload, last_failure_code "
+            "FROM transactional_email_queue WHERE id=?",
+            (queue_id,),
+        ).fetchone()
+    assert row["state"] == "expired"
+    assert row["encrypted_payload"] == b""
+    assert row["last_failure_code"] == "challenge_unavailable"
+
+
+def test_terminal_queue_rows_are_pruned_after_operational_retention(tmp_path, monkeypatch):
+    now = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+    monkeypatch.setattr(queue_module, "_now", lambda: now[0])
+    store, queue, _identity_id, queue_id, _clock = _setup(
+        tmp_path, monkeypatch, now=now[0]
+    )
+    assert queue.process_one(FakeSender()) is True
+
+    now[0] += timedelta(days=31)
+    assert queue.process_one(FakeSender()) is False
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT id FROM transactional_email_queue WHERE id=?",
+            (queue_id,),
+        ).fetchone()
+    assert row is None
