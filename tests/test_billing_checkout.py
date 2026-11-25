@@ -145,6 +145,7 @@ def test_checkout_to_subscription_webhook_reconciliation_never_grants_entitlemen
         "id": "evt_checkout_e2e",
         "type": "customer.subscription.created",
         "created": 1795600000,
+        "livemode": False,
         "data": {"object": {
             "id": "sub_checkoutE2E",
             "customer": "cus_checkoutE2E",
