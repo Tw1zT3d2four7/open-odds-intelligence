@@ -7,9 +7,12 @@ def test_legacy_basic_auth_unconfigured_mode_preserves_existing_open_behavior(mo
     monkeypatch.setattr(main.config, "AUTH_USERNAME", "")
     monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
 
-    response = TestClient(main.app).get("/")
+    monkeypatch.setattr(main.config, "AUTH_MODE", "legacy_basic")
+    client = TestClient(main.app)
+    response = client.get("/")
     assert response.status_code == 200
     assert "Open Odds Intelligence" in response.text
+    assert client.get("/auth/csrf").status_code == 404
 
 
 def test_legacy_basic_auth_requires_credentials_when_both_are_configured(monkeypatch):
@@ -55,12 +58,18 @@ def test_identity_mode_fails_closed_until_full_route_cutover_is_enabled(monkeypa
     client = TestClient(main.app)
     dashboard = client.get("/")
     assert dashboard.status_code == 503
-    assert "not ready" in dashboard.json()["detail"].lower()
+    assert "not enabled" in dashboard.json()["detail"].lower()
+    assert client.get("/api/odds").status_code == 503
 
-    # The Docker liveness contract remains independent of browser authentication.
+    # Only the separately protected identity entry points are enabled in this
+    # staged mode; the detailed provider health payload is not public.
+    csrf = client.get("/auth/csrf")
+    assert csrf.status_code == 200
+    assert csrf.headers["cache-control"] == "no-store"
+
     health = client.get("/api/health")
     assert health.status_code == 200
-    assert health.json()["status"] == "ok"
+    assert set(health.json()) == {"status", "app"}
 
 
 def test_identity_mode_never_falls_back_to_configured_legacy_basic_credentials(monkeypatch):
@@ -71,7 +80,7 @@ def test_identity_mode_never_falls_back_to_configured_legacy_basic_credentials(m
     client = TestClient(main.app)
     response = client.get("/", auth=("operator", "legacy-secret"))
     assert response.status_code == 503
-    assert "not ready" in response.json()["detail"].lower()
+    assert "not enabled" in response.json()["detail"].lower()
 
 
 
