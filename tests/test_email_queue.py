@@ -199,3 +199,32 @@ def test_consumed_challenge_is_discarded_before_provider_delivery(tmp_path, monk
     assert row["state"] == "expired"
     assert row["encrypted_payload"] == b""
     assert row["last_failure_code"] == "challenge_unavailable"
+
+
+
+def test_expired_worker_lease_cannot_complete_after_reclaim(tmp_path, monkeypatch):
+    now = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+    monkeypatch.setattr(queue_module, "_now", lambda: now[0])
+    store, queue, _identity_id, queue_id, _clock = _setup(
+        tmp_path, monkeypatch, now=now[0]
+    )
+
+    stale = queue._claim()
+    assert stale is not None
+    now[0] += timedelta(seconds=61)
+    assert queue._finish(stale, state="sent") is False
+
+    current = queue._claim()
+    assert current is not None
+    assert current["lease_token"] != stale["lease_token"]
+    assert queue._finish(
+        stale, state="failed", failure_code="unexpected"
+    ) is False
+    assert queue._finish(current, state="sent") is True
+
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT state FROM transactional_email_queue WHERE id=?",
+            (queue_id,),
+        ).fetchone()
+    assert row["state"] == "sent"
