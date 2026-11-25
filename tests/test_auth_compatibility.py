@@ -40,11 +40,6 @@ def test_legacy_basic_auth_requires_credentials_when_both_are_configured(monkeyp
 def test_legacy_basic_auth_partial_configuration_fails_closed_but_health_stays_public(monkeypatch):
     monkeypatch.setattr(main.config, "AUTH_USERNAME", "operator")
     monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
-    from app.identity import IdentityStore
-    monkeypatch.setattr(
-        main.app.state, "identity_store",
-        IdentityStore(tmp_path / "identity-mode.sqlite3"), raising=False,
-    )
     monkeypatch.setattr(main.service, "status", lambda: {"status": "ok"})
     monkeypatch.setattr(main.limits_monitor, "status", lambda: {"status": "ok"})
 
@@ -63,6 +58,11 @@ def test_identity_mode_protects_product_routes_and_exposes_only_staged_auth_page
     monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
     monkeypatch.setattr(main.config, "AUTH_USERNAME", "")
     monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
+    from app.identity import IdentityStore
+    monkeypatch.setattr(
+        main.app.state, "identity_store",
+        IdentityStore(tmp_path / "identity-mode.sqlite3"), raising=False,
+    )
     monkeypatch.setattr(main.service, "status", lambda: {"status": "ok"})
     monkeypatch.setattr(main.limits_monitor, "status", lambda: {"status": "ok"})
 
@@ -91,10 +91,15 @@ def test_identity_mode_protects_product_routes_and_exposes_only_staged_auth_page
     assert set(health.json()) == {"status", "app"}
 
 
-def test_identity_mode_never_falls_back_to_configured_legacy_basic_credentials(monkeypatch):
+def test_identity_mode_never_falls_back_to_configured_legacy_basic_credentials(monkeypatch, tmp_path):
     monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
     monkeypatch.setattr(main.config, "AUTH_USERNAME", "operator")
     monkeypatch.setattr(main.config, "AUTH_PASSWORD", "legacy-secret")
+    from app.identity import IdentityStore
+    monkeypatch.setattr(
+        main.app.state, "identity_store",
+        IdentityStore(tmp_path / "identity-basic-fallback.sqlite3"), raising=False,
+    )
 
     client = TestClient(main.app)
     response = client.get("/", auth=("operator", "legacy-secret"))
