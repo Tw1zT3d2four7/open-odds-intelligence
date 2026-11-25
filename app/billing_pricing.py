@@ -4,6 +4,7 @@ These are display/catalog prices only. Checkout remains disabled until Stripe
 Price IDs, account-specific fees, entitlements, and launch acceptance are set.
 """
 from decimal import Decimal, ROUND_HALF_UP
+import re
 
 CURRENCY = "usd"
 STRIPE_DOMESTIC_CARD_RATE = Decimal("0.029")
@@ -62,3 +63,28 @@ PLAN_PRICES = {
         "target_net_cents": ANNUAL_TARGET_NET_CENTS,
     },
 }
+
+
+def validate_recurring_price(price: dict, interval: str, configured_price_id: str) -> bool:
+    """Validate one server-configured Stripe test Price against the approved catalog."""
+    if interval not in PLAN_PRICES or not isinstance(price, dict):
+        return False
+    if (
+        not isinstance(configured_price_id, str)
+        or not re.fullmatch(r"price_[A-Za-z0-9]+", configured_price_id)
+    ):
+        return False
+    recurring = price.get("recurring")
+    expected = PLAN_PRICES[interval]
+    return bool(
+        price.get("id") == configured_price_id
+        and price.get("active") is True
+        and price.get("livemode") is False
+        and price.get("currency") == CURRENCY
+        and type(price.get("unit_amount")) is int
+        and price.get("unit_amount") == expected["amount_cents"]
+        and isinstance(recurring, dict)
+        and recurring.get("interval") == interval
+        and type(recurring.get("interval_count")) is int
+        and recurring.get("interval_count") == 1
+    )
