@@ -421,6 +421,27 @@ def subscriber_account_summary(
 
 
 
+@router.get("/auth/billing")
+def subscriber_billing_summary(
+    response: Response,
+    session: dict = Depends(require_subscriber),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Return only the authenticated subscriber's own subscription and invoice history."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        return store.subscriber_billing_summary(session["identity_id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Subscriber billing summary failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Billing information is temporarily unavailable.",
+        ) from None
+
+
 @router.post("/auth/register", status_code=202, dependencies=[Depends(require_authenticated_csrf)])
 def register_subscriber(
     payload: RegistrationInput,
