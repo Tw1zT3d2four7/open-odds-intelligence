@@ -382,6 +382,7 @@ tbody tr:last-child td{border-bottom:0}
       const data = await response.json();
       const active = new Set(data.entitlements || []);
       document.getElementById("entitlement-expiry").value = "";
+      document.getElementById("entitlement-reason").value = "";
       entitlementOptions.forEach(input => { input.checked = active.has(input.value); });
       entitlementLoadedIdentity = identityId;
       entitlementSave.disabled = false;
@@ -425,6 +426,7 @@ tbody tr:last-child td{border-bottom:0}
       });
       if (!response.ok) throw new Error("Feature access update rejected");
       entitlementLoadedIdentity = identityId;
+      document.getElementById("entitlement-reason").value = "";
       entitlementStatus.textContent = "Feature access saved and recorded in the security audit history.";
       subscribersLoaded = false;
       auditLoaded = false;

@@ -594,6 +594,8 @@ def test_admin_console_is_private_no_store_and_separate_from_subscriber_access(t
     assert response.status_code == 200
     assert "Open Odds Intelligence Admin" in response.text
     assert "System Configuration" in response.text
+    assert 'id="entitlement-reason"' in response.text
+    assert "reason_code:reasonCode" in response.text
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-frame-options"] == "DENY"

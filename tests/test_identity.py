@@ -1019,6 +1019,19 @@ def test_subscriber_entitlement_updates_reject_unapproved_feature_keys(tmp_path,
         )
 
 
+def test_subscriber_entitlement_updates_reject_unapproved_reason_codes(tmp_path, monkeypatch):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "reason-code@example.test", "a strong reason code password"
+    )
+    admin_id = _mfa_admin(store, monkeypatch, "reason-code-admin@example.test")
+    with pytest.raises(ValueError, match="reason code"):
+        store.set_subscriber_entitlements(
+            subscriber_id, ["dashboard"], actor_identity_id=admin_id,
+            reason_code="unapproved",
+        )
+
+
 def test_subscriber_directory_storage_is_bounded_searchable_and_minimal(tmp_path, monkeypatch):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     subscriber_id = store.create_subscriber(
