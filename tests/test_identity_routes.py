@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import config
-from app.dependencies import get_identity_store, get_rate_limiter
+from app.dependencies import get_identity_store, get_odds_service, get_rate_limiter
 from app.email_delivery import EmailDeliveryError
 from app.identity import IdentityStore
 from app.email_queue import TransactionalEmailQueue
@@ -701,3 +701,62 @@ def test_admin_subscriber_status_api_requires_mfa_csrf_and_records_actor(tmp_pat
             (subscriber_id,),
         ).fetchone()
     assert event["actor_identity_id"] == admin_id
+
+
+
+def test_admin_overview_is_mfa_protected_no_store_and_secret_minimized(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+
+    class FakeOddsService:
+        def status(self):
+            return {
+                "providers": ["the_odds_api"],
+                "configured": True,
+                "data_freshness": "current",
+                "last_updated": "2026-11-25T12:00:00+00:00",
+                "stored_snapshots": 12,
+                "stored_events": 48,
+                "stored_bookmakers": 9,
+                "sport_freshness": [{
+                    "sport": "basketball_nba", "freshness": "current",
+                    "last_updated": "2026-11-25T12:00:00+00:00",
+                    "age_seconds": 120, "event_count": 48,
+                }],
+                "alerts_enabled": True,
+                "alerts_sent": 7,
+                "last_alert_at": "2026-11-25T11:59:00+00:00",
+                "last_alert_check": "2026-11-25T12:00:00+00:00",
+                "last_error": "provider error containing secret-token-value",
+                "last_alert_error": None,
+                "provider_keys": {"the_odds_api": {"raw_key": "must-not-leak"}},
+                "provider_usage": {"raw": "must-not-leak"},
+            }
+
+    harness.client.app.dependency_overrides[get_odds_service] = lambda: FakeOddsService()
+    assert harness.client.get("/admin/overview").status_code == 401
+    admin_id = harness.store.provision_administrator(
+        "overview-admin@example.test", "a strong overview admin password 123"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "overview-admin@example.test",
+        "password": "a strong overview admin password 123",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+
+    response = harness.client.get("/admin/overview")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["stored_events"] == 48
+    assert payload["sports"][0]["sport"] == "basketball_nba"
+    assert payload["alerts"]["sent"] == 7
+    assert payload["provider_error_present"] is True
+    assert "provider_keys" not in payload
+    assert "provider_usage" not in payload
+    assert "secret-token-value" not in response.text
+    assert "must-not-leak" not in response.text
