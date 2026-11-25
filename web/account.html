@@ -67,6 +67,8 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
         <input id="current-password" type="password" autocomplete="current-password" maxlength="1024" required>
         <div class="label"><label for="new-password">New password</label></div>
         <input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <div class="label"><label for="confirm-new-password">Confirm new password</label></div>
+        <input id="confirm-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
         <p class="card-footer">Use at least 12 characters. Changing your password signs out all active sessions.</p>
         <button id="password-submit" type="submit">Update password</button>
       </form>
@@ -112,6 +114,9 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
     const button = el("password-submit"), message = el("password-message");
     button.disabled = true; message.textContent = "";
     try {
+      if (el("new-password").value !== el("confirm-new-password").value) {
+        throw new Error("The new passwords do not match.");
+      }
       const token = csrfToken();
       if (!token) throw new Error("Secure form initialization failed. Reload the page.");
       const response = await fetch("/auth/password/change", {
@@ -125,7 +130,7 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Password change could not be completed.");
       message.textContent = data.message || "Password updated. Please sign in again.";
-      el("current-password").value = ""; el("new-password").value = "";
+      el("current-password").value = ""; el("new-password").value = ""; el("confirm-new-password").value = "";
       window.location.replace("/login");
     } catch (error) {
       message.textContent = error.message || "Password change could not be completed.";

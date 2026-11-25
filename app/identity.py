@@ -696,6 +696,13 @@ class IdentityStore:
                    WHERE identity_id=? AND revoked_at IS NULL""",
                 (now, identity_id),
             )
+            # A previously issued reset link must not remain usable after the
+            # subscriber has authenticated and changed their password.
+            db.execute(
+                """UPDATE password_reset_challenges SET consumed_at=?
+                   WHERE identity_id=? AND consumed_at IS NULL""",
+                (now, identity_id),
+            )
             self._record_audit_event(
                 db,
                 "subscriber.password_changed",

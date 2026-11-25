@@ -1153,6 +1153,8 @@ def test_subscriber_password_change_verifies_current_password_and_revokes_all_se
     _verify_subscriber(store, "password-change@example.test")
     first_token, _ = store.create_session(identity_id)
     second_token, _ = store.create_session(identity_id)
+    reset_token = store.create_password_reset_challenge("password-change@example.test")
+    assert reset_token
 
     assert store.change_subscriber_password(
         identity_id, "incorrect current password", "a completely new secure password"
@@ -1168,6 +1170,12 @@ def test_subscriber_password_change_verifies_current_password_and_revokes_all_se
     assert store.authenticate(
         "password-change@example.test", "correct horse battery", "subscriber"
     ) is None
+    assert store.authenticate(
+        "password-change@example.test", "a completely new secure password", "subscriber"
+    ) == identity_id
+    assert store.consume_password_reset_challenge(
+        reset_token, "another entirely new secure password"
+    ) is False
     assert store.authenticate(
         "password-change@example.test", "a completely new secure password", "subscriber"
     ) == identity_id
