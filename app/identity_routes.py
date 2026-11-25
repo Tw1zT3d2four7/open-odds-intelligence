@@ -186,7 +186,7 @@ def _send_challenge_email(
         "<p>If you did not request this message, you can ignore it.</p>"
     )
     token_fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    sender.send(
+    return sender.send(
         recipient,
         subject,
         text=text_body,
@@ -218,15 +218,44 @@ def get_email_sender(request: Request):
     return sender
 
 
-def _deliver_or_record_failure(sender, **kwargs) -> None:
+def _deliver_or_record_failure(store: IdentityStore, sender, **kwargs) -> None:
+    identity_id = kwargs["identity_id"]
+    purpose = "password_reset" if kwargs["purpose"] == "password-reset" else "verification"
     try:
-        _send_challenge_email(sender, **kwargs)
+        if store.email_provider_circuit_open():
+            store.record_email_delivery_event(
+                identity_id, purpose, "skipped", failure_code="circuit_open"
+            )
+            logger.warning("Transactional authentication email delivery is paused.")
+            return
+    except Exception:
+        # Fail closed: do not send when persistent circuit state cannot be checked.
+        logger.warning("Transactional email protection is temporarily unavailable.")
+        return
+
+    try:
+        provider_message_id = _send_challenge_email(sender, **kwargs)
     except HTTPException:
         raise
-    except EmailDeliveryError:
+    except EmailDeliveryError as exc:
+        try:
+            store.record_email_delivery_event(
+                identity_id, purpose, "failed", failure_code=exc.failure_code
+            )
+        except Exception:
+            logger.warning("Transactional email failure status could not be recorded.")
         # Never log destination addresses, challenge tokens, provider responses,
         # or credentials. A resend request can issue a fresh challenge.
         logger.warning("Transactional authentication email delivery failed.")
+        return
+
+    try:
+        store.record_email_delivery_event(
+            identity_id, purpose, "sent", provider_message_id=provider_message_id
+        )
+    except Exception:
+        # Do not cause a duplicate send by returning an error after provider success.
+        logger.warning("Transactional email success status could not be recorded.")
 
 
 @router.get("/auth/csrf")
@@ -264,7 +293,7 @@ def register_subscriber(
         token = store.create_email_verification_challenge(payload.email)
         if token:
             _deliver_or_record_failure(
-                sender,
+                store, sender,
                 recipient=payload.email,
                 token=token,
                 identity_id=identity_id,
@@ -300,7 +329,7 @@ def resend_verification(
                 ).fetchone()
             if row:
                 _deliver_or_record_failure(
-                    sender, recipient=payload.email, token=token,
+                    store, sender, recipient=payload.email, token=token,
                     identity_id=row["id"], purpose="verification",
                 )
     except HTTPException:
