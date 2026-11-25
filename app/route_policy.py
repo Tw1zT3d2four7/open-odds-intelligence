@@ -58,6 +58,8 @@ IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/account"): "subscriber_only",
     ("GET", "/auth/account"): "subscriber_only",
     ("GET", "/auth/billing"): "subscriber_only",
+    ("POST", "/auth/billing/checkout"): "subscriber_only",
+    ("POST", "/auth/billing/portal"): "subscriber_only",
     ("GET", "/admin"): "administrator_only",
     ("GET", "/admin/overview"): "administrator_only",
     ("GET", "/forgot-password"): "public_minimal",
