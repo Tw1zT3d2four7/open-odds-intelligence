@@ -497,6 +497,8 @@ def subscriber_login(
     store: IdentityStore = Depends(get_identity_store),
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
 ):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     _rate_limit(request, limiter, "subscriber-login", _identifier(payload.email))
     try:
         identity_id = store.authenticate(payload.email, payload.password, "subscriber")
@@ -543,6 +545,8 @@ def administrator_login(
     store: IdentityStore = Depends(get_identity_store),
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
 ):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     _rate_limit(request, limiter, "administrator-login", _identifier(payload.email))
     if bool(payload.totp_code) == bool(payload.recovery_code):
         raise HTTPException(status_code=401, detail="Administrator authentication failed.")

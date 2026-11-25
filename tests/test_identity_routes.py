@@ -119,6 +119,8 @@ def test_verification_link_is_consumed_and_subscriber_can_login(tmp_path, monkey
         "password": "a strong password 123",
     })
     assert login.status_code == 200
+    assert login.headers["Cache-Control"] == "no-store"
+    assert login.headers["Pragma"] == "no-cache"
     assert login.json()["ok"] is True
     assert "__Host-ooi_subscriber" in login.headers.get("set-cookie", "")
 
@@ -198,6 +200,8 @@ def test_admin_login_requires_password_and_totp_before_session(tmp_path, monkeyp
         "totp_code": code,
     })
     assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     assert "__Host-ooi_admin" in response.headers.get("set-cookie", "")
     assert "__Host-ooi_subscriber" not in response.headers.get("set-cookie", "")
 
