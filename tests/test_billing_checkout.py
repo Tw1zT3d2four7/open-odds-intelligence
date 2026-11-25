@@ -43,7 +43,7 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
         calls.append((method, path, params, idempotency_key))
         if path.startswith("/prices/"):
             return {
-                "id": "price_MonthlyCaseSensitive", "active": True, "livemode": False,
+                "id": "price_MonthlyCaseSensitive", "active": True, "livemode": False, "livemode": False,
                 "currency": "usd", "unit_amount": 1068,
                 "recurring": {"interval": "month", "interval_count": 1},
             }
@@ -84,7 +84,7 @@ def test_checkout_uses_annual_price_only_for_year_interval(billing_harness, monk
         calls.append((path, params))
         if path == "/prices/price_YearlyCaseSensitive":
             return {
-                "id": "price_YearlyCaseSensitive", "active": True,
+                "id": "price_YearlyCaseSensitive", "active": True, "livemode": False,
                 "currency": "usd", "unit_amount": 10405,
                 "recurring": {"interval": "year", "interval_count": 1},
             }
