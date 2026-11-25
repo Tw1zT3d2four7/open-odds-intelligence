@@ -1,3 +1,4 @@
+import hashlib
 import sqlite3
 from datetime import timedelta
 
@@ -222,7 +223,7 @@ def test_email_verification_challenge_rejects_expired_and_unknown_tokens(tmp_pat
         db.execute(
             """UPDATE email_verification_challenges
                SET expires_at='2000-01-01T00:00:00+00:00' WHERE token_hash=?""",
-            (__import__("hashlib").sha256(token.encode()).hexdigest(),),
+            (hashlib.sha256(token.encode()).hexdigest(),),
         )
     assert store.consume_email_verification_challenge(token) is False
     assert store.consume_email_verification_challenge("unknown-token") is False
