@@ -64,6 +64,18 @@ def test_preflight_fails_closed_before_provider_calls_without_webhook_storage(mo
     assert result["provider_requests_made"] == 0
 
 
+def test_preflight_requires_explicit_test_mode_acknowledgement(monkeypatch):
+    _configure_valid_test_environment(monkeypatch)
+    monkeypatch.setattr(config, "STRIPE_TEST_MODE_ACKNOWLEDGED", False)
+    monkeypatch.setattr(
+        billing_preflight.stripe_api, "stripe_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("network must not be called")),
+    )
+    result = billing_preflight.run_preflight()
+    assert result["test_mode_acknowledged"] is False
+    assert result["provider_requests_made"] == 0
+
+
 def test_preflight_rejects_live_credentials_and_non_https_origin(monkeypatch):
     _configure_valid_test_environment(monkeypatch)
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_live_not_allowed")
