@@ -104,6 +104,7 @@ def test_identity_route_policy_distinguishes_public_mutations_and_session_logout
     assert classify_route("POST", "/auth/sessions/revoke-all", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
     assert classify_route("GET", "/admin/audit-events", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/admin/subscribers", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("GET", "/admin/billing", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"    assert classify_route("GET", "/admin/subscribers", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("POST", "/admin/subscribers/{identity_id}/status", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     for path in (
         "/auth/register",
