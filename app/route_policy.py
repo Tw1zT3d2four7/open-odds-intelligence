@@ -69,6 +69,7 @@ IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("POST", "/auth/password/change"): "subscriber_only",
     ("GET", "/auth/sessions"): "subscriber_only",
     ("POST", "/auth/sessions/{session_id}/revoke"): "subscriber_only",
+    ("POST", "/auth/sessions/revoke-all"): "subscriber_only",
     ("POST", "/auth/login"): "public_csrf",
     ("POST", "/auth/logout"): "subscriber_only",
     ("POST", "/admin/auth/login"): "public_csrf",
