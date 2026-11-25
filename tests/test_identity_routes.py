@@ -420,15 +420,6 @@ def test_open_email_circuit_skips_provider_and_records_delivery_state(tmp_path, 
 
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/login", "/register", "/admin/login",
-        "/forgot-password", "/verify-email", "/reset-password",
-    ],
-)
-
-
 def test_auth_page_uses_a_fresh_csp_script_nonce_for_each_response(tmp_path, monkeypatch):
     harness = IdentityRouteHarness(tmp_path, monkeypatch)
     first = harness.client.get("/login")
@@ -441,6 +432,13 @@ def test_auth_page_uses_a_fresh_csp_script_nonce_for_each_response(tmp_path, mon
     assert f"script-src 'nonce-{second_nonce}'" in second.headers["content-security-policy"]
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/login", "/register", "/admin/login",
+        "/forgot-password", "/verify-email", "/reset-password",
+    ],
+)
 def test_auth_entry_pages_are_no_store_and_share_the_secure_auth_shell(
     tmp_path, monkeypatch, path
 ):
