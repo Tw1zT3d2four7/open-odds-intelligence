@@ -121,6 +121,30 @@ def test_checkout_fails_closed_for_live_key_or_live_webhook_mode(billing_harness
     assert response.status_code == 503
 
 
+def test_checkout_blocks_duplicate_nonterminal_subscription(billing_harness, monkeypatch):
+    client, store, identity_id = billing_harness
+    store.link_billing_customer(identity_id, "cus_existing_subscription")
+    with store.connect() as db:
+        db.execute(
+            """INSERT INTO billing_subscriptions(
+                id, identity_id, stripe_subscription_id, stripe_customer_id,
+                status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'active', ?, ?)""",
+            ("local-sub", identity_id, "sub_existing", "cus_existing_subscription",
+             "2026-11-25T00:00:00+00:00", "2026-11-25T00:00:00+00:00"),
+        )
+    monkeypatch.setattr(
+        stripe_api, "stripe_request",
+        lambda *args, **kwargs: pytest.fail("Checkout must not create a duplicate subscription"),
+    )
+    response = client.post(
+        "/auth/billing/checkout", json={"interval": "month"},
+        headers={"Idempotency-Key": "client-key-1234567890"},
+    )
+    assert response.status_code == 409
+    assert "existing subscription" in response.json()["detail"]
+
+
 def test_checkout_requires_idempotency_key_and_enabled_flag(billing_harness, monkeypatch):
     client, _store, _identity_id = billing_harness
     response = client.post("/auth/billing/checkout", json={"interval": "month"})
