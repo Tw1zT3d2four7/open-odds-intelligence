@@ -1,8 +1,9 @@
-"""Isolated subscriber and administrator authentication routes.
+"""Subscriber and administrator authentication routes.
 
-This router is intentionally not mounted by app.main yet. It is exercised as
-an independent HTTP surface while the legacy application remains unchanged.
-The final cutover will mount it only after route-policy and entitlement wiring.
+The router is registered in app.main but exposed only through the explicit
+AUTH_MODE=identity allowlist. In legacy_basic mode its paths remain hidden;
+identity mode still blocks all product routes until authorization and
+entitlement wiring is complete.
 """
 from __future__ import annotations
 
