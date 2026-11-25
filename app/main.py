@@ -15,7 +15,6 @@ from .service import service
 limits_monitor = service.limits_monitor
 from .markets import market_board, analyze_markets
 from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
-from .identity_routes import router as identity_router
 from .route_policy import IDENTITY_ROUTE_ACCESS_POLICY, classify_route
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -142,10 +141,6 @@ app = FastAPI(title=config.APP_NAME, version="0.4.0",
               description="Self-hosted open-source odds comparison and market intelligence.",
               lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
-
-# Register identity endpoints now; middleware exposes them only in explicit
-# AUTH_MODE=identity and the route-policy manifest covers every registered path.
-app.include_router(identity_router)
 
 
 @app.middleware("http")
@@ -525,3 +520,11 @@ def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), of
             "limit": page["limit"], "offset": page["offset"],
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
 
+
+
+# Import and mount after the product routes are declared. This keeps router
+# registration deterministic even when the identity modules are imported by
+# test harnesses or future application factories first.
+from .identity_routes import router as identity_router
+
+app.include_router(identity_router)
