@@ -55,27 +55,30 @@ def _set_no_store(response: Response) -> None:
 
 def require_subscriber(
     request: Request,
-    response: Response,
     store: IdentityStore = Depends(get_identity_store),
+    response: Response = None,
 ) -> dict:
     """Require an active subscriber session; admin cookies never satisfy it."""
-    _set_no_store(response)
+    if response is not None:
+        _set_no_store(response)
     return _resolve_session_fail_closed(request, store, "subscriber")
 
 
 def require_administrator(
     request: Request,
-    response: Response,
     store: IdentityStore = Depends(get_identity_store),
+    response: Response = None,
 ) -> dict:
     """Require an active administrator session established after MFA."""
-    _set_no_store(response)
+    if response is not None:
+        _set_no_store(response)
     return _resolve_session_fail_closed(request, store, "administrator")
 
 
-def require_authenticated_csrf(request: Request, response: Response) -> None:
+def require_authenticated_csrf(request: Request, response: Response = None) -> None:
     """Require same-origin CSRF and prevent caching even when validation rejects."""
-    _set_no_store(response)
+    if response is not None:
+        _set_no_store(response)
     require_same_origin_csrf(request)
 
 
