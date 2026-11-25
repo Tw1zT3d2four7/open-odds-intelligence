@@ -789,6 +789,120 @@ class IdentityStore:
             )
             db.commit()
 
+    def set_subscriber_entitlements(
+        self,
+        identity_id: str,
+        entitlement_keys: list[str] | tuple[str, ...],
+        *,
+        actor_identity_id: str,
+        expires_at: datetime | None = None,
+    ) -> list[str]:
+        """Replace one subscriber's feature grants; only an active MFA admin may act."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        if (
+            not isinstance(actor_identity_id, str)
+            or not actor_identity_id
+            or len(actor_identity_id) > 128
+            or actor_identity_id == identity_id
+        ):
+            raise ValueError("A separate administrator actor is required.")
+        if not isinstance(entitlement_keys, (list, tuple)) or len(entitlement_keys) > 32:
+            raise ValueError("Entitlement list is invalid.")
+        if any(
+            not isinstance(key, str) or key not in _ENTITLEMENT_KEYS
+            for key in entitlement_keys
+        ):
+            raise ValueError("One or more entitlement keys are not supported.")
+        normalized = sorted(set(entitlement_keys))
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        expiry = None
+        if expires_at is not None:
+            if (
+                not isinstance(expires_at, datetime)
+                or expires_at.tzinfo is None
+                or expires_at.utcoffset() is None
+            ):
+                raise ValueError("Entitlement expiry must include a timezone.")
+            if expires_at.astimezone(timezone.utc) <= now_dt:
+                raise ValueError("Entitlement expiry must be in the future.")
+            expiry = _timestamp(expires_at)
+
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            subject = db.execute(
+                """SELECT id FROM identities
+                   WHERE id=? AND account_type='subscriber' AND is_active=1""",
+                (identity_id,),
+            ).fetchone()
+            if subject is None:
+                db.rollback()
+                raise ValueError("An active subscriber identity is required.")
+            actor = self._resolve_audit_actor(db, identity_id, actor_identity_id)
+            db.execute(
+                "DELETE FROM subscriber_entitlements WHERE identity_id=?",
+                (identity_id,),
+            )
+            for key in normalized:
+                db.execute(
+                    """INSERT INTO subscriber_entitlements(
+                        id, identity_id, entitlement_key, starts_at, expires_at,
+                        granted_by, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        secrets.token_urlsafe(18), identity_id, key, now, expiry,
+                        actor, now, now,
+                    ),
+                )
+            self._record_audit_event(
+                db,
+                "subscriber.entitlements_updated",
+                identity_id,
+                now,
+                metadata={"entitlements": normalized, "expires_at": expiry},
+                actor_identity_id=actor,
+            )
+            db.commit()
+        return normalized
+
+    def active_subscriber_entitlements(self, identity_id: str) -> list[str]:
+        """Return only currently active feature grants for an active subscriber."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT e.entitlement_key
+                   FROM subscriber_entitlements e
+                   JOIN identities i ON i.id=e.identity_id
+                   WHERE e.identity_id=? AND i.account_type='subscriber'
+                     AND i.is_active=1 AND e.starts_at<=?
+                     AND (e.expires_at IS NULL OR e.expires_at>?)
+                   ORDER BY e.entitlement_key""",
+                (identity_id, now, now),
+            ).fetchall()
+        return [row["entitlement_key"] for row in rows]
+
+    def has_subscriber_entitlement(self, identity_id: str, entitlement_key: str) -> bool:
+        """Fail closed unless an active subscriber has the requested feature grant."""
+        if not isinstance(entitlement_key, str) or entitlement_key not in _ENTITLEMENT_KEYS:
+            return False
+        now = _timestamp(_now())
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT 1
+                   FROM subscriber_entitlements e
+                   JOIN identities i ON i.id=e.identity_id
+                   WHERE e.identity_id=? AND e.entitlement_key=?
+                     AND i.account_type='subscriber' AND i.is_active=1
+                     AND e.starts_at<=?
+                     AND (e.expires_at IS NULL OR e.expires_at>?)
+                   LIMIT 1""",
+                (identity_id, entitlement_key, now, now),
+            ).fetchone()
+        return row is not None
+
     def list_security_audit_events(
         self,
         *,
