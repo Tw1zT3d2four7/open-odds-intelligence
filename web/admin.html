@@ -305,8 +305,8 @@ tbody tr:last-child td{border-bottom:0}
         ["processing_state","count","latest_updated"], "No webhook events recorded.");
       document.getElementById("billing-boundary").textContent =
         "Webhook events in failed state: " + Number(data.failed_webhook_count || 0).toLocaleString() +
-        ". Checkout: " + (data.checkout_available ? "enabled" : "disabled") +
-        ". Customer Portal: " + (data.customer_portal_available ? "enabled" : "disabled") +
+        ". Test-mode Checkout: " + (data.checkout_available ? "enabled" : "disabled") +
+        ". Test-mode Customer Portal: " + (data.customer_portal_available ? "enabled" : "disabled") +
         ". Live billing: " + (data.live_billing_enabled ? "enabled" : "disabled") + ".";
       status.textContent = "Billing operations data refreshed. This view contains aggregate counts only; no subscriber identifiers or payment credentials are exposed.";
       billingLoaded = true;
