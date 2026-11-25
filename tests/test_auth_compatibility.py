@@ -170,7 +170,8 @@ def test_identity_mode_product_api_requires_a_server_side_entitlement(monkeypatc
     totp = pyotp.parse_uri(uri)
     store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
     store.set_subscriber_entitlements(
-        subscriber_id, ["odds"], actor_identity_id=admin_id
+        subscriber_id, ["odds"], actor_identity_id=admin_id,
+        reason_code="support_request",
     )
 
     allowed = client.get("/api/odds")
