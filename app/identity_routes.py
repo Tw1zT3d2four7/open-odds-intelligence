@@ -156,6 +156,10 @@ class AdministratorLoginInput(LoginInput):
     recovery_code: str | None = Field(default=None, min_length=1, max_length=128)
 
 
+class SessionRevokeInput(StrictModel):
+    reason_code: str = Field(pattern="^(security_review|support_request|account_request|other)$")
+
+
 class EntitlementUpdateInput(StrictModel):
     identity_id: str = Field(min_length=1, max_length=128)
     entitlements: list[str] = Field(max_length=32)
@@ -680,6 +684,61 @@ def update_subscriber_status(
             status_code=503,
             detail="Subscriber status change is temporarily unavailable.",
         ) from None
+
+
+@router.get(
+    "/admin/sessions",
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_sessions(
+    response: Response,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10_000_000),
+    session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Return active session metadata without exposing bearer tokens or hashes."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        return store.list_active_sessions(
+            actor_identity_id=session["identity_id"],
+            current_session_id=session["session_id"], limit=limit, offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Administrator session directory query failed.")
+        raise HTTPException(status_code=503, detail="Session directory is temporarily unavailable.") from None
+
+
+@router.post(
+    "/admin/sessions/{session_id}/revoke",
+    dependencies=[Depends(require_administrator), Depends(require_authenticated_csrf)],
+)
+def revoke_administrator_visible_session(
+    session_id: str, payload: SessionRevokeInput, response: Response,
+    session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Revoke a selected session; the current administrator session is protected."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        changed = store.revoke_session_by_id(
+            session_id, actor_identity_id=session["identity_id"],
+            current_session_id=session["session_id"], reason_code=payload.reason_code,
+        )
+        if not changed:
+            raise HTTPException(status_code=404, detail="Active session not found.")
+        return {"revoked": True}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Administrator session revocation failed.")
+        raise HTTPException(status_code=503, detail="Session revocation is temporarily unavailable.") from None
 
 
 @router.get(

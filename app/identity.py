@@ -1457,6 +1457,91 @@ class IdentityStore:
             db.commit()
         return True
 
+    def list_active_sessions(
+        self, *, actor_identity_id: str, current_session_id: str,
+        limit: int = 25, offset: int = 0,
+    ) -> dict:
+        """Return bounded active-session metadata to an authenticated administrator."""
+        if not isinstance(actor_identity_id, str) or not actor_identity_id or len(actor_identity_id) > 128:
+            raise ValueError("A valid administrator identity is required.")
+        if not isinstance(current_session_id, str) or not current_session_id or len(current_session_id) > 128:
+            raise ValueError("A valid current administrator session is required.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("Session page size must be between 1 and 100.")
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 10_000_000:
+            raise ValueError("Session offset must be between 0 and 10000000.")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            actor = db.execute(
+                """SELECT i.account_type, i.is_active, m.enrolled_at
+                   FROM identities i LEFT JOIN administrator_mfa m ON m.identity_id=i.id
+                   WHERE i.id=?""", (actor_identity_id,)
+            ).fetchone()
+            if (actor is None or actor["account_type"] != "administrator"
+                    or not actor["is_active"] or actor["enrolled_at"] is None):
+                raise ValueError("An active MFA-enrolled administrator is required.")
+            where = "s.revoked_at IS NULL AND s.expires_at>? AND i.is_active=1 AND s.id<>?"
+            total = db.execute(
+                "SELECT COUNT(*) FROM sessions s JOIN identities i ON i.id=s.identity_id WHERE " + where,
+                (now, current_session_id),
+            ).fetchone()[0]
+            rows = db.execute(
+                """SELECT s.id AS session_id, s.identity_id, i.account_type,
+                          s.created_at, s.last_seen_at, s.expires_at
+                   FROM sessions s JOIN identities i ON i.id=s.identity_id
+                   WHERE """ + where + """
+                   ORDER BY s.last_seen_at DESC, s.id LIMIT ? OFFSET ?""",
+                (now, current_session_id, limit, offset),
+            ).fetchall()
+        return {"sessions": [dict(row) for row in rows], "total": total,
+                "limit": limit, "offset": offset}
+
+    def revoke_session_by_id(
+        self, session_id: str, *, actor_identity_id: str,
+        current_session_id: str, reason_code: str,
+    ) -> bool:
+        """Revoke one session by opaque ID without ever handling its bearer token."""
+        if not isinstance(session_id, str) or not session_id or len(session_id) > 128:
+            raise ValueError("A valid session reference is required.")
+        if not isinstance(current_session_id, str) or not current_session_id:
+            raise ValueError("A valid current administrator session is required.")
+        if session_id == current_session_id:
+            raise ValueError("The current administrator session cannot be revoked here.")
+        if reason_code not in {"security_review", "support_request", "account_request", "other"}:
+            raise ValueError("A supported session revocation reason code is required.")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            now = _timestamp(_now())
+            row = db.execute(
+                """SELECT s.identity_id, i.account_type FROM sessions s
+                   JOIN identities i ON i.id=s.identity_id
+                   WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at>? AND i.is_active=1""",
+                (session_id, now),
+            ).fetchone()
+            if row is None:
+                db.rollback()
+                return False
+            try:
+                actor = self._resolve_audit_actor(db, row["identity_id"], actor_identity_id)
+            except ValueError:
+                db.rollback()
+                raise
+            cursor = db.execute(
+                """UPDATE sessions SET revoked_at=?
+                   WHERE id=? AND revoked_at IS NULL AND expires_at>?""",
+                (now, session_id, now),
+            )
+            if cursor.rowcount != 1:
+                db.rollback()
+                return False
+            self._record_audit_event(
+                db, "administrator.session_revoked", row["identity_id"], now,
+                {"reason_code": reason_code, "account_type": row["account_type"]},
+                actor_identity_id=actor,
+            )
+            db.commit()
+        return True
+
     def revoke_all_sessions(
         self, identity_id: str, *, actor_identity_id: str | None = None
     ) -> int:

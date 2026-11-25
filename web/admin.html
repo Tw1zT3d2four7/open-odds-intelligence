@@ -175,6 +175,16 @@ tbody tr:last-child td{border-bottom:0}
     <section class="view" id="view-configuration" hidden><span class="planned">Planned module</span><div class="panel"><h2>System configuration</h2><p>Environment configuration remains disabled until its allowlist, validation, atomic apply, backup, rollback, and restart design is approved.</p></div></section>
     <section class="view" id="view-communications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Communications</h2><p>Platform announcements and subscriber communications will be introduced with consent, targeting, and delivery safeguards.</p></div></section>
     <section class="view" id="view-security" hidden>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Active account sessions</h2>
+        <p>Inspect active sessions across subscriber and administrator accounts. The current administrator session is intentionally hidden and cannot be revoked here. Bearer tokens and credential hashes are never displayed.</p>
+        <div class="audit-controls"><button id="sessions-refresh" type="button">Refresh sessions</button></div>
+        <div class="audit-status" id="sessions-status" role="status" aria-live="polite">Session inventory has not been loaded.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Account type</th><th>Identity</th><th>Created</th><th>Last activity</th><th>Expires</th><th>Action</th></tr></thead>
+          <tbody id="session-rows"><tr><td colspan="6">Select Security to load active sessions.</td></tr></tbody>
+        </table></div>
+      </div>
       <div class="panel">
         <h2>Security audit history</h2>
         <p>Recent authentication, account, MFA, and session events. Results are paginated and omit account email addresses and credential material.</p>
@@ -427,6 +437,82 @@ tbody tr:last-child td{border-bottom:0}
   const auditFilter = document.getElementById("audit-filter");
   const auditActorFilter = document.getElementById("audit-actor-filter");
   const auditSubjectFilter = document.getElementById("audit-subject-filter");
+  const sessionsStatus = document.getElementById("sessions-status");
+  const sessionRows = document.getElementById("session-rows");
+  async function loadAdminSessions() {
+    sessionsStatus.textContent = "Loading active account sessions…";
+    try {
+      const response = await fetch("/admin/sessions?limit=50&offset=0", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Session inventory unavailable");
+      const data = await response.json();
+      sessionRows.replaceChildren();
+      if (!data.sessions.length) {
+        const row = document.createElement("tr");
+        const empty = document.createElement("td");
+        empty.colSpan = 6;
+        empty.textContent = "No other active sessions.";
+        row.appendChild(empty);
+        sessionRows.appendChild(row);
+      } else {
+        data.sessions.forEach(item => {
+          const row = document.createElement("tr");
+          cell(row, item.account_type);
+          cell(row, item.identity_id);
+          cell(row, item.created_at);
+          cell(row, item.last_seen_at);
+          cell(row, item.expires_at);
+          const actionCell = document.createElement("td");
+          const action = document.createElement("button");
+          action.type = "button";
+          action.textContent = "Revoke";
+          action.dataset.sessionId = item.session_id;
+          actionCell.appendChild(action);
+          row.appendChild(actionCell);
+          sessionRows.appendChild(row);
+        });
+      }
+      sessionsStatus.textContent = String(data.total) + " active session(s) · current administrator session excluded";
+    } catch (_error) {
+      sessionsStatus.textContent = "Session inventory could not be loaded. Refresh or sign in again.";
+    }
+  }
+  async function revokeAdminVisibleSession(sessionId, button) {
+    if (!window.confirm("Revoke this account session immediately? The account will need to sign in again.")) return;
+    const reasonCode = window.prompt("Choose reason code: security_review, support_request, account_request, or other.");
+    if (reasonCode === null) return;
+    const allowed = ["security_review","support_request","account_request","other"];
+    if (!allowed.includes(reasonCode.trim())) {
+      sessionsStatus.textContent = "Choose one of the supported session revocation reason codes.";
+      return;
+    }
+    let token = "";
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      button.disabled = true;
+      const response = await fetch("/admin/sessions/" + encodeURIComponent(sessionId) + "/revoke", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({reason_code:reasonCode.trim()})
+      });
+      if (!response.ok) throw new Error("Session revocation rejected");
+      sessionsStatus.textContent = "Session revoked and recorded in the security audit history.";
+      auditLoaded = false;
+      await loadAdminSessions();
+    } catch (_error) {
+      sessionsStatus.textContent = "Session could not be revoked. Refresh and verify the administrator session.";
+      button.disabled = false;
+    }
+  }
   function cell(row, value) {
     const td = document.createElement("td");
     td.textContent = value == null || value === "" ? "—" : String(value);
@@ -476,10 +562,15 @@ tbody tr:last-child td{border-bottom:0}
       auditStatus.textContent = "Audit history could not be loaded. Refresh the page or sign in again.";
     }
   }
+  document.getElementById("sessions-refresh").addEventListener("click", loadAdminSessions);
+  sessionRows.addEventListener("click", event => {
+    const action = event.target.closest("button[data-session-id]");
+    if (action) revokeAdminVisibleSession(action.dataset.sessionId, action);
+  });
   buttons.forEach(button => button.addEventListener("click", () => {
     selectView(button.dataset.view);
     if (button.dataset.view === "overview" && !overviewLoaded) loadOverview();
-    if (button.dataset.view === "security" && !auditLoaded) loadAudit();
+    if (button.dataset.view === "security") { loadAdminSessions(); if (!auditLoaded) loadAudit(); }
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
   subscriberRows.addEventListener("click", async event => {

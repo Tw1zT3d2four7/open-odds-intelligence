@@ -760,3 +760,58 @@ def test_admin_overview_is_mfa_protected_no_store_and_secret_minimized(tmp_path,
     assert "provider_usage" not in payload
     assert "secret-token-value" not in response.text
     assert "must-not-leak" not in response.text
+
+
+def test_admin_session_api_requires_mfa_csrf_and_protects_current_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    subscriber_id = harness.store.create_subscriber(
+        "session-api-user@example.test", "a strong session api password"
+    )
+    challenge = harness.store.create_email_verification_challenge("session-api-user@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    subscriber_token, subscriber_session_id = harness.store.create_session(subscriber_id)
+    assert harness.client.get("/admin/sessions").status_code == 401
+
+    admin_id = harness.store.provision_administrator(
+        "session-api-admin@example.test", "a strong session api admin password"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "session-api-admin@example.test",
+        "password": "a strong session api admin password",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+    admin_token = harness.client.cookies.get("__Host-ooi_admin")
+    current_session = harness.store.get_session(admin_token)
+    assert current_session and current_session["session_id"]
+
+    listing = harness.client.get("/admin/sessions")
+    assert listing.status_code == 200
+    assert listing.headers["cache-control"] == "no-store"
+    data = listing.json()
+    target = next(row for row in data["sessions"] if row["session_id"] == subscriber_session_id)
+    assert target["identity_id"] == subscriber_id
+    assert "token_hash" not in listing.text
+    assert "session-api-user@example.test" not in listing.text
+
+    path = f"/admin/sessions/{subscriber_session_id}/revoke"
+    assert harness.post(path, {"reason_code": "security_review"}, csrf=False).status_code == 403
+    revoked = harness.post(path, {"reason_code": "security_review"})
+    assert revoked.status_code == 200
+    assert revoked.json() == {"revoked": True}
+    assert harness.store.get_session(subscriber_token) is None
+    assert harness.post(
+        f"/admin/sessions/{current_session['session_id']}/revoke",
+        {"reason_code": "security_review"},
+    ).status_code == 422
+    with harness.store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id FROM security_audit_events
+               WHERE event_type='administrator.session_revoked'
+               AND subject_identity_id=?""", (subscriber_id,)
+        ).fetchone()
+    assert event["actor_identity_id"] == admin_id

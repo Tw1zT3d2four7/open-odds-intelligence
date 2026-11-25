@@ -1052,3 +1052,51 @@ def test_subscriber_directory_storage_is_bounded_searchable_and_minimal(tmp_path
         store.list_subscribers(email_query=" ")
 
 
+
+
+def test_administrator_session_directory_and_revocation_are_bounded_and_audited(tmp_path, monkeypatch):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "session-target@example.test", "a strong session target password"
+    )
+    _verify_subscriber(store, "session-target@example.test")
+    subscriber_token, subscriber_session_id = store.create_session(subscriber_id)
+    admin_id = _mfa_admin(store, monkeypatch, "session-admin@example.test")
+    current_session_id = "current-admin-session-reference"
+    listing = store.list_active_sessions(
+        actor_identity_id=admin_id, current_session_id=current_session_id, limit=10
+    )
+    target = next(row for row in listing["sessions"] if row["session_id"] == subscriber_session_id)
+    assert target["identity_id"] == subscriber_id
+    assert target["account_type"] == "subscriber"
+    assert "token_hash" not in target and "email" not in target
+    assert "session-target@example.test" not in str(target)
+    with pytest.raises(ValueError, match="current administrator session"):
+        store.revoke_session_by_id(
+            current_session_id, actor_identity_id=admin_id,
+            current_session_id=current_session_id, reason_code="security_review",
+        )
+    with pytest.raises(ValueError, match="reason code"):
+        store.revoke_session_by_id(
+            subscriber_session_id, actor_identity_id=admin_id,
+            current_session_id=current_session_id, reason_code="free text",
+        )
+    assert store.revoke_session_by_id(
+        subscriber_session_id, actor_identity_id=admin_id,
+        current_session_id=current_session_id, reason_code="security_review",
+    ) is True
+    assert store.get_session(subscriber_token) is None
+    assert store.revoke_session_by_id(
+        subscriber_session_id, actor_identity_id=admin_id,
+        current_session_id=current_session_id, reason_code="security_review",
+    ) is False
+    with store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, event_type, metadata_json
+               FROM security_audit_events WHERE subject_identity_id=?
+               AND event_type='administrator.session_revoked'""", (subscriber_id,)
+        ).fetchone()
+    assert event["actor_identity_id"] == admin_id
+    assert event["event_type"] == "administrator.session_revoked"
+    assert '"reason_code":"security_review"' in event["metadata_json"]
+    assert "session-target@example.test" not in event["metadata_json"]
