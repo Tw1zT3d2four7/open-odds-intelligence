@@ -141,7 +141,7 @@ Still required before Phase 1 is complete:
 - [ ] Add Users, Subscriptions, Notifications, Platform, System Configuration, Communications, and Security views backed by reviewed admin APIs.
 - [x] Add a protected, bounded, paginated, no-store administrator audit API and a Security view that renders audit events without account email addresses.
 - [x] Expose bounded event-type, actor-identity, and subject-identity filters in the Security view; audit records remain free of account email addresses and credentials.
-- [x] Add MFA-admin-only, CSRF-protected subscriber suspension/reactivation with required bounded reasons, atomic session revocation on suspension, and actor-attributed audit events; expose guarded controls in the Users directory.
+- [x] Add MFA-admin-only, CSRF-protected subscriber suspension/reactivation with required controlled reason codes, atomic session revocation on suspension, and actor-attributed audit events; expose guarded controls in the Users directory.
 - [x] Add a protected, paginated, searchable, read-only subscriber directory and Users view; expose only account identity, email, active/verification state, creation time, and active entitlements, never authentication material.
 - [ ] Add remaining privileged-action security controls and audit-retention administration.
 
