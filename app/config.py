@@ -179,3 +179,10 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 # Dedicated Fernet key for encrypted durable Stripe webhook event bodies.
 STRIPE_WEBHOOK_ENCRYPTION_KEY = os.getenv("STRIPE_WEBHOOK_ENCRYPTION_KEY", "")
 STRIPE_WEBHOOK_LIVEMODE = os.getenv("STRIPE_WEBHOOK_LIVEMODE", "false").strip().lower() in ("1", "true", "yes", "on")
+# Stripe recurring Price IDs are public identifiers, not secrets. Preserve them exactly.
+# Leave blank until the corresponding recurring Price objects exist in Stripe.
+STRIPE_PRICE_MONTHLY_ID = os.getenv("STRIPE_PRICE_MONTHLY_ID", "")
+STRIPE_PRICE_YEARLY_ID = os.getenv("STRIPE_PRICE_YEARLY_ID", "")
+# Hosted purchase and customer self-service remain explicitly disabled by default.
+STRIPE_CHECKOUT_ENABLED = os.getenv("STRIPE_CHECKOUT_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+STRIPE_CUSTOMER_PORTAL_ENABLED = os.getenv("STRIPE_CUSTOMER_PORTAL_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
