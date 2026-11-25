@@ -15,6 +15,8 @@ from .service import service
 limits_monitor = service.limits_monitor
 from .markets import market_board, analyze_markets
 from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
+from .identity_routes import router as identity_router
+from .route_policy import IDENTITY_ROUTE_ACCESS_POLICY, classify_route
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -155,15 +157,22 @@ async def optional_basic_auth(request: Request, call_next):
     if request.url.path == "/api/health" and request.method in {"GET", "HEAD"}:
         return await call_next(request)
 
-    # Identity mode is intentionally recognized but not yet activated. Until
-    # every route has its server-side policy, entitlement checks, CSRF boundary,
-    # rate limits, and rollback coverage wired in, fail closed rather than
-    # accidentally falling through to legacy-open or Basic Auth behavior.
-    if config.AUTH_MODE != "legacy_basic":
+    identity_path_set = {path for _method, path in IDENTITY_ROUTE_ACCESS_POLICY}
+    if config.AUTH_MODE == "identity":
+        # Only the separately policy-classified account entry points are
+        # enabled at this stage. Existing odds/product routes remain fail-closed
+        # until their subscriber sessions and server-side entitlements are wired.
+        if classify_route(request.method, request.url.path, IDENTITY_ROUTE_ACCESS_POLICY) is not None:
+            return await call_next(request)
         return JSONResponse(
             status_code=503,
-            content={"detail": "Identity authentication mode is not ready for activation."},
+            content={"detail": "Product access is not enabled until authorization and plan entitlements are configured."},
         )
+
+    # The identity endpoints are not part of the legacy self-hosted experience.
+    # Hide them in legacy mode even when legacy Basic Auth is intentionally unset.
+    if request.url.path in identity_path_set:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
 
     if bool(username) != bool(password):
         return JSONResponse(
@@ -203,6 +212,11 @@ def dashboard():
 
 @app.get("/api/health")
 def health():
+    # Identity mode exposes only the liveness contract needed by Docker/Caddy.
+    # Detailed provider and operational diagnostics remain private until the
+    # administrator diagnostics surface is implemented.
+    if config.AUTH_MODE == "identity":
+        return {"status": "ok", "app": config.APP_NAME}
     return {"status": "ok", "app": config.APP_NAME, **service.status(),
             "market_limits": limits_monitor.status()}
 
@@ -506,3 +520,9 @@ def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), of
     return {"arbitrage": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
+
+
+
+# Keep the identity router registered for route-policy/CI inventory, while the
+# middleware exposes it only in explicit AUTH_MODE=identity.
+app.include_router(identity_router)
