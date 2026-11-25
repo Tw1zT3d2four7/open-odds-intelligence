@@ -29,6 +29,9 @@ _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _ACCOUNT_TYPES = frozenset({"subscriber", "administrator"})
+_SUBSCRIBER_STATUS_REASON_CODES = frozenset({
+    "support_request", "policy_violation", "security_concern", "billing_issue", "other",
+})
 _ENTITLEMENT_KEYS = frozenset({
     "dashboard", "odds", "market_limits", "market_board", "simulation",
     "player_props", "clv", "market_movement", "history",
@@ -909,7 +912,7 @@ class IdentityStore:
         *,
         is_active: bool,
         actor_identity_id: str,
-        reason: str,
+        reason_code: str,
     ) -> dict:
         """Suspend or reactivate a subscriber with atomic session revocation and audit."""
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
@@ -923,10 +926,8 @@ class IdentityStore:
             raise ValueError("A separate administrator actor is required.")
         if not isinstance(is_active, bool):
             raise ValueError("Subscriber status must be active or suspended.")
-        if not isinstance(reason, str) or not 8 <= len(reason.strip()) <= 240:
-            raise ValueError("An administrative reason between 8 and 240 characters is required.")
-
-        normalized_reason = " ".join(reason.split())
+        if not isinstance(reason_code, str) or reason_code not in _SUBSCRIBER_STATUS_REASON_CODES:
+            raise ValueError("A supported administrative reason code is required.")
         now = _timestamp(_now())
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -969,7 +970,7 @@ class IdentityStore:
                 now,
                 {
                     "status": "active" if is_active else "suspended",
-                    "reason": normalized_reason,
+                    "reason_code": reason_code,
                     "revoked_sessions": revoked_count,
                 },
                 actor_identity_id=actor,
