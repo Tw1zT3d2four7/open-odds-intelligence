@@ -144,15 +144,18 @@ def stale_policy_entries(
 def matched_route_path(scope: dict, routes: Iterable[BaseRoute]) -> str | None:
     """Resolve a concrete ASGI request path to its registered route template.
 
-    Middleware runs before Starlette attaches scope["route"]. Matching the
-    declared routes here ensures parameterized endpoints use their explicit
-    access-policy entry instead of being mistaken for unknown paths.
+    Middleware runs before Starlette attaches scope["route"]. Use the route's
+    compiled path expression and declared methods so parameterized endpoints
+    resolve without depending on router dispatch having already run.
     """
+    path = scope.get("path", "")
+    method = str(scope.get("method", "GET")).upper()
     for route in routes:
-        try:
-            match, _child_scope = route.matches(scope)
-        except (KeyError, TypeError, ValueError):
+        pattern = getattr(route, "path_regex", None)
+        route_path = getattr(route, "path", None)
+        if pattern is None or route_path is None or pattern.match(path) is None:
             continue
-        if match is Match.FULL:
-            return getattr(route, "path", None)
+        methods = getattr(route, "methods", None)
+        if not methods or method in methods or (method == "HEAD" and "GET" in methods):
+            return route_path
     return None
