@@ -180,6 +180,12 @@ def _validate_identity_schema(connection: sqlite3.Connection, version: int) -> N
         }
     if version >= 14:
         required_columns["billing_invoices"].add("payment_failed_at")
+    if version >= 15:
+        required_columns["billing_checkout_attempts"] = {
+            "identity_id", "billing_interval", "idempotency_key_hash",
+            "attempt_token", "checkout_session_id", "expires_at",
+            "created_at", "updated_at",
+        }
 
     available_tables = {
         row[0] for row in connection.execute(
