@@ -4,6 +4,12 @@ import hmac
 import json
 
 import pytest
+from cryptography.fernet import Fernet
+
+
+@pytest.fixture(autouse=True)
+def stripe_webhook_encryption_key(monkeypatch):
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -70,6 +76,9 @@ def test_webhook_intake_verifies_and_persists_only_fingerprint(client):
     assert row["payload_sha256"] == hashlib.sha256(payload).hexdigest()
     assert row["processing_state"] == "received"
     assert "payload" not in columns and "raw_payload" not in columns
+    assert "encrypted_payload" in columns
+    lease = store.claim_stripe_webhook_event("evt_http_123")
+    assert lease and store.get_stripe_webhook_event_payload("evt_http_123", lease) == payload
 
 
 def test_webhook_duplicate_delivery_is_acknowledged_idempotently(client):
@@ -166,3 +175,13 @@ def test_webhook_uses_stripe_signature_instead_of_legacy_browser_basic_auth(tmp_
     finally:
         main.app.dependency_overrides.pop(get_identity_store, None)
     assert response.status_code == 400
+
+
+def test_webhook_fails_closed_when_encrypted_event_storage_is_not_configured(client, monkeypatch):
+    http, store = client
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", "")
+    payload = _payload()
+    response = http.post("/webhooks/stripe", content=payload, headers={"stripe-signature": _signature(payload)})
+    assert response.status_code == 503
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM billing_webhook_events").fetchone()[0] == 0
