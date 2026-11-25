@@ -10,6 +10,7 @@ from app import config
 from app.dependencies import get_identity_store, get_rate_limiter
 from app.email_delivery import EmailDeliveryError
 from app.identity import IdentityStore
+from app.email_queue import TransactionalEmailQueue
 from app.rate_limit import SQLiteRateLimiter
 from app.identity_routes import get_email_sender, router
 
@@ -38,6 +39,7 @@ class IdentityRouteHarness:
         )
         self.sender = FakeSender()
         monkeypatch.setattr(config, "PUBLIC_BASE_URL", "https://ooi.example")
+        monkeypatch.setattr(config, "EMAIL_QUEUE_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
         app = FastAPI()
         app.include_router(router)
         app.state.email_sender = self.sender
@@ -45,6 +47,13 @@ class IdentityRouteHarness:
         app.dependency_overrides[get_rate_limiter] = lambda: self.limiter
         self.client = TestClient(app, base_url="https://ooi.example")
         self._csrf()
+
+    def deliver_pending(self):
+        queue = TransactionalEmailQueue(self.store)
+        delivered = 0
+        while queue.process_one(self.sender):
+            delivered += 1
+        return delivered
 
     def _csrf(self):
         response = self.client.get("/auth/csrf")
@@ -67,6 +76,8 @@ def test_registration_creates_unverified_subscriber_and_sends_one_time_link(tmp_
     })
     assert response.status_code == 202
     assert "verification email" in response.json()["message"]
+    assert harness.sender.messages == []
+    assert harness.deliver_pending() == 1
     assert len(harness.sender.messages) == 1
     message = harness.sender.messages[0]
     assert message["recipient"] == "Person@example.com"
@@ -132,6 +143,7 @@ def test_password_reset_request_is_generic_and_reset_revokes_sessions(tmp_path, 
     requested = harness.post("/auth/password-reset/request", {"email": "person@example.com"})
     assert requested.status_code == 202
     assert "If an active account" in requested.json()["message"]
+    assert harness.deliver_pending() == 1
     reset_message = harness.sender.messages[-1]
     reset_token = reset_message["text"].split("#token=", 1)[1].split()[0]
     consumed = harness.post("/auth/password-reset/consume", {
@@ -151,6 +163,7 @@ def test_registration_delivery_failure_does_not_leak_provider_error(tmp_path, mo
     })
     assert response.status_code == 202
     assert "provider details" not in response.text
+    assert harness.deliver_pending() == 1
     with harness.store.connect() as db:
         delivery = db.execute(
             "SELECT status, failure_code FROM email_delivery_events"
@@ -255,8 +268,9 @@ def test_verification_resend_has_persistent_cooldown(tmp_path, monkeypatch):
     harness = IdentityRouteHarness(tmp_path, monkeypatch)
     harness.store.create_subscriber("person@example.com", "a strong password 123")
     first = harness.post("/auth/verification/resend", {"email": "person@example.com"})
-    second = harness.post("/auth/verification/resend", {"email": "person@example.com"})
     assert first.status_code == 202
+    assert harness.deliver_pending() == 1
+    second = harness.post("/auth/verification/resend", {"email": "person@example.com"})
     assert second.status_code == 429
     assert len(harness.sender.messages) == 1
 
@@ -268,6 +282,7 @@ def test_password_reset_request_is_account_enumeration_resistant(tmp_path, monke
     known = harness.post("/auth/password-reset/request", {"email": "known@example.com"})
     assert unknown.status_code == known.status_code == 202
     assert unknown.json() == known.json()
+    assert harness.deliver_pending() == 1
     assert len(harness.sender.messages) == 1
 
 
