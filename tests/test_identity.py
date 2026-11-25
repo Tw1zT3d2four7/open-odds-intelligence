@@ -852,7 +852,8 @@ def test_subscriber_suspension_atomically_revokes_sessions_and_preserves_account
     _verify_subscriber(store, "lifecycle@example.test")
     admin_id = _mfa_admin(store, monkeypatch, "lifecycle-admin@example.test")
     store.set_subscriber_entitlements(
-        subscriber_id, ["dashboard", "odds"], actor_identity_id=admin_id
+        subscriber_id, ["dashboard", "odds"], actor_identity_id=admin_id,
+        reason_code="support_request",
     )
     first_token, _ = store.create_session(subscriber_id)
     second_token, _ = store.create_session(subscriber_id)
@@ -940,12 +941,12 @@ def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_pa
     )
     with pytest.raises(ValueError, match="MFA-enrolled administrator"):
         store.set_subscriber_entitlements(
-            subscriber_id, ["odds"], actor_identity_id=other_subscriber
+            subscriber_id, ["odds"], actor_identity_id=other_subscriber, reason_code="support_request"
         )
 
     admin_id = _mfa_admin(store, monkeypatch)
     grants = store.set_subscriber_entitlements(
-        subscriber_id, ["odds", "dashboard"], actor_identity_id=admin_id
+        subscriber_id, ["odds", "dashboard"], actor_identity_id=admin_id, reason_code="support_request"
     )
     assert grants == ["dashboard", "odds"]
     assert store.active_subscriber_entitlements(subscriber_id) == grants
@@ -963,6 +964,7 @@ def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_pa
     assert event["actor_identity_id"] == admin_id
     assert event["event_type"] == "subscriber.entitlements_updated"
     assert '"dashboard"' in event["metadata_json"]
+    assert '"reason_code":"support_request"' in event["metadata_json"]
     assert "entitled@example.com" not in event["metadata_json"]
 
 
@@ -983,7 +985,7 @@ def test_subscriber_entitlement_expiry_and_replacement_are_enforced(tmp_path, mo
     )
     store.set_subscriber_entitlements(
         subscriber_id, ["odds"], actor_identity_id=admin_id,
-        expires_at=local_expiry,
+        reason_code="trial_grant", expires_at=local_expiry,
     )
     assert store.has_subscriber_entitlement(subscriber_id, "odds") is True
 
@@ -992,7 +994,7 @@ def test_subscriber_entitlement_expiry_and_replacement_are_enforced(tmp_path, mo
     assert store.active_subscriber_entitlements(subscriber_id) == []
 
     store.set_subscriber_entitlements(
-        subscriber_id, ["dashboard"], actor_identity_id=admin_id
+        subscriber_id, ["dashboard"], actor_identity_id=admin_id, reason_code="support_request"
     )
     assert store.has_subscriber_entitlement(subscriber_id, "odds") is False
     assert store.has_subscriber_entitlement(subscriber_id, "dashboard") is True
@@ -1013,7 +1015,7 @@ def test_subscriber_entitlement_updates_reject_unapproved_feature_keys(tmp_path,
     admin_id = _mfa_admin(store, monkeypatch, "invalid-entitlement-admin@example.com")
     with pytest.raises(ValueError, match="entitlement"):
         store.set_subscriber_entitlements(
-            subscriber_id, keys, actor_identity_id=admin_id
+            subscriber_id, keys, actor_identity_id=admin_id, reason_code="support_request"
         )
 
 
@@ -1027,7 +1029,7 @@ def test_subscriber_directory_storage_is_bounded_searchable_and_minimal(tmp_path
     )
     admin_id = _mfa_admin(store, monkeypatch, "directory-admin@example.com")
     store.set_subscriber_entitlements(
-        subscriber_id, ["odds", "dashboard"], actor_identity_id=admin_id
+        subscriber_id, ["odds", "dashboard"], actor_identity_id=admin_id, reason_code="support_request"
     )
 
     result = store.list_subscribers(limit=1, offset=0)

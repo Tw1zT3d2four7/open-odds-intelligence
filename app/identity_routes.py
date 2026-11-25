@@ -173,6 +173,7 @@ class SessionRevokeInput(StrictModel):
 class EntitlementUpdateInput(StrictModel):
     identity_id: str = Field(min_length=1, max_length=128)
     entitlements: list[str] = Field(max_length=32)
+    reason_code: str = Field(pattern="^(support_request|trial_grant|promotional_access|billing_adjustment|other)$")
     expires_at: datetime | None = None
 
 
@@ -858,6 +859,7 @@ def update_subscriber_entitlements(
             payload.identity_id,
             payload.entitlements,
             actor_identity_id=session["identity_id"],
+            reason_code=payload.reason_code,
             expires_at=payload.expires_at,
         )
     except ValueError as exc:

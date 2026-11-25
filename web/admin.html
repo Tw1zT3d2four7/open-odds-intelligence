@@ -163,6 +163,15 @@ tbody tr:last-child td{border-bottom:0}
           <label class="check"><input type="checkbox" value="arbitrage"> <strong>Arbitrage</strong>arbitrage</label>
         </div>
         <div class="audit-controls">
+          <label for="entitlement-reason">Reason for access change</label>
+          <select id="entitlement-reason" required>
+            <option value="">Choose a reason</option>
+            <option value="support_request">Support request</option>
+            <option value="trial_grant">Trial grant</option>
+            <option value="promotional_access">Promotional access</option>
+            <option value="billing_adjustment">Billing adjustment</option>
+            <option value="other">Other</option>
+          </select>
           <label for="entitlement-expiry">Optional expiration</label>
           <input id="entitlement-expiry" type="datetime-local">
           <button id="entitlement-save" type="button" disabled>Save feature access</button>
@@ -390,6 +399,11 @@ tbody tr:last-child td{border-bottom:0}
       return;
     }
     const grants = entitlementOptions.filter(input => input.checked).map(input => input.value);
+    const reasonCode = document.getElementById("entitlement-reason").value;
+    if (!["support_request","trial_grant","promotional_access","billing_adjustment","other"].includes(reasonCode)) {
+      entitlementStatus.textContent = "Choose a supported reason for this feature-access change.";
+      return;
+    }
     if (!window.confirm("Save " + grants.length + " feature grant(s) for this subscriber? An empty selection revokes all feature access.")) return;
     const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
     let token = match ? decodeURIComponent(match[1]) : "";
@@ -407,7 +421,7 @@ tbody tr:last-child td{border-bottom:0}
       const response = await fetch("/admin/subscriber-entitlements", {
         method:"PUT",credentials:"same-origin",cache:"no-store",
         headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
-        body:JSON.stringify({identity_id:identityId,entitlements:grants,expires_at:expiresAt})
+        body:JSON.stringify({identity_id:identityId,entitlements:grants,reason_code:reasonCode,expires_at:expiresAt})
       });
       if (!response.ok) throw new Error("Feature access update rejected");
       entitlementLoadedIdentity = identityId;
@@ -430,6 +444,7 @@ tbody tr:last-child td{border-bottom:0}
     if (entitlementIdentity.value.trim() !== entitlementLoadedIdentity) {
       entitlementSave.disabled = true;
       document.getElementById("entitlement-expiry").value = "";
+      document.getElementById("entitlement-reason").value = "";
       entitlementOptions.forEach(input => { input.checked = false; });
     }
   });

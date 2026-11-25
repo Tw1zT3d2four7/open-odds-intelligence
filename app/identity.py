@@ -32,6 +32,9 @@ _ACCOUNT_TYPES = frozenset({"subscriber", "administrator"})
 _SUBSCRIBER_STATUS_REASON_CODES = frozenset({
     "support_request", "policy_violation", "security_concern", "billing_issue", "other",
 })
+_ENTITLEMENT_REASON_CODES = frozenset({
+    "support_request", "trial_grant", "promotional_access", "billing_adjustment", "other",
+})
 _ENTITLEMENT_KEYS = frozenset({
     "dashboard", "odds", "market_limits", "market_board", "simulation",
     "player_props", "clv", "market_movement", "history",
@@ -798,9 +801,10 @@ class IdentityStore:
         entitlement_keys: list[str] | tuple[str, ...],
         *,
         actor_identity_id: str,
+        reason_code: str,
         expires_at: datetime | None = None,
     ) -> list[str]:
-        """Replace one subscriber's feature grants; only an active MFA admin may act."""
+        """Replace one subscriber's feature grants with a controlled audit reason."""
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
             raise ValueError("A valid subscriber identity reference is required.")
         if (
@@ -810,6 +814,8 @@ class IdentityStore:
             or actor_identity_id == identity_id
         ):
             raise ValueError("A separate administrator actor is required.")
+        if not isinstance(reason_code, str) or reason_code not in _ENTITLEMENT_REASON_CODES:
+            raise ValueError("A supported entitlement change reason code is required.")
         if not isinstance(entitlement_keys, (list, tuple)) or len(entitlement_keys) > 32:
             raise ValueError("Entitlement list is invalid.")
         if any(
@@ -863,7 +869,11 @@ class IdentityStore:
                 "subscriber.entitlements_updated",
                 identity_id,
                 now,
-                metadata={"entitlements": normalized, "expires_at": expiry},
+                metadata={
+                    "entitlements": normalized,
+                    "expires_at": expiry,
+                    "reason_code": reason_code,
+                },
                 actor_identity_id=actor,
             )
             db.commit()

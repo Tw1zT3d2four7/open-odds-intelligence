@@ -512,7 +512,10 @@ def test_admin_entitlement_api_requires_mfa_session_and_csrf(tmp_path, monkeypat
     })
     assert login.status_code == 200
 
-    payload = {"identity_id": subscriber_id, "entitlements": ["dashboard", "odds"]}
+    payload = {
+        "identity_id": subscriber_id, "entitlements": ["dashboard", "odds"],
+        "reason_code": "support_request",
+    }
     missing_csrf = harness.client.put("/admin/subscriber-entitlements", json=payload)
     assert missing_csrf.status_code == 403
 
@@ -531,6 +534,16 @@ def test_admin_entitlement_api_requires_mfa_session_and_csrf(tmp_path, monkeypat
         "identity_id": subscriber_id,
         "entitlements": ["dashboard", "odds"],
     }
+
+    invalid_reason = harness.client.put(
+        "/admin/subscriber-entitlements",
+        json={**payload, "reason_code": "unapproved"},
+        headers={
+            "origin": "https://ooi.example",
+            "x-ooi-csrf-token": csrf,
+        },
+    )
+    assert invalid_reason.status_code == 422
 
     readback = harness.client.get(
         "/admin/subscriber-entitlements",
