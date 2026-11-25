@@ -41,7 +41,7 @@ def test_identity_schema_initialization_is_idempotent(tmp_path):
     first.initialize()
     with first.connect() as db:
         versions = db.execute("SELECT version FROM schema_migrations").fetchall()
-    assert [row["version"] for row in versions] == [1, 2, 3]
+    assert [row["version"] for row in versions] == [1, 2, 3, 4]
 
 
 def test_schema_refuses_a_newer_database_version(tmp_path):
@@ -719,3 +719,82 @@ def test_audit_query_fails_closed_on_invalid_metadata(tmp_path, metadata_json):
 
     with pytest.raises(RuntimeError, match="Audit event metadata is invalid"):
         store.list_security_audit_events(event_type="test.corrupt_metadata")
+
+
+
+def test_email_delivery_history_is_secret_free_and_provider_success_resets_circuit(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("private@example.com", "a strong password 123")
+
+    store.record_email_delivery_event(
+        identity_id, "verification", "failed", failure_code="transport"
+    )
+    store.record_email_delivery_event(
+        identity_id, "verification", "sent", provider_message_id="email_provider_123"
+    )
+    assert store.email_provider_circuit_open() is False
+
+    with store.connect() as db:
+        event = db.execute(
+            "SELECT provider, identity_id, purpose, status, provider_message_id, failure_code "
+            "FROM email_delivery_events ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        circuit = db.execute(
+            "SELECT consecutive_failures, opened_until, last_success_at "
+            "FROM email_provider_circuit WHERE provider='resend'"
+        ).fetchone()
+        raw = " ".join(
+            str(value) for value in db.execute(
+                "SELECT * FROM email_delivery_events"
+            ).fetchone()
+        )
+    assert event["status"] == "sent"
+    assert event["provider_message_id"] == "email_provider_123"
+    assert circuit["consecutive_failures"] == 0
+    assert circuit["opened_until"] is None
+    assert circuit["last_success_at"] is not None
+    assert "private@example.com" not in raw
+
+
+def test_email_provider_circuit_opens_after_five_consecutive_failures(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("person@example.com", "a strong password 123")
+
+    for _ in range(5):
+        store.record_email_delivery_event(
+            identity_id, "password_reset", "failed",
+            failure_code="provider_unavailable",
+        )
+    assert store.email_provider_circuit_open() is True
+
+    store.record_email_delivery_event(
+        identity_id, "password_reset", "skipped", failure_code="circuit_open"
+    )
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT consecutive_failures, opened_until FROM email_provider_circuit "
+            "WHERE provider='resend'"
+        ).fetchone()
+        skipped = db.execute(
+            "SELECT status, failure_code FROM email_delivery_events ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+    assert row["consecutive_failures"] == 5
+    assert row["opened_until"] is not None
+    assert skipped["status"] == "skipped"
+    assert skipped["failure_code"] == "circuit_open"
+
+
+def test_email_delivery_event_rejects_unreviewed_failure_metadata(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("person@example.com", "a strong password 123")
+    with pytest.raises(ValueError, match="failure code"):
+        store.record_email_delivery_event(
+            identity_id, "verification", "failed",
+            failure_code="provider said private token is abc",
+        )
+    with pytest.raises(ValueError, match="Unsupported email"):
+        store.record_email_delivery_event(
+            identity_id, "verification", "sent",
+            provider="unreviewed-provider",
+            provider_message_id="email-id",
+        )
