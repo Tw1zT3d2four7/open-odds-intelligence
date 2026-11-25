@@ -101,6 +101,7 @@ Implemented on the feature branch so far:
 - [x] Password reset revokes all sessions; security audit events exclude challenge/password values.
 - [x] Private interactive one-time administrator bootstrap; no public administrator registration.
 - [x] Administrator TOTP enrollment, encrypted seed storage, fresh-step replay prevention, and ten single-use hashed recovery codes.
+- [x] Make first-admin bootstrap resumable after an interrupted pre-MFA setup only when the existing admin password verifies; already-enrolled MFA cannot be reset through bootstrap, and TOTP codes are entered without terminal echo.
 - [x] Separate subscriber/admin Secure host-only cookies, CSRF/origin helpers, and lazy FastAPI session dependencies.
 - [x] Persistent atomic rate-limit primitives using HMAC-hashed bucket identifiers and fail-closed behavior; integrated with identity-mode login, registration, verification, and password-reset routes.
 - [x] Explicit access policy for all 25 registered HTTP routes (21 application endpoints plus four framework-generated schema/documentation routes); CI detects unclassified or stale entries. Manual refresh and framework documentation routes are administrator-only in the target policy.
