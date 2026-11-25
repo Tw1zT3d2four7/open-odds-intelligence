@@ -55,6 +55,10 @@ def _snapshot_database(path: Path) -> tuple[bytes, int]:
     snapshot = sqlite3.connect(":memory:")
     try:
         source.backup(snapshot)
+        # The source database normally uses WAL. Serialize an in-memory snapshot
+        # with MEMORY journaling so deserialize() never tries to create sidecars
+        # for the special :memory: database name.
+        snapshot.execute("PRAGMA journal_mode=MEMORY")
         integrity = snapshot.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("Identity database integrity check failed.")
