@@ -97,7 +97,7 @@ class ResendEmailSender:
         if idempotency_key is not None:
             if (
                 not isinstance(idempotency_key, str)
-                or not re.fullmatch(r"[\\x21-\\x7e]{1,256}", idempotency_key)
+                or not re.fullmatch(r"[\x21-\x7e]{1,256}", idempotency_key)
             ):
                 raise ValueError("Email idempotency key is invalid.")
             headers["Idempotency-Key"] = idempotency_key
