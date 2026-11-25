@@ -6,6 +6,8 @@ acceptance. API credentials and provider error bodies are never returned.
 from __future__ import annotations
 
 import json
+import re
+from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -21,9 +23,9 @@ def stripe_request(method: str, path: str, *, params: dict | None = None,
     from . import config
 
     secret = config.STRIPE_SECRET_KEY
-    if not isinstance(secret, str) or not secret.startswith("sk_test_"):
+    if not isinstance(secret, str) or not re.fullmatch(r"sk_test_[A-Za-z0-9]+", secret):
         raise StripeAPIError("Stripe test-mode API credentials are not configured.")
-    if not path.startswith("/") or ".." in path:
+    if method.upper() not in {"GET", "POST"} or not re.fullmatch(r"/[A-Za-z0-9_/-]+", path) or ".." in path or "//" in path:
         raise StripeAPIError("Stripe API request is invalid.")
 
     headers = {
@@ -49,6 +51,9 @@ def stripe_request(method: str, path: str, *, params: dict | None = None,
         )
     try:
         with urlopen(request, timeout=12) as response:
+            final_url = urlsplit(response.geturl())
+            if final_url.scheme != "https" or final_url.hostname != "api.stripe.com":
+                raise StripeAPIError("Stripe returned an unexpected API destination.")
             raw = response.read(1_048_577)
             if len(raw) > 1_048_576:
                 raise StripeAPIError("Stripe returned an oversized response.")
