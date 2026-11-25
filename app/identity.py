@@ -827,7 +827,7 @@ class IdentityStore:
                 raise ValueError("Entitlement expiry must include a timezone.")
             if expires_at.astimezone(timezone.utc) <= now_dt:
                 raise ValueError("Entitlement expiry must be in the future.")
-            expiry = _timestamp(expires_at)
+            expiry = _timestamp(expires_at.astimezone(timezone.utc))
 
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
