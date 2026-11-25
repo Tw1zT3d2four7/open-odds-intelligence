@@ -20,6 +20,7 @@ def billing_harness(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", "https://ooi.example")
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_UnitTestSecretCaseSensitive")
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_LIVEMODE", False)
+    monkeypatch.setattr(config, "STRIPE_TEST_MODE_ACKNOWLEDGED", True)
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "whsec_testAcceptanceSecret123456")
     monkeypatch.setattr(
         config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
