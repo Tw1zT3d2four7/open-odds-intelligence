@@ -1582,6 +1582,96 @@ class IdentityStore:
             db.commit()
         return revoked_count
 
+    def list_subscriber_sessions(
+        self, identity_id: str, *, current_session_id: str,
+        limit: int = 25, offset: int = 0,
+    ) -> dict:
+        """Return bounded session metadata for one active subscriber only."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity is required.")
+        if not isinstance(current_session_id, str) or not current_session_id or len(current_session_id) > 128:
+            raise ValueError("A valid current session is required.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("Session page size must be between 1 and 100.")
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 10_000_000:
+            raise ValueError("Session offset must be between 0 and 10000000.")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            owner = db.execute(
+                "SELECT account_type, is_active FROM identities WHERE id=?",
+                (identity_id,),
+            ).fetchone()
+            if owner is None or owner["account_type"] != "subscriber" or not owner["is_active"]:
+                raise ValueError("An active subscriber account is required.")
+            where = (
+                "s.identity_id=? AND s.revoked_at IS NULL AND s.expires_at>? "
+                "AND i.is_active=1"
+            )
+            total = db.execute(
+                "SELECT COUNT(*) FROM sessions s JOIN identities i ON i.id=s.identity_id WHERE " + where,
+                (identity_id, now),
+            ).fetchone()[0]
+            rows = db.execute(
+                """SELECT s.id AS session_id, s.created_at, s.last_seen_at,
+                          s.expires_at, (s.id=?) AS is_current
+                   FROM sessions s JOIN identities i ON i.id=s.identity_id
+                   WHERE """ + where + """
+                   ORDER BY (s.id=?) DESC, s.last_seen_at DESC, s.id
+                   LIMIT ? OFFSET ?""",
+                (current_session_id, identity_id, now, current_session_id, limit, offset),
+            ).fetchall()
+        return {
+            "sessions": [dict(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def revoke_subscriber_session_by_id(
+        self, identity_id: str, session_id: str,
+    ) -> bool:
+        """Revoke one session only when it belongs to the authenticated subscriber."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity is required.")
+        if not isinstance(session_id, str) or not session_id or len(session_id) > 128:
+            raise ValueError("A valid session reference is required.")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            owner = db.execute(
+                "SELECT account_type, is_active FROM identities WHERE id=?",
+                (identity_id,),
+            ).fetchone()
+            if owner is None or owner["account_type"] != "subscriber" or not owner["is_active"]:
+                db.rollback()
+                raise ValueError("An active subscriber account is required.")
+            now = _timestamp(_now())
+            row = db.execute(
+                """SELECT id FROM sessions
+                   WHERE id=? AND identity_id=? AND revoked_at IS NULL AND expires_at>?""",
+                (session_id, identity_id, now),
+            ).fetchone()
+            if row is None:
+                db.rollback()
+                return False
+            cursor = db.execute(
+                """UPDATE sessions SET revoked_at=?
+                   WHERE id=? AND identity_id=? AND revoked_at IS NULL AND expires_at>?""",
+                (now, session_id, identity_id, now),
+            )
+            if cursor.rowcount != 1:
+                db.rollback()
+                return False
+            self._record_audit_event(
+                db,
+                "subscriber.session_revoked",
+                identity_id,
+                now,
+                {"self_service": True},
+                actor_identity_id=identity_id,
+            )
+            db.commit()
+        return True
+
     def list_active_sessions(
         self, *, actor_identity_id: str, current_session_id: str,
         limit: int = 25, offset: int = 0,
