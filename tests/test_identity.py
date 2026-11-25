@@ -2,6 +2,14 @@ import sqlite3
 from datetime import timedelta
 
 import pytest
+from cryptography.fernet import Fernet
+
+from app import config
+
+
+@pytest.fixture(autouse=True)
+def stripe_webhook_encryption_key(monkeypatch):
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 
 from app.identity import IdentityStore
 
@@ -41,7 +49,7 @@ def test_identity_schema_initialization_is_idempotent(tmp_path):
     first.initialize()
     with first.connect() as db:
         versions = db.execute("SELECT version FROM schema_migrations").fetchall()
-    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
 
 def test_schema_refuses_a_newer_database_version(tmp_path):
