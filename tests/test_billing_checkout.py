@@ -50,7 +50,7 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
         if path == "/customers":
             return {"id": "cus_test123"}
         if path == "/checkout/sessions":
-            return {"url": "https://checkout.stripe.com/c/pay/cs_test_123"}
+            return {"id": "cs_test_123", "url": "https://checkout.stripe.com/c/pay/cs_test_123"}
         raise AssertionError(path)
 
     monkeypatch.setattr(stripe_api, "stripe_request", fake_stripe)
@@ -91,7 +91,7 @@ def test_checkout_uses_annual_price_only_for_year_interval(billing_harness, monk
         if path == "/customers":
             return {"id": "cus_testannual"}
         if path == "/checkout/sessions":
-            return {"url": "https://checkout.stripe.com/c/pay/cs_test_annual"}
+            return {"id": "cs_test_annual", "url": "https://checkout.stripe.com/c/pay/cs_test_annual"}
         raise AssertionError(path)
 
     monkeypatch.setattr(stripe_api, "stripe_request", fake_stripe)
