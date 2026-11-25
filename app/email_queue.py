@@ -67,6 +67,8 @@ class TransactionalEmailQueue:
             raise ValueError("A valid one-time challenge token is required.")
         if not isinstance(challenge_expires_at, datetime):
             raise ValueError("A challenge expiry timestamp is required.")
+        if challenge_expires_at.tzinfo is None or challenge_expires_at.utcoffset() is None:
+            raise ValueError("Challenge expiry must be timezone-aware.")
         now = _now()
         expiry = challenge_expires_at.astimezone(timezone.utc)
         if expiry <= now:

@@ -296,3 +296,31 @@ def test_queue_key_rotation_mismatch_preserves_pending_ciphertext(tmp_path, monk
     assert paused["attempt_count"] == 0
     assert paused["encrypted_payload"] == before
     assert paused["last_failure_code"] == "payload_decryption_failed"
+
+
+def test_queue_rejects_naive_challenge_expiry_before_inserting(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        queue_module.config,
+        "EMAIL_QUEUE_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("naive-expiry@example.test", "a strong password 123")
+    token = store.create_email_verification_challenge("naive-expiry@example.test")
+    queue = TransactionalEmailQueue(store)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        queue.enqueue(
+            identity_id=identity_id,
+            purpose="verification",
+            challenge_token=token,
+            recipient="naive-expiry@example.test",
+            subject="Verify account",
+            text="Verify this account",
+            html=None,
+            challenge_expires_at=datetime.now() + timedelta(hours=1),
+        )
+    with store.connect() as db:
+        count = db.execute(
+            "SELECT COUNT(*) FROM transactional_email_queue"
+        ).fetchone()[0]
+    assert count == 0
