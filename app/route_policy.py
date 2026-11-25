@@ -44,8 +44,9 @@ ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/api/arbitrage"): "subscriber_entitled",
 }
 
-# The identity router is maintained as a separately testable route set until
-# it is mounted behind AUTH_MODE=identity. Keep its policy complete meanwhile.
+# Identity endpoints have their own explicit policy and are admitted only by
+# the AUTH_MODE=identity middleware allowlist. Product route dependencies remain
+# a separate integration milestone.
 IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/auth/csrf"): "public_minimal",
     ("POST", "/auth/register"): "public_csrf",
