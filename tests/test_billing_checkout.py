@@ -176,6 +176,13 @@ def test_checkout_fails_closed_for_live_key_or_live_webhook_mode(billing_harness
         headers={"Idempotency-Key": "client-key-1234567890"},
     )
     assert response.status_code == 503
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    monkeypatch.setattr(config, "STRIPE_TEST_MODE_ACKNOWLEDGED", False)
+    response = client.post(
+        "/auth/billing/checkout", json={"interval": "month"},
+        headers={"Idempotency-Key": "client-key-1234567890"},
+    )
+    assert response.status_code == 503
 
 
 def test_checkout_blocks_duplicate_nonterminal_subscription(billing_harness, monkeypatch):
