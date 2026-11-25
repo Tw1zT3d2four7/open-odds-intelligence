@@ -258,8 +258,8 @@ def dashboard():
 @app.get("/api/health")
 def health():
     # Identity mode exposes only the liveness contract needed by Docker/Caddy.
-    # Detailed provider and operational diagnostics remain private until the
-    # administrator diagnostics surface is implemented.
+    # Detailed provider and operational diagnostics are exposed only through
+    # the MFA-protected Admin Overview, never through the public health route.
     if config.AUTH_MODE == "identity":
         return {"status": "ok", "app": config.APP_NAME}
     return {"status": "ok", "app": config.APP_NAME, **service.status(),
