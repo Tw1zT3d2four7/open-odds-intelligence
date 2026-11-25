@@ -1,5 +1,6 @@
 import hashlib
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 import pytest
@@ -1574,6 +1575,25 @@ def test_checkout_reservation_is_atomic_idempotent_and_expires(tmp_path):
     assert replacement["state"] == "reserved"
     assert replacement["attempt_token"] != first["attempt_token"]
     assert store.billing_checkout_pending(subscriber_id) is True
+
+
+def test_checkout_reservation_allows_only_one_concurrent_attempt(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "checkout-concurrent@example.test", "a strong concurrent checkout password"
+    )
+
+    def reserve(index):
+        key_hash = hashlib.sha256(f"parallel-client-key-{index}".encode()).hexdigest()
+        return store.reserve_billing_checkout(subscriber_id, "month", key_hash)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(reserve, range(8)))
+
+    assert sum(result["state"] == "reserved" for result in results) == 1
+    assert sum(result["state"] == "checkout_pending" for result in results) == 7
+    tokens = [result["attempt_token"] for result in results if result["state"] == "reserved"]
+    assert len(tokens) == 1
 
 
 def test_checkout_reservation_refuses_existing_subscription(tmp_path):
