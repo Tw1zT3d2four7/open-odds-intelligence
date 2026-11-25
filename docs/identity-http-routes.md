@@ -33,6 +33,7 @@ Public registration can create only a subscriber. Administrator provisioning rem
 - Forwarded client-IP headers are ignored until trusted proxy CIDRs are explicitly configured after deployment topology review.
 - Email links carry challenge tokens in the URL fragment (`#token=...`), which browsers do not send in HTTP requests or referrer headers. The page must read the fragment and POST the token in the request body.
 - Email provider exceptions are sanitized. The API key is case-preserving and is never returned to the browser or written to audit events.
+- Delivery outcomes are recorded in a separate 90-day table with no recipient address or challenge token. A persistent Resend circuit opens after five consecutive failures within ten minutes, remains open for ten minutes, and permits one 60-second half-open probe.
 
 ## Rate-limit starting values
 
@@ -54,7 +55,7 @@ The router is intentionally not included in the live FastAPI application. Before
 
 1. Add every new route to the explicit route manifest and verify no route is unclassified or stale.
 2. Attach the route-policy dependency assembly and explicit entitlement checks to all existing subscriber product routes.
-3. Add durable delivery status/retry handling and a provider circuit breaker; a provider failure currently leaves a valid challenge available for a later resend but does not yet create a durable delivery record.
+3. Add a durable send queue and safe retry workflow. Delivery history and the persistent provider circuit breaker are implemented, but a provider failure currently leaves a valid challenge available only for a later user-requested resend; raw challenge tokens are not retained for background retries.
 4. Test the exact Caddy-to-app peer topology and configure only the narrow trusted proxy CIDR.
 5. Build subscriber/admin frontend entry points and ensure they bootstrap CSRF before any mutation.
 6. Run the complete non-production flow with a verified sender domain and operator-controlled mailbox.
