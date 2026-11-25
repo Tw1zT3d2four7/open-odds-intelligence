@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app import main
@@ -13,6 +14,11 @@ def test_legacy_basic_auth_unconfigured_mode_preserves_existing_open_behavior(mo
     assert response.status_code == 200
     assert "Open Odds Intelligence" in response.text
     assert client.get("/auth/csrf").status_code == 404
+    for path in (
+        "/login", "/register", "/admin/login", "/forgot-password",
+        "/verify-email", "/reset-password", "/auth/csrf",
+    ):
+        assert client.get(path).status_code == 404
 
 
 def test_legacy_basic_auth_requires_credentials_when_both_are_configured(monkeypatch):
@@ -67,6 +73,15 @@ def test_identity_mode_fails_closed_until_full_route_cutover_is_enabled(monkeypa
     assert csrf.status_code == 200
     assert csrf.headers["cache-control"] == "no-store"
 
+    for path in (
+        "/login", "/register", "/admin/login", "/forgot-password",
+        "/verify-email", "/reset-password",
+    ):
+        page = client.get(path)
+        assert page.status_code == 200
+        assert page.headers["cache-control"] == "no-store"
+        assert "Open Odds Intelligence" in page.text
+
     health = client.get("/api/health")
     assert health.status_code == 200
     assert set(health.json()) == {"status", "app"}
@@ -96,3 +111,16 @@ def test_unknown_authentication_mode_is_rejected_during_configuration_load(monke
     # Restore the shared config module for the remaining application tests.
     monkeypatch.setenv("AUTH_MODE", "legacy_basic")
     importlib.reload(config)
+
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/login", "/register", "/admin/login", "/forgot-password", "/verify-email", "/reset-password"],
+)
+def test_legacy_basic_credentials_do_not_expose_identity_pages(monkeypatch, path):
+    monkeypatch.setattr(main.config, "AUTH_MODE", "legacy_basic")
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "operator")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "legacy-secret")
+    client = TestClient(main.app)
+    assert client.get(path, auth=("operator", "legacy-secret")).status_code == 404
