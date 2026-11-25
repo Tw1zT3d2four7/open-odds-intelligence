@@ -26,6 +26,9 @@ def dependencies_for_route(
     *,
     entitlement_dependency: Callable | None = None,
     policy: Mapping[tuple[str, str], str] | None = None,
+    subscriber_dependency: Callable = require_subscriber,
+    administrator_dependency: Callable = require_administrator,
+    csrf_dependency: Callable = require_authenticated_csrf,
 ) -> list[Depends]:
     """Return the complete dependency list for a classified route.
 
@@ -52,21 +55,21 @@ def dependencies_for_route(
         return [Depends(require_authenticated_csrf)]
 
     if access_class == "administrator_only":
-        dependencies = [Depends(require_administrator)]
+        dependencies = [Depends(administrator_dependency)]
     elif access_class == "subscriber_only":
-        dependencies = [Depends(require_subscriber)]
+        dependencies = [Depends(subscriber_dependency)]
     elif access_class == "subscriber_entitled":
         if entitlement_dependency is None or not callable(entitlement_dependency):
             raise RuntimeError(
                 "A server-side entitlement dependency is required for subscriber routes."
             )
         dependencies = [
-            Depends(require_subscriber),
+            Depends(subscriber_dependency),
             Depends(entitlement_dependency),
         ]
     else:
         raise ValueError("Route access policy is not supported.")
 
     if mutating:
-        dependencies.append(Depends(require_authenticated_csrf))
+        dependencies.append(Depends(csrf_dependency))
     return dependencies
