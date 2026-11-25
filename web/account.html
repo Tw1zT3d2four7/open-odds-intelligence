@@ -156,7 +156,7 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       });
     }
     if (!data.checkout_available || !data.customer_portal_available) {
-      el("billing-availability").textContent = "Subscription purchases and self-service billing changes are not enabled yet. Monthly and annual plans will be offered after plan pricing, entitlements, and Stripe test-mode acceptance are approved.";
+      el("billing-availability").textContent = "The approved monthly and yearly prices are shown above. Subscription purchases and self-service billing changes remain disabled until Stripe test-mode acceptance and the access rules are complete.";
     }
   }
   async function loadAccount() {
