@@ -428,5 +428,7 @@ def test_auth_entry_pages_are_no_store_and_share_the_secure_auth_shell(
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert "default-src" in response.headers["content-security-policy"]
     assert "Open Odds Intelligence" in response.text
     assert "__Host-ooi_csrf" in response.text
