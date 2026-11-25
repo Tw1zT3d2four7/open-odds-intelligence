@@ -27,6 +27,7 @@ h1{font-size:clamp(30px,5vw,42px);line-height:1.1;letter-spacing:-.04em;margin:0
 .value{font-size:15px;font-weight:650;overflow-wrap:anywhere}.status{display:inline-flex;align-items:center;gap:7px;border:1px solid #3d827a;border-radius:20px;padding:4px 10px;color:var(--accent);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
 .status:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
 .feature-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}.feature-list li{padding:10px 12px;border:1px solid #2b4059;border-radius:8px;background:#0c1727;color:#d9e5f4}
+.session-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}.session-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;border:1px solid #2b4059;border-radius:8px;background:#0c1727}.session-meta{min-width:0}.session-meta strong{display:block;font-size:13px}.session-meta small{display:block;color:var(--muted);font-size:11px;overflow-wrap:anywhere}.session-current{color:var(--accent);font-size:10px;font-weight:800;text-transform:uppercase}.session-row button{flex-shrink:0;padding:6px 9px;font-size:12px}
 .empty{color:var(--muted);font-size:13px}.notice{display:none;margin:0 0 18px;padding:11px 13px;border:1px solid #78494c;border-radius:8px;color:#ffb9b9;background:#401d2433}
 .notice.show{display:block}.card-footer{margin-top:18px;color:var(--muted);font-size:12px}.workspace-link{display:none;margin-top:18px}
 .workspace-link a{color:var(--accent);font-weight:700;text-decoration:none}.workspace-link a:hover{text-decoration:underline}
@@ -73,6 +74,12 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
         <button id="password-submit" type="submit">Update password</button>
       </form>
       <p id="password-message" class="card-footer" role="status" aria-live="polite"></p>
+    </section>
+    <section class="card" aria-labelledby="sessions-heading">
+      <h2 id="sessions-heading">Active sessions</h2>
+      <p class="card-footer">Review where your account is signed in. You can revoke any session you do not recognize.</p>
+      <ul class="session-list" id="session-list"><li class="empty">Loading active sessions…</li></ul>
+      <p id="session-message" class="card-footer" role="status" aria-live="polite"></p>
     </section>
   </div>
 </main>
@@ -137,6 +144,61 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       button.disabled = false;
     }
   });
+  function formatSessionDate(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
+  }
+  async function loadSessions() {
+    const response = await fetch("/auth/sessions", {credentials:"same-origin",cache:"no-store"});
+    if (response.status === 401) { window.location.replace("/login"); return; }
+    if (!response.ok) throw new Error("Active sessions are temporarily unavailable.");
+    const data = await response.json();
+    const list = el("session-list"); list.replaceChildren();
+    if (!Array.isArray(data.sessions) || data.sessions.length === 0) {
+      const item = document.createElement("li"); item.className = "empty";
+      item.textContent = "No active sessions were found."; list.appendChild(item); return;
+    }
+    data.sessions.forEach(item => {
+      const row = document.createElement("li"); row.className = "session-row";
+      const meta = document.createElement("div"); meta.className = "session-meta";
+      const title = document.createElement("strong");
+      title.textContent = item.is_current ? "This device" : "Signed-in session";
+      const detail = document.createElement("small");
+      detail.textContent = "Last active: " + formatSessionDate(item.last_seen_at) +
+        " · Expires: " + formatSessionDate(item.expires_at);
+      meta.append(title, detail);
+      if (item.is_current) {
+        const badge = document.createElement("span"); badge.className = "session-current";
+        badge.textContent = "Current"; meta.appendChild(badge);
+      }
+      const button = document.createElement("button"); button.type = "button";
+      button.textContent = "Revoke"; button.dataset.sessionId = item.session_id;
+      button.setAttribute("aria-label", item.is_current ? "Sign out this device" : "Revoke this session");
+      row.append(meta, button); list.appendChild(row);
+    });
+  }
+  el("session-list").addEventListener("click", async event => {
+    const button = event.target.closest("button[data-session-id]");
+    if (!button) return;
+    if (!window.confirm("Revoke this session? If it is the current device, you will be signed out.")) return;
+    button.disabled = true;
+    try {
+      const token = csrfToken();
+      if (!token) throw new Error("Secure session initialization failed. Reload the page.");
+      const response = await fetch("/auth/sessions/" + encodeURIComponent(button.dataset.sessionId) + "/revoke", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"X-Ooi-Csrf-Token":token}
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Session could not be revoked.");
+      if (data.current_session) { window.location.replace("/login"); return; }
+      el("session-message").textContent = "Session revoked.";
+      await loadSessions();
+    } catch (error) {
+      el("session-message").textContent = error.message || "Session could not be revoked.";
+      button.disabled = false;
+    }
+  });
   el("sign-out").addEventListener("click", async () => {
     const button = el("sign-out"); button.disabled = true;
     try {
@@ -149,7 +211,8 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
   });
   Promise.all([
     fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"}).then(response => { if (!response.ok) throw new Error("Secure session initialization failed."); }),
-    loadAccount()
+    loadAccount(),
+    loadSessions()
   ]).then(results => { if (results[1]) el("sign-out").disabled = false; })
     .catch(error => notice(error.message || "Your account could not be loaded."));
 })();
