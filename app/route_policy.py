@@ -69,6 +69,8 @@ IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("POST", "/admin/auth/login"): "public_csrf",
     ("POST", "/admin/auth/logout"): "administrator_only",
     ("GET", "/admin/audit-events"): "administrator_only",
+    ("GET", "/admin/sessions"): "administrator_only",
+    ("POST", "/admin/sessions/{session_id}/revoke"): "administrator_only",
     ("GET", "/admin/subscribers"): "administrator_only",
     ("POST", "/admin/subscribers/{identity_id}/status"): "administrator_only",
     ("GET", "/admin/subscriber-entitlements"): "administrator_only",
