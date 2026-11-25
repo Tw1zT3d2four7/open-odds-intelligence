@@ -7,7 +7,7 @@
 - Run this drill only in an isolated staging/non-production deployment.
 - Use synthetic subscriber and administrator accounts. Do not copy production identity data into staging.
 - Confirm both the identity database path and odds-history database path point to staging storage before running any command.
-- Keep the backup encryption key in the staging secret manager. Never paste it into chat, a ticket, shell history, or a command-line argument.
+- Keep all independent staging keys in the staging secret manager: IDENTITY_BACKUP_ENCRYPTION_KEY, MFA_ENCRYPTION_KEY, EMAIL_QUEUE_ENCRYPTION_KEY, and RATE_LIMIT_HASH_KEY. Never paste a key into chat, a ticket, shell history, or a command-line argument. Never reuse one key for another purpose.
 - Create a private backup directory owned by the application operator. Existing directories must not be group/world writable; the tooling will not change their permissions.
 - Stop the staging application and all workers before an apply/restore operation. The CLI flag is an explicit operator confirmation, not an automatic process detector.
 - Never run the apply steps against a production volume as part of this drill.
@@ -19,6 +19,9 @@ Set the staging environment to use dedicated paths, for example:
 - ACCOUNTS_DATABASE_PATH: a staging-only identity database file.
 - DATABASE_PATH: a staging-only odds-history database file.
 - IDENTITY_BACKUP_ENCRYPTION_KEY: a valid Fernet key held in the staging secret manager.
+- MFA_ENCRYPTION_KEY: the staging key required to decrypt administrator TOTP seeds.
+- EMAIL_QUEUE_ENCRYPTION_KEY: the staging key required to decrypt pending authentication email payloads.
+- RATE_LIMIT_HASH_KEY: the staging key required to preserve stable rate-limit bucket digests.
 
 Generate a key for a disposable staging environment if one is not already provisioned:
 
@@ -67,7 +70,7 @@ Expected results:
 - No pre-restore snapshot is created.
 - Restore must not proceed until the correct key is recovered from the staging secret manager.
 
-Restore the correct staging key before continuing. Never rotate or replace a production key as part of this test.
+Restore the correct staging backup key before continuing. Keep the other three independent staging keys unchanged. Never rotate or replace a production key as part of this test.
 
 ## 4. Restore into a separate staging target
 
