@@ -187,11 +187,17 @@ def _identifier(value: str) -> str:
 def _public_origin() -> str:
     base = config.PUBLIC_BASE_URL
     parsed = urlsplit(base)
+    try:
+        parsed.port  # Force validation of malformed explicit ports.
+    except ValueError:
+        parsed = None
     if (
-        parsed.scheme != "https"
+        parsed is None
+        or parsed.scheme != "https"
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
+        or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
     ):
