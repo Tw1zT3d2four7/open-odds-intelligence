@@ -169,6 +169,8 @@ def _validate_identity_schema(connection: sqlite3.Connection, version: int) -> N
         })
     if version >= 11:
         required_columns["billing_webhook_events"].add("encrypted_payload")
+    if version >= 12:
+        required_columns["billing_subscriptions"].add("last_event_created_at")
 
     available_tables = {
         row[0] for row in connection.execute(
