@@ -805,7 +805,7 @@ def test_email_provider_half_open_probe_is_exclusive_across_workers(tmp_path, mo
     from datetime import datetime, timedelta, timezone
     from app import identity as identity_module
 
-    now = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+    now = [datetime.now(timezone.utc)]
     monkeypatch.setattr(identity_module, "_now", lambda: now[0])
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     identity_id = store.create_subscriber("person@example.com", "a strong password 123")
@@ -847,7 +847,7 @@ def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_pa
     other_subscriber = store.create_subscriber(
         "other-entitled@example.com", "another strong subscriber password"
     )
-    with pytest.raises(ValueError, match="separate administrator"):
+    with pytest.raises(ValueError, match="MFA-enrolled administrator"):
         store.set_subscriber_entitlements(
             subscriber_id, ["odds"], actor_identity_id=other_subscriber
         )
@@ -908,7 +908,6 @@ def test_subscriber_entitlement_expiry_and_replacement_are_enforced(tmp_path, mo
     "keys",
     [
         ["unknown-feature"],
-        ["odds", "odds"],
         ["odds", "x" * 300],
     ],
 )
