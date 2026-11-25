@@ -230,6 +230,56 @@ def test_backup_rejects_foreign_key_violations(tmp_path, monkeypatch):
         create_encrypted_backup(source, tmp_path / "invalid-relations.fernet")
 
 
+def test_backup_and_restore_cli_requires_explicit_offline_apply(tmp_path, monkeypatch, capsys):
+    import sys
+    from scripts import backup_identity, restore_identity
+
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setattr(config, "IDENTITY_BACKUP_ENCRYPTION_KEY", key)
+    source = tmp_path / "source" / "accounts.sqlite3"
+    _identity_store(source)
+    monkeypatch.setattr(config, "ACCOUNTS_DATABASE_PATH", str(source))
+
+    monkeypatch.setattr(sys, "argv", ["backup_identity"])
+    assert backup_identity.main() == 0
+    backups = list((source.parent / "backups").glob("identity-*.sqlite3.fernet"))
+    assert len(backups) == 1
+    backup = backups[0]
+    assert inspect_encrypted_backup(backup)["schema_version"] == 8
+
+    target = tmp_path / "target" / "accounts.sqlite3"
+    target_store, old_identity_id = _identity_store(target)
+    monkeypatch.setattr(config, "ACCOUNTS_DATABASE_PATH", str(target))
+
+    # Inspection is the default and must never replace the current database.
+    monkeypatch.setattr(sys, "argv", ["restore_identity", str(backup)])
+    assert restore_identity.main() == 0
+    with target_store.connect() as db:
+        assert db.execute("SELECT 1 FROM identities WHERE id=?", (old_identity_id,)).fetchone()
+
+    # --apply alone is insufficient and must fail before touching the target.
+    monkeypatch.setattr(sys, "argv", ["restore_identity", str(backup), "--apply"])
+    with pytest.raises(SystemExit):
+        restore_identity.main()
+    with target_store.connect() as db:
+        assert db.execute("SELECT 1 FROM identities WHERE id=?", (old_identity_id,)).fetchone()
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["restore_identity", str(backup), "--apply", "--confirm-offline"],
+    )
+    assert restore_identity.main() == 0
+    restored_store = IdentityStore(target)
+    with restored_store.connect() as db:
+        restored = db.execute(
+            "SELECT email FROM identities ORDER BY email"
+        ).fetchall()
+    assert [row["email"] for row in restored] == ["backup-user@example.test"]
+    pre_restore = list((target.parent / "backups").glob("identity-pre-restore-*.sqlite3.fernet"))
+    assert len(pre_restore) == 1
+    assert inspect_encrypted_backup(pre_restore[0])["schema_version"] == 8
+
+
 def test_backup_refuses_odds_history_database(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
