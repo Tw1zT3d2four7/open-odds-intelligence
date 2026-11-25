@@ -1,7 +1,8 @@
 """Approved subscriber prices and transparent Stripe fee gross-up estimates.
 
-These are display/catalog prices only. Checkout remains disabled until Stripe
-Price IDs, account-specific fees, entitlements, and launch acceptance are set.
+These prices are also the server-side Checkout validation catalog. Stripe
+hosted-billing switches remain default-off; paid entitlements and production
+activation are separate launch gates.
 """
 from decimal import Decimal, ROUND_HALF_UP
 import re
