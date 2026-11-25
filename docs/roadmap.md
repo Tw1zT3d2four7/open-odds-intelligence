@@ -76,7 +76,7 @@ Use **Stripe** as the payment processor. Keep payment handling hosted by Stripe 
 - Stripe is the payment source of truth; Open Odds Intelligence remains the authority for application access and server-side entitlements. Never activate paid access from a browser redirect alone.
 - Model subscription lifecycle states explicitly, including trial (only if later approved), active, past-due, grace-period, canceled, unpaid, and refunded/adjusted states as applicable.
 - Notify subscribers of failed payments, retry according to Stripe configuration, and use a documented, configurable grace period before paid entitlements are suspended. Preserve accounts and historical data when access is suspended.
-- Support monthly and annual billing. Annual discount amounts, final plan names/prices, trials, refund rules, grace-period length, and entitlement bundles remain open decisions and must be approved before launch.
+- Support monthly and annual automatic recurring billing. Approved customer-facing prices are $10.68/month and $104.05/year, calculated to target $10.00/$100.00 net after standard US domestic card (2.9% + $0.30) and Stripe Billing pay-as-you-go (0.7%) fees. Annual subscribers save $24.11 versus twelve monthly payments. These estimates exclude international-card, currency-conversion, tax, refund, dispute, and custom-pricing fees. Plan names/entitlements, trials, refund rules, grace-period length, and test-mode acceptance remain launch gates.
 - Do not store card numbers, CVCs, or other raw payment credentials in our database, logs, audit records, or backups.
 
 ### 2.11 Subscriber account experience
@@ -259,7 +259,7 @@ The Environment Configuration manager remains a separate protected-admin workstr
 
 ## 6. Open decisions
 
-- Final plan names, prices, entitlements, and trials.
+- Plan entitlement bundles, final paid-tier names, and trials. Approved subscriber pricing: $10.00 monthly net target and $100.00 annual net target; using Stripe's published US domestic card rate (2.9% + $0.30) plus Stripe Billing pay-as-you-go (0.7%), customer-facing catalog prices are $10.68/month and $104.05/year. Both renew automatically at their selected interval. The annual price saves $24.11 versus twelve monthly payments. These fee gross-ups are estimates for standard domestic card processing and exclude international-card, currency-conversion, tax, refund, dispute, and custom-pricing fees.
 - Email/SMS providers and compliance requirements.
 - Discord OAuth scopes, bot permissions, and server/channel UX.
 - Queue technology and expected scale.
