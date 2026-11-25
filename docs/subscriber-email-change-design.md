@@ -88,3 +88,18 @@ Before implementation, approve:
 - The support/recovery path for an email change the subscriber did not initiate.
 
 Until these decisions are approved, email change remains design-only.
+
+## 9. Recommended defaults for approval
+
+These defaults keep the current verified address authoritative until the new address is proven, while giving the original mailbox a chance to stop an unauthorized change:
+
+| Decision | Recommended default |
+|---|---|
+| Old-address notice | Send a security alert immediately when a change is requested, with a one-time cancellation link; send a second confirmation after successful completion. Never include the full new address. |
+| New-address verification expiry | 30 minutes; keep the existing verified address active after expiry. |
+| Replacement link | One outstanding request per subscriber; 60-second resend cooldown and a maximum of 5 requests per 24 hours. Issuing a replacement consumes the earlier challenge. |
+| Cancellation | Allow cancellation from the old-address notice. Also allow the signed-in subscriber to cancel from Account after re-entering the current password. Cancellation consumes the pending challenge and revokes sessions as a precaution. |
+| Old mailbox unavailable | Do not make access to the old mailbox a hard prerequisite. Completion still requires the current password and verification of the new address; send the old-address notice as a best-effort security alert. |
+| Suspected unauthorized change | The old-address cancellation link cancels the pending request and triggers a generic security warning. If the change already completed, use an operator-assisted identity recovery process; never bypass verification with a direct admin email edit. |
+
+The 30-minute lifetime and resend limits are intentionally stricter than initial registration verification because changing the account's login identifier is a high-impact action. These are recommendations only; implementation remains blocked until the user approves the decisions.
