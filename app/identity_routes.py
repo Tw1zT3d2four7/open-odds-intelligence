@@ -193,6 +193,7 @@ def _send_challenge_email(
     return TransactionalEmailQueue(store).enqueue(
         identity_id=identity_id,
         purpose=queue_purpose,
+        challenge_token=token,
         recipient=recipient,
         subject=subject,
         text=text_body,
