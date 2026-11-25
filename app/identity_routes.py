@@ -182,7 +182,7 @@ def _send_challenge_email(
     link = _public_link(path, token)
     safe_link = html.escape(link, quote=True)
     text_body = (
-        f"Use this link to {action}:\\n\\n{link}\\n\\n"
+        f"Use this link to {action}:\n\n{link}\n\n"
         "If you did not request this message, you can ignore it."
     )
     html_body = (
