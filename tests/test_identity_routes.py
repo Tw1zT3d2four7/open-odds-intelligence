@@ -1,4 +1,4 @@
-from datetime import timedelta
+import time
 
 import pytest
 import pyotp
@@ -164,7 +164,7 @@ def test_admin_login_requires_password_and_totp_before_session(tmp_path, monkeyp
     )
     uri = harness.store.start_administrator_mfa_enrollment(identity_id)
     secret = pyotp.parse_uri(uri).secret
-    code = pyotp.TOTP(secret).now()
+    code = pyotp.TOTP(secret).at(int(time.time()) + 30)
     response = harness.post("/admin/auth/login", {
         "email": "admin@example.com",
         "password": "an administrator password 123",
@@ -221,3 +221,37 @@ def test_admin_recovery_code_can_establish_mfa_session_once(tmp_path, monkeypatc
         "recovery_code": recovery_codes[0],
     })
     assert second.status_code == 401
+
+
+
+def test_email_origin_must_be_configured_before_registration_creates_account(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "PUBLIC_BASE_URL", "")
+    response = harness.post("/auth/register", {
+        "email": "person@example.com",
+        "password": "a strong password 123",
+    })
+    assert response.status_code == 503
+    with harness.store.connect() as db:
+        count = db.execute("SELECT COUNT(*) FROM identities").fetchone()[0]
+    assert count == 0
+
+
+def test_verification_resend_has_persistent_cooldown(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    harness.store.create_subscriber("person@example.com", "a strong password 123")
+    first = harness.post("/auth/verification/resend", {"email": "person@example.com"})
+    second = harness.post("/auth/verification/resend", {"email": "person@example.com"})
+    assert first.status_code == 202
+    assert second.status_code == 429
+    assert len(harness.sender.messages) == 1
+
+
+def test_password_reset_request_is_account_enumeration_resistant(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    unknown = harness.post("/auth/password-reset/request", {"email": "unknown@example.com"})
+    harness.store.create_subscriber("known@example.com", "a strong password 123")
+    known = harness.post("/auth/password-reset/request", {"email": "known@example.com"})
+    assert unknown.status_code == known.status_code == 202
+    assert unknown.json() == known.json()
+    assert len(harness.sender.messages) == 1
