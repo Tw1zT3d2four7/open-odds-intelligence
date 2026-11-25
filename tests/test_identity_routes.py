@@ -597,10 +597,10 @@ def test_admin_audit_api_is_mfa_protected_paginated_and_non_cacheable(tmp_path, 
 
     filtered = harness.client.get(
         "/admin/audit-events",
-        params={"event_type": "administrator_provisioned"},
+        params={"event_type": "administrator.provisioned"},
     )
     assert filtered.status_code == 200
-    assert all(event["event_type"] == "administrator_provisioned"
+    assert all(event["event_type"] == "administrator.provisioned"
                for event in filtered.json()["events"])
     assert harness.client.get("/admin/audit-events", params={"limit": 0}).status_code == 422
     assert subscriber_id
