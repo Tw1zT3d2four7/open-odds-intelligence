@@ -400,9 +400,12 @@ def test_open_email_circuit_skips_provider_and_records_delivery_state(tmp_path, 
     })
     assert response.status_code == 202
     assert harness.sender.messages == []
+    assert harness.deliver_pending() == 1
     with harness.store.connect() as db:
-        latest = db.execute(
-            "SELECT status, failure_code FROM email_delivery_events ORDER BY rowid DESC LIMIT 1"
+        queued = db.execute(
+            "SELECT state, attempt_count, last_failure_code "
+            "FROM transactional_email_queue ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
-    assert latest["status"] == "skipped"
-    assert latest["failure_code"] == "circuit_open"
+    assert queued["state"] == "pending"
+    assert queued["attempt_count"] == 0
+    assert queued["last_failure_code"] == "circuit_open"
