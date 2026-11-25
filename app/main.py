@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI):
     limits_task = None
     results_task = None
     alert_task = None
+    email_task = None
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
         and service._provider_key_pools["oddslink"].configured
@@ -108,6 +109,9 @@ async def lifespan(app: FastAPI):
             and "therundown" in service.active_provider_names()
             and service._provider_key_pools["therundown"].configured):
         results_task = asyncio.create_task(_simulation_results_loop())
+    if config.AUTH_MODE == "identity" and config.EMAIL_PROVIDER == "resend":
+        from .email_queue_worker import email_delivery_loop
+        email_task = asyncio.create_task(email_delivery_loop())
     try:
         yield
     finally:
@@ -133,6 +137,12 @@ async def lifespan(app: FastAPI):
             results_task.cancel()
             try:
                 await results_task
+            except asyncio.CancelledError:
+                pass
+        if email_task is not None:
+            email_task.cancel()
+            try:
+                await email_task
             except asyncio.CancelledError:
                 pass
 
