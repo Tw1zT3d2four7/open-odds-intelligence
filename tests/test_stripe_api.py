@@ -2,6 +2,7 @@
 import io
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
+from urllib.request import Request
 
 import pytest
 
@@ -107,7 +108,7 @@ def test_provider_http_error_is_sanitized(monkeypatch):
 
 def test_redirect_handler_never_follows_or_forwards_bearer_credentials():
     handler = stripe_api._RejectRedirects()
-    request = __import__("urllib.request", fromlist=["Request"]).Request(
+    request = Request(
         "https://api.stripe.com/v1/customers",
         headers={"Authorization": "Bearer sk_test_never_forward"},
     )
