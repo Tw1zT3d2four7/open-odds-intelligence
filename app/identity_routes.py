@@ -580,6 +580,7 @@ def create_subscriber_checkout(
         if (
             price.get("id") != price_id
             or price.get("active") is not True
+            or price.get("livemode") is not False
             or price.get("currency") != CURRENCY
             or price.get("unit_amount") != expected_amount
             or recurring.get("interval") != payload.interval
