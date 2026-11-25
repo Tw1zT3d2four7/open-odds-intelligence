@@ -1236,3 +1236,70 @@ def test_subscriber_can_sign_out_all_devices(tmp_path, monkeypatch):
     assert event["actor_identity_id"] == identity_id
     assert event["subject_identity_id"] == identity_id
     assert '"revoked_count":2' in event["metadata_json"]
+
+
+def test_subscriber_billing_summary_is_private_bounded_and_self_only(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    harness.store.create_subscriber("billing-user@example.test", "a strong billing password")
+    challenge = harness.store.create_email_verification_challenge("billing-user@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    login = harness.post("/auth/login", {
+        "email": "billing-user@example.test",
+        "password": "a strong billing password",
+    })
+    assert login.status_code == 200
+
+    identity_id = harness.store.get_identity_id_by_email("billing-user@example.test")
+    now = "2026-11-25T00:00:00+00:00"
+    with harness.store.connect() as db:
+        db.execute(
+            """INSERT INTO billing_customers(identity_id, stripe_customer_id, created_at, updated_at)
+               VALUES (?, 'cus_private_billing', ?, ?)""",
+            (identity_id, now, now),
+        )
+        db.execute(
+            """INSERT INTO billing_subscriptions(
+                id, identity_id, stripe_subscription_id, stripe_customer_id,
+                plan_code, billing_interval, status, cancel_at_period_end,
+                created_at, updated_at, last_event_created_at
+            ) VALUES ('local-sub', ?, 'sub_private', 'cus_private_billing',
+                      'basic', 'year', 'active', 1, ?, ?, ?)""",
+            (identity_id, now, now, now),
+        )
+        db.execute(
+            """INSERT INTO billing_invoices(
+                id, identity_id, stripe_invoice_id, stripe_customer_id,
+                stripe_subscription_id, status, amount_due, amount_paid, currency,
+                last_event_created_at, created_at, updated_at
+            ) VALUES ('local-invoice', ?, 'in_private', 'cus_private_billing',
+                      'sub_private', 'paid', 12000, 12000, 'usd', ?, ?, ?)""",
+            (identity_id, now, now, now),
+        )
+
+    response = harness.client.get("/auth/billing")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    data = response.json()
+    assert data["checkout_available"] is False
+    assert data["customer_portal_available"] is False
+    assert data["subscriptions"] == [{
+        "subscription_id": "sub_private",
+        "plan_code": "basic",
+        "billing_interval": "year",
+        "status": "active",
+        "current_period_start": None,
+        "current_period_end": None,
+        "cancel_at_period_end": True,
+        "canceled_at": None,
+        "ended_at": None,
+        "updated_at": now,
+    }]
+    assert data["invoices"][0]["invoice_id"] == "in_private"
+    assert data["invoices"][0]["amount_paid"] == 12000
+    assert "stripe_customer_id" not in response.text
+    assert "encrypted_payload" not in response.text
+    assert "lease_token" not in response.text
+
+    harness.client.post("/auth/logout", headers=harness.csrf_headers())
+    assert harness.client.get("/auth/billing").status_code == 401
