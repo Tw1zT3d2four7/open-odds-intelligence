@@ -18,12 +18,12 @@ This behavior is part of the current deployment contract and must remain unchang
 
 ## Required rollout modes
 
-The future implementation should use an explicit, validated authentication mode rather than silently inferring a migration state from whether credentials happen to be present.
+The application now uses an explicit, validated `AUTH_MODE` setting rather than silently inferring a migration state from whether credentials happen to be present. The default is `legacy_basic`. The recognized `identity` value currently fails closed with HTTP 503 for every non-health route; it is a migration guard, not an activated identity implementation. This prevents an early configuration change from opening routes before authorization is wired.
 
 | Mode | Intended behavior | Availability |
 |---|---|---|
 | `legacy_basic` | Preserve the exact existing Basic Auth behavior, including its current fail-closed handling of partial configuration. Identity routes are not activated. | Initial/default compatibility mode |
-| `identity` | Use the new identity/session boundary. Public account entry points are narrowly allowlisted; subscriber and administrator routes require their corresponding session and authorization checks. | Only after all cutover gates pass |
+| `identity` | Intended to use the new identity/session boundary. **Current behavior:** fail closed with HTTP 503 on every non-health route until the full integration is complete. | Guard exists; activation unavailable until all cutover gates pass |
 
 No implicit `open`, `hybrid`, or Basic-Auth-bypass mode should be introduced. In particular, a partially configured Basic Auth setup must never cause the app to become public.
 
@@ -77,4 +77,4 @@ The mode switch must be an explicit operator action. It must not be triggered by
 
 ## Current implementation boundary
 
-The session-cookie and CSRF helpers in `app/auth.py` remain isolated and are not wired to FastAPI. This document specifies the intended transition; it does not add an authentication mode, change middleware, expose new routes, or alter production behavior.
+The session-cookie and CSRF helpers in `app/auth.py` remain isolated and are not wired to FastAPI. `AUTH_MODE` now validates only `legacy_basic` and `identity`; the default preserves the existing Basic Auth contract. Selecting `identity` currently fails closed with HTTP 503 outside the health probe. No identity routes are exposed and no production behavior changes unless the operator explicitly changes the mode.
