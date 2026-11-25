@@ -50,6 +50,7 @@ router = APIRouter(include_in_schema=False)
 
 _AUTH_PAGE = Path(__file__).resolve().parent.parent / "web" / "auth.html"
 _ADMIN_PAGE = Path(__file__).resolve().parent.parent / "web" / "admin.html"
+_ACCOUNT_PAGE = Path(__file__).resolve().parent.parent / "web" / "account.html"
 
 
 def _render_auth_page() -> HTMLResponse:
@@ -94,6 +95,26 @@ def _render_admin_page() -> HTMLResponse:
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
+def _render_account_page() -> HTMLResponse:
+    """Render the subscriber account view with non-cacheable, nonce-protected scripts."""
+    nonce = secrets.token_urlsafe(18)
+    content = _ACCOUNT_PAGE.read_text(encoding="utf-8")
+    if content.count("<script>") != 1:
+        raise RuntimeError("Subscriber account page must contain exactly one nonceable script block.")
+    content = content.replace("<script>", f'<script nonce="{nonce}">', 1)
+    response = HTMLResponse(content)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; "
+        "connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    )
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
 
 @router.get("/login", response_class=HTMLResponse)
 def subscriber_login_page():
@@ -117,6 +138,14 @@ def administrator_login_page():
 def administrator_console_page():
     """Serve the separate console only to an active MFA-authenticated administrator."""
     return _render_admin_page()
+
+@router.get("/account", response_class=HTMLResponse)
+def subscriber_account_page(
+    _session: dict = Depends(require_subscriber),
+):
+    """Serve the subscriber account overview only to an active verified subscriber."""
+    return _render_account_page()
+
 
 
 @router.get("/forgot-password", response_class=HTMLResponse)
@@ -356,6 +385,30 @@ def csrf_bootstrap(response: Response):
     response.headers["Pragma"] = "no-cache"
     issue_csrf_cookie(response)
     return {"ok": True}
+
+@router.get("/auth/account")
+def subscriber_account_summary(
+    response: Response,
+    session: dict = Depends(require_subscriber),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Return only the signed-in subscriber's own account and active feature grants."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        feature_access = store.active_subscriber_entitlements(session["identity_id"])
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Account information is temporarily unavailable.",
+        ) from None
+    return {
+        "email": session["email"],
+        "account_status": "active",
+        "email_verified": True,
+        "feature_access": feature_access,
+    }
+
 
 
 @router.post("/auth/register", status_code=202, dependencies=[Depends(require_authenticated_csrf)])

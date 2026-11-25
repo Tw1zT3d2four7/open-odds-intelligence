@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0b1220">
+<title>Open Odds Intelligence · Your Account</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121d30;--line:#263750;--muted:#91a4bd;--text:#edf4ff;--accent:#57c7a5}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -15%,#1b3850 0,transparent 48%),var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{height:76px;padding:0 clamp(18px,5vw,64px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(145,164,189,.14)}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);font-weight:800;letter-spacing:.09em;font-size:13px}
+.mark{width:36px;height:36px;border:1px solid #3d827a;border-radius:50%;display:grid;place-items:center;background:#10283a;color:var(--accent)}
+.mark svg{width:22px;height:22px}.brand span span{display:block;color:var(--accent);font-size:10px;letter-spacing:.24em}
+.header-actions{display:flex;align-items:center;gap:18px}.header-note{font-size:12px;color:var(--muted)}
+button{border:1px solid #38536d;border-radius:8px;background:#17283e;color:var(--text);font:inherit;font-weight:700;padding:9px 14px;cursor:pointer}
+button:hover{border-color:var(--accent)}button:disabled{opacity:.55;cursor:wait}
+main{width:min(920px,100% - 36px);margin:58px auto}.eyebrow{color:var(--accent);font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;margin-bottom:12px}
+h1{font-size:clamp(30px,5vw,42px);line-height:1.1;letter-spacing:-.04em;margin:0 0 10px}.lede{color:var(--muted);margin:0 0 30px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:linear-gradient(155deg,rgba(22,36,58,.98),rgba(16,27,44,.98));border:1px solid var(--line);border-radius:15px;padding:24px;box-shadow:0 20px 70px #0004}
+.card h2{font-size:17px;margin:0 0 18px}.label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.12em;font-weight:800;margin:16px 0 4px}
+.value{font-size:15px;font-weight:650;overflow-wrap:anywhere}.status{display:inline-flex;align-items:center;gap:7px;border:1px solid #3d827a;border-radius:20px;padding:4px 10px;color:var(--accent);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.status:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.feature-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}.feature-list li{padding:10px 12px;border:1px solid #2b4059;border-radius:8px;background:#0c1727;color:#d9e5f4}
+.empty{color:var(--muted);font-size:13px}.notice{display:none;margin:0 0 18px;padding:11px 13px;border:1px solid #78494c;border-radius:8px;color:#ffb9b9;background:#401d2433}
+.notice.show{display:block}.card-footer{margin-top:18px;color:var(--muted);font-size:12px}.workspace-link{display:none;margin-top:18px}
+.workspace-link a{color:var(--accent);font-weight:700;text-decoration:none}.workspace-link a:hover{text-decoration:underline}
+footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
+@media(max-width:680px){main{margin:38px auto}.grid{grid-template-columns:1fr}.header-note{display:none}.card{padding:20px}}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/account" aria-label="Open Odds Intelligence account">
+    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M12 3v9l6.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 16.5 9 13l2 1.5 6-6" stroke="#edf4ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span>OPEN ODDS<span>INTELLIGENCE</span></span>
+  </a>
+  <div class="header-actions"><span class="header-note">Subscriber account</span><button id="sign-out" type="button" disabled>Sign out</button></div>
+</header>
+<main>
+  <div class="eyebrow">Your account</div><h1>Account overview</h1>
+  <p class="lede">Review your secure account status and the features currently enabled for you.</p>
+  <div id="notice" class="notice" role="alert"></div>
+  <div class="grid">
+    <section class="card" aria-labelledby="account-heading">
+      <h2 id="account-heading">Account details</h2>
+      <div class="label">Email address</div><div class="value" id="email">Loading…</div>
+      <div class="label">Account status</div><div class="value"><span class="status" id="account-status">Checking</span></div>
+      <div class="label">Email verification</div><div class="value" id="verification">Checking</div>
+      <p class="card-footer">Your account is protected by a secure, server-managed session.</p>
+    </section>
+    <section class="card" aria-labelledby="features-heading">
+      <h2 id="features-heading">Enabled feature access</h2>
+      <ul class="feature-list" id="feature-list"><li class="empty">Loading feature access…</li></ul>
+      <div class="workspace-link" id="workspace-link"><a href="/">Open your workspace →</a></div>
+      <p class="card-footer">Feature access is managed separately from billing. No paid plan or subscription status is implied here.</p>
+    </section>
+  </div>
+</main>
+<footer>Open Odds Intelligence · Secure subscriber account</footer>
+<script>
+(() => {
+  "use strict";
+  const el = id => document.getElementById(id);
+  const notice = message => { el("notice").textContent = message; el("notice").classList.add("show"); };
+  const labels = {dashboard:"Market dashboard",market_limits:"Market limits",odds:"Odds data",market_board:"Market board",simulation:"Game simulation",player_props:"Player props",clv:"Closing-line value",market_movement:"Market movement",history:"Historical data",opportunities:"Odds opportunities",arbitrage:"Arbitrage"};
+  function csrfToken() {
+    const prefix = "__Host-ooi_csrf=";
+    const part = document.cookie.split("; ").find(item => item.startsWith(prefix));
+    return part ? decodeURIComponent(part.slice(prefix.length)) : "";
+  }
+  async function loadAccount() {
+    const response = await fetch("/auth/account", {credentials:"same-origin",cache:"no-store"});
+    if (response.status === 401) { window.location.replace("/login"); return false; }
+    if (!response.ok) throw new Error("Your account information is temporarily unavailable.");
+    const data = await response.json();
+    el("email").textContent = data.email;
+    el("account-status").textContent = data.account_status;
+    el("verification").textContent = data.email_verified ? "Verified" : "Not verified";
+    const list = el("feature-list"); list.replaceChildren();
+    if (!Array.isArray(data.feature_access) || data.feature_access.length === 0) {
+      const item = document.createElement("li"); item.className = "empty";
+      item.textContent = "No feature access has been assigned yet."; list.appendChild(item);
+    } else {
+      data.feature_access.forEach(key => {
+        const item = document.createElement("li"); item.textContent = labels[key] || key.replaceAll("_", " ");
+        list.appendChild(item);
+      });
+    }
+    if (Array.isArray(data.feature_access) && data.feature_access.includes("dashboard")) el("workspace-link").style.display = "block";
+    return true;
+  }
+  el("sign-out").addEventListener("click", async () => {
+    const button = el("sign-out"); button.disabled = true;
+    try {
+      const token = csrfToken();
+      if (!token) throw new Error("Secure sign-out could not be initialized. Reload the page.");
+      const response = await fetch("/auth/logout", {method:"POST",credentials:"same-origin",cache:"no-store",headers:{"X-Ooi-Csrf-Token":token}});
+      if (!response.ok) throw new Error("Sign-out could not be completed. Please try again.");
+      window.location.replace("/login");
+    } catch (error) { notice(error.message || "Sign-out could not be completed."); button.disabled = false; }
+  });
+  Promise.all([
+    fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"}).then(response => { if (!response.ok) throw new Error("Secure session initialization failed."); }),
+    loadAccount()
+  ]).then(results => { if (results[1]) el("sign-out").disabled = false; })
+    .catch(error => notice(error.message || "Your account could not be loaded."));
+})();
+</script>
+</body>
+</html>

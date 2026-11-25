@@ -182,7 +182,8 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
       let result;
       if (view.kind === "login") {
         result = await post("/auth/login", {email,password});
-        show("You are signed in. Your subscriber workspace will open when product access is enabled.", "success");
+        window.location.assign("/account");
+        return;
       } else if (view.kind === "register") {
         result = await post("/auth/register", {email,password});
         show(result.message || "If this address can be registered, a verification email will be sent.", "success");
@@ -192,7 +193,8 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
         if (/^\d{6}$/.test(code)) payload.totp_code = code;
         else payload.recovery_code = code;
         await post("/admin/auth/login", payload);
-        show("Administrator authentication succeeded. The protected Admin Console will be available when its workspace is enabled.", "success");
+        window.location.assign("/admin");
+        return;
       } else if (view.kind === "forgot") {
         result = await post("/auth/password-reset/request", {email});
         show(result.message || "If an active account matches this address, a recovery email will be sent.", "success");

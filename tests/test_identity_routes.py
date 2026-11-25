@@ -899,3 +899,57 @@ def test_admin_bulk_subscriber_session_revocation_requires_csrf_and_is_audited(t
     assert event["actor_identity_id"] == admin_id
     assert '"revoked_count":2' in event["metadata_json"]
     assert "bulk-session-user@example.test" not in event["metadata_json"]
+
+
+def test_subscriber_account_page_and_summary_are_private_and_minimal(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    assert harness.client.get("/account").status_code == 401
+    assert harness.client.get("/auth/account").status_code == 401
+
+    harness.store.create_subscriber("account-user@example.test", "a strong account password")
+    challenge = harness.store.create_email_verification_challenge("account-user@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    login = harness.post("/auth/login", {
+        "email": "account-user@example.test",
+        "password": "a strong account password",
+    })
+    assert login.status_code == 200
+
+    page = harness.client.get("/account")
+    assert page.status_code == 200
+    assert page.headers["cache-control"] == "no-store"
+    assert page.headers["pragma"] == "no-cache"
+    nonce = page.headers["content-security-policy"].split("script-src 'nonce-", 1)[1].split("'", 1)[0]
+    assert f'<script nonce="{nonce}">' in page.text
+
+    response = harness.client.get("/auth/account")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.json() == {
+        "email": "account-user@example.test",
+        "account_status": "active",
+        "email_verified": True,
+        "feature_access": [],
+    }
+    assert "__Host-ooi_subscriber" not in response.text
+    assert "token_hash" not in response.text
+
+
+def test_administrator_session_cannot_access_subscriber_account(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    admin_id = harness.store.provision_administrator(
+        "account-admin@example.test", "a strong account admin password"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "account-admin@example.test",
+        "password": "a strong account admin password",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+    assert harness.client.get("/account").status_code == 401
+    assert harness.client.get("/auth/account").status_code == 401
