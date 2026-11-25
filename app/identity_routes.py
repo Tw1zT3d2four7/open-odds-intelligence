@@ -133,7 +133,7 @@ def _identifier(value: str) -> str:
     return value.strip().casefold()
 
 
-def _public_link(path: str, token: str) -> str:
+def _public_origin() -> str:
     base = config.PUBLIC_BASE_URL
     parsed = urlsplit(base)
     if (
@@ -148,7 +148,12 @@ def _public_link(path: str, token: str) -> str:
             status_code=503,
             detail="Authentication email delivery is not configured.",
         )
-    return f"{base.rstrip('/')}/{path.lstrip('/')}#token={quote(token, safe='')}"
+    return base.rstrip("/")
+
+
+def _public_link(path: str, token: str) -> str:
+    base = _public_origin()
+    return f"{base}/{path.lstrip('/')}#token={quote(token, safe='')}"
 
 
 def _send_challenge_email(
@@ -195,6 +200,7 @@ def get_email_sender(request: Request):
     """Resolve a sender lazily; tests can inject a fake sender on app.state."""
     configured = getattr(request.app.state, "email_sender", None)
     if configured is not None:
+        _public_origin()
         return configured
     try:
         sender = create_email_sender()
@@ -208,6 +214,7 @@ def get_email_sender(request: Request):
             status_code=503,
             detail="Authentication email delivery is not configured.",
         )
+    _public_origin()
     request.app.state.email_sender = sender
     return sender
 
