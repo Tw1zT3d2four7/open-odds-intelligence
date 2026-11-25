@@ -1962,9 +1962,21 @@ class IdentityStore:
             )
         except (TypeError, ValueError):
             public_origin_ready = False
+        try:
+            webhook_ready = bool(
+                isinstance(config.STRIPE_WEBHOOK_SECRET, str)
+                and config.STRIPE_WEBHOOK_SECRET.startswith("whsec_")
+                and len(config.STRIPE_WEBHOOK_SECRET) >= 16
+                and config.STRIPE_WEBHOOK_SECRET.strip() == config.STRIPE_WEBHOOK_SECRET
+                and isinstance(config.STRIPE_WEBHOOK_ENCRYPTION_KEY, str)
+                and Fernet(config.STRIPE_WEBHOOK_ENCRYPTION_KEY.encode("ascii", errors="strict"))
+            )
+        except (ValueError, TypeError, UnicodeEncodeError):
+            webhook_ready = False
         test_mode_ready = bool(
             re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
-            and not config.STRIPE_WEBHOOK_LIVEMODE and public_origin_ready
+            and not config.STRIPE_WEBHOOK_LIVEMODE
+            and webhook_ready and public_origin_ready
         )
         return {
             "customer_count": customer_count,
