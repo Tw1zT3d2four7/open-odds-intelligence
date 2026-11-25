@@ -3,6 +3,7 @@ from app import main
 from app.route_policy import (
     IDENTITY_ROUTE_ACCESS_POLICY,
     ROUTE_ACCESS_POLICY,
+    application_route_access_policy,
     classify_route,
     stale_policy_entries,
     unclassified_routes,
@@ -28,8 +29,8 @@ def test_policy_inventory_covers_all_application_and_framework_http_routes():
         for method in (route.methods or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert len(actual) == 25
-    assert set(ROUTE_ACCESS_POLICY) == actual
+    assert len(actual) == 35
+    assert set(application_route_access_policy()) == actual
 
 
 def test_shared_provider_refresh_routes_require_administrator_access():
