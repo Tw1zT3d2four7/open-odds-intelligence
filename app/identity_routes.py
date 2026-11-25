@@ -558,6 +558,35 @@ def administrator_login(
 
 
 @router.get(
+    "/admin/subscribers",
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_subscribers(
+    response: Response,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10_000_000),
+    email_query: str | None = Query(None, min_length=1, max_length=254),
+    _session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Return a minimal, paginated subscriber directory to administrators."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        return store.list_subscribers(
+            limit=limit, offset=offset, email_query=email_query
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Administrator subscriber directory query failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Subscriber directory is temporarily unavailable.",
+        ) from None
+
+
+@router.get(
     "/admin/audit-events",
     dependencies=[Depends(require_administrator)],
 )
