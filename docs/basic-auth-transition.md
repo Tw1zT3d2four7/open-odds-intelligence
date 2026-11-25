@@ -23,7 +23,7 @@ The application now uses an explicit, validated `AUTH_MODE` setting rather than 
 | Mode | Intended behavior | Availability |
 |---|---|---|
 | `legacy_basic` | Preserve the exact existing Basic Auth behavior, including its current fail-closed handling of partial configuration. Identity routes are not activated. | Initial/default compatibility mode |
-| `identity` | Intended to use the new identity/session boundary. **Current behavior:** fail closed with HTTP 503 on every non-health route until the full integration is complete. | Guard exists; activation unavailable until all cutover gates pass |
+| `identity` | Staged identity mode exposes only the CSRF bootstrap and subscriber/admin authentication endpoints. Product/dashboard/API routes return HTTP 503; the public health endpoint is reduced to minimal liveness. Full subscriber/admin product access is not enabled. | Authentication-only staging is implemented; production cutover still requires every gate below |
 
 No implicit `open`, `hybrid`, or Basic-Auth-bypass mode should be introduced. In particular, a partially configured Basic Auth setup must never cause the app to become public.
 
@@ -77,4 +77,4 @@ The mode switch must be an explicit operator action. It must not be triggered by
 
 ## Current implementation boundary
 
-The session-cookie/CSRF helpers and the new subscriber/administrator router in `app/identity_routes.py` remain isolated and are not mounted in FastAPI. The router implements registration, email verification/resend, password recovery, subscriber login/logout, and administrator password-plus-MFA login/logout, with route-level CSRF and rate limits. Its route inventory is documented in `docs/identity-http-routes.md`. `AUTH_MODE` validates only `legacy_basic` and `identity`; the default preserves the existing Basic Auth contract. Selecting `identity` currently fails closed with HTTP 503 outside the health probe. No identity routes are exposed and no production behavior changes unless the operator explicitly changes the mode.
+The subscriber/administrator router in `app/identity_routes.py` is registered with FastAPI, but middleware controls its exposure. In `legacy_basic`, the new auth paths return 404 and the existing Basic Auth behavior is unchanged. In staged `identity` mode, only the explicitly classified CSRF and authentication endpoints are exposed; every existing product/dashboard route returns HTTP 503, and `/api/health` returns only minimal liveness fields. The router implements registration, email verification/resend, password recovery, subscriber login/logout, and administrator password-plus-MFA login/logout, with route-level CSRF and rate limits. Its route inventory is documented in `docs/identity-http-routes.md`. Full product access is still unavailable until the remaining cutover gates pass.
