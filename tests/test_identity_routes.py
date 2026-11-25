@@ -501,6 +501,7 @@ def test_admin_entitlement_api_requires_mfa_session_and_csrf(tmp_path, monkeypat
         },
     )
     assert updated.status_code == 200
+    assert updated.headers["cache-control"] == "no-store"
     assert updated.json() == {
         "identity_id": subscriber_id,
         "entitlements": ["dashboard", "odds"],
@@ -511,6 +512,7 @@ def test_admin_entitlement_api_requires_mfa_session_and_csrf(tmp_path, monkeypat
         params={"identity_id": subscriber_id},
     )
     assert readback.status_code == 200
+    assert readback.headers["cache-control"] == "no-store"
     assert readback.json()["entitlements"] == ["dashboard", "odds"]
     assert "subscriber-entitlement@example.test" not in readback.text
 
