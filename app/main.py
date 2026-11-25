@@ -182,6 +182,9 @@ async def optional_basic_auth(request: Request, call_next):
     # executes before Starlette populates scope["route"], so exact URL lookup alone
     # would reject valid subscriber/session-specific admin endpoints.
     policy_path = matched_route_path(request.scope, request.app.router.routes) or request.url.path
+    # Stripe authenticates this transport with its signed raw-body header, not browser Basic Auth.
+    if classify_route(request.method, policy_path, ROUTE_ACCESS_POLICY) == "stripe_signature":
+        return await call_next(request)
     identity_path_set = {path for _method, path in IDENTITY_ROUTE_ACCESS_POLICY}
     if config.AUTH_MODE == "identity":
         # Identity pages/endpoints are admitted by their separate policy. Existing
