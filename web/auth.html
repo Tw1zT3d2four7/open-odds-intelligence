@@ -98,6 +98,16 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
   };
   const view = views[path] || views["/login"];
   const el = id => document.getElementById(id);
+  function setLinks(items) {
+    const container = el("links");
+    container.replaceChildren();
+    items.forEach(([href, label]) => {
+      const link = document.createElement("a");
+      link.href = href;
+      link.textContent = label;
+      container.appendChild(link);
+    });
+  }
   const form = el("account-form"), msg = el("message"), button = el("submit");
   button.disabled = true;
   let challengeToken = "";
@@ -107,19 +117,19 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
   el("help").textContent = view.help;
   if (view.kind === "register") {
     el("password").autocomplete = "new-password";
-    el("links").innerHTML = '<a href="/login">Already have an account? Sign in</a><a href="/admin/login">Administrator</a>';
+    setLinks([["/login", "Already have an account? Sign in"], ["/admin/login", "Administrator"]]);
   } else if (view.kind === "admin") {
     el("mfa-field").classList.remove("hidden");
     el("badge").textContent = "Private administrator";
-    el("links").innerHTML = '<a href="/login">Subscriber sign in</a>';
+    setLinks([["/login", "Subscriber sign in"]]);
     el("help").textContent = "This private login is separate from subscriber access. Public registration cannot create administrators.";
   } else if (view.kind === "forgot") {
     el("password-field").classList.add("hidden");
-    el("links").innerHTML = '<a href="/login">Return to sign in</a>';
+    setLinks([["/login", "Return to sign in"]]);
   } else if (view.kind === "verify") {
     el("email-field").classList.add("hidden");
     el("password-field").classList.add("hidden");
-    el("links").innerHTML = '<a href="/login">Go to sign in</a>';
+    setLinks([["/login", "Go to sign in"]]);
     challengeToken = new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
     history.replaceState(null, "", window.location.pathname);
     if (!challengeToken) {
@@ -130,7 +140,7 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
     el("email-field").classList.add("hidden");
     el("password-field").classList.add("hidden");
     el("new-password-field").classList.remove("hidden");
-    el("links").innerHTML = '<a href="/login">Return to sign in</a>';
+    setLinks([["/login", "Return to sign in"]]);
     challengeToken = new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
     history.replaceState(null, "", window.location.pathname);
     if (!challengeToken) {
@@ -138,7 +148,7 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
       show("This recovery link is missing or invalid. Request a new password-reset email.", "error");
     }
   } else {
-    el("links").innerHTML = '<a href="/register">Create an account</a><a href="/forgot-password">Forgot password?</a>';
+    setLinks([["/register", "Create an account"], ["/forgot-password", "Forgot password?"]]);
   }
 
   function show(text, type) {

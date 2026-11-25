@@ -102,7 +102,7 @@ Implemented on the feature branch so far:
 - [x] Private interactive one-time administrator bootstrap; no public administrator registration.
 - [x] Administrator TOTP enrollment, encrypted seed storage, fresh-step replay prevention, and ten single-use hashed recovery codes.
 - [x] Separate subscriber/admin Secure host-only cookies, CSRF/origin helpers, and lazy FastAPI session dependencies.
-- [x] Persistent atomic rate-limit primitives using HMAC-hashed bucket identifiers and fail-closed behavior; not yet attached to production routes.
+- [x] Persistent atomic rate-limit primitives using HMAC-hashed bucket identifiers and fail-closed behavior; integrated with identity-mode login, registration, verification, and password-reset routes.
 - [x] Explicit access policy for all 25 registered HTTP routes (21 application endpoints plus four framework-generated schema/documentation routes); CI detects unclassified or stale entries. Manual refresh and framework documentation routes are administrator-only in the target policy.
 - [x] Fail-closed route dependency assembly: subscriber routes require a supplied server-side entitlement dependency; every authenticated non-safe HTTP method requires CSRF; public mutation and unclassified routes are rejected. The helper remains isolated and is not wired to live routes.
 - [x] Legacy Basic Auth behavior covered by HTTP regression tests (including malformed base64, missing separators, invalid UTF-8, mixed-case scheme handling, and product API protection) and left unchanged.
@@ -112,7 +112,7 @@ Implemented on the feature branch so far:
 - [x] Bounded, paginated, secret-free audit query supports event-type, actor, and subject filters without returning email addresses.
 - [x] Proxy-chain parsing ignores forwarded headers unless explicitly trusted CIDRs are configured; deployment-specific trust remains unconfigured pending topology review.
 - [x] Health endpoint exposure and exact Docker health-probe compatibility documented in `docs/health-endpoint-security-design.md`; no live health behavior changed.
-- [x] Proposed endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md`; thresholds remain inactive pending route integration and deployment review.
+- [x] Endpoint-specific authentication rate-limit policy documented in `docs/auth-rate-limit-policy.md` and integrated with identity-mode routes; conservative thresholds remain subject to deployment-traffic and proxy-topology review before public activation.
 - [x] HTTP dependency-boundary tests cover subscriber/admin cookie isolation, missing/expired/revoked sessions, inactive identities, storage failure, CSRF on subscriber/admin mutations, and administrator session creation only after MFA proof.
 - [x] Latest full CI verification of the identity/Admin Console security baseline: run `45662005190`, commit `1b1bf9342c67be65453c284258a548b735812489` — **843 passed, 1 warning**.
 

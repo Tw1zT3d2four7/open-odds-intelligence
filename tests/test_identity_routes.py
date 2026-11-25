@@ -454,6 +454,7 @@ def test_auth_entry_pages_are_no_store_and_share_the_secure_auth_shell(
     assert f"script-src 'nonce-{nonce}'" in csp
     assert "'unsafe-inline'" not in csp.split("script-src", 1)[1].split(";", 1)[0]
     assert '<script nonce="' in response.text
+    assert "innerHTML" not in response.text
     assert "Open Odds Intelligence" in response.text
     assert "__Host-ooi_csrf" in response.text
 

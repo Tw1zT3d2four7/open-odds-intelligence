@@ -1,7 +1,7 @@
 # Authentication Rate-Limit Policy
 
-**Status:** Proposed defaults for review; not attached to HTTP routes.  
-**Implementation available:** app/rate_limit.py provides persistent atomic fixed-window counters, HMAC-hashed bucket identifiers, multi-dimension consumption, and generic fail-closed HTTP responses.
+**Status:** Implemented on the staged `AUTH_MODE=identity` authentication routes; thresholds are conservative defaults and must be reviewed against real deployment traffic before public activation.  
+**Implementation:** `app/identity_routes.py::_rate_limit` applies persistent atomic fixed-window counters through `app/rate_limit.py`, using HMAC-hashed bucket identifiers, multi-dimension consumption, and generic fail-closed HTTP responses. Identity routes remain hidden in `legacy_basic` mode.
 
 ## Policy goals
 
@@ -15,13 +15,12 @@
 
 ## Proposed starting thresholds
 
-These are conservative initial values for a small self-hosted deployment, not a final capacity promise. They should be reviewed against expected signup volume, shared-NAT users, email provider quotas, and operational recovery procedures before route integration.
+These are the active conservative starting values for a small self-hosted deployment, not a final capacity promise. Review them against expected signup volume, shared-NAT users, email provider quotas, and operational recovery procedures before public activation.
 
 | Operation | IP bucket | Account/destination bucket | Notes |
 |---|---:|---:|---|
 | Subscriber login | 20 / 15 min | 8 / 15 min | Account bucket keyed by normalized email; same generic failure for unknown email and wrong password. |
-| Administrator login | 8 / 15 min | 5 / 15 min | Separate admin namespace; alert/audit repeated failures without logging submitted secrets. |
-| Administrator MFA verification | 8 / 10 min | 5 / 10 min | Count invalid codes; one-time recovery-code consumption also rate-limited. |
+| Administrator login (password + TOTP or recovery code) | 8 / 15 min | 5 / 15 min | One combined administrator-login bucket covers password and second-factor attempts; there is no separate MFA verification endpoint or bucket. |
 | Subscriber registration | 10 / hour | 3 / hour | Account bucket keyed by normalized email; verification delivery is separately capped. |
 | Resend email verification | 5 / hour | 3 / hour | Always return a generic response; do not reveal whether an address is registered. |
 | Request password reset | 10 / hour | 3 / hour | Same generic response for known and unknown accounts. |
@@ -46,14 +45,16 @@ Notation: maximum requests per fixed-window duration. Both dimensions must be ch
 
 ## Implementation notes and limitations
 
-- Current SQLiteRateLimiter.consume_many() uses a transaction and BEGIN IMMEDIATE to atomically check all dimensions and increment counters.
+- `SQLiteRateLimiter.consume_many()` uses a transaction and `BEGIN IMMEDIATE` to atomically check all dimensions and increment counters.
+- Route integration is active for subscriber login, administrator login, registration, verification resend/consume, and password-reset request/consume. The administrator login bucket covers both TOTP and recovery-code attempts.
 - Bucket identifiers are HMAC-SHA256 digests using RATE_LIMIT_HASH_KEY; the key must be configured with at least 32 bytes.
 - The rate-limit database is the separate accounts database, not the odds-history database.
 - The current limiter uses fixed windows. A request burst can occur at a window boundary; if observed abuse warrants it, consider a token-bucket/sliding-window implementation as a separately tested change.
 - request_peer_ip() ignores forwarded headers by default. Do not configure broad trusted networks or assume Caddy's address. Inspect the live network topology and trust only the exact proxy hop(s).
-- The primitives and dependency are tested but are not attached to application routes. No production behavior changes until the corresponding authentication routes exist and integration tests cover their policies.
+- Identity-mode route integration has regression coverage for account-enumeration resistance, resend cooldown, and fail-closed limiter behavior; lower-level tests cover bucket atomicity, independent dimensions, expiry, and concurrency.
+- Identity mode is still a staged deployment mode. Production remains on `legacy_basic`; do not enable identity mode publicly until reverse-proxy trust, backup/restore, TLS, and end-to-end deployment gates are reviewed.
 
-## Required tests before activation
+## Required tests before public activation
 
 - IP and account limits independently deny requests at their configured thresholds.
 - A denial in either dimension does not increment the other dimension.
