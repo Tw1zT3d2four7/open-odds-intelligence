@@ -13,6 +13,7 @@
 | GET | `/register` | Public safe | Subscriber registration page. |
 | GET | `/admin/login` | Public safe | Separate private administrator sign-in page. |
 | GET | `/admin` | Administrator only | Separate no-store Admin Console shell; requires an active MFA-authenticated administrator session. |
+| GET | `/admin/overview` | Administrator only | No-store, sanitized operational metrics from the shared odds service; provider key material and raw errors are never returned. |
 | GET | `/admin/audit-events` | Administrator only | Bounded, paginated, no-store security audit history with event, actor, and subject filters; excludes account email addresses and credential material. |
 | GET | `/admin/subscribers` | Administrator only | Bounded, paginated, searchable, no-store subscriber directory with minimal account and active-entitlement fields. |
 | GET | `/forgot-password` | Public safe | Password-recovery request page. |
@@ -63,7 +64,7 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Current activation boundary
 
-The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all 22 routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy.
+The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all 23 routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy.
 
 Verification and password-reset requests now enqueue messages in the versioned identity database. Recipient addresses and challenge links are encrypted with a dedicated Fernet key. A background worker claims messages with atomic leases, reuses stable Resend idempotency keys, retries only transient failures with bounded backoff, and discards messages whose one-time challenge has expired or already been consumed. The worker runs only in identity mode. Tests use a fake sender and never contact Resend.
 
@@ -84,7 +85,7 @@ The default `legacy_basic` mode remains the production compatibility boundary an
 
 The first Phase 2 deliverable is a distinct `/admin` workspace shell. It is served separately from the subscriber dashboard and is protected directly by the administrator session dependency. Subscriber cookies, missing sessions, and expired/revoked sessions cannot open it. The page is returned with `Cache-Control: no-store`, a restrictive same-origin Content Security Policy, frame denial, and no-referrer policy.
 
-The shell establishes separate navigation for Overview, Users, Feature Access, Billing, Notifications, Platform, System Configuration, Communications, and Security. Users provides a searchable, paginated subscriber directory and guarded suspend/reactivate controls. Feature Access manages manual entitlement grants and optional expiry through the existing MFA-admin and CSRF-protected API; it does not represent billing or commercial subscription plans. Security provides paginated audit history with event-type, actor-identity, and subject-identity filters. Sections without completed protected APIs remain explicitly marked as planned; no operational metrics are fabricated. Administrator logout uses the existing CSRF-protected endpoint. The shell is available only in staged `AUTH_MODE=identity`; the default `legacy_basic` experience is unchanged.
+The shell establishes separate navigation for Overview, Users, Feature Access, Billing, Notifications, Platform, System Configuration, Communications, and Security. Overview displays live, allowlisted operational metrics through `GET /admin/overview`; provider key details and raw provider errors are never exposed. Users provides a searchable, paginated subscriber directory and guarded suspend/reactivate controls. Feature Access manages manual entitlement grants and optional expiry through the existing MFA-admin and CSRF-protected API; it does not represent billing or commercial subscription plans. Security provides paginated audit history with event-type, actor-identity, and subject-identity filters. Sections without completed protected APIs remain explicitly marked as planned; no operational metrics are fabricated. Administrator logout uses the existing CSRF-protected endpoint. The shell is available only in staged `AUTH_MODE=identity`; the default `legacy_basic` experience is unchanged.
 
 
 ### Administrator subscriber directory
