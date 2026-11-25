@@ -256,7 +256,7 @@ async def prevent_identity_response_caching(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
     identity_page_paths = {
-        "/login", "/register", "/admin", "/admin/login",
+        "/login", "/register", "/admin", "/admin/login", "/account",
         "/forgot-password", "/verify-email", "/reset-password",
     }
     if path in identity_page_paths or path.startswith(("/auth/", "/admin/")):
