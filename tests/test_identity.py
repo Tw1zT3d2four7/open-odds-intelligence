@@ -1246,8 +1246,12 @@ def test_billing_schema_is_additive_idempotent_and_stores_no_payment_card_data(t
         ).fetchone()["status"] == "incomplete"
         with pytest.raises(sqlite3.IntegrityError):
             db.execute(
-                "INSERT INTO billing_webhook_events VALUES "
-                "('evt_test_123', 'customer.subscription.created', 0, ?, 'received', 0, 'now', NULL, NULL)",
+                """INSERT INTO billing_webhook_events(
+                    stripe_event_id, event_type, livemode, payload_sha256,
+                    processing_state, attempt_count, received_at, processed_at,
+                    last_error_code, lease_token_hash, lease_expires_at, updated_at
+                ) VALUES ('evt_test_123', 'customer.subscription.created', 0, ?,
+                          'received', 0, 'now', NULL, NULL, NULL, NULL, 'now')""",
                 ("b" * 64,),
             )
         with pytest.raises(sqlite3.IntegrityError):
