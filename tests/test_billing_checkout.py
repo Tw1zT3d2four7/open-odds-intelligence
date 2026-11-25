@@ -20,6 +20,10 @@ def billing_harness(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", "https://ooi.example")
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_UnitTestSecretCaseSensitive")
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_LIVEMODE", False)
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "whsec_testAcceptanceSecret123456")
+    monkeypatch.setattr(
+        config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
+    )
     monkeypatch.setattr(config, "STRIPE_CHECKOUT_ENABLED", True)
     monkeypatch.setattr(config, "STRIPE_CUSTOMER_PORTAL_ENABLED", True)
     monkeypatch.setattr(config, "STRIPE_PRICE_MONTHLY_ID", "price_MonthlyCaseSensitive")
@@ -138,6 +142,20 @@ def test_checkout_fails_closed_for_live_key_or_live_webhook_mode(billing_harness
     assert response.status_code == 503
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_UnitTestSecretCaseSensitive")
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_LIVEMODE", True)
+    response = client.post(
+        "/auth/billing/checkout", json={"interval": "month"},
+        headers={"Idempotency-Key": "client-key-1234567890"},
+    )
+    assert response.status_code == 503
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_LIVEMODE", False)
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "")
+    response = client.post(
+        "/auth/billing/checkout", json={"interval": "month"},
+        headers={"Idempotency-Key": "client-key-1234567890"},
+    )
+    assert response.status_code == 503
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "whsec_testAcceptanceSecret123456")
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", "invalid-fernet-key")
     response = client.post(
         "/auth/billing/checkout", json={"interval": "month"},
         headers={"Idempotency-Key": "client-key-1234567890"},
