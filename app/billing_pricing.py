@@ -67,7 +67,7 @@ PLAN_PRICES = {
 
 def validate_recurring_price(price: dict, interval: str, configured_price_id: str) -> bool:
     """Validate one server-configured Stripe test Price against the approved catalog."""
-    if interval not in PLAN_PRICES or not isinstance(price, dict):
+    if not isinstance(interval, str) or interval not in PLAN_PRICES or not isinstance(price, dict):
         return False
     if (
         not isinstance(configured_price_id, str)
