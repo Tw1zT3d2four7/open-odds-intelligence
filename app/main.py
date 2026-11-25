@@ -528,3 +528,18 @@ def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), of
 from .identity_routes import router as identity_router
 
 app.include_router(identity_router)
+_registered_identity_route_keys = {
+    (method, route.path)
+    for route in app.router.routes
+    for method in (getattr(route, "methods", None) or set())
+    if method not in {"HEAD", "OPTIONS"}
+}
+for _identity_route in identity_router.routes:
+    _identity_route_keys = {
+        (method, _identity_route.path)
+        for method in (_identity_route.methods or set())
+        if method not in {"HEAD", "OPTIONS"}
+    }
+    if not _identity_route_keys.issubset(_registered_identity_route_keys):
+        app.router.routes.append(_identity_route)
+        _registered_identity_route_keys.update(_identity_route_keys)
