@@ -25,7 +25,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 14
+_SCHEMA_VERSION = 15
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -488,6 +488,27 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (14, _timestamp(_now())),
+                    )
+                if current < 15:
+                    db.execute("""CREATE TABLE billing_checkout_attempts (
+                        identity_id TEXT PRIMARY KEY REFERENCES identities(id) ON DELETE CASCADE,
+                        billing_interval TEXT NOT NULL CHECK(
+                            billing_interval IN ('month', 'year')
+                        ),
+                        idempotency_key_hash TEXT NOT NULL
+                            CHECK(length(idempotency_key_hash) = 64),
+                        attempt_token TEXT NOT NULL UNIQUE,
+                        checkout_session_id TEXT UNIQUE,
+                        expires_at TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )""")
+                    db.execute(
+                        "CREATE INDEX idx_billing_checkout_expiry ON billing_checkout_attempts(expires_at)"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (15, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
@@ -1689,6 +1710,115 @@ class IdentityStore:
                 raise ValueError("Stripe customer is already linked to another account.") from None
             db.commit()
         return stripe_customer_id
+
+    def reserve_billing_checkout(
+        self, identity_id: str, billing_interval: str, idempotency_key_hash: str,
+        *, lifetime_seconds: int = 1800,
+    ) -> dict:
+        """Atomically reserve one short-lived Checkout attempt per subscriber."""
+        if (
+            not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128
+            or billing_interval not in {"month", "year"}
+            or not isinstance(idempotency_key_hash, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", idempotency_key_hash)
+            or isinstance(lifetime_seconds, bool)
+            or not isinstance(lifetime_seconds, int)
+            or not 1800 <= lifetime_seconds <= 1800
+        ):
+            raise ValueError("Checkout reservation parameters are invalid.")
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        expires_at = _timestamp(now_dt + timedelta(seconds=lifetime_seconds))
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            account = db.execute(
+                "SELECT id FROM identities WHERE id=? AND account_type='subscriber' AND is_active=1",
+                (identity_id,),
+            ).fetchone()
+            if account is None:
+                db.rollback()
+                raise ValueError("An active subscriber account is required.")
+            subscription = db.execute(
+                """SELECT 1 FROM billing_subscriptions
+                   WHERE identity_id=? AND status NOT IN ('canceled', 'incomplete_expired')
+                   LIMIT 1""",
+                (identity_id,),
+            ).fetchone()
+            if subscription is not None:
+                db.rollback()
+                return {"state": "existing_subscription"}
+            existing = db.execute(
+                "SELECT * FROM billing_checkout_attempts WHERE identity_id=?",
+                (identity_id,),
+            ).fetchone()
+            if existing is not None and existing["expires_at"] > now:
+                db.rollback()
+                if existing["idempotency_key_hash"] == idempotency_key_hash:
+                    return {
+                        "state": "reserved",
+                        "attempt_token": existing["attempt_token"],
+                        "expires_at": existing["expires_at"],
+                        "checkout_session_id": existing["checkout_session_id"],
+                    }
+                return {"state": "checkout_pending", "expires_at": existing["expires_at"]}
+            attempt_token = secrets.token_urlsafe(32)
+            db.execute(
+                """INSERT INTO billing_checkout_attempts(
+                    identity_id, billing_interval, idempotency_key_hash,
+                    attempt_token, checkout_session_id, expires_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
+                ON CONFLICT(identity_id) DO UPDATE SET
+                    billing_interval=excluded.billing_interval,
+                    idempotency_key_hash=excluded.idempotency_key_hash,
+                    attempt_token=excluded.attempt_token,
+                    checkout_session_id=NULL,
+                    expires_at=excluded.expires_at,
+                    created_at=excluded.created_at,
+                    updated_at=excluded.updated_at""",
+                (identity_id, billing_interval, idempotency_key_hash,
+                 attempt_token, expires_at, now, now),
+            )
+            db.commit()
+        return {
+            "state": "reserved",
+            "attempt_token": attempt_token,
+            "expires_at": expires_at,
+            "checkout_session_id": None,
+        }
+
+    def mark_billing_checkout_session(
+        self, identity_id: str, attempt_token: str, checkout_session_id: str
+    ) -> bool:
+        """Attach the provider session only to the still-current reservation."""
+        if (
+            not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128
+            or not isinstance(attempt_token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", attempt_token)
+            or not isinstance(checkout_session_id, str)
+            or not re.fullmatch(r"cs_test_[A-Za-z0-9]+", checkout_session_id)
+        ):
+            raise ValueError("Checkout session reference is invalid.")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            cursor = db.execute(
+                """UPDATE billing_checkout_attempts
+                   SET checkout_session_id=?, updated_at=?
+                   WHERE identity_id=? AND attempt_token=? AND expires_at>?""",
+                (checkout_session_id, now, identity_id, attempt_token, now),
+            )
+        return cursor.rowcount == 1
+
+    def billing_checkout_pending(self, identity_id: str) -> bool:
+        """Return whether this subscriber has a live Checkout reservation."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT 1 FROM billing_checkout_attempts
+                   WHERE identity_id=? AND expires_at>? LIMIT 1""",
+                (identity_id, now),
+            ).fetchone()
+        return row is not None
 
     def subscriber_has_open_subscription(self, identity_id: str) -> bool:
         """Prevent starting a second checkout while a nonterminal subscription exists."""
