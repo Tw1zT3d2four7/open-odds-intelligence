@@ -39,6 +39,7 @@ def test_preflight_checks_both_server_owned_prices_without_creating_objects(monk
 
     monkeypatch.setattr(billing_preflight.stripe_api, "stripe_request", fake_stripe)
     result = billing_preflight.run_preflight()
+    assert result["test_mode_acknowledged"] is True
     assert result["monthly_price"] is True
     assert result["annual_price"] is True
     assert result["provider_requests_made"] == 2
@@ -56,6 +57,7 @@ def test_preflight_fails_closed_before_provider_calls_without_webhook_storage(mo
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("network must not be called")),
     )
     result = billing_preflight.run_preflight()
+    assert result["test_mode_acknowledged"] is True
     assert result["webhook_storage"] is False
     assert result["monthly_price"] is False
     assert result["annual_price"] is False
