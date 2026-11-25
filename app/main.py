@@ -603,10 +603,17 @@ def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), of
 # registration deterministic even when the identity modules are imported by
 # test harnesses or future application factories first.
 from .identity_routes import router as identity_router
-from .billing_routes import router as billing_router
+from .billing_routes import receive_stripe_webhook
 
 app.include_router(identity_router)
-app.include_router(billing_router)
+# Register the signed webhook as a concrete application route. This keeps it
+# present in the runtime route inventory while remaining excluded from OpenAPI.
+app.add_api_route(
+    "/webhooks/stripe",
+    receive_stripe_webhook,
+    methods=["POST"],
+    include_in_schema=False,
+)
 _registered_identity_route_keys = {
     (method, route.path)
     for route in app.router.routes
