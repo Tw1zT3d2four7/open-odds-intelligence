@@ -163,6 +163,10 @@ def _validate_identity_schema(connection: sqlite3.Connection, version: int) -> N
             "processing_state", "attempt_count", "received_at", "processed_at",
             "last_error_code",
         }
+    if version >= 10:
+        required_columns["billing_webhook_events"].update({
+            "lease_token_hash", "lease_expires_at", "updated_at",
+        })
 
     available_tables = {
         row[0] for row in connection.execute(
