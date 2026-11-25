@@ -1,8 +1,8 @@
 # Isolated Identity HTTP Router
 
 **Implementation:** `app/identity_routes.py`  
-**Tests:** `tests/test_identity_routes.py`  
-**Status:** Implemented and CI-tested, but deliberately not mounted by `app.main`.  
+**Tests:** `tests/test_identity_routes.py`, `tests/test_route_policy.py`, `tests/test_route_authorization.py`  
+**Status:** Implemented, separately policy-classified, and CI-tested, but deliberately not mounted by `app.main`.  
 **Production impact:** None.
 
 ## Route inventory
@@ -51,9 +51,9 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Not ready to mount
 
-The router is intentionally not included in the live FastAPI application. Before mounting it:
+The router is intentionally not included in the live FastAPI application. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all ten routes, and dependency-assembly tests verify that the router's actual security dependencies match that policy. Before mounting it:
 
-1. Add every new route to the explicit route manifest and verify no route is unclassified or stale.
+1. Merge the separately tested identity route policy into the live route manifest and verify no route is unclassified or stale.
 2. Attach the route-policy dependency assembly and explicit entitlement checks to all existing subscriber product routes.
 3. Add a durable send queue and safe retry workflow. Delivery history and the persistent provider circuit breaker are implemented, but a provider failure currently leaves a valid challenge available only for a later user-requested resend; raw challenge tokens are not retained for background retries.
 4. Test the exact Caddy-to-app peer topology and configure only the narrow trusted proxy CIDR.
