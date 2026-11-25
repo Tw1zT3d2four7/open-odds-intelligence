@@ -173,6 +173,37 @@ def test_checkout_blocks_duplicate_nonterminal_subscription(billing_harness, mon
     assert billing.json()["checkout_available"] is False
 
 
+def test_checkout_is_rate_limited_before_repeated_provider_calls(billing_harness, monkeypatch):
+    client, _store, _identity_id = billing_harness
+    provider_calls = []
+
+    def fake_stripe(method, path, *, params=None, idempotency_key=None):
+        provider_calls.append(path)
+        if path.startswith("/prices/"):
+            return {
+                "id": "price_MonthlyCaseSensitive", "active": True, "livemode": False,
+                "currency": "usd", "unit_amount": 1068,
+                "recurring": {"interval": "month", "interval_count": 1},
+            }
+        if path == "/customers":
+            return {"id": "cus_rateLimit"}
+        if path == "/checkout/sessions":
+            return {"id": "cs_test_rateLimit", "url": "https://checkout.stripe.com/c/pay/cs_test_rateLimit"}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(stripe_api, "stripe_request", fake_stripe)
+    responses = []
+    for index in range(6):
+        responses.append(client.post(
+            "/auth/billing/checkout", json={"interval": "month"},
+            headers={"Idempotency-Key": f"rate-limit-client-key-{index:02d}"},
+        ))
+    assert responses[0].status_code == 200
+    assert all(response.status_code == 409 for response in responses[1:5])
+    assert responses[5].status_code == 429
+    assert provider_calls.count("/checkout/sessions") == 1
+
+
 def test_checkout_requires_idempotency_key_and_enabled_flag(billing_harness, monkeypatch):
     client, _store, _identity_id = billing_harness
     response = client.post("/auth/billing/checkout", json={"interval": "month"})
