@@ -81,6 +81,7 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
       <ul class="session-list" id="session-list"><li class="empty">Loading active sessions…</li></ul>
       <p id="session-count" class="card-footer" aria-live="polite"></p>
       <button id="sessions-load-more" type="button" hidden>Load more sessions</button>
+      <button id="sign-out-everywhere" type="button">Sign out all devices</button>
       <p id="session-message" class="card-footer" role="status" aria-live="polite"></p>
     </section>
   </div>
@@ -191,6 +192,25 @@ footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
     more.hidden = loadedSessionCount >= totalSessionCount;
     more.disabled = false;
   }
+  el("sign-out-everywhere").addEventListener("click", async () => {
+    if (!window.confirm("Sign out every device, including this one? You will need to sign in again.")) return;
+    const button = el("sign-out-everywhere"); button.disabled = true;
+    try {
+      const token = csrfToken();
+      if (!token) throw new Error("Secure sign-out could not be initialized. Reload the page.");
+      const response = await fetch("/auth/sessions/revoke-all", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"X-Ooi-Csrf-Token":token}
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "All sessions could not be revoked.");
+      el("session-message").textContent = "Signed out of " + data.revoked_sessions + " active session(s).";
+      window.location.replace("/login");
+    } catch (error) {
+      el("session-message").textContent = error.message || "All sessions could not be revoked.";
+      button.disabled = false;
+    }
+  });
   el("sessions-load-more").addEventListener("click", async () => {
     const button = el("sessions-load-more"); button.disabled = true;
     try { await loadSessions({append:true}); }
