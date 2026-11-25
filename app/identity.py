@@ -712,7 +712,7 @@ class IdentityStore:
                 "customer.subscription.updated",
                 "customer.subscription.deleted",
             }:
-                db.execute(
+                completed = db.execute(
                     """UPDATE billing_webhook_events
                        SET processing_state='processed', processed_at=?, updated_at=?,
                            lease_token_hash=NULL, lease_expires_at=NULL,
@@ -721,6 +721,9 @@ class IdentityStore:
                          AND lease_token_hash=? AND lease_expires_at>?""",
                     (now, now, event_id, _token_digest(lease_token), now),
                 )
+                if completed.rowcount != 1:
+                    db.rollback()
+                    return "lease_lost"
                 db.commit()
                 return "ignored"
 
