@@ -965,7 +965,7 @@ class IdentityStore:
             occurred_at = _timestamp(datetime.fromtimestamp(event_created, tz=timezone.utc))
             existing = db.execute(
                 """SELECT identity_id, stripe_customer_id, stripe_subscription_id,
-                          last_event_created_at
+                          last_event_created_at, payment_failed_at
                    FROM billing_invoices WHERE stripe_invoice_id=?""", (invoice_id,)
             ).fetchone()
             if existing is not None and (
@@ -1035,7 +1035,7 @@ class IdentityStore:
                         (status, amount_due, amount_paid, currency, period_start, period_end,
                          occurred_at, now,
                          None if event_type == "invoice.paid" else (
-                             occurred_at if event_type == "invoice.payment_failed" else existing["last_event_created_at"]
+                             occurred_at if event_type == "invoice.payment_failed" else existing["payment_failed_at"]
                          ), invoice_id),
                     )
                     result = "updated"
