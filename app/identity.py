@@ -454,6 +454,32 @@ class IdentityStore:
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (12, _timestamp(_now())),
                     )
+                if current < 13:
+                    db.execute("""CREATE TABLE billing_invoices (
+                        id TEXT PRIMARY KEY,
+                        identity_id TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+                        stripe_invoice_id TEXT NOT NULL UNIQUE,
+                        stripe_customer_id TEXT NOT NULL REFERENCES billing_customers(stripe_customer_id) ON DELETE RESTRICT,
+                        stripe_subscription_id TEXT REFERENCES billing_subscriptions(stripe_subscription_id) ON DELETE RESTRICT,
+                        status TEXT NOT NULL CHECK(status IN (
+                            'draft', 'open', 'paid', 'uncollectible', 'void'
+                        )),
+                        amount_due INTEGER CHECK(amount_due IS NULL OR amount_due >= 0),
+                        amount_paid INTEGER CHECK(amount_paid IS NULL OR amount_paid >= 0),
+                        currency TEXT,
+                        period_start TEXT,
+                        period_end TEXT,
+                        last_event_created_at TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )""")
+                    db.execute(
+                        "CREATE INDEX idx_billing_invoices_identity ON billing_invoices(identity_id, status, updated_at)"
+                    )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (13, _timestamp(_now())),
+                    )
                 db.commit()
             except Exception:
                 db.rollback()
@@ -812,6 +838,181 @@ class IdentityStore:
                             now, occurred_at, subscription_id,
                         ),
                     )
+
+            completed = db.execute(
+                """UPDATE billing_webhook_events
+                   SET processing_state='processed', processed_at=?, updated_at=?,
+                       lease_token_hash=NULL, lease_expires_at=NULL, last_error_code=NULL
+                   WHERE stripe_event_id=? AND processing_state='processing'
+                     AND lease_token_hash=? AND lease_expires_at>?""",
+                (now, now, event_id, _token_digest(lease_token), now),
+            )
+            if completed.rowcount != 1:
+                db.rollback()
+                return "lease_lost"
+            db.commit()
+            return result
+
+    def process_stripe_invoice_event(self, event_id: str, lease_token: str) -> str:
+        """Reconcile invoice payment state atomically; never changes entitlements."""
+        if not isinstance(event_id, str) or not event_id or len(event_id) > 255:
+            return "invalid"
+        if not isinstance(lease_token, str) or not lease_token:
+            return "invalid"
+        now = _timestamp(_now())
+        key = config.STRIPE_WEBHOOK_ENCRYPTION_KEY
+        if not isinstance(key, str) or not key:
+            raise RuntimeError("Stripe webhook encryption is not configured.")
+        try:
+            cipher = Fernet(key.encode("ascii"))
+        except (ValueError, UnicodeEncodeError):
+            raise RuntimeError("Stripe webhook encryption configuration is invalid.") from None
+
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            inbox = db.execute(
+                """SELECT event_type, encrypted_payload FROM billing_webhook_events
+                   WHERE stripe_event_id=? AND processing_state='processing'
+                     AND lease_token_hash=? AND lease_expires_at>?""",
+                (event_id, _token_digest(lease_token), now),
+            ).fetchone()
+            if inbox is None:
+                db.rollback()
+                return "lease_lost"
+            if not inbox["encrypted_payload"]:
+                db.rollback()
+                raise RuntimeError("Stripe webhook event payload is unavailable.")
+            try:
+                event = json.loads(cipher.decrypt(inbox["encrypted_payload"].encode("ascii")))
+                event_created = event["created"]
+                invoice = event["data"]["object"]
+                invoice_id = invoice["id"]
+                customer_id = invoice["customer"]
+            except (InvalidToken, ValueError, UnicodeEncodeError, TypeError, KeyError):
+                db.rollback()
+                raise ValueError("Stripe invoice event payload is invalid.") from None
+
+            event_type = inbox["event_type"]
+            status_by_event = {
+                "invoice.finalized": "open",
+                "invoice.paid": "paid",
+                "invoice.payment_failed": "open",
+                "invoice.voided": "void",
+                "invoice.marked_uncollectible": "uncollectible",
+            }
+            if event_type not in status_by_event:
+                db.rollback()
+                raise ValueError("Unsupported Stripe invoice event type.")
+            if (
+                isinstance(event_created, bool) or not isinstance(event_created, int)
+                or event_created < 0
+                or not isinstance(invoice_id, str) or not invoice_id or len(invoice_id) > 255
+                or not isinstance(customer_id, str) or not customer_id or len(customer_id) > 255
+            ):
+                db.rollback()
+                raise ValueError("Stripe invoice event identifiers are invalid.")
+
+            customer = db.execute(
+                "SELECT identity_id FROM billing_customers WHERE stripe_customer_id=?",
+                (customer_id,),
+            ).fetchone()
+            if customer is None:
+                db.rollback()
+                raise LookupError("Stripe customer is not linked to a local subscriber.")
+
+            subscription_id = invoice.get("subscription")
+            if not isinstance(subscription_id, str):
+                parent = invoice.get("parent")
+                details = parent.get("subscription_details") if isinstance(parent, dict) else None
+                candidate = details.get("subscription") if isinstance(details, dict) else None
+                subscription_id = candidate if isinstance(candidate, str) else None
+            subscription = None
+            if subscription_id:
+                subscription = db.execute(
+                    """SELECT identity_id, stripe_customer_id FROM billing_subscriptions
+                       WHERE stripe_subscription_id=?""", (subscription_id,)
+                ).fetchone()
+                if (
+                    subscription is None
+                    or subscription["identity_id"] != customer["identity_id"]
+                    or subscription["stripe_customer_id"] != customer_id
+                ):
+                    db.rollback()
+                    raise ValueError("Stripe invoice subscription mapping conflicts with local data.")
+
+            occurred_at = _timestamp(datetime.fromtimestamp(event_created, tz=timezone.utc))
+            existing = db.execute(
+                """SELECT identity_id, stripe_customer_id, stripe_subscription_id,
+                          last_event_created_at
+                   FROM billing_invoices WHERE stripe_invoice_id=?""", (invoice_id,)
+            ).fetchone()
+            if existing is not None and (
+                existing["identity_id"] != customer["identity_id"]
+                or existing["stripe_customer_id"] != customer_id
+                or existing["stripe_subscription_id"] != subscription_id
+            ):
+                db.rollback()
+                raise ValueError("Stripe invoice customer mapping conflicts with local data.")
+
+            if existing is not None and existing["last_event_created_at"] >= occurred_at:
+                result = "stale"
+            else:
+                status = status_by_event[event_type]
+                amount_due = invoice.get("amount_due")
+                amount_paid = invoice.get("amount_paid")
+                currency = invoice.get("currency")
+                if any(value is not None and (
+                    isinstance(value, bool) or not isinstance(value, int) or value < 0
+                ) for value in (amount_due, amount_paid)):
+                    db.rollback()
+                    raise ValueError("Stripe invoice amount is invalid.")
+                if currency is not None and (
+                    not isinstance(currency, str) or len(currency) != 3
+                    or not currency.isalpha() or currency.lower() != currency
+                ):
+                    db.rollback()
+                    raise ValueError("Stripe invoice currency is invalid.")
+
+                def invoice_period(value):
+                    if value is None:
+                        return None
+                    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                        raise ValueError("Stripe invoice period is invalid.")
+                    return _timestamp(datetime.fromtimestamp(value, tz=timezone.utc))
+
+                lines = invoice.get("lines", {})
+                line_data = lines.get("data", []) if isinstance(lines, dict) else []
+                first_line = line_data[0] if isinstance(line_data, list) and line_data else {}
+                period = first_line.get("period", {}) if isinstance(first_line, dict) else {}
+                try:
+                    period_start = invoice_period(period.get("start") if isinstance(period, dict) else None)
+                    period_end = invoice_period(period.get("end") if isinstance(period, dict) else None)
+                except (ValueError, OverflowError, OSError):
+                    db.rollback()
+                    raise ValueError("Stripe invoice period is invalid.") from None
+
+                if existing is None:
+                    db.execute(
+                        """INSERT INTO billing_invoices(
+                            id, identity_id, stripe_invoice_id, stripe_customer_id,
+                            stripe_subscription_id, status, amount_due, amount_paid,
+                            currency, period_start, period_end, last_event_created_at,
+                            created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (secrets.token_urlsafe(24), customer["identity_id"], invoice_id,
+                         customer_id, subscription_id, status, amount_due, amount_paid,
+                         currency, period_start, period_end, occurred_at, now, now),
+                    )
+                    result = "created"
+                else:
+                    db.execute(
+                        """UPDATE billing_invoices SET status=?, amount_due=?, amount_paid=?,
+                           currency=?, period_start=?, period_end=?, last_event_created_at=?,
+                           updated_at=? WHERE stripe_invoice_id=?""",
+                        (status, amount_due, amount_paid, currency, period_start, period_end,
+                         occurred_at, now, invoice_id),
+                    )
+                    result = "updated"
 
             completed = db.execute(
                 """UPDATE billing_webhook_events
