@@ -1319,9 +1319,10 @@ def test_stripe_webhook_event_ingestion_is_idempotent_and_payload_fingerprinted(
     }
     with store.connect() as db:
         row = db.execute(
-            "SELECT payload_sha256 FROM billing_webhook_events WHERE stripe_event_id='evt_one'"
+            "SELECT payload_sha256, encrypted_payload FROM billing_webhook_events WHERE stripe_event_id='evt_one'"
         ).fetchone()
     assert row["payload_sha256"] == __import__("hashlib").sha256(payload).hexdigest()
+    assert row["encrypted_payload"] != payload.decode()
     with pytest.raises(ValueError, match="reused with different"):
         store.record_stripe_webhook_event(
             "evt_one", "invoice.paid", False, b'{"different":true}'
@@ -1348,6 +1349,8 @@ def test_stripe_webhook_leases_prevent_double_processing_and_recover_expired_wor
         )
     second = store.claim_stripe_webhook_event("evt_lease", lease_seconds=60)
     assert second and second != first
+    assert store.get_stripe_webhook_event_payload("evt_lease", first) is None
+    assert store.get_stripe_webhook_event_payload("evt_lease", second) == '{"id":"evt_lease"}'.encode()
     assert store.complete_stripe_webhook_event("evt_lease", first) is False
     assert store.complete_stripe_webhook_event("evt_lease", second) is True
     assert store.claim_stripe_webhook_event("evt_lease") is None
