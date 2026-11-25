@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from cryptography.fernet import Fernet
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -458,6 +459,7 @@ def subscriber_billing_summary(
             isinstance(config.STRIPE_SECRET_KEY, str)
             and re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
             and not config.STRIPE_WEBHOOK_LIVEMODE
+            and _stripe_test_webhook_ready()
             and public_origin_ready
         )
         subscription_exists = store.subscriber_has_open_subscription(session["identity_id"])
@@ -501,6 +503,23 @@ def subscriber_billing_summary(
         ) from None
 
 
+def _stripe_test_webhook_ready() -> bool:
+    """Require a test-mode signing secret and valid encrypted inbox key."""
+    secret = config.STRIPE_WEBHOOK_SECRET
+    encryption_key = config.STRIPE_WEBHOOK_ENCRYPTION_KEY
+    if (
+        not isinstance(secret, str) or not secret.startswith("whsec_")
+        or len(secret) < 16 or secret.strip() != secret
+        or not isinstance(encryption_key, str) or not encryption_key
+    ):
+        return False
+    try:
+        Fernet(encryption_key.encode("ascii", errors="strict"))
+    except (ValueError, TypeError, UnicodeEncodeError):
+        return False
+    return True
+
+
 def _stripe_test_billing_ready(*, checkout: bool = False, portal: bool = False) -> None:
     """Fail closed unless the explicitly enabled Stripe test-mode path is configured."""
     enabled = config.STRIPE_CHECKOUT_ENABLED if checkout else config.STRIPE_CUSTOMER_PORTAL_ENABLED
@@ -510,6 +529,7 @@ def _stripe_test_billing_ready(*, checkout: bool = False, portal: bool = False) 
         not isinstance(config.STRIPE_SECRET_KEY, str)
         or not re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
         or config.STRIPE_WEBHOOK_LIVEMODE
+        or not _stripe_test_webhook_ready()
     ):
         raise HTTPException(status_code=503, detail="Stripe test-mode billing is not configured.")
     if checkout:
