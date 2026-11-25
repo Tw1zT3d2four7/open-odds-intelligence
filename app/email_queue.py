@@ -52,6 +52,7 @@ class TransactionalEmailQueue:
         *,
         identity_id: str,
         purpose: str,
+        challenge_token: str,
         recipient: str,
         subject: str,
         text: str,
@@ -62,6 +63,8 @@ class TransactionalEmailQueue:
             raise ValueError("Unsupported transactional email purpose.")
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
             raise ValueError("A valid identity reference is required.")
+        if not isinstance(challenge_token, str) or not challenge_token or len(challenge_token) > 256:
+            raise ValueError("A valid one-time challenge token is required.")
         if not isinstance(challenge_expires_at, datetime):
             raise ValueError("A challenge expiry timestamp is required.")
         now = _now()
@@ -78,6 +81,7 @@ class TransactionalEmailQueue:
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         )
         fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        challenge_token_hash = hashlib.sha256(challenge_token.encode("utf-8")).hexdigest()
         idempotency_key = f"ooi-{purpose}-{identity_id}-{fingerprint}"
         queue_id = secrets.token_urlsafe(24)
         created = _timestamp(now)
@@ -88,13 +92,13 @@ class TransactionalEmailQueue:
                     id, provider, identity_id, purpose, encrypted_payload,
                     idempotency_key, state, attempt_count, max_attempts,
                     next_attempt_at, challenge_expires_at, idempotency_expires_at,
-                    created_at, updated_at
-                ) VALUES (?, 'resend', ?, ?, ?, ?, 'pending', 0, 8, ?, ?, ?, ?, ?)""",
+                    created_at, updated_at, challenge_token_hash
+                ) VALUES (?, 'resend', ?, ?, ?, ?, 'pending', 0, 8, ?, ?, ?, ?, ?, ?)""",
                 (
                     queue_id, identity_id, purpose, encrypted, idempotency_key,
                     created, _timestamp(expiry),
                     _timestamp(now + timedelta(hours=23)),
-                    created, created,
+                    created, created, challenge_token_hash,
                 ),
             )
             db.commit()
@@ -121,6 +125,34 @@ class TransactionalEmailQueue:
                        updated_at=?
                    WHERE state IN ('pending', 'leased') AND attempt_count>=max_attempts""",
                 (stamp,),
+            )
+            # Never deliver a link after its one-time challenge has been consumed,
+            # revoked, deleted, or expired. Only a digest is stored in the queue.
+            db.execute(
+                """UPDATE transactional_email_queue
+                   SET state='expired', encrypted_payload=X'', lease_token_hash=NULL,
+                       lease_expires_at=NULL, last_failure_code='challenge_unavailable',
+                       updated_at=?
+                   WHERE state IN ('pending', 'leased') AND (
+                     challenge_token_hash IS NULL
+                     OR (
+                       purpose='verification' AND NOT EXISTS (
+                         SELECT 1 FROM email_verification_challenges c
+                         WHERE c.identity_id=transactional_email_queue.identity_id
+                           AND c.token_hash=transactional_email_queue.challenge_token_hash
+                           AND c.consumed_at IS NULL AND c.expires_at>?
+                       )
+                     )
+                     OR (
+                       purpose='password_reset' AND NOT EXISTS (
+                         SELECT 1 FROM password_reset_challenges c
+                         WHERE c.identity_id=transactional_email_queue.identity_id
+                           AND c.token_hash=transactional_email_queue.challenge_token_hash
+                           AND c.consumed_at IS NULL AND c.expires_at>?
+                       )
+                     )
+                   )""",
+                (stamp, stamp, stamp),
             )
             db.execute(
                 """UPDATE transactional_email_queue
