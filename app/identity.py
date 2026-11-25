@@ -903,6 +903,85 @@ class IdentityStore:
             ).fetchone()
         return row is not None
 
+    def set_subscriber_status(
+        self,
+        identity_id: str,
+        *,
+        is_active: bool,
+        actor_identity_id: str,
+        reason: str,
+    ) -> dict:
+        """Suspend or reactivate a subscriber with atomic session revocation and audit."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        if (
+            not isinstance(actor_identity_id, str)
+            or not actor_identity_id
+            or len(actor_identity_id) > 128
+            or actor_identity_id == identity_id
+        ):
+            raise ValueError("A separate administrator actor is required.")
+        if not isinstance(is_active, bool):
+            raise ValueError("Subscriber status must be active or suspended.")
+        if not isinstance(reason, str) or not 8 <= len(reason.strip()) <= 240:
+            raise ValueError("An administrative reason between 8 and 240 characters is required.")
+
+        normalized_reason = " ".join(reason.split())
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            subject = db.execute(
+                """SELECT is_active FROM identities
+                   WHERE id=? AND account_type='subscriber'""",
+                (identity_id,),
+            ).fetchone()
+            if subject is None:
+                db.rollback()
+                raise ValueError("A subscriber identity was not found.")
+            actor = self._resolve_audit_actor(db, identity_id, actor_identity_id)
+            current_status = bool(subject["is_active"])
+            if current_status == is_active:
+                db.rollback()
+                return {
+                    "identity_id": identity_id,
+                    "is_active": current_status,
+                    "revoked_sessions": 0,
+                    "changed": False,
+                }
+
+            db.execute(
+                "UPDATE identities SET is_active=? WHERE id=? AND account_type='subscriber'",
+                (1 if is_active else 0, identity_id),
+            )
+            revoked_count = 0
+            if not is_active:
+                cursor = db.execute(
+                    """UPDATE sessions SET revoked_at=?
+                       WHERE identity_id=? AND revoked_at IS NULL""",
+                    (now, identity_id),
+                )
+                revoked_count = cursor.rowcount
+
+            self._record_audit_event(
+                db,
+                "subscriber.reactivated" if is_active else "subscriber.suspended",
+                identity_id,
+                now,
+                {
+                    "status": "active" if is_active else "suspended",
+                    "reason": normalized_reason,
+                    "revoked_sessions": revoked_count,
+                },
+                actor_identity_id=actor,
+            )
+            db.commit()
+        return {
+            "identity_id": identity_id,
+            "is_active": is_active,
+            "revoked_sessions": revoked_count,
+            "changed": True,
+        }
+
     def list_subscribers(
         self, *, limit: int = 25, offset: int = 0, email_query: str | None = None
     ) -> dict:
