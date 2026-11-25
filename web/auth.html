@@ -116,6 +116,7 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
     el("password-field").classList.add("hidden");
     el("links").innerHTML = '<a href="/login">Return to sign in</a>';
   } else if (view.kind === "verify") {
+    el("email-field").classList.add("hidden");
     el("password-field").classList.add("hidden");
     el("links").innerHTML = '<a href="/login">Go to sign in</a>';
     challengeToken = new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
@@ -125,6 +126,7 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
       show("This verification link is missing or invalid. Request a new verification email.", "error");
     }
   } else if (view.kind === "reset") {
+    el("email-field").classList.add("hidden");
     el("password-field").classList.add("hidden");
     el("new-password-field").classList.remove("hidden");
     el("links").innerHTML = '<a href="/login">Return to sign in</a>';
