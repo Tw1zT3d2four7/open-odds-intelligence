@@ -446,8 +446,8 @@ def subscriber_billing_summary(
         )
         checkout_ready = bool(
             config.STRIPE_CHECKOUT_ENABLED and test_mode_ready
-            and config.STRIPE_PRICE_MONTHLY_ID.startswith("price_")
-            and config.STRIPE_PRICE_YEARLY_ID.startswith("price_")
+            and re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_MONTHLY_ID)
+            and re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_YEARLY_ID)
             and config.STRIPE_PRICE_MONTHLY_ID != config.STRIPE_PRICE_YEARLY_ID
         )
         portal_ready = bool(config.STRIPE_CUSTOMER_PORTAL_ENABLED and test_mode_ready)
