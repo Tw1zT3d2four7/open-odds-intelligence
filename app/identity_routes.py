@@ -450,8 +450,13 @@ def subscriber_billing_summary(
             and not config.STRIPE_WEBHOOK_LIVEMODE
             and public_origin_ready
         )
+        checkout_blocked = (
+            store.subscriber_has_open_subscription(session["identity_id"])
+            or store.billing_checkout_pending(session["identity_id"])
+        )
         checkout_ready = bool(
             config.STRIPE_CHECKOUT_ENABLED and test_mode_ready
+            and not checkout_blocked
             and re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_MONTHLY_ID)
             and re.fullmatch(r"price_[A-Za-z0-9]+", config.STRIPE_PRICE_YEARLY_ID)
             and config.STRIPE_PRICE_MONTHLY_ID != config.STRIPE_PRICE_YEARLY_ID
