@@ -125,3 +125,24 @@ def test_webhook_fails_closed_when_signing_secret_is_missing(client, monkeypatch
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "")
     response = http.post("/webhooks/stripe", content=_payload())
     assert response.status_code == 503
+
+
+def test_identity_mode_routes_stripe_webhook_to_signature_verifier(tmp_path, monkeypatch):
+    from app import main
+    store = IdentityStore(tmp_path / "middleware-accounts.sqlite3")
+    monkeypatch.setattr(config, "AUTH_MODE", "identity")
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setattr(config, "STRIPE_WEBHOOK_LIVEMODE", False)
+    import app.stripe_webhooks as verifier
+    monkeypatch.setattr(verifier.time, "time", lambda: TIMESTAMP)
+    main.app.dependency_overrides[get_identity_store] = lambda: store
+    try:
+        response = TestClient(main.app).post(
+            "/webhooks/stripe", content=_payload(),
+            headers={"stripe-signature": "t=1,v1=" + "0" * 64},
+        )
+    finally:
+        main.app.dependency_overrides.pop(get_identity_store, None)
+    # 400 proves middleware admitted the request to cryptographic verification;
+    # a middleware policy failure would return 503 before the handler.
+    assert response.status_code == 400
