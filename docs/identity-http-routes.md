@@ -12,9 +12,13 @@
 | GET | `/login` | Public safe | Subscriber sign-in page. |
 | GET | `/register` | Public safe | Subscriber registration page. |
 | GET | `/admin/login` | Public safe | Separate private administrator sign-in page. |
+| GET | `/account` | Subscriber only | Protected subscriber account overview; requires an active, verified subscriber session. |
+| GET | `/auth/account` | Subscriber only | Returns only the signed-in subscriber's email, active/verified state, and currently active feature grants. |
 | GET | `/admin` | Administrator only | Separate no-store Admin Console shell; requires an active MFA-authenticated administrator session. |
 | GET | `/admin/overview` | Administrator only | No-store, sanitized operational metrics from the shared odds service; provider key material and raw errors are never returned. |
 | GET | `/admin/audit-events` | Administrator only | Bounded, paginated, no-store security audit history with event, actor, and subject filters; excludes account email addresses and credential material. |
+| GET | `/admin/sessions` | Administrator only | Bounded active-session inventory; exposes session metadata only, never bearer tokens, token hashes, or subscriber email addresses. |
+| POST | `/admin/sessions/{session_id}/revoke` | Administrator + CSRF | Revokes a selected session with a controlled reason code and MFA-admin audit attribution; the current administrator session cannot revoke itself. |
 | GET | `/admin/subscribers` | Administrator only | Bounded, paginated, searchable, no-store subscriber directory with minimal account and active-entitlement fields. |
 | GET | `/forgot-password` | Public safe | Password-recovery request page. |
 | GET | `/verify-email` | Public safe | Reads the challenge token from the URL fragment and submits it in the request body. |
@@ -30,6 +34,7 @@
 | POST | `/admin/auth/login` | Public + CSRF | Administrator password plus TOTP or single-use recovery code. |
 | POST | `/admin/auth/logout` | Administrator + CSRF | Revokes only the administrator session and clears its cookie. |
 | POST | `/admin/subscribers/{identity_id}/status` | Administrator + CSRF | Suspends/reactivates a subscriber with a controlled reason code; suspension revokes active sessions in the same transaction and records the MFA administrator actor. |
+| POST | `/admin/subscribers/{identity_id}/sessions/revoke` | Administrator + CSRF | Revokes all active sessions for one subscriber atomically, with a controlled reason code and actor-attributed audit event. |
 | GET | `/admin/subscriber-entitlements` | Administrator only | Reads feature grants for one subscriber identity; never returns account email. |
 | PUT | `/admin/subscriber-entitlements` | Administrator + CSRF | Replaces a subscriber's feature grants; requires an active MFA-backed administrator session and records an audit event. |
 
@@ -64,7 +69,7 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Current activation boundary
 
-The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all 23 routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy.
+The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all 28 routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy. Subscriber and administrator authentication dependencies set `Cache-Control: no-store` and `Pragma: no-cache` before session or CSRF validation, so rejected authentication responses are non-cacheable as well as successful responses.
 
 Verification and password-reset requests now enqueue messages in the versioned identity database. Recipient addresses and challenge links are encrypted with a dedicated Fernet key. A background worker claims messages with atomic leases, reuses stable Resend idempotency keys, retries only transient failures with bounded backoff, and discards messages whose one-time challenge has expired or already been consumed. The worker runs only in identity mode. Tests use a fake sender and never contact Resend.
 
@@ -85,7 +90,11 @@ The default `legacy_basic` mode remains the production compatibility boundary an
 
 The first Phase 2 deliverable is a distinct `/admin` workspace shell. It is served separately from the subscriber dashboard and is protected directly by the administrator session dependency. Subscriber cookies, missing sessions, and expired/revoked sessions cannot open it. The page is returned with `Cache-Control: no-store`, a restrictive same-origin Content Security Policy, frame denial, and no-referrer policy.
 
-The shell establishes separate navigation for Overview, Users, Feature Access, Billing, Notifications, Platform, System Configuration, Communications, and Security. Overview displays live, allowlisted operational metrics through `GET /admin/overview`; provider key details and raw provider errors are never exposed. Users provides a searchable, paginated subscriber directory and guarded suspend/reactivate controls. Feature Access manages manual entitlement grants and optional expiry through the existing MFA-admin and CSRF-protected API; it does not represent billing or commercial subscription plans. Security provides paginated audit history with event-type, actor-identity, and subject-identity filters. Sections without completed protected APIs remain explicitly marked as planned; no operational metrics are fabricated. Administrator logout uses the existing CSRF-protected endpoint. The shell is available only in staged `AUTH_MODE=identity`; the default `legacy_basic` experience is unchanged.
+The shell establishes separate navigation for Overview, Users, Feature Access, Billing, Notifications, Platform, System Configuration, Communications, and Security. Overview displays live, allowlisted operational metrics through `GET /admin/overview`; provider key details and raw provider errors are never exposed. Users provides a searchable, paginated subscriber directory, guarded suspend/reactivate controls, and subscriber-wide session revocation. Feature Access manages manual entitlement grants and optional expiry through the existing MFA-admin and CSRF-protected API; it does not represent billing or commercial subscription plans. Security provides paginated audit history with event-type, actor-identity, and subject-identity filters, active-session inventory, and individual session revocation. Sections without completed protected APIs remain explicitly marked as planned; no operational metrics are fabricated. Administrator logout uses the existing CSRF-protected endpoint.
+
+### Subscriber account overview
+
+The subscriber sign-in flow now redirects to `/account`. The protected, read-only account overview displays the signed-in email address, active account and email-verification state, and current feature grants through `GET /auth/account`. Both the page and summary API require a subscriber session; administrator cookies cannot authorize them. The page uses a fresh per-response CSP script nonce and no-store headers. It does not imply a paid plan, billing status, or entitlement bundle, and it does not yet expose profile, password, or notification-preference mutations. The shell is available only in staged `AUTH_MODE=identity`; the default `legacy_basic` experience is unchanged.
 
 
 ### Administrator subscriber directory
