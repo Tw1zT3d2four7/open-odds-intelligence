@@ -25,7 +25,10 @@ _MAX_BACKUP_BYTES = 512 * 1024 * 1024
 def _cipher(key: str | bytes | None = None) -> Fernet:
     value = key if key is not None else config.IDENTITY_BACKUP_ENCRYPTION_KEY
     if isinstance(value, str):
-        value = value.encode("ascii", errors="strict")
+        try:
+            value = value.encode("ascii", errors="strict")
+        except UnicodeEncodeError:
+            raise ValueError("IDENTITY_BACKUP_ENCRYPTION_KEY is invalid.") from None
     if not isinstance(value, bytes) or not value:
         raise ValueError("IDENTITY_BACKUP_ENCRYPTION_KEY is not configured.")
     try:
@@ -41,6 +44,8 @@ def _regular_file(path: Path, *, must_exist: bool = True) -> None:
         info = path.stat()
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("Identity database and backup paths must be regular files.")
+        if info.st_mode & 0o077:
+            raise PermissionError("Identity database and backup files must not be accessible by group or others.")
 
 
 def _snapshot_database(path: Path) -> tuple[bytes, int]:
@@ -53,6 +58,11 @@ def _snapshot_database(path: Path) -> tuple[bytes, int]:
         integrity = snapshot.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("Identity database integrity check failed.")
+        identity_table = snapshot.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='identities'"
+        ).fetchone()
+        if identity_table is None:
+            raise ValueError("Source database is not the identity database.")
         row = snapshot.execute(
             "SELECT MAX(version) FROM schema_migrations"
         ).fetchone()
@@ -76,6 +86,11 @@ def _validate_database_bytes(data: bytes) -> int:
         integrity = connection.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("Identity backup integrity check failed.")
+        identity_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='identities'"
+        ).fetchone()
+        if identity_table is None:
+            raise ValueError("Backup does not contain an identity database.")
         row = connection.execute(
             "SELECT MAX(version) FROM schema_migrations"
         ).fetchone()
@@ -176,6 +191,8 @@ def restore_encrypted_backup(
     cipher = _cipher(key)
     backup = Path(backup_path)
     target = Path(target_path)
+    if target.resolve(strict=False) == Path(config.DATABASE_PATH).resolve(strict=False):
+        raise ValueError("Refusing to overwrite the odds-history database.")
     _regular_file(backup)
     if target.is_symlink():
         raise ValueError("Identity restore target cannot be a symlink.")
@@ -185,6 +202,8 @@ def restore_encrypted_backup(
         raise ValueError("Identity restore directory cannot be a symlink.")
     os.chmod(parent, 0o700)
 
+    if backup.stat().st_size <= len(_MAGIC) or backup.stat().st_size > _MAX_BACKUP_BYTES + 1024 * 1024:
+        raise ValueError("Identity backup file size is invalid.")
     encrypted = backup.read_bytes()
     if not encrypted.startswith(_MAGIC):
         raise ValueError("Identity backup format is not recognized.")
