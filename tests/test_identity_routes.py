@@ -646,3 +646,56 @@ def test_admin_subscriber_directory_requires_mfa_and_is_paginated(tmp_path, monk
     assert filtered.status_code == 200
     assert filtered.json()["total"] == 1
     assert harness.client.get("/admin/subscribers", params={"limit": 0}).status_code == 422
+
+
+
+def test_admin_subscriber_status_api_requires_mfa_csrf_and_records_actor(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    subscriber_id = harness.store.create_subscriber(
+        "status-user@example.test", "a strong status user password 123"
+    )
+    admin_id = harness.store.provision_administrator(
+        "status-admin@example.test", "a strong status admin password 123"
+    )
+    path = f"/admin/subscribers/{subscriber_id}/status"
+    assert harness.post(path, {
+        "is_active": False, "reason": "Support approved temporary suspension"
+    }).status_code == 401
+
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "status-admin@example.test",
+        "password": "a strong status admin password 123",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+
+    denied = harness.post(path, {
+        "is_active": False, "reason": "Support approved temporary suspension"
+    }, csrf=False)
+    assert denied.status_code == 403
+    changed = harness.post(path, {
+        "is_active": False, "reason": "Support approved temporary suspension"
+    })
+    assert changed.status_code == 200
+    assert changed.headers["cache-control"] == "no-store"
+    assert changed.json()["is_active"] is False
+    assert harness.client.get("/admin/subscribers").json()["subscribers"][0]["is_active"] is False
+
+    invalid = harness.post(path, {"is_active": True, "reason": "short"})
+    assert invalid.status_code == 422
+    reactivated = harness.post(path, {
+        "is_active": True, "reason": "Support approved account reactivation"
+    })
+    assert reactivated.status_code == 200
+    assert reactivated.json()["is_active"] is True
+    with harness.store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, event_type FROM security_audit_events
+               WHERE subject_identity_id=? AND event_type='subscriber.reactivated'""",
+            (subscriber_id,),
+        ).fetchone()
+    assert event["actor_identity_id"] == admin_id
