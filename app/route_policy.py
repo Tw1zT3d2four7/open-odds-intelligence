@@ -1,8 +1,8 @@
-"""Explicit target access policy for every existing HTTP endpoint.
+"""Explicit access policy for product and identity HTTP endpoints.
 
-This is an inventory/guardrail, not active middleware. The legacy Basic Auth
-middleware remains the only live HTTP authentication boundary until the
-identity-mode cutover is separately reviewed and approved.
+Product APIRoutes use this policy to assemble mode-aware dependencies. The
+identity-mode middleware admits only classified routes; legacy Basic Auth
+behavior remains the default compatibility boundary.
 """
 from __future__ import annotations
 
