@@ -145,7 +145,8 @@ Still required before Phase 1 is complete:
 - [x] Draft the provider-neutral notification architecture for verified email, an Open Odds-owned Discord bot, and consent-based SMS, including subscriber preferences, delivery outbox/retries, opt-out controls, and admin operations; no provider integration is authorized by the draft.
 - [ ] Approve notification providers, Discord linking/delivery mode, preference defaults, and rollout gates before implementation.
 - [ ] Add Notifications, Platform, and Communications views backed by reviewed admin APIs.
-- [ ] Design and approve the System Configuration manager before implementation; protected `.env` editing remains disabled until its allowlist, validation, atomic apply, backup, rollback, and restart design is approved.
+- [x] Draft the protected Environment Configuration manager design, including a separate host-side trust boundary, strict variable allowlist, staged validation, atomic publication, backups, rollback, audit, and explicit restart gates.
+- [ ] Review and approve the System Configuration manager design and initial variable allowlist before implementation; protected `.env` editing remains disabled until the host-side apply and restart architecture is approved.
 - [x] Add a protected, bounded, paginated, no-store administrator audit API and a Security view that renders audit events without account email addresses.
 - [x] Expose bounded event-type, actor-identity, and subject-identity filters in the Security view; audit records remain free of account email addresses and credentials.
 - [x] Add MFA-admin-only, CSRF-protected subscriber suspension/reactivation with required controlled reason codes, atomic session revocation on suspension, and actor-attributed audit events; expose guarded controls in the Users directory.
