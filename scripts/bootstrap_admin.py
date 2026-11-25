@@ -30,13 +30,9 @@ def main() -> int:
             # If a prior run created the first admin but was interrupted before
             # MFA enrollment, allow only that same account to resume with its
             # existing password. Never create a second administrator here.
-            if str(exc) != "An administrator already exists; initial bootstrap is closed.":
-                raise
             identity_id = store.authenticate(email, password, "administrator")
             if identity_id is None:
-                raise ValueError(
-                    "An administrator already exists; supplied credentials did not match."
-                ) from None
+                raise exc
         provisioning_uri = store.start_administrator_mfa_enrollment(identity_id)
     except (ValueError, RuntimeError) as exc:
         print(f"Bootstrap could not continue: {exc}")
