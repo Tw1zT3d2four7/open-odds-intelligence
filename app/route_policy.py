@@ -11,9 +11,9 @@ from collections.abc import Iterable
 from starlette.routing import BaseRoute
 
 
-# Values are deliberately descriptive policy classes, not authorization
-# functions. Route wiring will happen only after migration and compatibility
-# behavior is covered by HTTP integration tests.
+# Values are descriptive policy classes. They are translated into concrete
+# FastAPI dependencies by route_authorization.py and protected by the identity
+# mode gate; they are never treated as authorization by themselves.
 ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/"): "subscriber_entitled",
     ("GET", "/api/health"): "public_minimal",
