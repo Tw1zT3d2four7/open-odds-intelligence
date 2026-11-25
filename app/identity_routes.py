@@ -487,7 +487,7 @@ def _stripe_test_billing_ready(*, checkout: bool = False, portal: bool = False) 
         raise HTTPException(status_code=503, detail="Hosted billing is not enabled.")
     if (
         not isinstance(config.STRIPE_SECRET_KEY, str)
-        or not config.STRIPE_SECRET_KEY.startswith("sk_test_")
+        or not re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
         or config.STRIPE_WEBHOOK_LIVEMODE
     ):
         raise HTTPException(status_code=503, detail="Stripe test-mode billing is not configured.")
