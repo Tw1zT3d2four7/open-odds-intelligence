@@ -161,6 +161,11 @@ class EntitlementUpdateInput(StrictModel):
     expires_at: datetime | None = None
 
 
+class SubscriberStatusInput(StrictModel):
+    is_active: bool
+    reason: str = Field(min_length=8, max_length=240)
+
+
 def _rate_limit(
     request: Request,
     limiter: SQLiteRateLimiter,
@@ -583,6 +588,40 @@ def administrator_subscribers(
         raise HTTPException(
             status_code=503,
             detail="Subscriber directory is temporarily unavailable.",
+        ) from None
+
+
+@router.post(
+    "/admin/subscribers/{identity_id}/status",
+    dependencies=[
+        Depends(require_administrator),
+        Depends(require_authenticated_csrf),
+    ],
+)
+def update_subscriber_status(
+    identity_id: str,
+    payload: SubscriberStatusInput,
+    response: Response,
+    session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Suspend/reactivate a subscriber with MFA-admin attribution and CSRF."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        return store.set_subscriber_status(
+            identity_id,
+            is_active=payload.is_active,
+            actor_identity_id=session["identity_id"],
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Administrator subscriber status change failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Subscriber status change is temporarily unavailable.",
         ) from None
 
 
