@@ -283,9 +283,19 @@ def test_backup_and_restore_cli_requires_explicit_offline_apply(tmp_path, monkey
         assert db.execute("SELECT 1 FROM identities WHERE id=?", (old_identity_id,)).fetchone()
 
     monkeypatch.setattr(
+        config, "IDENTITY_BACKUP_ENCRYPTION_KEY",
+        Fernet.generate_key().decode("ascii"),
+    )
+    monkeypatch.setattr(
         sys, "argv",
         ["restore_identity", str(backup), "--apply", "--confirm-offline"],
     )
+    assert restore_identity.main() == 2
+    with target_store.connect() as db:
+        assert db.execute("SELECT 1 FROM identities WHERE id=?", (old_identity_id,)).fetchone()
+    assert not list((target.parent / "backups").glob("identity-pre-restore-*.sqlite3.fernet"))
+
+    monkeypatch.setattr(config, "IDENTITY_BACKUP_ENCRYPTION_KEY", key)
     assert restore_identity.main() == 0
     restored_store = IdentityStore(target)
     with restored_store.connect() as db:
