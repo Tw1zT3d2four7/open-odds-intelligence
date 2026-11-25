@@ -163,7 +163,7 @@ class EntitlementUpdateInput(StrictModel):
 
 class SubscriberStatusInput(StrictModel):
     is_active: bool
-    reason: str = Field(min_length=8, max_length=240)
+    reason_code: str = Field(pattern="^(support_request|policy_violation|security_concern|billing_issue|other)$")
 
 
 def _rate_limit(
@@ -613,7 +613,7 @@ def update_subscriber_status(
             identity_id,
             is_active=payload.is_active,
             actor_identity_id=session["identity_id"],
-            reason=payload.reason,
+            reason_code=payload.reason_code,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
