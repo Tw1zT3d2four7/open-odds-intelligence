@@ -143,6 +143,10 @@ app = FastAPI(title=config.APP_NAME, version="0.4.0",
               lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
+# Register identity endpoints now; middleware exposes them only in explicit
+# AUTH_MODE=identity and the route-policy manifest covers every registered path.
+app.include_router(identity_router)
+
 
 @app.middleware("http")
 async def optional_basic_auth(request: Request, call_next):
@@ -521,8 +525,3 @@ def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), of
             "limit": page["limit"], "offset": page["offset"],
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
 
-
-
-# Keep the identity router registered for route-policy/CI inventory, while the
-# middleware exposes it only in explicit AUTH_MODE=identity.
-app.include_router(identity_router)
