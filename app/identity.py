@@ -1697,6 +1697,58 @@ class IdentityStore:
             "customer_portal_available": False,
         }
 
+    def administrator_billing_overview(self) -> dict:
+        """Return aggregate billing operations data without subscriber or provider secrets."""
+        with self.connect() as db:
+            subscription_rows = db.execute(
+                """SELECT status, billing_interval, COUNT(*) AS total
+                   FROM billing_subscriptions GROUP BY status, billing_interval
+                   ORDER BY status, billing_interval"""
+            ).fetchall()
+            invoice_rows = db.execute(
+                """SELECT status, COUNT(*) AS total,
+                          SUM(CASE WHEN payment_failed_at IS NOT NULL THEN 1 ELSE 0 END) AS failed
+                   FROM billing_invoices GROUP BY status ORDER BY status"""
+            ).fetchall()
+            event_rows = db.execute(
+                """SELECT processing_state, COUNT(*) AS total,
+                          MAX(updated_at) AS latest_updated
+                   FROM billing_webhook_events GROUP BY processing_state
+                   ORDER BY processing_state"""
+            ).fetchall()
+            customer_count = db.execute(
+                "SELECT COUNT(*) FROM billing_customers"
+            ).fetchone()[0]
+            failed_attempts = db.execute(
+                """SELECT COUNT(*) FROM billing_webhook_events
+                   WHERE processing_state='failed'"""
+            ).fetchone()[0]
+        subscriptions = [
+            {"status": row["status"], "billing_interval": row["billing_interval"], "count": row["total"]}
+            for row in subscription_rows
+        ]
+        invoices = [
+            {"status": row["status"], "count": row["total"], "payment_failures": row["failed"]}
+            for row in invoice_rows
+        ]
+        events = [
+            {"processing_state": row["processing_state"], "count": row["total"],
+             "latest_updated": row["latest_updated"]}
+            for row in event_rows
+        ]
+        return {
+            "customer_count": customer_count,
+            "subscription_count": sum(row["count"] for row in subscriptions),
+            "invoice_count": sum(row["count"] for row in invoices),
+            "failed_webhook_count": failed_attempts,
+            "subscriptions_by_status_and_interval": subscriptions,
+            "invoices_by_status": invoices,
+            "webhook_events_by_state": events,
+            "checkout_available": False,
+            "customer_portal_available": False,
+            "live_billing_enabled": False,
+        }
+
     def active_subscriber_entitlements(self, identity_id: str) -> list[str]:
         """Return only currently active feature grants for an active subscriber."""
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
