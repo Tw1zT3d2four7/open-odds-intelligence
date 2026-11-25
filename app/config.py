@@ -136,8 +136,9 @@ PLAYER_PROPS_MARKETS = os.getenv("PLAYER_PROPS_MARKETS", "").strip()
 PLAYER_PROPS_REFRESH_INTERVAL_SECONDS = max(3600, int(os.getenv("PLAYER_PROPS_REFRESH_INTERVAL_SECONDS", "14400")))
 PLAYER_PROPS_MAX_EVENTS = max(1, min(50, int(os.getenv("PLAYER_PROPS_MAX_EVENTS", "5"))))
 
-# Authentication migration is explicit. Identity mode remains fail-closed in the
-# HTTP boundary until the complete subscriber/admin route integration is enabled.
+# Authentication migration is explicit. Identity mode activates staged identity
+# endpoints and product-route session/entitlement guards; legacy_basic remains
+# the default until the non-production cutover and rollback gates are approved.
 AUTH_MODE = os.getenv("AUTH_MODE", "legacy_basic").strip().lower()
 if AUTH_MODE not in {"legacy_basic", "identity"}:
     raise ValueError("AUTH_MODE must be either 'legacy_basic' or 'identity'.")
