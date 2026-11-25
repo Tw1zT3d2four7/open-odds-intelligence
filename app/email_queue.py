@@ -217,7 +217,10 @@ class TransactionalEmailQueue:
                    SET state=?, next_attempt_at=?, lease_token_hash=NULL,
                        lease_expires_at=NULL, last_failure_code=?,
                        attempt_count=CASE
-                           WHEN ? IN ('circuit_open','circuit_state_unavailable')
+                           WHEN ? IN (
+                             'circuit_open','circuit_state_unavailable',
+                             'payload_decryption_failed'
+                           )
                            THEN MAX(0, attempt_count-1) ELSE attempt_count END,
                        encrypted_payload=CASE WHEN ? IN ('sent','failed','expired')
                                                THEN X'' ELSE encrypted_payload END,
@@ -236,6 +239,9 @@ class TransactionalEmailQueue:
 
     def process_one(self, sender) -> bool:
         """Deliver at most one message. Returns True when a queue item was handled."""
+        # Validate key syntax before leasing anything. A missing/malformed key
+        # must pause delivery, not consume or destroy queued encrypted payloads.
+        _key_cipher()
         item = self._claim()
         if item is None:
             return False
@@ -283,7 +289,15 @@ class TransactionalEmailQueue:
                 failure_code=exc.failure_code, delay_seconds=delay if can_retry else 0,
             )
             return True
-        except (InvalidToken, KeyError, TypeError, ValueError, UnicodeDecodeError):
+        except InvalidToken:
+            # A wrong/rotated key is an operator-recoverable condition. Preserve
+            # ciphertext and release the lease without consuming a send attempt.
+            self._finish(
+                item, state="pending", failure_code="payload_decryption_failed",
+                delay_seconds=300,
+            )
+            return True
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError):
             self._finish(item, state="failed", failure_code="payload_invalid")
             return True
         except Exception:
