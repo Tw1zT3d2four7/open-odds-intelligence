@@ -25,7 +25,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -284,6 +284,12 @@ class IdentityStore:
                     db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (4, _timestamp(_now())),
+                    )
+                if current < 5:
+                    db.execute("ALTER TABLE email_provider_circuit ADD COLUMN probe_until TEXT")
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (5, _timestamp(_now())),
                     )
                 db.commit()
             except Exception:
@@ -572,6 +578,42 @@ class IdentityStore:
             ).fetchone()
         return bool(row and row["opened_until"] and row["opened_until"] > now)
 
+    def claim_email_provider_send(self, provider: str = "resend") -> bool:
+        """Atomically allow one half-open probe after the provider cooldown.
+
+        While the circuit is open no request is sent. Once its cooldown expires,
+        only one worker receives a 60-second probe lease; concurrent workers stay
+        blocked until that probe succeeds, fails, or its lease expires.
+        """
+        if provider != "resend":
+            raise ValueError("Unsupported email provider.")
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT consecutive_failures, opened_until, probe_until
+                   FROM email_provider_circuit WHERE provider=?""",
+                (provider,),
+            ).fetchone()
+            if row is None:
+                db.commit()
+                return True
+            if row["opened_until"] and row["opened_until"] > now:
+                db.commit()
+                return False
+            if int(row["consecutive_failures"]) >= 5:
+                if row["probe_until"] and row["probe_until"] > now:
+                    db.commit()
+                    return False
+                probe_until = _timestamp(now_dt + timedelta(minutes=1))
+                db.execute(
+                    "UPDATE email_provider_circuit SET probe_until=?, updated_at=? WHERE provider=?",
+                    (probe_until, now, provider),
+                )
+            db.commit()
+            return True
+
     def record_email_delivery_event(
         self,
         identity_id: str,
@@ -637,7 +679,7 @@ class IdentityStore:
                         last_failure_at, last_success_at, last_error_code, updated_at
                     ) VALUES (?, 0, NULL, NULL, ?, NULL, ?)
                     ON CONFLICT(provider) DO UPDATE SET
-                        consecutive_failures=0, opened_until=NULL,
+                        consecutive_failures=0, opened_until=NULL, probe_until=NULL,
                         last_success_at=excluded.last_success_at,
                         last_error_code=NULL, updated_at=excluded.updated_at""",
                     (provider, now, now),
@@ -670,7 +712,7 @@ class IdentityStore:
                     ) VALUES (?, ?, ?, ?, NULL, ?, ?)
                     ON CONFLICT(provider) DO UPDATE SET
                         consecutive_failures=excluded.consecutive_failures,
-                        opened_until=excluded.opened_until,
+                        opened_until=excluded.opened_until, probe_until=NULL,
                         last_failure_at=excluded.last_failure_at,
                         last_error_code=excluded.last_error_code,
                         updated_at=excluded.updated_at""",
