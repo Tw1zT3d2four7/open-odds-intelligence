@@ -162,7 +162,9 @@ The initial shell now includes working Security, Users, and manual Feature Acces
 
 - [x] Implement subscriber registration, email verification, login/logout, and account-enumeration-resistant password recovery with one-time challenges and session revocation.
 - [x] Add a protected, read-only `/account` overview and subscriber-only `/auth/account` summary API; show only the signed-in subscriber's verified/active state and currently active feature grants.
-- [ ] Design and implement subscriber-initiated password changes, email changes, and account closure with re-authentication, session revocation, audit attribution, and migration/recovery tests.
+- [x] Implement subscriber-initiated password changes with current-password re-authentication, rate limits, CSRF protection, session revocation, invalidation of outstanding reset links, self-attributed audit events, and a confirmed password-change form on the account page.
+- [ ] Implement subscriber-initiated email changes with re-authentication, new-address verification, notification to the previous address, session revocation, audit attribution, and migration/recovery tests.
+- [ ] Design account closure after account-data retention rules are approved; do not implement deletion before that policy is settled.
 - [ ] Define account-data and account-closure retention rules before implementing deletion or automated retention.
 
 Notification preferences remain in Phase 8; commercial plan and billing state remain in Phases 5 and 9. The account overview deliberately does not label manual feature grants as a paid subscription.
