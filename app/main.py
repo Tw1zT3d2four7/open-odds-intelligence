@@ -192,7 +192,8 @@ async def optional_basic_auth(request: Request, call_next):
         product_access = classify_route(
             request.method, policy_path, ROUTE_ACCESS_POLICY
         )
-        if product_access == "public_minimal":
+        if product_access in {"public_minimal", "stripe_signature"}:
+            # Stripe's route handler performs HMAC authentication against the exact raw body.
             return await call_next(request)
         if product_access in {"subscriber_entitled", "administrator_only"}:
             # Framework-generated docs routes cannot receive APIRoute dependencies;
