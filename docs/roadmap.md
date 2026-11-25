@@ -127,7 +127,7 @@ Still required before Phase 1 is complete:
 - [ ] Verify actual Caddy-to-app peer topology before configuring trusted proxy CIDRs.
 - [x] Preserve detailed `/api/health` in legacy mode and provide minimal public liveness in identity mode without breaking the Compose probe.
 - [x] Build responsive subscriber sign-in/registration, email verification/recovery, and separate administrator sign-in entry pages with CSRF bootstrap and no-store responses.
-- [x] Add encrypted identity-database backup/restore tooling with explicit offline restore confirmation, integrity checks, encrypted pre-restore snapshots, and odds-database protection; preserve caller-owned directory permissions, reject group/world-writable destinations, and keep backup files mode 0600.
+- [x] Add encrypted identity-database backup/restore tooling with explicit offline restore confirmation, full schema/migration and foreign-key validation, bounded encrypted snapshots, encrypted pre-restore snapshots, and odds-database protection; preserve caller-owned directory permissions, reject group/world-writable destinations, and keep backup files mode 0600.
 - [ ] Run the backup/restore and key-recovery drills in a non-production deployment; the tooling has not been run against a live volume.
 - [ ] Test the complete identity flow in a non-production deployment matching the real TLS/reverse-proxy shape.
 
