@@ -1620,6 +1620,67 @@ class IdentityStore:
             db.commit()
         return normalized
 
+    def subscriber_billing_summary(self, identity_id: str) -> dict:
+        """Return a bounded, read-only billing summary for the signed-in subscriber."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        with self.connect() as db:
+            account = db.execute(
+                "SELECT id FROM identities WHERE id=? AND account_type='subscriber' AND is_active=1",
+                (identity_id,),
+            ).fetchone()
+            if account is None:
+                raise ValueError("An active subscriber account is required.")
+            subscriptions = db.execute(
+                """SELECT stripe_subscription_id, plan_code, billing_interval, status,
+                          current_period_start, current_period_end, cancel_at_period_end,
+                          canceled_at, ended_at, updated_at
+                   FROM billing_subscriptions WHERE identity_id=?
+                   ORDER BY updated_at DESC, stripe_subscription_id LIMIT 20""",
+                (identity_id,),
+            ).fetchall()
+            invoices = db.execute(
+                """SELECT stripe_invoice_id, stripe_subscription_id, status,
+                          amount_due, amount_paid, currency, period_start, period_end,
+                          updated_at
+                   FROM billing_invoices WHERE identity_id=?
+                   ORDER BY updated_at DESC, stripe_invoice_id LIMIT 20""",
+                (identity_id,),
+            ).fetchall()
+        return {
+            "subscriptions": [
+                {
+                    "subscription_id": row["stripe_subscription_id"],
+                    "plan_code": row["plan_code"],
+                    "billing_interval": row["billing_interval"],
+                    "status": row["status"],
+                    "current_period_start": row["current_period_start"],
+                    "current_period_end": row["current_period_end"],
+                    "cancel_at_period_end": bool(row["cancel_at_period_end"]),
+                    "canceled_at": row["canceled_at"],
+                    "ended_at": row["ended_at"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in subscriptions
+            ],
+            "invoices": [
+                {
+                    "invoice_id": row["stripe_invoice_id"],
+                    "subscription_id": row["stripe_subscription_id"],
+                    "status": row["status"],
+                    "amount_due": row["amount_due"],
+                    "amount_paid": row["amount_paid"],
+                    "currency": row["currency"],
+                    "period_start": row["period_start"],
+                    "period_end": row["period_end"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in invoices
+            ],
+            "checkout_available": False,
+            "customer_portal_available": False,
+        }
+
     def active_subscriber_entitlements(self, identity_id: str) -> list[str]:
         """Return only currently active feature grants for an active subscriber."""
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
