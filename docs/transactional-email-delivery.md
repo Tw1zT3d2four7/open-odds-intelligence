@@ -3,7 +3,7 @@
 **Initial provider:** Resend  
 **Implementation:** `app/email_delivery.py`  
 **Scope:** Verification and password-recovery messages  
-**Status:** Provider adapter implemented; no account routes send mail yet.
+**Status:** Provider adapter and isolated-route delivery tracking/circuit breaker implemented; identity router remains unmounted.
 
 ## Provider decision
 
@@ -28,13 +28,14 @@ Use `EMAIL_PROVIDER=disabled` to disable delivery intentionally. Do not silently
 - Recipient, subject, body-size, header-injection, timeout, and idempotency-key validation.
 - Provider response bodies and transport exception details are not propagated into application errors or logs.
 - Resend idempotency keys are supported for `POST /emails`; keys may be up to 256 characters and are retained by the provider for 24 hours. Retry orchestration must reuse the exact same key and identical request payload. The adapter accepts printable ASCII keys and does not retry automatically.
-- Provider message ID is returned to the caller for later delivery tracking.
+- Provider message ID is returned to the caller and recorded in a separate 90-day identity-database delivery history. Records contain identity reference, purpose, status, provider message ID, safe failure code, and timestamp; they never store email addresses, challenge tokens, request bodies, or provider error text.
+- A persistent provider circuit opens after five consecutive failures within ten minutes, stays open for ten minutes, and then grants only one worker a 60-second half-open probe lease. A successful send resets the circuit. Circuit-state storage failure blocks sends.
 - API keys remain case-sensitive and are preserved byte-for-byte from configuration.
 - Tests use a fake HTTP transport; CI never contacts the real provider.
 
 ## Not yet enabled
 
-The adapter is not called by public HTTP routes. Registration and recovery must not create a challenge and then silently lose the token. Route integration must add per-account resend cooldowns, daily destination caps, atomic IP/account rate limits, generic account-enumeration-resistant responses, and a provider circuit breaker before email delivery is exposed.
+The adapter is not called by public HTTP routes. Registration and recovery routes now record sanitized delivery outcomes and enforce a persistent provider circuit breaker. The isolated router also has per-account resend cooldowns, daily destination caps, atomic IP/account rate limits, and generic account-enumeration-resistant responses. It remains unmounted until durable retry/queue behavior is designed, the complete route policy is integrated, and the non-production provider flow is verified.
 
 ## Operator setup before a real delivery test
 
