@@ -1150,3 +1150,45 @@ def test_subscriber_can_revoke_current_session_and_is_signed_out(tmp_path, monke
         ).fetchone()
     assert event["actor_identity_id"] == identity_id
     assert event["subject_identity_id"] == identity_id
+
+
+def test_subscriber_session_listing_is_bounded_and_paginated(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber(
+        "session-pages@example.test", "a strong session pagination password"
+    )
+    challenge = harness.store.create_email_verification_challenge("session-pages@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    login = harness.post("/auth/login", {
+        "email": "session-pages@example.test",
+        "password": "a strong session pagination password",
+    })
+    assert login.status_code == 200
+    current_token = harness.client.cookies.get("__Host-ooi_subscriber")
+    created = [harness.store.create_session(identity_id) for _ in range(27)]
+    created_ids = {session_id for _token, session_id in created}
+
+    first = harness.client.get("/auth/sessions?limit=25&offset=0")
+    assert first.status_code == 200
+    first_data = first.json()
+    assert first_data["total"] == 28
+    assert first_data["limit"] == 25
+    assert first_data["offset"] == 0
+    assert len(first_data["sessions"]) == 25
+    assert first_data["sessions"][0]["is_current"] is True
+
+    second = harness.client.get("/auth/sessions?limit=25&offset=25")
+    assert second.status_code == 200
+    second_data = second.json()
+    assert second_data["total"] == 28
+    assert second_data["offset"] == 25
+    assert len(second_data["sessions"]) == 3
+    assert all(not row["is_current"] for row in second_data["sessions"])
+
+    first_ids = {row["session_id"] for row in first_data["sessions"]}
+    second_ids = {row["session_id"] for row in second_data["sessions"]}
+    assert first_ids.isdisjoint(second_ids)
+    assert first_ids | second_ids == created_ids | {
+        harness.store.get_session(current_token)["session_id"]
+    }
+    assert harness.client.get("/auth/sessions?limit=101").status_code == 422
