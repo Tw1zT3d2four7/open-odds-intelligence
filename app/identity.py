@@ -1718,6 +1718,7 @@ class IdentityStore:
         """Atomically reserve one short-lived Checkout attempt per subscriber."""
         if (
             not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128
+            or not isinstance(billing_interval, str)
             or billing_interval not in {"month", "year"}
             or not isinstance(idempotency_key_hash, str)
             or not re.fullmatch(r"[a-f0-9]{64}", idempotency_key_hash)
@@ -1753,7 +1754,10 @@ class IdentityStore:
             ).fetchone()
             if existing is not None and existing["expires_at"] > now:
                 db.rollback()
-                if existing["idempotency_key_hash"] == idempotency_key_hash:
+                if (
+                    existing["idempotency_key_hash"] == idempotency_key_hash
+                    and existing["billing_interval"] == billing_interval
+                ):
                     return {
                         "state": "reserved",
                         "attempt_token": existing["attempt_token"],
