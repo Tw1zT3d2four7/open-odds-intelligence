@@ -76,8 +76,13 @@ def test_registration_creates_unverified_subscriber_and_sends_one_time_link(tmp_
         row = db.execute(
             "SELECT account_type, email_verified_at FROM identities"
         ).fetchone()
+        delivery = db.execute(
+            "SELECT status, provider_message_id FROM email_delivery_events"
+        ).fetchone()
     assert row["account_type"] == "subscriber"
     assert row["email_verified_at"] is None
+    assert delivery["status"] == "sent"
+    assert delivery["provider_message_id"] == "email_test_id"
 
 
 def test_duplicate_registration_returns_same_generic_response_without_resending(tmp_path, monkeypatch):
@@ -146,6 +151,12 @@ def test_registration_delivery_failure_does_not_leak_provider_error(tmp_path, mo
     })
     assert response.status_code == 202
     assert "provider details" not in response.text
+    with harness.store.connect() as db:
+        delivery = db.execute(
+            "SELECT status, failure_code FROM email_delivery_events"
+        ).fetchone()
+    assert delivery["status"] == "failed"
+    assert delivery["failure_code"] == "unexpected"
 
 
 def test_auth_mutations_require_origin_and_csrf_proof(tmp_path, monkeypatch):
@@ -354,3 +365,29 @@ def test_registration_storage_failure_returns_sanitized_service_error(tmp_path, 
     })
     assert response.status_code == 503
     assert "private identity database path" not in response.text
+
+
+
+def test_open_email_circuit_skips_provider_and_records_delivery_state(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    seed_identity = harness.store.create_subscriber(
+        "seed@example.com", "a strong password 123"
+    )
+    for _ in range(5):
+        harness.store.record_email_delivery_event(
+            seed_identity, "verification", "failed",
+            failure_code="provider_unavailable",
+        )
+
+    response = harness.post("/auth/register", {
+        "email": "new-person@example.com",
+        "password": "a strong password 123",
+    })
+    assert response.status_code == 202
+    assert harness.sender.messages == []
+    with harness.store.connect() as db:
+        latest = db.execute(
+            "SELECT status, failure_code FROM email_delivery_events ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+    assert latest["status"] == "skipped"
+    assert latest["failure_code"] == "circuit_open"
