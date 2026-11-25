@@ -124,7 +124,7 @@ tbody tr:last-child td{border-bottom:0}
         </div>
         <div class="audit-status" id="subscriber-status" role="status" aria-live="polite">Subscriber directory has not been loaded.</div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Email</th><th>Status</th><th>Verified</th><th>Created</th><th>Entitlements</th><th>Identity</th></tr></thead>
+          <thead><tr><th>Email</th><th>Status</th><th>Verified</th><th>Created</th><th>Entitlements</th><th>Identity</th><th>Account action</th></tr></thead>
           <tbody id="subscriber-rows"><tr><td colspan="6">Select Users to load subscribers.</td></tr></tbody>
         </table></div>
         <div class="audit-pagination"><button id="subscriber-previous" type="button" disabled>Previous</button><span id="subscriber-page">Page 1</span><button id="subscriber-next" type="button" disabled>Next</button></div>
@@ -208,7 +208,7 @@ tbody tr:last-child td{border-bottom:0}
       if (!data.subscribers.length) {
         const row = document.createElement("tr");
         const empty = document.createElement("td");
-        empty.colSpan = 6;
+        empty.colSpan = 7;
         empty.textContent = "No matching subscribers.";
         row.appendChild(empty);
         subscriberRows.appendChild(row);
@@ -221,6 +221,16 @@ tbody tr:last-child td{border-bottom:0}
           cell(row, user.created_at);
           cell(row, (user.entitlements || []).join(", ") || "None");
           cell(row, user.identity_id);
+          const actionCell = document.createElement("td");
+          const action = document.createElement("button");
+          action.type = "button";
+          action.className = "subscriber-status-action";
+          action.dataset.identityId = user.identity_id;
+          action.dataset.nextActive = user.is_active ? "false" : "true";
+          action.textContent = user.is_active ? "Suspend" : "Reactivate";
+          action.setAttribute("aria-label", (user.is_active ? "Suspend " : "Reactivate ") + user.email);
+          actionCell.appendChild(action);
+          row.appendChild(actionCell);
           subscriberRows.appendChild(row);
         });
       }
@@ -292,6 +302,46 @@ tbody tr:last-child td{border-bottom:0}
     if (button.dataset.view === "security" && !auditLoaded) loadAudit();
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
+  subscriberRows.addEventListener("click", async event => {
+    const action = event.target.closest("button[data-identity-id]");
+    if (!action) return;
+    const identityId = action.dataset.identityId;
+    const nextActive = action.dataset.nextActive === "true";
+    const verb = nextActive ? "reactivate" : "suspend";
+    if (!window.confirm("Are you sure you want to " + verb + " this subscriber?")) return;
+    const reason = window.prompt("Enter the administrative reason (8–240 characters). Do not include passwords, API keys, or other secrets.");
+    if (reason === null) return;
+    const normalizedReason = reason.trim();
+    if (normalizedReason.length < 8 || normalizedReason.length > 240) {
+      subscriberStatus.textContent = "A reason between 8 and 240 characters is required.";
+      return;
+    }
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    let token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      action.disabled = true;
+      const response = await fetch("/admin/subscribers/" + encodeURIComponent(identityId) + "/status", {
+        method:"POST", credentials:"same-origin", cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({is_active:nextActive,reason:normalizedReason})
+      });
+      if (!response.ok) throw new Error("Subscriber status change rejected");
+      subscriberStatus.textContent = "Subscriber account updated. Refreshing directory…";
+      auditLoaded = false;
+      await loadSubscribers();
+    } catch (_error) {
+      subscriberStatus.textContent = "Subscriber status could not be changed. Refresh the page or sign in again.";
+    } finally {
+      action.disabled = false;
+    }
+  });
   document.getElementById("subscriber-search-button").addEventListener("click", () => { subscriberOffset = 0; loadSubscribers(); });
   document.getElementById("subscriber-previous").addEventListener("click", () => { subscriberOffset = Math.max(0, subscriberOffset - subscriberLimit); loadSubscribers(); });
   document.getElementById("subscriber-next").addEventListener("click", () => { subscriberOffset += subscriberLimit; loadSubscribers(); });
