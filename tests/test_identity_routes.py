@@ -268,7 +268,7 @@ def test_successful_subscriber_login_revokes_previous_session(tmp_path, monkeypa
     previous_token, _ = harness.store.create_session(identity_id)
     harness.client.cookies.set(
         "__Host-ooi_subscriber", previous_token,
-        domain="ooi.example", path="/", secure=True,
+        domain="ooi.example", path="/",
     )
 
     response = harness.post("/auth/login", {
