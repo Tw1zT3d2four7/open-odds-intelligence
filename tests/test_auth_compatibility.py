@@ -74,6 +74,13 @@ def test_identity_mode_protects_product_routes_and_exposes_only_staged_auth_page
     assert odds.status_code == 401
     assert odds.headers["cache-control"] == "no-store"
 
+    password_change_without_csrf = client.post("/auth/password/change", json={
+        "current_password": "a valid current password",
+        "new_password": "a different secure password",
+    })
+    assert password_change_without_csrf.status_code in {401, 403}
+    assert password_change_without_csrf.headers["cache-control"] == "no-store"
+
     # Only the separately protected identity entry points are enabled in this
     # staged mode; the detailed provider health payload is not public.
     csrf = client.get("/auth/csrf")

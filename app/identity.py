@@ -653,8 +653,6 @@ class IdentityStore:
             return False
         if not isinstance(new_password, str) or len(new_password) > 1024:
             raise ValueError("Password is too long.")
-        if current_password == new_password:
-            raise ValueError("New password must be different from the current password.")
 
         with self.connect() as db:
             row = db.execute(
@@ -672,6 +670,8 @@ class IdentityStore:
             return False
         if not valid:
             return False
+        if current_password == new_password:
+            raise ValueError("New password must be different from the current password.")
 
         replacement_hash = _password_hash(new_password)
         with self.connect() as db:

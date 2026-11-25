@@ -982,7 +982,6 @@ def test_subscriber_password_change_requires_csrf_and_revokes_all_sessions(tmp_p
     }
     denied = harness.post("/auth/password/change", payload, csrf=False)
     assert denied.status_code == 403
-    assert denied.headers["cache-control"] == "no-store"
     assert harness.store.get_session(current_token) is not None
 
     wrong = harness.post("/auth/password/change", {
