@@ -40,6 +40,11 @@ def test_legacy_basic_auth_requires_credentials_when_both_are_configured(monkeyp
 def test_legacy_basic_auth_partial_configuration_fails_closed_but_health_stays_public(monkeypatch):
     monkeypatch.setattr(main.config, "AUTH_USERNAME", "operator")
     monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
+    from app.identity import IdentityStore
+    monkeypatch.setattr(
+        main.app.state, "identity_store",
+        IdentityStore(tmp_path / "identity-mode.sqlite3"), raising=False,
+    )
     monkeypatch.setattr(main.service, "status", lambda: {"status": "ok"})
     monkeypatch.setattr(main.limits_monitor, "status", lambda: {"status": "ok"})
 
@@ -54,7 +59,7 @@ def test_legacy_basic_auth_partial_configuration_fails_closed_but_health_stays_p
 
 
 
-def test_identity_mode_fails_closed_until_full_route_cutover_is_enabled(monkeypatch):
+def test_identity_mode_protects_product_routes_and_exposes_only_staged_auth_pages(monkeypatch, tmp_path):
     monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
     monkeypatch.setattr(main.config, "AUTH_USERNAME", "")
     monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
@@ -63,9 +68,8 @@ def test_identity_mode_fails_closed_until_full_route_cutover_is_enabled(monkeypa
 
     client = TestClient(main.app)
     dashboard = client.get("/")
-    assert dashboard.status_code == 503
-    assert "not enabled" in dashboard.json()["detail"].lower()
-    assert client.get("/api/odds").status_code == 503
+    assert dashboard.status_code == 401
+    assert client.get("/api/odds").status_code == 401
 
     # Only the separately protected identity entry points are enabled in this
     # staged mode; the detailed provider health payload is not public.
@@ -94,8 +98,7 @@ def test_identity_mode_never_falls_back_to_configured_legacy_basic_credentials(m
 
     client = TestClient(main.app)
     response = client.get("/", auth=("operator", "legacy-secret"))
-    assert response.status_code == 503
-    assert "not enabled" in response.json()["detail"].lower()
+    assert response.status_code == 401
 
 
 
