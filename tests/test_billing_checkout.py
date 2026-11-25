@@ -240,7 +240,7 @@ def test_customer_portal_does_not_accept_untrusted_customer_ids(billing_harness,
 def test_stripe_api_client_rejects_non_test_secret_without_network(monkeypatch):
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_live_do_not_use")
     monkeypatch.setattr(
-        stripe_api, "urlopen",
+        stripe_api, "_open_stripe_url",
         lambda *args, **kwargs: pytest.fail("network must not be called for live credentials"),
     )
     with pytest.raises(stripe_api.StripeAPIError):
