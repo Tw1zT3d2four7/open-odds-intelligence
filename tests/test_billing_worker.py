@@ -143,10 +143,11 @@ def test_worker_reconciles_invoice_payment_state_without_granting_access(tmp_pat
     assert second["updated"] == 1
     with store.connect() as db:
         row = db.execute(
-            "SELECT status, amount_paid FROM billing_invoices WHERE stripe_invoice_id='in_invoice'"
+            "SELECT status, amount_paid, payment_failed_at FROM billing_invoices WHERE stripe_invoice_id='in_invoice'"
         ).fetchone()
     assert row["status"] == "open"
     assert row["amount_paid"] == 0
+    assert row["payment_failed_at"] == "2026-11-26T00:00:00+00:00"
 
     enqueue("evt_invoice_old", "invoice.paid", 1795640000, 2500)
     third = process_pending_stripe_events(store)
