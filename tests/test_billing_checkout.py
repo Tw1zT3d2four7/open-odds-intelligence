@@ -1,5 +1,9 @@
 """Security and server-side price selection tests for hosted Stripe billing."""
+import hashlib
+import hmac
 import json
+import time
+
 import pytest
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
@@ -7,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app import config, stripe_api
 from app.billing_worker import process_pending_stripe_events
+from app.billing_routes import router as billing_webhook_router
 from app.dependencies import get_identity_store, get_rate_limiter, require_authenticated_csrf, require_subscriber
 from app.identity import IdentityStore
 from app.identity_routes import router
@@ -33,6 +38,7 @@ def billing_harness(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STRIPE_PRICE_YEARLY_ID", "price_YearlyCaseSensitive")
     app = FastAPI()
     app.include_router(router)
+    app.include_router(billing_webhook_router)
     app.dependency_overrides[get_identity_store] = lambda: store
     limiter = SQLiteRateLimiter(tmp_path / "rate-limit.sqlite3", hash_key=b"test-rate-limit-key-material-32bytes")
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
@@ -156,10 +162,20 @@ def test_checkout_to_subscription_webhook_reconciliation_never_grants_entitlemen
             }]},
         }},
     }
-    store.record_stripe_webhook_event(
-        event["id"], event["type"], False,
-        json.dumps(event, separators=(",", ":")).encode("utf-8"),
+    payload = json.dumps(event, separators=(",", ":")).encode("utf-8")
+    timestamp = int(time.time())
+    signature = hmac.new(
+        config.STRIPE_WEBHOOK_SECRET.encode("ascii"),
+        str(timestamp).encode("ascii") + b"." + payload,
+        hashlib.sha256,
+    ).hexdigest()
+    webhook = client.post(
+        "/webhooks/stripe",
+        content=payload,
+        headers={"stripe-signature": f"t={timestamp},v1={signature}"},
     )
+    assert webhook.status_code == 200
+    assert webhook.json()["received"] is True
     worker_result = process_pending_stripe_events(store, limit=10)
     assert worker_result["created"] == 1
     assert store.billing_checkout_pending(identity_id) is False
