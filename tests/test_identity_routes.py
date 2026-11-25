@@ -1014,3 +1014,29 @@ def test_subscriber_password_change_requires_csrf_and_revokes_all_sessions(tmp_p
         ).fetchone()
     assert event["actor_identity_id"] == identity_id
     assert event["metadata_json"] == "{}"
+
+
+def test_subscriber_password_change_is_rate_limited_by_identity(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    identity_id = harness.store.create_subscriber(
+        "password-rate@example.test", "correct horse battery"
+    )
+    challenge = harness.store.create_email_verification_challenge("password-rate@example.test")
+    assert harness.store.consume_email_verification_challenge(challenge) is True
+    login = harness.post("/auth/login", {
+        "email": "password-rate@example.test",
+        "password": "correct horse battery",
+    })
+    assert login.status_code == 200
+    payload = {
+        "current_password": "incorrect current password",
+        "new_password": "a completely new secure password",
+    }
+    for _ in range(5):
+        response = harness.post("/auth/password/change", payload)
+        assert response.status_code == 401
+    limited = harness.post("/auth/password/change", payload)
+    assert limited.status_code == 429
+    assert int(limited.headers["Retry-After"]) > 0
+    active_token = harness.client.cookies.get("__Host-ooi_subscriber")
+    assert harness.store.get_session(active_token) is not None

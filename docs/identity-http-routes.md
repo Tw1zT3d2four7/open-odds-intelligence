@@ -29,6 +29,7 @@
 | POST | `/auth/verify-email` | Public + CSRF | Consumes a one-time email verification challenge. |
 | POST | `/auth/password-reset/request` | Public + CSRF | Requests a recovery email with a generic response. |
 | POST | `/auth/password-reset/consume` | Public + CSRF | Consumes a one-time recovery challenge and revokes all account sessions. |
+| POST | `/auth/password/change` | Subscriber + CSRF | Requires the current password; atomically updates the password, invalidates outstanding reset links, revokes all sessions, clears local cookies, and records a secret-free self-attributed audit event. |
 | POST | `/auth/login` | Public + CSRF | Subscriber password login; verified email is required by the identity store. |
 | POST | `/auth/logout` | Subscriber + CSRF | Revokes only the subscriber session and clears its cookie. |
 | POST | `/admin/auth/login` | Public + CSRF | Administrator password plus TOTP or single-use recovery code. |
@@ -45,6 +46,7 @@ Public registration can create only a subscriber. Administrator provisioning rem
 - All state-changing routes require the HTTPS same-origin double-submit CSRF cookie/header pair.
 - Subscriber and administrator sessions use separate host-only Secure cookies. Cross-class cookies cannot satisfy the other account type's dependencies.
 - Successful login revokes any prior cookie session in that account-class slot before issuing a fresh opaque session.
+- Subscriber password changes require the current password and CSRF proof, are rate-limited by IP and internal identity ID, invalidate outstanding password-reset links, atomically update the Argon2 hash and revoke every active session, then clear the current session and CSRF cookies. The audit event contains no password or email.
 - Administrator sessions are created only after a fresh TOTP or single-use recovery code is accepted. The identity store consumes the MFA proof atomically with session creation.
 - Registration, login, verification resend, and password-reset request responses avoid disclosing whether an account exists or is verified.
 - Rate limits use atomic persistent IP and account/destination buckets. Verification and password-reset email requests include a 60-second per-destination cooldown and a daily cap. Bucket values are HMAC-hashed before persistence.
@@ -69,7 +71,7 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Current activation boundary
 
-The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all 28 routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy. Subscriber and administrator authentication dependencies set `Cache-Control: no-store` and `Pragma: no-cache` before session or CSRF validation, so rejected authentication responses are non-cacheable as well as successful responses.
+The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all 29 routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy. Subscriber and administrator authentication dependencies set `Cache-Control: no-store` and `Pragma: no-cache` before session or CSRF validation, so rejected authentication responses are non-cacheable as well as successful responses.
 
 Verification and password-reset requests now enqueue messages in the versioned identity database. Recipient addresses and challenge links are encrypted with a dedicated Fernet key. A background worker claims messages with atomic leases, reuses stable Resend idempotency keys, retries only transient failures with bounded backoff, and discards messages whose one-time challenge has expired or already been consumed. The worker runs only in identity mode. Tests use a fake sender and never contact Resend.
 

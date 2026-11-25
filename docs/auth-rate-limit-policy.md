@@ -25,6 +25,7 @@ These are the active conservative starting values for a small self-hosted deploy
 | Resend email verification | 5 / hour | 3 / hour | Always return a generic response; do not reveal whether an address is registered. |
 | Request password reset | 10 / hour | 3 / hour | Same generic response for known and unknown accounts. |
 | Consume password reset | 10 / hour | 5 / hour | Token is one-time and expires; password policy still enforced. |
+| Subscriber password change | 10 / 15 min | 5 / 15 min | Requires a verified subscriber session, current password, and CSRF; success revokes every session. |
 | Consume email verification | 10 / hour | 5 / hour | Token is one-time and expires. |
 | Admin bootstrap | Not an HTTP route | Not an HTTP route | Keep the private interactive one-time operator command; never expose bootstrap over the web. |
 
@@ -46,7 +47,7 @@ Notation: maximum requests per fixed-window duration. Both dimensions must be ch
 ## Implementation notes and limitations
 
 - `SQLiteRateLimiter.consume_many()` uses a transaction and `BEGIN IMMEDIATE` to atomically check all dimensions and increment counters.
-- Route integration is active for subscriber login, administrator login, registration, verification resend/consume, and password-reset request/consume. The administrator login bucket covers both TOTP and recovery-code attempts.
+- Route integration is active for subscriber login, administrator login, registration, verification resend/consume, password-reset request/consume, and authenticated subscriber password changes. Password changes use an IP bucket of 10 per 15 minutes and an identity bucket of 5 per 15 minutes, keyed by internal identity ID rather than email. The administrator login bucket covers both TOTP and recovery-code attempts.
 - Bucket identifiers are HMAC-SHA256 digests using RATE_LIMIT_HASH_KEY; the key must be configured with at least 32 bytes.
 - The rate-limit database is the separate accounts database, not the odds-history database.
 - The current limiter uses fixed windows. A request burst can occur at a window boundary; if observed abuse warrants it, consider a token-bucket/sliding-window implementation as a separately tested change.
