@@ -51,12 +51,12 @@ def test_read_and_simulation_routes_require_subscriber_entitlement():
         assert classify_route(method, path) == "subscriber_entitled"
 
 
-def test_health_is_the_only_public_target_route():
+def test_health_and_signed_webhook_are_the_only_public_target_routes():
     public = [
         key for key, access_class in ROUTE_ACCESS_POLICY.items()
         if access_class == "public_minimal"
     ]
-    assert public == [("GET", "/api/health")]
+    assert set(public) == {("GET", "/api/health"), ("POST", "/webhooks/stripe")}
 
 
 def test_framework_schema_and_interactive_docs_are_not_implicitly_public():
