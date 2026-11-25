@@ -132,3 +132,59 @@ def test_legacy_basic_credentials_do_not_expose_identity_pages(monkeypatch, path
     monkeypatch.setattr(main.config, "AUTH_PASSWORD", "legacy-secret")
     client = TestClient(main.app)
     assert client.get(path, auth=("operator", "legacy-secret")).status_code == 404
+
+
+
+def test_identity_mode_product_api_requires_a_server_side_entitlement(monkeypatch, tmp_path):
+    import pyotp
+    from cryptography.fernet import Fernet
+    from app.auth import SUBSCRIBER_COOKIE
+    from app.identity import IdentityStore
+
+    monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
+    monkeypatch.setattr(
+        main.config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
+    )
+    store = IdentityStore(tmp_path / "entitlement-http.sqlite3")
+    monkeypatch.setattr(main.app.state, "identity_store", store, raising=False)
+
+    subscriber_id = store.create_subscriber(
+        "product-user@example.test", "a strong product user password"
+    )
+    verification = store.create_email_verification_challenge("product-user@example.test")
+    assert store.consume_email_verification_challenge(verification) is True
+    subscriber_token, _ = store.create_session(subscriber_id)
+
+    monkeypatch.setattr(main.service, "events", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main.service, "status", lambda: {})
+
+    client = TestClient(main.app)
+    client.cookies.set(SUBSCRIBER_COOKIE, subscriber_token)
+    denied = client.get("/api/odds")
+    assert denied.status_code == 403
+
+    admin_id = store.provision_administrator(
+        "product-admin@example.test", "a strong product admin password"
+    )
+    uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.parse_uri(uri)
+    store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    store.set_subscriber_entitlements(
+        subscriber_id, ["odds"], actor_identity_id=admin_id
+    )
+
+    allowed = client.get("/api/odds")
+    assert allowed.status_code == 200
+    assert allowed.json()["events"] == []
+
+
+def test_legacy_product_requests_do_not_initialize_identity_storage(monkeypatch):
+    monkeypatch.setattr(main.config, "AUTH_MODE", "legacy_basic")
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
+    monkeypatch.delattr(main.app.state, "identity_store", raising=False)
+    client = TestClient(main.app)
+
+    response = client.get("/api/odds")
+    assert response.status_code == 200
+    assert not hasattr(main.app.state, "identity_store")
