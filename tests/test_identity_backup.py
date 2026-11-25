@@ -31,13 +31,13 @@ def test_encrypted_identity_backup_and_restore_round_trip(tmp_path, monkeypatch)
 
     backup = tmp_path / "backups" / "identity.sqlite3.fernet"
     result = create_encrypted_backup(source, backup)
-    assert result["schema_version"] == 12
+    assert result["schema_version"] == 13
     assert backup.stat().st_mode & 0o777 == 0o600
     assert backup.parent.stat().st_mode & 0o777 == 0o700
     assert b"backup-user@example.test" not in backup.read_bytes()
 
     inspected = inspect_encrypted_backup(backup)
-    assert inspected["schema_version"] == 12
+    assert inspected["schema_version"] == 13
 
     restored = tmp_path / "restored" / "accounts.sqlite3"
     result = restore_encrypted_backup(
@@ -104,8 +104,8 @@ def test_backup_publication_failure_never_leaves_a_partial_final_file(
 
     monkeypatch.setattr(identity_backup.os, "link", original_link)
     result = create_encrypted_backup(source, destination)
-    assert result["schema_version"] == 12
-    assert inspect_encrypted_backup(destination)["schema_version"] == 12
+    assert result["schema_version"] == 13
+    assert inspect_encrypted_backup(destination)["schema_version"] == 13
 
 
 def test_backup_preserves_existing_parent_permissions_and_rejects_shared_writable_dirs(
@@ -155,7 +155,7 @@ def test_restore_creates_encrypted_pre_restore_snapshot(tmp_path, monkeypatch):
     pre_restore = Path(result["pre_restore_backup"])
     assert pre_restore.exists()
     assert pre_restore.stat().st_mode & 0o777 == 0o600
-    assert inspect_encrypted_backup(pre_restore)["schema_version"] == 12
+    assert inspect_encrypted_backup(pre_restore)["schema_version"] == 13
 
     restored_store = IdentityStore(target)
     with restored_store.connect() as db:
@@ -311,7 +311,7 @@ def test_backup_and_restore_cli_requires_explicit_offline_apply(tmp_path, monkey
     backups = list((source.parent / "backups").glob("identity-*.sqlite3.fernet"))
     assert len(backups) == 1
     backup = backups[0]
-    assert inspect_encrypted_backup(backup)["schema_version"] == 12
+    assert inspect_encrypted_backup(backup)["schema_version"] == 13
 
     target = tmp_path / "target" / "accounts.sqlite3"
     target_store, old_identity_id = _identity_store(target)
@@ -353,7 +353,7 @@ def test_backup_and_restore_cli_requires_explicit_offline_apply(tmp_path, monkey
     assert [row["email"] for row in restored] == ["backup-user@example.test"]
     pre_restore = list((target.parent / "backups").glob("identity-pre-restore-*.sqlite3.fernet"))
     assert len(pre_restore) == 1
-    assert inspect_encrypted_backup(pre_restore[0])["schema_version"] == 12
+    assert inspect_encrypted_backup(pre_restore[0])["schema_version"] == 13
 
 
 def test_backup_refuses_odds_history_database(tmp_path, monkeypatch):
