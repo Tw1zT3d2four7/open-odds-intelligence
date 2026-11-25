@@ -439,10 +439,16 @@ def subscriber_billing_summary(
     response.headers["Pragma"] = "no-cache"
     try:
         summary = store.subscriber_billing_summary(session["identity_id"])
+        try:
+            _public_origin()
+            public_origin_ready = True
+        except HTTPException:
+            public_origin_ready = False
         test_mode_ready = (
             isinstance(config.STRIPE_SECRET_KEY, str)
-            and config.STRIPE_SECRET_KEY.startswith("sk_test_")
+            and re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
             and not config.STRIPE_WEBHOOK_LIVEMODE
+            and public_origin_ready
         )
         checkout_ready = bool(
             config.STRIPE_CHECKOUT_ENABLED and test_mode_ready
