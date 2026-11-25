@@ -13,13 +13,18 @@ from .identity import IdentityStore
 from .rate_limit import SQLiteRateLimiter
 
 
-def get_identity_store(request: Request) -> IdentityStore:
+def get_identity_store(
+    request: Request,
+    response: Response = None,
+) -> IdentityStore:
     """Return the app-scoped identity store, creating it only on first use.
 
     Tests and future application wiring may inject an already-created store
     through app.state.identity_store. Initialization failures fail closed and
     never expose database paths or exception details to the client.
     """
+    if response is not None:
+        _set_no_store(response)
     store = getattr(request.app.state, "identity_store", None)
     if store is not None:
         return store
