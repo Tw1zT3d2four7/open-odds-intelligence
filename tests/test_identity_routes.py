@@ -674,11 +674,11 @@ def test_admin_subscriber_status_api_requires_mfa_csrf_and_records_actor(tmp_pat
     assert login.status_code == 200
 
     denied = harness.post(path, {
-        "is_active": False, "reason": "Support approved temporary suspension"
+        "is_active": False, "reason_code": "support_request"
     }, csrf=False)
     assert denied.status_code == 403
     changed = harness.post(path, {
-        "is_active": False, "reason": "Support approved temporary suspension"
+        "is_active": False, "reason_code": "support_request"
     })
     assert changed.status_code == 200
     assert changed.headers["cache-control"] == "no-store"
