@@ -46,7 +46,23 @@ from .email_queue import TransactionalEmailQueue, validate_email_queue_configura
 from .rate_limit import SQLiteRateLimiter, request_peer_ip
 
 logger = logging.getLogger(__name__)
-router = APIRouter(include_in_schema=False)
+
+
+def _set_no_store_headers(response: Response) -> None:
+    """Prevent browsers and intermediaries caching any identity-route response.
+
+    Router-level execution ensures headers are present even when authentication,
+    CSRF, validation, or authorization dependencies reject a request before the
+    endpoint function itself runs.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
+router = APIRouter(
+    include_in_schema=False,
+    dependencies=[Depends(_set_no_store_headers)],
+)
 
 _AUTH_PAGE = Path(__file__).resolve().parent.parent / "web" / "auth.html"
 _ADMIN_PAGE = Path(__file__).resolve().parent.parent / "web" / "admin.html"
