@@ -823,3 +823,102 @@ def test_email_provider_half_open_probe_is_exclusive_across_workers(tmp_path, mo
 
     now[0] += timedelta(minutes=1, seconds=1)
     assert store.claim_email_provider_send() is True
+
+
+
+def _mfa_admin(store, email="entitlement-admin@example.com"):
+    import pyotp
+
+    admin_id = store.provision_administrator(email, "an entitlement admin password")
+    uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.parse_uri(uri)
+    store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    return admin_id
+
+
+def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "entitled@example.com", "a strong subscriber password"
+    )
+    assert store.active_subscriber_entitlements(subscriber_id) == []
+    assert store.has_subscriber_entitlement(subscriber_id, "odds") is False
+
+    other_subscriber = store.create_subscriber(
+        "other-entitled@example.com", "another strong subscriber password"
+    )
+    with pytest.raises(ValueError, match="separate administrator"):
+        store.set_subscriber_entitlements(
+            subscriber_id, ["odds"], actor_identity_id=other_subscriber
+        )
+
+    admin_id = _mfa_admin(store)
+    grants = store.set_subscriber_entitlements(
+        subscriber_id, ["odds", "dashboard"], actor_identity_id=admin_id
+    )
+    assert grants == ["dashboard", "odds"]
+    assert store.active_subscriber_entitlements(subscriber_id) == grants
+    assert store.has_subscriber_entitlement(subscriber_id, "odds") is True
+    assert store.has_subscriber_entitlement(subscriber_id, "arbitrage") is False
+
+    with store.connect() as db:
+        event = db.execute(
+            """SELECT actor_identity_id, event_type, metadata_json
+               FROM security_audit_events
+               WHERE subject_identity_id=? AND event_type='subscriber.entitlements_updated'
+               ORDER BY occurred_at DESC LIMIT 1""",
+            (subscriber_id,),
+        ).fetchone()
+    assert event["actor_identity_id"] == admin_id
+    assert event["event_type"] == "subscriber.entitlements_updated"
+    assert '"dashboard"' in event["metadata_json"]
+    assert "entitled@example.com" not in event["metadata_json"]
+
+
+def test_subscriber_entitlement_expiry_and_replacement_are_enforced(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app import identity as identity_module
+    import pyotp
+
+    now = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+    monkeypatch.setattr(identity_module, "_now", lambda: now[0])
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "expiry@example.com", "a strong expiry password"
+    )
+    admin_id = _mfa_admin(store, "expiry-admin@example.com")
+    store.set_subscriber_entitlements(
+        subscriber_id, ["odds"], actor_identity_id=admin_id,
+        expires_at=now[0] + timedelta(hours=1),
+    )
+    assert store.has_subscriber_entitlement(subscriber_id, "odds") is True
+
+    now[0] += timedelta(hours=2)
+    assert store.has_subscriber_entitlement(subscriber_id, "odds") is False
+    assert store.active_subscriber_entitlements(subscriber_id) == []
+
+    store.set_subscriber_entitlements(
+        subscriber_id, ["dashboard"], actor_identity_id=admin_id
+    )
+    assert store.has_subscriber_entitlement(subscriber_id, "odds") is False
+    assert store.has_subscriber_entitlement(subscriber_id, "dashboard") is True
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [
+        ["unknown-feature"],
+        ["odds", "odds"],
+        ["odds", "x" * 300],
+    ],
+)
+def test_subscriber_entitlement_updates_reject_unapproved_feature_keys(tmp_path, keys):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "invalid-entitlement@example.com", "a strong invalid entitlement password"
+    )
+    admin_id = _mfa_admin(store, "invalid-entitlement-admin@example.com")
+    with pytest.raises(ValueError, match="entitlement"):
+        store.set_subscriber_entitlements(
+            subscriber_id, keys, actor_identity_id=admin_id
+        )
