@@ -212,7 +212,7 @@ Build subscriber settings for channels, categories, sports/leagues, thresholds, 
 
 ### Phase 9 — Billing
 
-- [x] Add the additive v9 billing persistence foundation: Stripe customer mapping, subscription lifecycle snapshot, and a unique webhook-event ledger with payload fingerprints, processing states, and bounded attempt counters. Backup/restore schema validation includes all billing tables.
+- [x] Add the additive v10 billing persistence foundation: Stripe customer mapping, subscription lifecycle snapshots, a unique webhook-event ledger, payload fingerprints, bounded attempt counters, hashed processing leases, lease-expiry recovery, and stale-worker rejection. Encrypted backup/restore schema validation includes all billing tables.
 - [ ] Implement verified Stripe webhook intake and atomic/idempotent event processing, with test/live-mode separation and reconciliation.
 - [ ] Implement the approved Stripe integration: hosted Checkout, hosted Customer Portal, signed webhook verification, idempotent event processing, subscription reconciliation, renewals, cancellation, failed-payment retries, configurable grace periods, refunds/adjustments, and plan changes. Keep application entitlements authoritative for access. Complete Stripe test-mode and staging acceptance before any production activation.
 
