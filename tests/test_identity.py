@@ -841,6 +841,92 @@ def _mfa_admin(store, monkeypatch, email="entitlement-admin@example.com"):
     return admin_id
 
 
+
+def test_subscriber_suspension_atomically_revokes_sessions_and_preserves_account_data(
+    tmp_path, monkeypatch
+):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "lifecycle@example.test", "a strong lifecycle password 123"
+    )
+    _verify_subscriber(store, "lifecycle@example.test")
+    admin_id = _mfa_admin(store, monkeypatch, "lifecycle-admin@example.test")
+    store.set_subscriber_entitlements(
+        subscriber_id, ["dashboard", "odds"], actor_identity_id=admin_id
+    )
+    first_token, _ = store.create_session(subscriber_id)
+    second_token, _ = store.create_session(subscriber_id)
+
+    suspended = store.set_subscriber_status(
+        subscriber_id, is_active=False, actor_identity_id=admin_id,
+        reason="Customer requested temporary account suspension",
+    )
+    assert suspended == {
+        "identity_id": subscriber_id, "is_active": False,
+        "revoked_sessions": 2, "changed": True,
+    }
+    assert store.get_session(first_token) is None
+    assert store.get_session(second_token) is None
+    assert store.active_subscriber_entitlements(subscriber_id) == []
+
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT is_active, email_verified_at FROM identities WHERE id=?",
+            (subscriber_id,),
+        ).fetchone()
+        event = db.execute(
+            """SELECT actor_identity_id, event_type, metadata_json
+               FROM security_audit_events
+               WHERE subject_identity_id=? AND event_type='subscriber.suspended'""",
+            (subscriber_id,),
+        ).fetchone()
+    assert row["is_active"] == 0
+    assert row["email_verified_at"] is not None
+    assert event["actor_identity_id"] == admin_id
+    assert event["event_type"] == "subscriber.suspended"
+    assert '"revoked_sessions":2' in event["metadata_json"]
+    assert "lifecycle@example.test" not in event["metadata_json"]
+
+    reactivated = store.set_subscriber_status(
+        subscriber_id, is_active=True, actor_identity_id=admin_id,
+        reason="Support approved account reactivation",
+    )
+    assert reactivated["changed"] is True
+    assert reactivated["is_active"] is True
+    assert reactivated["revoked_sessions"] == 0
+    assert store.active_subscriber_entitlements(subscriber_id) == ["dashboard", "odds"]
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT is_active, email_verified_at FROM identities WHERE id=?",
+            (subscriber_id,),
+        ).fetchone()
+    assert row["is_active"] == 1
+    assert row["email_verified_at"] is not None
+
+
+def test_subscriber_status_change_rejects_unauthorized_actor_and_invalid_reason(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    subscriber_id = store.create_subscriber(
+        "lifecycle-deny@example.test", "a strong lifecycle deny password"
+    )
+    other_subscriber = store.create_subscriber(
+        "lifecycle-other@example.test", "a strong lifecycle other password"
+    )
+    with pytest.raises(ValueError, match="MFA-enrolled administrator"):
+        store.set_subscriber_status(
+            subscriber_id, is_active=False, actor_identity_id=other_subscriber,
+            reason="Support requested suspension",
+        )
+    with pytest.raises(ValueError, match="reason"):
+        store.set_subscriber_status(
+            subscriber_id, is_active=False, actor_identity_id="some-admin",
+            reason="short",
+        )
+    with store.connect() as db:
+        row = db.execute("SELECT is_active FROM identities WHERE id=?", (subscriber_id,)).fetchone()
+    assert row["is_active"] == 1
+
+
 def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_path, monkeypatch):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     subscriber_id = store.create_subscriber(
