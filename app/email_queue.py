@@ -223,11 +223,12 @@ class TransactionalEmailQueue:
                                                THEN X'' ELSE encrypted_payload END,
                        sent_at=CASE WHEN ?='sent' THEN ? ELSE sent_at END,
                        updated_at=?
-                   WHERE id=? AND state='leased' AND lease_token_hash=?""",
+                   WHERE id=? AND state='leased' AND lease_token_hash=?
+                     AND lease_expires_at>?""",
                 (
                     state, _timestamp(now + timedelta(seconds=max(0, delay_seconds))),
                     failure_code, failure_code, state, state, _timestamp(now),
-                    _timestamp(now), item["id"], lease_hash,
+                    _timestamp(now), item["id"], lease_hash, _timestamp(now),
                 ),
             )
             db.commit()
