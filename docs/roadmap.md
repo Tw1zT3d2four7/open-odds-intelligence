@@ -131,7 +131,8 @@ Still required before Phase 1 is complete:
 - [x] Add encrypted identity-database backup/restore tooling with explicit offline restore confirmation, full version-aware schema/migration and foreign-key validation (including optional rate-limit buckets), bounded encrypted snapshots, encrypted pre-restore snapshots, and odds-database protection; preserve caller-owned directory permissions, reject group/world-writable destinations, and keep backup files mode 0600. CLI tests verify inspection-only default behavior, require both `--apply` and `--confirm-offline` for replacement, and prove a wrong key leaves the restore target untouched.
 - [x] Document the non-production backup/restore and key-recovery drill procedure; automated CLI tests cover inspection-only defaults, explicit offline apply, pre-restore snapshots, and wrong-key no-mutation behavior.
 - [ ] Execute the backup/restore and key-recovery drill in a non-production deployment; the tooling has not been run against any live volume.
-- [ ] Test the complete identity flow in a non-production deployment matching the real TLS/reverse-proxy shape.
+- [x] Draft a non-production identity acceptance checklist covering isolated Compose/volumes, TLS and proxy topology, subscriber/admin flows, route policy, email queue, rate limits, and backup/restore.
+- [ ] Execute the checklist in a non-production deployment matching the real TLS/reverse-proxy shape; record actual Caddy-to-app peer topology before configuring trusted proxy CIDRs.
 
 **Exit criteria:** Subscribers cannot access admin routes or APIs; public registration cannot create admins; admin sessions require MFA; all route authorization and entitlement checks pass; existing dashboard, odds behavior, alerts, and history remain intact.
 
