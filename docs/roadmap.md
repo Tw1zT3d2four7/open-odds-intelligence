@@ -141,6 +141,7 @@ Still required before Phase 1 is complete:
 - [x] Protect the shell with an active administrator session; subscriber sessions and unauthenticated requests are rejected.
 - [x] Build a protected, no-store Admin Overview API with a strict allowlist of live odds, freshness, bookmaker, and alert metrics; omit provider keys and raw errors.
 - [x] Add Users, manual feature access (Subscriptions), and Security views backed by reviewed, MFA-admin-only APIs.
+- [x] Add the protected subscriber account overview at /account with a self-only account summary, active feature access, nonce-protected scripts, no-store responses, and secure subscriber sign-out.
 - [x] Draft the provider-neutral notification architecture for verified email, an Open Odds-owned Discord bot, and consent-based SMS, including subscriber preferences, delivery outbox/retries, opt-out controls, and admin operations; no provider integration is authorized by the draft.
 - [ ] Approve notification providers, Discord linking/delivery mode, preference defaults, and rollout gates before implementation.
 - [ ] Add Notifications, Platform, and Communications views backed by reviewed admin APIs.
