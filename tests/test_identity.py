@@ -41,7 +41,7 @@ def test_identity_schema_initialization_is_idempotent(tmp_path):
     first.initialize()
     with first.connect() as db:
         versions = db.execute("SELECT version FROM schema_migrations").fetchall()
-    assert [row["version"] for row in versions] == [1, 2, 3, 4]
+    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5]
 
 
 def test_schema_refuses_a_newer_database_version(tmp_path):
@@ -798,3 +798,28 @@ def test_email_delivery_event_rejects_unreviewed_failure_metadata(tmp_path):
             provider="unreviewed-provider",
             provider_message_id="email-id",
         )
+
+
+
+def test_email_provider_half_open_probe_is_exclusive_across_workers(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app import identity as identity_module
+
+    now = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+    monkeypatch.setattr(identity_module, "_now", lambda: now[0])
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("person@example.com", "a strong password 123")
+    for _ in range(5):
+        store.record_email_delivery_event(
+            identity_id, "verification", "failed",
+            failure_code="provider_unavailable",
+        )
+
+    assert store.claim_email_provider_send() is False
+    now[0] += timedelta(minutes=11)
+    assert store.claim_email_provider_send() is True
+    # Only one concurrent worker may hold the half-open probe lease.
+    assert store.claim_email_provider_send() is False
+
+    now[0] += timedelta(minutes=1, seconds=1)
+    assert store.claim_email_provider_send() is True
