@@ -19,7 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import config
 from .auth import (
     ADMINISTRATOR_COOKIE,
-    CSRF_COOKIE,
     SUBSCRIBER_COOKIE,
     clear_csrf_cookie,
     clear_session_cookie,
@@ -254,6 +253,11 @@ def register_subscriber(
         return {"message": "If this address can be registered, a verification email will be sent."}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Registration is temporarily unavailable. Please try again later.",
+        ) from None
     try:
         token = store.create_email_verification_challenge(payload.email)
         if token:
