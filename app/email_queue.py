@@ -36,6 +36,11 @@ def _key_cipher() -> Fernet:
         ) from None
 
 
+def validate_email_queue_configuration() -> None:
+    """Fail before accepting a challenge when encrypted queue storage is unavailable."""
+    _key_cipher()
+
+
 class TransactionalEmailQueue:
     """Database-backed queue with short leases and bounded idempotent retries."""
 
@@ -116,6 +121,15 @@ class TransactionalEmailQueue:
                        updated_at=?
                    WHERE state IN ('pending', 'leased') AND attempt_count>=max_attempts""",
                 (stamp,),
+            )
+            db.execute(
+                """UPDATE transactional_email_queue
+                   SET state='failed', encrypted_payload=X'', lease_token_hash=NULL,
+                       lease_expires_at=NULL, last_failure_code='idempotency_window_elapsed',
+                       updated_at=?
+                   WHERE state IN ('pending', 'leased')
+                     AND idempotency_expires_at<=? AND challenge_expires_at>?""",
+                (stamp, stamp, stamp),
             )
             row = db.execute(
                 """SELECT * FROM transactional_email_queue
