@@ -617,7 +617,7 @@ def create_subscriber_checkout(
             )
         attempt_token = reservation["attempt_token"]
         origin = _public_origin()
-        checkout_expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+        checkout_expires_at = datetime.now(timezone.utc) + timedelta(minutes=35)
         checkout = stripe_api.stripe_request(
             "POST", "/checkout/sessions",
             params={
