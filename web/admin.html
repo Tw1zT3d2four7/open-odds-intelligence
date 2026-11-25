@@ -133,7 +133,7 @@ tbody tr:last-child td{border-bottom:0}
     <section class="view" id="view-subscriptions" hidden>
       <div class="panel">
         <h2>Manual feature access</h2>
-        <p>Grant or revoke individual feature entitlements for an active subscriber. These are operator-managed feature grants, not subscription plans or billing records.</p>
+        <p>Grant or revoke individual feature entitlements for an active subscriber. Saving replaces the subscriber’s current feature grants; one optional expiration applies to every selected grant. These are operator-managed grants, not subscription plans or billing records.</p>
         <div class="audit-controls">
           <label for="entitlement-identity">Subscriber identity ID</label>
           <input id="entitlement-identity" type="text" maxlength="128" autocomplete="off" placeholder="Copy from the Users directory">
@@ -195,7 +195,7 @@ tbody tr:last-child td{border-bottom:0}
   const labels = {
     overview:["Overview","Platform administration and security operations."],
     users:["Users","Subscriber account lifecycle and access."],
-    subscriptions:["Subscriptions","Plans, entitlements, and subscriber access."],
+    subscriptions:["Feature Access","Manual feature grants and expiration controls."],
     billing:["Billing","Payments and subscription lifecycle."],
     notifications:["Notifications","Delivery operations and channel health."],
     platform:["Platform","Provider status and operational controls."],
@@ -298,6 +298,7 @@ tbody tr:last-child td{border-bottom:0}
       if (!response.ok) throw new Error("Feature access lookup failed");
       const data = await response.json();
       const active = new Set(data.entitlements || []);
+      document.getElementById("entitlement-expiry").value = "";
       entitlementOptions.forEach(input => { input.checked = active.has(input.value); });
       entitlementLoadedIdentity = identityId;
       entitlementSave.disabled = false;
@@ -351,7 +352,11 @@ tbody tr:last-child td{border-bottom:0}
     if (event.key === "Enter") loadEntitlements();
   });
   entitlementIdentity.addEventListener("input", () => {
-    if (entitlementIdentity.value.trim() !== entitlementLoadedIdentity) entitlementSave.disabled = true;
+    if (entitlementIdentity.value.trim() !== entitlementLoadedIdentity) {
+      entitlementSave.disabled = true;
+      document.getElementById("entitlement-expiry").value = "";
+      entitlementOptions.forEach(input => { input.checked = false; });
+    }
   });
 
   let auditOffset = 0;
