@@ -665,10 +665,13 @@ def administrator_audit_events(
     dependencies=[Depends(require_administrator)],
 )
 def get_subscriber_entitlements(
+    response: Response,
     identity_id: str,
     _session: dict = Depends(require_administrator),
     store: IdentityStore = Depends(get_identity_store),
 ):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     try:
         entitlements = store.active_subscriber_entitlements(identity_id)
     except ValueError as exc:
@@ -687,9 +690,12 @@ def get_subscriber_entitlements(
 )
 def update_subscriber_entitlements(
     payload: EntitlementUpdateInput,
+    response: Response,
     session: dict = Depends(require_administrator),
     store: IdentityStore = Depends(get_identity_store),
 ):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     try:
         entitlements = store.set_subscriber_entitlements(
             payload.identity_id,
