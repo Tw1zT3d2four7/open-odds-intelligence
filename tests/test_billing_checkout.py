@@ -256,6 +256,22 @@ def test_customer_portal_requires_existing_local_customer_mapping(billing_harnes
     assert calls[0][1]["customer"] == "cus_testLinked"
 
 
+def test_customer_portal_is_rate_limited_before_provider_calls(billing_harness, monkeypatch):
+    client, store, identity_id = billing_harness
+    store.link_billing_customer(identity_id, "cus_portalRateLimit")
+    provider_calls = []
+
+    def fake_stripe(method, path, *, params=None, idempotency_key=None):
+        provider_calls.append(path)
+        return {"url": "https://billing.stripe.com/p/session/portal_rate_limit"}
+
+    monkeypatch.setattr(stripe_api, "stripe_request", fake_stripe)
+    responses = [client.post("/auth/billing/portal") for _ in range(11)]
+    assert all(response.status_code == 200 for response in responses[:10])
+    assert responses[10].status_code == 429
+    assert provider_calls == ["/billing_portal/sessions"] * 10
+
+
 def test_customer_portal_does_not_accept_untrusted_customer_ids(billing_harness, monkeypatch):
     client, store, identity_id = billing_harness
     store.link_billing_customer(identity_id, "cus_testLinked")
