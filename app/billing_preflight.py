@@ -52,6 +52,7 @@ def run_preflight() -> dict[str, object]:
             and re.fullmatch(r"sk_test_[A-Za-z0-9]+", config.STRIPE_SECRET_KEY)
         ),
         "test_webhook_mode": not bool(config.STRIPE_WEBHOOK_LIVEMODE),
+        "test_mode_acknowledged": bool(config.STRIPE_TEST_MODE_ACKNOWLEDGED),
         "webhook_storage": _webhook_storage_ready(),
         "public_https_origin": _public_https_origin_ready(),
         "checkout_switch": bool(config.STRIPE_CHECKOUT_ENABLED),
@@ -62,7 +63,7 @@ def run_preflight() -> dict[str, object]:
     }
     if not all(
         result[key]
-        for key in ("test_api_key", "test_webhook_mode", "webhook_storage", "public_https_origin")
+        for key in ("test_api_key", "test_webhook_mode", "test_mode_acknowledged", "webhook_storage", "public_https_origin")
     ):
         return result
 
@@ -88,6 +89,7 @@ def main() -> int:
     labels = (
         ("test_api_key", "Stripe API key is test-mode"),
         ("test_webhook_mode", "Webhook mode is test-mode"),
+        ("test_mode_acknowledged", "Operator explicitly acknowledged isolated test mode"),
         ("webhook_storage", "Webhook signature/encrypted storage configured"),
         ("public_https_origin", "Public application origin is HTTPS"),
         ("monthly_price", "Monthly recurring Price matches approved catalog"),
@@ -101,8 +103,8 @@ def main() -> int:
     print(f"[INFO] Read-only Stripe API requests: {result['provider_requests_made']}")
     print("No customer, Checkout Session, subscription, Portal session, or payment was created.")
     required = (
-        "test_api_key", "test_webhook_mode", "webhook_storage",
-        "public_https_origin", "monthly_price", "annual_price",
+        "test_api_key", "test_webhook_mode", "test_mode_acknowledged",
+        "webhook_storage", "public_https_origin", "monthly_price", "annual_price",
     )
     return 0 if all(result[key] for key in required) else 1
 
