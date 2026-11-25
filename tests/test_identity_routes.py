@@ -49,6 +49,7 @@ class IdentityRouteHarness:
     def _csrf(self):
         response = self.client.get("/auth/csrf")
         assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
 
     def post(self, path, payload, *, csrf=True):
         headers = {"origin": "https://ooi.example"}
