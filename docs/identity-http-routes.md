@@ -82,3 +82,8 @@ The default `legacy_basic` mode remains the production compatibility boundary an
 The first Phase 2 deliverable is a distinct `/admin` workspace shell. It is served separately from the subscriber dashboard and is protected directly by the administrator session dependency. Subscriber cookies, missing sessions, and expired/revoked sessions cannot open it. The page is returned with `Cache-Control: no-store`, a restrictive same-origin Content Security Policy, frame denial, and no-referrer policy.
 
 The initial shell establishes the navigation and visual structure for Overview, Users, Subscriptions, Billing, Notifications, Platform, System Configuration, Communications, and Security. Sections that do not yet have completed protected APIs are explicitly marked as planned; the shell does not fabricate operational metrics or expose placeholder write controls. Administrator logout uses the existing CSRF-protected endpoint. The shell is available only in staged `AUTH_MODE=identity`; the default `legacy_basic` experience is unchanged.
+
+
+### Administrator subscriber directory
+
+- `GET /admin/subscribers` — administrator-only, MFA-backed, bounded read-only subscriber directory. Supports `limit` (1–100), `offset`, and a bounded `email_query`. Returns identity ID, email, active/verification state, creation time, and currently active entitlement keys only. Password hashes, sessions, recovery/verification challenges, and credential material are never returned. Responses are marked no-store.
