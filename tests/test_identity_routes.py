@@ -770,6 +770,7 @@ def test_admin_billing_overview_is_mfa_protected_aggregate_only_and_no_store(tmp
 
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_AdminReadinessCase")
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_LIVEMODE", False)
+    monkeypatch.setattr(config, "STRIPE_TEST_MODE_ACKNOWLEDGED", True)
     monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "whsec_testAdminReadinessSecret123")
     monkeypatch.setattr(
         config, "STRIPE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
