@@ -10,11 +10,23 @@ import re
 from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 class StripeAPIError(RuntimeError):
     """Sanitized provider failure safe to handle at an HTTP boundary."""
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    """Never forward the Stripe bearer token through an HTTP redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _open_stripe_url(request: Request, *, timeout: int):
+    """Open only the fixed Stripe API request without following redirects."""
+    return build_opener(_RejectRedirects).open(request, timeout=timeout)
 
 
 def stripe_request(method: str, path: str, *, params: dict | None = None,
@@ -50,7 +62,7 @@ def stripe_request(method: str, path: str, *, params: dict | None = None,
             method="GET",
         )
     try:
-        with urlopen(request, timeout=12) as response:
+        with _open_stripe_url(request, timeout=12) as response:
             final_url = urlsplit(response.geturl())
             if final_url.scheme != "https" or final_url.hostname != "api.stripe.com":
                 raise StripeAPIError("Stripe returned an unexpected API destination.")
