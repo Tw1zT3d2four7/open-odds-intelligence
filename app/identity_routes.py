@@ -42,6 +42,7 @@ from .email_delivery import (
     create_email_sender,
 )
 from .identity import IdentityStore
+from .billing_pricing import CURRENCY, MONTHLY_PRICE_CENTS, ANNUAL_PRICE_CENTS
 from .email_queue import TransactionalEmailQueue, validate_email_queue_configuration
 from .rate_limit import SQLiteRateLimiter, request_peer_ip
 
@@ -431,7 +432,22 @@ def subscriber_billing_summary(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     try:
-        return store.subscriber_billing_summary(session["identity_id"])
+        summary = store.subscriber_billing_summary(session["identity_id"])
+        summary["price_catalog"] = {
+            "currency": CURRENCY,
+            "monthly": {
+                "amount_cents": MONTHLY_PRICE_CENTS,
+                "interval": "month",
+                "recurring": True,
+            },
+            "annual": {
+                "amount_cents": ANNUAL_PRICE_CENTS,
+                "interval": "year",
+                "recurring": True,
+            },
+            "checkout_available": False,
+        }
+        return summary
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from None
     except Exception:
