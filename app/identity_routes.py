@@ -30,6 +30,7 @@ from .auth import (
 )
 from .dependencies import (
     get_identity_store,
+    get_odds_service,
     get_rate_limiter,
     require_administrator,
     require_authenticated_csrf,
@@ -560,6 +561,62 @@ def administrator_login(
     set_session_cookie(response, token, "administrator", max_age=4 * 60 * 60)
     issue_csrf_cookie(response)
     return {"ok": True}
+
+
+@router.get(
+    "/admin/overview",
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_overview(
+    response: Response,
+    _session: dict = Depends(require_administrator),
+    odds_service=Depends(get_odds_service),
+):
+    """Return a safe allowlist of live operational metrics to the Admin Console."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        status = odds_service.status()
+        if not isinstance(status, dict):
+            raise RuntimeError("Invalid service status response.")
+        freshness = []
+        for item in status.get("sport_freshness", []):
+            if not isinstance(item, dict):
+                continue
+            freshness.append({
+                "sport": str(item.get("sport") or "")[:80],
+                "freshness": str(item.get("freshness") or "unknown")[:24],
+                "last_updated": item.get("last_updated"),
+                "age_seconds": item.get("age_seconds"),
+                "event_count": max(0, int(item.get("event_count") or 0)),
+            })
+        return {
+            "providers": [
+                str(name)[:40] for name in status.get("providers", [])
+                if isinstance(name, str)
+            ],
+            "configured": bool(status.get("configured")),
+            "data_freshness": str(status.get("data_freshness") or "unknown")[:24],
+            "last_updated": status.get("last_updated"),
+            "stored_snapshots": max(0, int(status.get("stored_snapshots") or 0)),
+            "stored_events": max(0, int(status.get("stored_events") or 0)),
+            "stored_bookmakers": max(0, int(status.get("stored_bookmakers") or 0)),
+            "sports": freshness,
+            "alerts": {
+                "enabled": bool(status.get("alerts_enabled")),
+                "sent": max(0, int(status.get("alerts_sent") or 0)),
+                "last_sent": status.get("last_alert_at"),
+                "last_check": status.get("last_alert_check"),
+            },
+            "provider_error_present": bool(status.get("last_error")),
+            "alert_error_present": bool(status.get("last_alert_error") or status.get("alert_error")),
+        }
+    except Exception:
+        logger.exception("Administrator overview query failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Platform overview is temporarily unavailable.",
+        ) from None
 
 
 @router.get(
