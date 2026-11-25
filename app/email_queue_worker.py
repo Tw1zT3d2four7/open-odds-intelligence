@@ -6,7 +6,7 @@ import logging
 
 from . import config
 from .email_delivery import create_email_sender
-from .email_queue import TransactionalEmailQueue
+from .email_queue import TransactionalEmailQueue, validate_email_queue_configuration
 from .identity import IdentityStore
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,9 @@ async def email_delivery_loop() -> None:
     queue = TransactionalEmailQueue(store)
     while True:
         try:
+            # Never claim and permanently fail queued messages when the
+            # dedicated encryption key is missing or temporarily misconfigured.
+            validate_email_queue_configuration()
             sender = create_email_sender()
             if sender is None:
                 await asyncio.sleep(30)
