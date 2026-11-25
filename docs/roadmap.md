@@ -66,9 +66,22 @@ Do not expose unrestricted host filesystem or Docker socket access to the applic
 
 Proposed sections: Overview, Users, Subscriptions, Billing, Notifications, Platform, System Configuration, Communications, and Security. The interface should be a separate, professional administrative workspace consistent with the product's visual identity.
 
-### 2.10 Billing
+### 2.10 Billing — Stripe selected
 
-Stripe is a candidate, not selected. Use hosted checkout, verified signed webhooks, idempotent event handling, and server-side entitlement updates. Define renewals, cancellation, failures, refunds, grace periods, and plan changes before launch.
+Use **Stripe** as the payment processor. Keep payment handling hosted by Stripe rather than storing or processing card data in Open Odds Intelligence.
+
+- Use Stripe Checkout for initial subscription purchases and plan changes where appropriate.
+- Use the Stripe Customer Portal for subscriber payment-method updates, invoices/receipts, and self-service cancellation.
+- Verify webhook signatures; process events idempotently and tolerate out-of-order/replayed events.
+- Stripe is the payment source of truth; Open Odds Intelligence remains the authority for application access and server-side entitlements. Never activate paid access from a browser redirect alone.
+- Model subscription lifecycle states explicitly, including trial (only if later approved), active, past-due, grace-period, canceled, unpaid, and refunded/adjusted states as applicable.
+- Notify subscribers of failed payments, retry according to Stripe configuration, and use a documented, configurable grace period before paid entitlements are suspended. Preserve accounts and historical data when access is suspended.
+- Support monthly and annual billing. Annual discount amounts, final plan names/prices, trials, refund rules, grace-period length, and entitlement bundles remain open decisions and must be approved before launch.
+- Do not store card numbers, CVCs, or other raw payment credentials in our database, logs, audit records, or backups.
+
+### 2.11 Subscriber account experience
+
+Use one subscriber-facing account area on the existing domain, with clear sections for Overview, Subscription, Billing, Security, Notifications, Connected Services, and Alert History. Keep billing self-service simple through Stripe's hosted portal. Keep account identity, password/session controls, notification preferences, and connected-service authorization inside Open Odds Intelligence. Subscriber account routes must remain isolated from the private Admin Console and enforce self-only server-side authorization.
 
 ## 3. Current architecture findings
 
@@ -144,7 +157,7 @@ Still required before Phase 1 is complete:
 - [x] Add Users, manual feature access (Subscriptions), and Security views backed by reviewed, MFA-admin-only APIs.
 - [x] Add the protected subscriber account overview at /account with a self-only account summary, active feature access, nonce-protected scripts, no-store responses, and secure subscriber sign-out.
 - [x] Draft the provider-neutral notification architecture for verified email, an Open Odds-owned Discord bot, and consent-based SMS, including subscriber preferences, delivery outbox/retries, opt-out controls, and admin operations; no provider integration is authorized by the draft.
-- [ ] Approve notification providers, Discord linking/delivery mode, preference defaults, and rollout gates before implementation.
+- [ ] Complete detailed design approval for notification providers (including the SMS provider), Discord OAuth scopes/bot permissions and destination model, preference defaults, consent/opt-out wording, and rollout gates before provider integrations or subscriber-facing delivery are implemented. The high-level centralized-engine architecture and channel direction are approved.
 - [ ] Add Notifications, Platform, and Communications views backed by reviewed admin APIs.
 - [x] Draft the protected Environment Configuration manager design, including a separate host-side trust boundary, strict variable allowlist, staged validation, atomic publication, backups, rollback, audit, and explicit restart gates.
 - [ ] Review and approve the System Configuration manager design and initial variable allowlist before implementation; protected `.env` editing remains disabled until the host-side apply and restart architecture is approved.
@@ -166,7 +179,7 @@ The initial shell now includes working Security, Users, and manual Feature Acces
 - [x] Add a protected, read-only `/account` overview and subscriber-only `/auth/account` summary API; show only the signed-in subscriber's verified/active state and currently active feature grants.
 - [x] Implement subscriber-initiated password changes with current-password re-authentication, rate limits, CSRF protection, session revocation, invalidation of outstanding reset links, self-attributed audit events, and a confirmed password-change form on the account page.
 - [x] Draft the subscriber email-change security and delivery design, including verified-new-address-first semantics, old-address security notices, atomic outbox requirements, and migration/recovery tests; implementation remains gated on approval of notification timing, expiry, cancellation, and recovery behavior.
-- [ ] Approve the email-change workflow decisions before implementing the new schema, routes, queue purposes, and account UI.
+- [ ] Complete the detailed email-change workflow approval (verification expiry, old-address notice timing, cancellation, recovery, and failure handling) before implementing the new schema, routes, queue purposes, or account UI.
 - [ ] Design account closure after account-data retention rules are approved; do not implement deletion before that policy is settled.
 - [ ] Define account-data and account-closure retention rules before implementing deletion or automated retention.
 
@@ -178,7 +191,7 @@ Define the editable-setting allowlist/schema; implement masked secrets, strict a
 
 ### Phase 5 — Subscription plans and entitlements
 
-Define plans, entitlements, lifecycle, and limits; enforce access server-side in APIs and notification dispatch. Final names/prices/limits remain subject to approval.
+Define Free, Basic, and Premium as the initial proposed tier structure; final names, prices, entitlement bundles, limits, trials, and monthly/annual discount remain subject to explicit approval. Keep entitlements server-side and default-deny. Stripe is the selected payment processor, but plan lifecycle behavior and launch configuration must be tested in Stripe test mode and isolated staging before production use.
 
 ### Phase 6 — Centralized Notification Engine
 
@@ -197,11 +210,27 @@ Build subscriber settings for channels, categories, sports/leagues, thresholds, 
 
 ### Phase 9 — Billing
 
-Select payment provider; implement secure checkout, signed/idempotent webhooks, renewals, cancellation, failed payments, refunds, plan changes, and grace periods.
+Implement the approved Stripe integration: hosted Checkout, hosted Customer Portal, signed webhook verification, idempotent event processing, subscription reconciliation, renewals, cancellation, failed-payment retries, configurable grace periods, refunds/adjustments, and plan changes. Keep application entitlements authoritative for access. Complete Stripe test-mode and staging acceptance before any production activation.
 
 ### Phase 10 — Security, reliability, and launch readiness
 
 Complete tenant isolation, secret/configuration security review, notification abuse controls, queue recovery, backup/restore, concurrent-user testing, privacy/compliance review, monitoring, and operational runbooks. No public subscriber launch without explicit approval.
+
+## 4A. Approved subscriber-commerce and notification delivery sequence
+
+The high-level architecture and provider direction below are approved. Detailed provider settings, legal/compliance wording, production credentials, pricing, and launch activation remain separate gates.
+
+1. **Account security and subscriber self-service:** finish the account foundation, including password change/recovery, session visibility/revocation, security notices, and the separately gated email-change workflow. Add the account navigation structure without exposing unfinished controls.
+2. **Plans and entitlement model:** define Free/Basic/Premium candidate bundles, limits, lifecycle states, and server-side access checks. Manual administrator grants remain distinct from paid subscriptions.
+3. **Stripe billing:** integrate Checkout, Customer Portal, signed/idempotent webhooks, subscription reconciliation, failed-payment handling, and a configurable grace period. Use Stripe test mode first; never store card data.
+4. **Central notification engine:** implement one durable event/outbox/dispatch pipeline with entitlement checks, subscriber preferences, idempotency, bounded retries, provider rate limits, delivery history, test mode, and global/channel pause controls. Preserve the existing odds-alert lifecycle and isolate delivery failures from odds processing.
+5. **Email delivery:** use the already-selected Resend transactional email provider for account/security and opted-in alert delivery, with verified sender configuration, bounce/suppression handling, and unsubscribe controls where applicable.
+6. **Official Discord integration:** use the first-party Open Odds Intelligence Discord application/bot and OAuth-based account linking. Subscribers authorize their own server/channel destinations; never reuse the operator's private admin Discord server or expose bot tokens/webhook secrets.
+7. **Optional SMS integration:** select and evaluate a provider before implementation. Require verified phone numbers, explicit consent records, STOP/HELP support, opt-out enforcement, delivery/cost monitoring, and appropriate compliance review. SMS remains optional and can be disabled per subscriber.
+8. **Subscriber preferences and account UI:** expose channel, category, sports/league, threshold, quiet-hour, and delivery-limit controls according to plan. Provide test delivery and bounded delivery history. Do not show nonfunctional controls before their backing APIs are ready.
+9. **Staging acceptance:** exercise the complete subscriber lifecycle, billing events, notification preferences, channel failures/retries, opt-outs, access revocation, backup/restore, and rollback in isolated staging before any production approval.
+
+The Environment Configuration manager remains a separate protected-admin workstream and is not a prerequisite for silently activating any integration. Its existing design-approval and host-side apply/restart gates remain in force. Email-change behavior likewise remains gated on its detailed workflow approval. No production credentials, real charges, public signups, external messages, production restarts, or cutovers are authorized by this architecture approval.
 
 ## 5. Non-negotiable safeguards
 
