@@ -1,8 +1,7 @@
-"""Isolated identity storage for subscriber and administrator accounts.
+"""SQLite identity storage for subscriber and administrator accounts.
 
-This module is intentionally not wired into HTTP routes yet. Account creation,
-authentication, and session operations are server-side primitives; administrator
-provisioning must only be invoked by a private operator-controlled workflow.
+The isolated identity router uses these server-side primitives. Administrator
+provisioning remains restricted to a private operator-controlled workflow.
 """
 from __future__ import annotations
 
