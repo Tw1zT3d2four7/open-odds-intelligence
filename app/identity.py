@@ -1635,6 +1635,60 @@ class IdentityStore:
             db.commit()
         return normalized
 
+    def billing_customer_id(self, identity_id: str) -> str | None:
+        """Return the Stripe customer mapped to this active subscriber, if any."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT c.stripe_customer_id
+                   FROM billing_customers c
+                   JOIN identities i ON i.id=c.identity_id
+                   WHERE c.identity_id=? AND i.account_type='subscriber' AND i.is_active=1""",
+                (identity_id,),
+            ).fetchone()
+        return row["stripe_customer_id"] if row else None
+
+    def link_billing_customer(self, identity_id: str, stripe_customer_id: str) -> str:
+        """Atomically link a newly created Stripe customer without changing an existing mapping."""
+        if (
+            not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128
+            or not isinstance(stripe_customer_id, str)
+            or not stripe_customer_id.startswith("cus_") or len(stripe_customer_id) > 255
+        ):
+            raise ValueError("Stripe customer mapping is invalid.")
+        now = _timestamp(_now())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            account = db.execute(
+                "SELECT id FROM identities WHERE id=? AND account_type='subscriber' AND is_active=1",
+                (identity_id,),
+            ).fetchone()
+            if account is None:
+                db.rollback()
+                raise ValueError("An active subscriber account is required.")
+            existing = db.execute(
+                "SELECT stripe_customer_id FROM billing_customers WHERE identity_id=?",
+                (identity_id,),
+            ).fetchone()
+            if existing is not None:
+                db.rollback()
+                if existing["stripe_customer_id"] != stripe_customer_id:
+                    raise ValueError("A different Stripe customer is already linked.")
+                return existing["stripe_customer_id"]
+            try:
+                db.execute(
+                    """INSERT INTO billing_customers(
+                        identity_id, stripe_customer_id, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?)""",
+                    (identity_id, stripe_customer_id, now, now),
+                )
+            except sqlite3.IntegrityError:
+                db.rollback()
+                raise ValueError("Stripe customer is already linked to another account.") from None
+            db.commit()
+        return stripe_customer_id
+
     def subscriber_billing_summary(self, identity_id: str) -> dict:
         """Return a bounded, read-only billing summary for the signed-in subscriber."""
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
