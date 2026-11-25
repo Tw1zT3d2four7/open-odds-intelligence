@@ -48,7 +48,7 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
                 "recurring": {"interval": "month", "interval_count": 1},
             }
         if path == "/customers":
-            return {"id": "cus_test_123"}
+            return {"id": "cus_test123"}
         if path == "/checkout/sessions":
             return {"url": "https://checkout.stripe.com/c/pay/cs_test_123"}
         raise AssertionError(path)
@@ -67,10 +67,10 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
     )
     assert response.status_code == 200
     assert response.json()["url"].startswith("https://checkout.stripe.com/")
-    assert store.billing_customer_id(identity_id) == "cus_test_123"
+    assert store.billing_customer_id(identity_id) == "cus_test123"
     checkout = next(call for call in calls if call[1] == "/checkout/sessions")
     assert checkout[2]["line_items[0][price]"] == "price_MonthlyCaseSensitive"
-    assert checkout[2]["customer"] == "cus_test_123"
+    assert checkout[2]["customer"] == "cus_test123"
     assert checkout[2]["mode"] == "subscription"
     assert checkout[2]["subscription_data[metadata][identity_id]"] == identity_id
     assert "sk_test" not in response.text
@@ -89,7 +89,7 @@ def test_checkout_uses_annual_price_only_for_year_interval(billing_harness, monk
                 "recurring": {"interval": "year", "interval_count": 1},
             }
         if path == "/customers":
-            return {"id": "cus_test_annual"}
+            return {"id": "cus_testannual"}
         if path == "/checkout/sessions":
             return {"url": "https://checkout.stripe.com/c/pay/cs_test_annual"}
         raise AssertionError(path)
@@ -123,14 +123,14 @@ def test_checkout_fails_closed_for_live_key_or_live_webhook_mode(billing_harness
 
 def test_checkout_blocks_duplicate_nonterminal_subscription(billing_harness, monkeypatch):
     client, store, identity_id = billing_harness
-    store.link_billing_customer(identity_id, "cus_existing_subscription")
+    store.link_billing_customer(identity_id, "cus_existingSubscription")
     with store.connect() as db:
         db.execute(
             """INSERT INTO billing_subscriptions(
                 id, identity_id, stripe_subscription_id, stripe_customer_id,
                 status, created_at, updated_at
             ) VALUES (?, ?, ?, ?, 'active', ?, ?)""",
-            ("local-sub", identity_id, "sub_existing", "cus_existing_subscription",
+            ("local-sub", identity_id, "sub_existing", "cus_existingSubscription",
              "2026-11-25T00:00:00+00:00", "2026-11-25T00:00:00+00:00"),
         )
     monkeypatch.setattr(
@@ -190,16 +190,16 @@ def test_customer_portal_requires_existing_local_customer_mapping(billing_harnes
     missing = client.post("/auth/billing/portal")
     assert missing.status_code == 409
     assert calls == []
-    store.link_billing_customer(identity_id, "cus_test_linked")
+    store.link_billing_customer(identity_id, "cus_testLinked")
     response = client.post("/auth/billing/portal")
     assert response.status_code == 200
     assert response.json()["url"].startswith("https://billing.stripe.com/")
-    assert calls[0][1]["customer"] == "cus_test_linked"
+    assert calls[0][1]["customer"] == "cus_testLinked"
 
 
 def test_customer_portal_does_not_accept_untrusted_customer_ids(billing_harness, monkeypatch):
     client, store, identity_id = billing_harness
-    store.link_billing_customer(identity_id, "cus_test_linked")
+    store.link_billing_customer(identity_id, "cus_testLinked")
     calls = []
     monkeypatch.setattr(
         stripe_api, "stripe_request",
@@ -209,7 +209,7 @@ def test_customer_portal_does_not_accept_untrusted_customer_ids(billing_harness,
     )
     response = client.post("/auth/billing/portal", json={"customer_id": "cus_attacker"})
     assert response.status_code == 200
-    assert calls[0]["params"]["customer"] == "cus_test_linked"
+    assert calls[0]["params"]["customer"] == "cus_testLinked"
 
 
 def test_stripe_api_client_rejects_non_test_secret_without_network(monkeypatch):
