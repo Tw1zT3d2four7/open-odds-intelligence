@@ -556,6 +556,16 @@ def create_subscriber_checkout(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     _stripe_test_billing_ready(checkout=True)
+    try:
+        if store.subscriber_has_open_subscription(session["identity_id"]):
+            raise HTTPException(
+                status_code=409,
+                detail="An existing subscription is already active or awaiting payment. Manage it through the Customer Portal.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="Subscription status is temporarily unavailable.") from None
     client_key = request.headers.get("idempotency-key", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", client_key):
         raise HTTPException(status_code=400, detail="A valid checkout idempotency key is required.")
