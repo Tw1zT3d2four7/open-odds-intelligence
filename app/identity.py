@@ -1713,7 +1713,7 @@ class IdentityStore:
 
     def reserve_billing_checkout(
         self, identity_id: str, billing_interval: str, idempotency_key_hash: str,
-        *, lifetime_seconds: int = 1800,
+        *, lifetime_seconds: int = 2100,
     ) -> dict:
         """Atomically reserve one short-lived Checkout attempt per subscriber."""
         if (
@@ -1724,7 +1724,7 @@ class IdentityStore:
             or not re.fullmatch(r"[a-f0-9]{64}", idempotency_key_hash)
             or isinstance(lifetime_seconds, bool)
             or not isinstance(lifetime_seconds, int)
-            or not 1800 <= lifetime_seconds <= 1800
+            or lifetime_seconds != 2100
         ):
             raise ValueError("Checkout reservation parameters are invalid.")
         now_dt = _now()
