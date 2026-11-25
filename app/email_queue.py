@@ -112,6 +112,11 @@ class TransactionalEmailQueue:
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute(
+                """DELETE FROM transactional_email_queue
+                   WHERE state IN ('sent', 'failed', 'expired') AND updated_at<?""",
+                (_timestamp(now - timedelta(days=30)),),
+            )
+            db.execute(
                 """UPDATE transactional_email_queue
                    SET state='expired', encrypted_payload=X'', lease_token_hash=NULL,
                        lease_expires_at=NULL, updated_at=?
@@ -268,7 +273,10 @@ class TransactionalEmailQueue:
                 and _timestamp(_now()) < item["idempotency_expires_at"]
                 and _timestamp(_now()) < item["challenge_expires_at"]
             )
-            delay = min(3600, 15 * (2 ** min(item["attempt_count"] - 1, 8)))
+            delay = min(
+                3600,
+                15 * (2 ** min(item["attempt_count"] - 1, 8)) + secrets.randbelow(5),
+            )
             self._finish(
                 item, state="pending" if can_retry else "failed",
                 failure_code=exc.failure_code, delay_seconds=delay if can_retry else 0,
