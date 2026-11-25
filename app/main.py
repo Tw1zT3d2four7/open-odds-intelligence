@@ -151,10 +151,20 @@ async def optional_basic_auth(request: Request, call_next):
     """
     username = config.AUTH_USERNAME
     password = config.AUTH_PASSWORD
-    # Keep the orchestrator health probe available even when operator auth is
-    # misconfigured; every application/data route still fails closed below.
+    # Keep the orchestrator health probe available in every authentication mode.
     if request.url.path == "/api/health" and request.method in {"GET", "HEAD"}:
         return await call_next(request)
+
+    # Identity mode is intentionally recognized but not yet activated. Until
+    # every route has its server-side policy, entitlement checks, CSRF boundary,
+    # rate limits, and rollback coverage wired in, fail closed rather than
+    # accidentally falling through to legacy-open or Basic Auth behavior.
+    if config.AUTH_MODE != "legacy_basic":
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Identity authentication mode is not ready for activation."},
+        )
+
     if bool(username) != bool(password):
         return JSONResponse(
             status_code=503,
