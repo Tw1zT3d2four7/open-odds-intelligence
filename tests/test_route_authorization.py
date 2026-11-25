@@ -82,7 +82,7 @@ def test_dependency_assembly_covers_every_declared_route_class():
 
     for (method, path), access_class in ROUTE_ACCESS_POLICY.items():
         resolved = _dependencies(method, path, entitlement_guard)
-        if access_class == "public_minimal":
+        if access_class in {"public_minimal", "stripe_signature"}:
             assert resolved == [], (method, path)
         elif access_class == "administrator_only":
             expected = [require_administrator]
@@ -352,3 +352,15 @@ def test_identity_policy_cannot_implicitly_allow_unclassified_routes():
         dependencies_for_route(
             "POST", "/admin/unknown", policy=IDENTITY_ROUTE_ACCESS_POLICY
         )
+
+
+def test_stripe_signature_route_is_post_only_and_uses_handler_verification():
+    from app import route_policy
+
+    assert _dependencies("POST", "/webhooks/stripe") == []
+    route_policy.ROUTE_ACCESS_POLICY[("GET", "/api/test-stripe")] = "stripe_signature"
+    try:
+        with pytest.raises(ValueError, match="must use POST"):
+            dependencies_for_route("GET", "/api/test-stripe")
+    finally:
+        route_policy.ROUTE_ACCESS_POLICY.pop(("GET", "/api/test-stripe"))
