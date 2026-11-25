@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0b1220">
+<title>Open Odds Intelligence Admin</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121d30;--panel2:#17263c;--line:#263750;--muted:#91a4bd;--text:#edf4ff;--accent:#57c7a5;--amber:#e8bd76;--red:#ed8585}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button{font:inherit}
+.layout{min-height:100vh;display:grid;grid-template-columns:252px minmax(0,1fr)}
+.sidebar{background:#0e1929;border-right:1px solid var(--line);padding:24px 16px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:11px;padding:0 10px 26px;color:var(--text);text-decoration:none;font-weight:850;letter-spacing:.1em;font-size:12px}
+.mark{width:36px;height:36px;border:1px solid #3d827a;border-radius:11px;display:grid;place-items:center;background:#10283a;color:var(--accent)}
+.mark svg{width:22px;height:22px}
+.brand small{display:block;color:var(--accent);font-size:9px;letter-spacing:.22em}
+.workspace-label{padding:8px 12px;color:#657a95;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+nav{display:grid;gap:5px}
+nav button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;border:1px solid transparent;border-radius:8px;padding:10px 12px;background:transparent;color:#aebed1;cursor:pointer}
+nav button:hover{background:#17263c;color:var(--text)}
+nav button[aria-current="page"]{background:#193449;border-color:#2e645e;color:#a8e7d2}
+nav button:focus-visible,.logout:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tag{font-size:9px;color:#8193aa;border:1px solid #344761;border-radius:20px;padding:2px 6px;white-space:nowrap}
+.sidebar-bottom{margin-top:auto;border-top:1px solid var(--line);padding:18px 10px 0}
+.admin-identity{display:flex;align-items:center;gap:10px;margin-bottom:14px;color:#b7c5d7;font-size:12px}
+.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#193449;color:var(--accent);font-weight:800}
+.logout{width:100%;padding:9px 11px;border:1px solid #40536b;border-radius:8px;background:transparent;color:#d3dfed;cursor:pointer}
+.logout:hover{border-color:var(--accent);color:var(--accent)}
+main{min-width:0;padding:34px clamp(20px,4vw,56px) 60px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+.eyebrow{font-size:10px;font-weight:800;letter-spacing:.17em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:clamp(25px,3vw,34px);line-height:1.15;letter-spacing:-.035em;margin:5px 0}
+.subtitle{color:var(--muted);margin:5px 0 0}
+.secure-pill{display:flex;align-items:center;gap:8px;border:1px solid #315e58;border-radius:30px;padding:7px 11px;color:#a8e7d2;font-size:11px;white-space:nowrap}
+.secure-pill:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px #57c7a566}
+.content{max-width:1120px;margin:30px auto 0}
+.welcome{padding:25px 27px;border:1px solid #2d4c5d;border-radius:14px;background:linear-gradient(115deg,#152d40,#142238 65%,#17243a);margin-bottom:20px}
+.welcome h2{font-size:21px;letter-spacing:-.025em;margin:0 0 7px}
+.welcome p{max-width:760px;color:#b2c3d6;margin:0}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0 24px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card-label{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.card-value{font-size:16px;font-weight:750;margin-top:8px}
+.card-note{color:#8094ad;font-size:11px;margin-top:3px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px}
+.panel h2{font-size:16px;margin:0 0 7px}
+.panel p{color:var(--muted);margin:0}
+.checks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}
+.check{padding:12px;border:1px solid #2a4653;border-radius:9px;color:#b8c9d9;font-size:12px}
+.check strong{display:block;color:#a8e7d2;margin-bottom:3px;font-size:12px}
+.view[hidden]{display:none}
+.planned{display:inline-block;margin-bottom:12px;padding:4px 8px;border-radius:20px;background:#342b1c;border:1px solid #655234;color:var(--amber);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.message{min-height:20px;color:#ffb9b9;font-size:12px;margin-top:10px}
+@media(max-width:900px){.layout{grid-template-columns:210px minmax(0,1fr)}.cards,.checks{grid-template-columns:1fr}}
+@media(max-width:650px){.layout{display:block}.sidebar{padding:14px;border-right:0;border-bottom:1px solid var(--line)}.brand{padding-bottom:12px}.workspace-label,.sidebar-bottom{display:none}nav{display:flex;overflow-x:auto;padding-bottom:3px}nav button{width:auto;white-space:nowrap}.tag{display:none}main{padding:22px 16px 40px}.topbar{align-items:flex-start;flex-direction:column}.secure-pill{align-self:flex-start}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <a class="brand" href="/admin" aria-label="Open Odds Intelligence Admin home">
+    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M12 3v9l6.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 16.5 9 13l2 1.5 6-6" stroke="#edf4ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span>OPEN ODDS<small>ADMIN CONSOLE</small></span>
+  </a>
+  <div class="workspace-label">Workspace</div>
+  <nav aria-label="Administrator sections">
+    <button type="button" data-view="overview" aria-current="page">Overview</button>
+    <button type="button" data-view="users">Users <span class="tag">Planned</span></button>
+    <button type="button" data-view="subscriptions">Subscriptions <span class="tag">Planned</span></button>
+    <button type="button" data-view="billing">Billing <span class="tag">Planned</span></button>
+    <button type="button" data-view="notifications">Notifications <span class="tag">Planned</span></button>
+    <button type="button" data-view="platform">Platform <span class="tag">Planned</span></button>
+    <button type="button" data-view="configuration">System Configuration <span class="tag">Planned</span></button>
+    <button type="button" data-view="communications">Communications <span class="tag">Planned</span></button>
+    <button type="button" data-view="security">Security <span class="tag">Planned</span></button>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="admin-identity"><span class="avatar" aria-hidden="true">A</span><span>Administrator<br><strong>MFA session</strong></span></div>
+    <button class="logout" id="logout" type="button">Sign out</button>
+    <div class="message" id="message" role="status" aria-live="polite"></div>
+  </div>
+</aside>
+<main>
+  <header class="topbar">
+    <div><div class="eyebrow">Private workspace</div><h1 id="page-title">Overview</h1><p class="subtitle" id="page-subtitle">Platform administration and security operations.</p></div>
+    <div class="secure-pill">Administrator session verified</div>
+  </header>
+  <div class="content">
+    <section class="view" id="view-overview">
+      <div class="welcome"><h2>Welcome to the control center.</h2><p>This is the private administration workspace for Open Odds Intelligence. Subscriber access, platform operations, and privileged settings will be managed here through dedicated, audited controls.</p></div>
+      <div class="cards">
+        <article class="card"><div class="card-label">Access boundary</div><div class="card-value">Administrator only</div><div class="card-note">Separate from subscriber sessions</div></article>
+        <article class="card"><div class="card-label">Sign-in protection</div><div class="card-value">Multi-factor required</div><div class="card-note">Password plus TOTP or recovery code</div></article>
+        <article class="card"><div class="card-label">Workspace status</div><div class="card-value">Foundation active</div><div class="card-note">Operational modules are being added in phases</div></article>
+      </div>
+      <div class="panel"><h2>Security baseline</h2><p>The console is served only after server-side administrator session validation. State-changing operations will require CSRF protection and will be recorded in the security audit trail.</p><div class="checks"><div class="check"><strong>✓ Separate admin session</strong>Subscriber cookies cannot authorize this workspace.</div><div class="check"><strong>✓ MFA-gated sign-in</strong>Administrator sessions require a fresh second factor.</div><div class="check"><strong>✓ Protected page response</strong>No-store, no-referrer, and frame-denial headers are applied.</div></div></div>
+    </section>
+    <section class="view" id="view-users" hidden><span class="planned">Planned module</span><div class="panel"><h2>User management</h2><p>Subscriber search, account status, verification state, suspension, and account lifecycle controls will appear here after the protected APIs and audit workflow are complete.</p></div></section>
+    <section class="view" id="view-subscriptions" hidden><span class="planned">Planned module</span><div class="panel"><h2>Subscriptions and access</h2><p>Plan bundles, trials, renewals, and subscriber entitlements will be managed through server-enforced subscription rules. No plan or billing state is fabricated in this shell.</p></div></section>
+    <section class="view" id="view-billing" hidden><span class="planned">Planned module</span><div class="panel"><h2>Billing</h2><p>Payment provider selection and billing lifecycle rules remain a separate roadmap milestone.</p></div></section>
+    <section class="view" id="view-notifications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Notification operations</h2><p>Queue health, delivery history, channel status, retry controls, and global pause controls will be backed by dedicated administrative APIs.</p></div></section>
+    <section class="view" id="view-platform" hidden><span class="planned">Planned module</span><div class="panel"><h2>Platform operations</h2><p>Provider health, refresh scheduling, and operational diagnostics will be exposed only through reviewed administrator endpoints.</p></div></section>
+    <section class="view" id="view-configuration" hidden><span class="planned">Planned module</span><div class="panel"><h2>System configuration</h2><p>Environment configuration remains disabled until its allowlist, validation, atomic apply, backup, rollback, and restart design is approved.</p></div></section>
+    <section class="view" id="view-communications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Communications</h2><p>Platform announcements and subscriber communications will be introduced with consent, targeting, and delivery safeguards.</p></div></section>
+    <section class="view" id="view-security" hidden><span class="planned">Planned module</span><div class="panel"><h2>Security and audit</h2><p>Administrator security controls and the paginated, secret-free audit event viewer are the next security-focused console capabilities.</p></div></section>
+  </div>
+</main>
+</div>
+<script>
+(() => {
+  "use strict";
+  const labels = {
+    overview:["Overview","Platform administration and security operations."],
+    users:["Users","Subscriber account lifecycle and access."],
+    subscriptions:["Subscriptions","Plans, entitlements, and subscriber access."],
+    billing:["Billing","Payments and subscription lifecycle."],
+    notifications:["Notifications","Delivery operations and channel health."],
+    platform:["Platform","Provider status and operational controls."],
+    configuration:["System Configuration","Protected environment and provider configuration."],
+    communications:["Communications","Subscriber announcements and messaging."],
+    security:["Security","Administrator controls and audit history."]
+  };
+  const buttons = [...document.querySelectorAll("[data-view]")];
+  const views = [...document.querySelectorAll(".view")];
+  function selectView(name) {
+    if (!labels[name]) return;
+    buttons.forEach(button => {
+      if (button.dataset.view === name) button.setAttribute("aria-current","page");
+      else button.removeAttribute("aria-current");
+    });
+    views.forEach(view => { view.hidden = view.id !== "view-" + name; });
+    document.getElementById("page-title").textContent = labels[name][0];
+    document.getElementById("page-subtitle").textContent = labels[name][1];
+  }
+  buttons.forEach(button => button.addEventListener("click", () => selectView(button.dataset.view)));
+  document.getElementById("logout").addEventListener("click", async () => {
+    const message = document.getElementById("message");
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    let token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Session check failed");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      const response = await fetch("/admin/auth/logout", {
+        method:"POST", credentials:"same-origin",
+        headers:{"Content-Type":"application/json","X-Ooi-Csrf-Token":token},
+        body:"{}"
+      });
+      if (!response.ok) throw new Error("Sign out could not be completed");
+      window.location.assign("/admin/login");
+    } catch (_error) {
+      message.textContent = "Sign out could not be completed. Please reload and try again.";
+    }
+  });
+})();
+</script>
+</body>
+</html>

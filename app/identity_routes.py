@@ -48,10 +48,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(include_in_schema=False)
 
 _AUTH_PAGE = Path(__file__).resolve().parent.parent / "web" / "auth.html"
+_ADMIN_PAGE = Path(__file__).resolve().parent.parent / "web" / "admin.html"
 
 
 def _render_auth_page() -> HTMLResponse:
     response = HTMLResponse(_AUTH_PAGE.read_text(encoding="utf-8"))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+        "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
+        "form-action 'self'; frame-ancestors 'none'"
+    )
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
+
+def _render_admin_page() -> HTMLResponse:
+    """Render the private console with non-cacheable, same-origin-only headers."""
+    response = HTMLResponse(_ADMIN_PAGE.read_text(encoding="utf-8"))
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -79,6 +97,15 @@ def subscriber_registration_page():
 @router.get("/admin/login", response_class=HTMLResponse)
 def administrator_login_page():
     return _render_auth_page()
+
+
+@router.get(
+    "/admin", response_class=HTMLResponse,
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_console_page():
+    """Serve the separate console only to an active MFA-authenticated administrator."""
+    return _render_admin_page()
 
 
 @router.get("/forgot-password", response_class=HTMLResponse)

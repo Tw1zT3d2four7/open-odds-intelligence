@@ -53,6 +53,7 @@ IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/login"): "public_minimal",
     ("GET", "/register"): "public_minimal",
     ("GET", "/admin/login"): "public_minimal",
+    ("GET", "/admin"): "administrator_only",
     ("GET", "/forgot-password"): "public_minimal",
     ("GET", "/verify-email"): "public_minimal",
     ("GET", "/reset-password"): "public_minimal",

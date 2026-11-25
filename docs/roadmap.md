@@ -135,7 +135,13 @@ Still required before Phase 1 is complete:
 
 ### Phase 2 — Admin Console foundation
 
-Build the separate Admin Console shell, navigation, responsive layout, protected admin APIs, administrator security controls, and privileged-action audit views.
+- [x] Add a distinct responsive `/admin` console shell with separate navigation and no-store/security headers.
+- [x] Protect the shell with an active administrator session; subscriber sessions and unauthenticated requests are rejected.
+- [ ] Build protected overview APIs and operational diagnostics.
+- [ ] Add Users, Subscriptions, Notifications, Platform, System Configuration, Communications, and Security views backed by reviewed admin APIs.
+- [ ] Add privileged-action audit views and security controls.
+
+The initial shell is intentionally navigation-first. Unimplemented sections are labeled as planned and do not display fabricated metrics or offer nonfunctional write controls. It is exposed only in staged `AUTH_MODE=identity`; production remains on `legacy_basic` until Phase 1 deployment gates and rollback drills pass.
 
 ### Phase 3 — Subscriber account foundation
 

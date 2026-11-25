@@ -513,3 +513,48 @@ def test_admin_entitlement_api_requires_mfa_session_and_csrf(tmp_path, monkeypat
     assert readback.status_code == 200
     assert readback.json()["entitlements"] == ["dashboard", "odds"]
     assert "subscriber-entitlement@example.test" not in readback.text
+
+
+
+def test_admin_console_is_private_no_store_and_separate_from_subscriber_access(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+
+    # No session and a valid subscriber session must both be denied.
+    assert harness.client.get("/admin").status_code == 401
+    subscriber_id = harness.store.create_subscriber(
+        "console-subscriber@example.test", "a strong subscriber password"
+    )
+    verification = harness.store.create_email_verification_challenge(
+        "console-subscriber@example.test"
+    )
+    assert harness.store.consume_email_verification_challenge(verification)
+    subscriber_token, _ = harness.store.create_session(subscriber_id)
+    harness.client.cookies.set(
+        "__Host-ooi_subscriber", subscriber_token, domain="ooi.example", path="/"
+    )
+    assert harness.client.get("/admin").status_code == 401
+    harness.client.cookies.delete("__Host-ooi_subscriber", domain="ooi.example", path="/")
+
+    # Only a password + fresh TOTP administrator session opens the console.
+    admin_id = harness.store.provision_administrator(
+        "console-admin@example.test", "an administrator password 123"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "console-admin@example.test",
+        "password": "an administrator password 123",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+
+    response = harness.client.get("/admin")
+    assert response.status_code == 200
+    assert "Open Odds Intelligence Admin" in response.text
+    assert "System Configuration" in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]

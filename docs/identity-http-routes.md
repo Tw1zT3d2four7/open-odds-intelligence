@@ -12,6 +12,7 @@
 | GET | `/login` | Public safe | Subscriber sign-in page. |
 | GET | `/register` | Public safe | Subscriber registration page. |
 | GET | `/admin/login` | Public safe | Separate private administrator sign-in page. |
+| GET | `/admin` | Administrator only | Separate no-store Admin Console shell; requires an active MFA-authenticated administrator session. |
 | GET | `/forgot-password` | Public safe | Password-recovery request page. |
 | GET | `/verify-email` | Public safe | Reads the challenge token from the URL fragment and submits it in the request body. |
 | GET | `/reset-password` | Public safe | Reads the recovery token from the URL fragment and submits it in the request body. |
@@ -59,7 +60,7 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Current activation boundary
 
-The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all eighteen routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy.
+The router is registered in FastAPI. Middleware hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all nineteen routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy.
 
 Verification and password-reset requests now enqueue messages in the versioned identity database. Recipient addresses and challenge links are encrypted with a dedicated Fernet key. A background worker claims messages with atomic leases, reuses stable Resend idempotency keys, retries only transient failures with bounded backoff, and discards messages whose one-time challenge has expired or already been consumed. The worker runs only in identity mode. Tests use a fake sender and never contact Resend.
 
@@ -74,3 +75,10 @@ Before enabling subscriber access publicly:
 7. Verify the existing dashboard, odds history, scheduled provider work, and alerts against a preserved test database, then complete the documented rollback drill.
 
 The default `legacy_basic` mode remains the production compatibility boundary and hides identity routes. Selecting `AUTH_MODE=identity` exposes authentication and protected admin entitlement endpoints and activates subscriber/admin session checks on product routes; subscriber product access remains default-deny until an MFA administrator grants the required feature keys. This staged mode is not a public launch or production cutover. No deployment or mode switch has been performed.
+
+
+## Admin Console foundation
+
+The first Phase 2 deliverable is a distinct `/admin` workspace shell. It is served separately from the subscriber dashboard and is protected directly by the administrator session dependency. Subscriber cookies, missing sessions, and expired/revoked sessions cannot open it. The page is returned with `Cache-Control: no-store`, a restrictive same-origin Content Security Policy, frame denial, and no-referrer policy.
+
+The initial shell establishes the navigation and visual structure for Overview, Users, Subscriptions, Billing, Notifications, Platform, System Configuration, Communications, and Security. Sections that do not yet have completed protected APIs are explicitly marked as planned; the shell does not fabricate operational metrics or expose placeholder write controls. Administrator logout uses the existing CSRF-protected endpoint. The shell is available only in staged `AUTH_MODE=identity`; the default `legacy_basic` experience is unchanged.
