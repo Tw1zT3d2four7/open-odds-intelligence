@@ -1,6 +1,7 @@
 
 from app import main
 from app.route_policy import (
+    IDENTITY_ROUTE_ACCESS_POLICY,
     ROUTE_ACCESS_POLICY,
     classify_route,
     stale_policy_entries,
@@ -71,3 +72,32 @@ def test_head_requests_inherit_the_get_route_access_class():
     assert classify_route("HEAD", "/api/odds") == "subscriber_entitled"
     assert classify_route("HEAD", "/api/health") == "public_minimal"
     assert classify_route("HEAD", "/docs") == "administrator_only"
+
+
+
+def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
+    from app.identity_routes import router as identity_router
+
+    routes = [
+        route for route in identity_router.routes
+        if getattr(route, "methods", None)
+    ]
+    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == 10
+    assert unclassified_routes(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
+    assert stale_policy_entries(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
+
+
+def test_identity_route_policy_distinguishes_public_mutations_and_session_logout():
+    assert classify_route("GET", "/auth/csrf", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
+    for path in (
+        "/auth/register",
+        "/auth/verification/resend",
+        "/auth/verify-email",
+        "/auth/password-reset/request",
+        "/auth/password-reset/consume",
+        "/auth/login",
+        "/admin/auth/login",
+    ):
+        assert classify_route("POST", path, IDENTITY_ROUTE_ACCESS_POLICY) == "public_csrf"
+    assert classify_route("POST", "/auth/logout", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("POST", "/admin/auth/logout", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
