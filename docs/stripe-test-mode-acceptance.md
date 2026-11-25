@@ -37,6 +37,14 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 Keep the Stripe API key's case exactly as issued. Do not reuse a live signing secret, API key, Price ID, customer, or webhook endpoint. The webhook endpoint must be reachable over HTTPS in the test environment. If using Stripe CLI forwarding, use the test-mode signing secret printed by the CLI and forward only to the isolated test app.
 
+Before enabling the subscriber actions, run the read-only catalog/configuration check:
+
+```bash
+python -m app.billing_preflight
+```
+
+It performs only Stripe Price GET requests, validates both approved recurring Price objects, and prints no secrets or Price IDs. It must exit successfully before proceeding. It does not create a customer, Checkout Session, Portal Session, subscription, or charge.
+
 ## 3. Start the isolated webhook listener and worker
 
 Configure the test webhook endpoint to deliver these events:
