@@ -226,9 +226,13 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                             size_provider = str(candidate.get("size_source_provider") or provider_name)
                             size_group = str(candidate.get("size_source_account_group") or candidate["source_account_group"])
                             candidate["size_source_account_group"] = size_group
-                            candidate["size_source_access_class"] = _provider_access_class(
-                                size_provider, size_group, provider_access_classes,
-                                provider_account_access_classes,
+                            candidate["size_source_access_class"] = (
+                                "restricted"
+                                if size_provider != provider_name and not size_group
+                                else _provider_access_class(
+                                    size_provider, size_group, provider_access_classes,
+                                    provider_account_access_classes,
+                                )
                             )
                         existing_index = outcome_map.get(identity_key)
                         if existing_index is None:
