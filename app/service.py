@@ -1206,12 +1206,24 @@ class OddsService:
                     markets = []
                     for market in book.get("markets") or []:
                         market_copy = dict(market)
-                        outcomes = [
-                            dict(outcome) for outcome in market.get("outcomes") or []
-                            if include_premium is None
-                            or outcome.get("source_access_class") == "free"
-                            or (include_premium and outcome.get("source_access_class") == "premium")
-                        ]
+                        outcomes = []
+                        for raw_outcome in market.get("outcomes") or []:
+                            if not (
+                                include_premium is None
+                                or raw_outcome.get("source_access_class") == "free"
+                                or (include_premium and raw_outcome.get("source_access_class") == "premium")
+                            ):
+                                continue
+                            outcome = dict(raw_outcome)
+                            size_class = outcome.get("size_source_access_class")
+                            if include_premium is not None and not (
+                                size_class == "free"
+                                or (include_premium and size_class == "premium")
+                            ):
+                                outcome.pop("size", None)
+                                outcome.pop("size_source_provider", None)
+                                outcome.pop("size_source_access_class", None)
+                            outcomes.append(outcome)
                         if outcomes:
                             market_copy["outcomes"] = outcomes
                             markets.append(market_copy)
