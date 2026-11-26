@@ -618,6 +618,7 @@ def test_market_limit_observations_from_same_tier_groups_coexist(tmp_path):
     second = fixture()
     for events, group in ((first, "free-a"), (second, "free-b")):
         for event in events:
+            event["sport_key"] = "americanfootball_nfl"
             for book in event.get("bookmakers", []):
                 for market in book.get("markets", []):
                     for outcome in market.get("outcomes", []):
