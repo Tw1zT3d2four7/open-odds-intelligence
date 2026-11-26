@@ -36,6 +36,9 @@ _SUBSCRIBER_STATUS_REASON_CODES = frozenset({
 _ENTITLEMENT_REASON_CODES = frozenset({
     "support_request", "trial_grant", "promotional_access", "billing_adjustment", "other",
 })
+_COMPLIMENTARY_REASON_CODES = frozenset({
+    "giveaway_winner", "promotional_campaign", "sponsorship", "service_recovery", "other",
+})
 _ENTITLEMENT_KEYS = frozenset({
     "dashboard", "odds", "market_limits", "market_board", "simulation",
     "player_props", "clv", "market_movement", "history",
@@ -1095,7 +1098,7 @@ class IdentityStore:
         actor_identity_id: str,
         expires_at: datetime,
         campaign: str,
-        reason: str,
+        reason_code: str,
     ) -> dict:
         """Atomically create a password-pending promo account, expiring grants and activation challenge."""
         normalized_email = _normalize_email(email)
@@ -1113,8 +1116,8 @@ class IdentityStore:
             raise ValueError("Complimentary access must expire within 366 days.")
         if not isinstance(campaign, str) or not campaign.strip() or len(campaign.strip()) > 80:
             raise ValueError("A campaign or promotion name is required.")
-        if not isinstance(reason, str) or not reason.strip() or len(reason.strip()) > 500:
-            raise ValueError("A reason for complimentary access is required.")
+        if not isinstance(reason_code, str) or reason_code not in _COMPLIMENTARY_REASON_CODES:
+            raise ValueError("Choose a supported complimentary-access reason.")
 
         now = _timestamp(now_dt)
         expiry = _timestamp(expires_at.astimezone(timezone.utc))
@@ -1158,7 +1161,7 @@ class IdentityStore:
                     "expires_at": expiry,
                     "grant_type": "complimentary",
                     "campaign": campaign.strip(),
-                    "reason": reason.strip(),
+                    "reason_code": reason_code,
                     "activation_expires_at": _timestamp(now_dt + timedelta(minutes=30)),
                 },
                 actor_identity_id=actor,
