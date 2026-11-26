@@ -86,6 +86,17 @@ def load_authentication_policy() -> AuthenticationPolicy:
             os.getenv("AUTH_ADMIN_SESSION_IDLE_SECONDS", "900")
         ),
     )
+    # These controls are intentionally fail-closed until their complete
+    # workflows are implemented. Never accept a setting that the runtime
+    # cannot honor; otherwise the Admin Console would promise protection it
+    # does not actually provide.
+    if not policy.administrator_mfa_required:
+        raise ValueError("AUTH_ADMIN_MFA_REQUIRED=false is unsupported; administrator MFA is mandatory.")
+    if policy.subscriber_mfa_required:
+        raise ValueError("AUTH_SUBSCRIBER_MFA_REQUIRED=true is unsupported until subscriber MFA is implemented.")
+    if not policy.csrf_required:
+        raise ValueError("AUTH_CSRF_REQUIRED=false is unsupported; CSRF protection is mandatory.")
+
     if not 60 <= policy.subscriber_session_idle_seconds <= 2_592_000:
         raise ValueError("AUTH_SUBSCRIBER_SESSION_IDLE_SECONDS must be between 60 and 2592000.")
     if not 60 <= policy.administrator_session_idle_seconds <= 86_400:
