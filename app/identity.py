@@ -700,9 +700,9 @@ class IdentityStore:
     def process_stripe_subscription_event(self, event_id: str, lease_token: str) -> str:
         """Apply a verified subscription snapshot and finish its inbox lease atomically.
 
-        Only Stripe subscription lifecycle events are interpreted here. Invoice events
-        remain recorded for a later reconciliation pass; subscription state alone never
-        grants application entitlements.
+        Stripe lifecycle events update the authoritative subscription snapshot.
+        Only an active, current-period monthly/yearly price configured by the operator
+        grants the premium_data scope; invoice events do not independently grant access.
         """
         if not isinstance(event_id, str) or not event_id or len(event_id) > 255:
             return "invalid"
