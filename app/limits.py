@@ -67,6 +67,23 @@ def oddslink_keyset_fingerprint():
     return hashlib.sha256(material.encode("utf-8")).hexdigest() if material else ""
 
 
+def _eligible_oddslink_account_groups():
+    allowed_classes = {"free"}
+    if config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED:
+        allowed_classes.add("premium")
+    overrides = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get("oddslink")
+    if overrides is not None:
+        configured_groups = {group for group, _ in oddslink_key_entries()}
+        return {
+            group for group, access_class in overrides.items()
+            if group in configured_groups and access_class in allowed_classes
+        }
+    provider_class = config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted")
+    if provider_class not in allowed_classes:
+        return set()
+    return {group for group, _ in oddslink_key_entries()}
+
+
 class OddsLinkClient:
     """Quota-aware, multi-key wrapper for the standalone market-limit poller."""
 
@@ -89,15 +106,20 @@ class OddsLinkClient:
         self.pool = ProviderKeyPool(
             "oddslink_limits", [f"{group}|{key}" for group, key in unique]
         )
+        self.allowed_account_groups = _eligible_oddslink_account_groups()
         self.key_count = len(unique)
+        self.last_account_group = ""
+        self.last_access_class = "restricted"
         self.usage = {}
         self.last_key_fingerprint = ""
 
     def fetch(self, sport):
+        if not self.allowed_account_groups:
+            raise LimitsError("No OddsLink account groups are eligible for market-limit polling")
         last_error = None
         for _ in range(self.key_count):
             try:
-                lease = self.pool.acquire()
+                lease = self.pool.acquire(allowed_account_groups=self.allowed_account_groups)
             except NoAvailableKeys as exc:
                 last_error = exc
                 break
@@ -129,16 +151,41 @@ class OddsLinkClient:
             self.pool.record_usage(lease, provider.usage)
             self.usage = dict(provider.usage)
             self.last_key_fingerprint = lease.fingerprint
+            self.last_account_group = lease.account_group
+            account_classes = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get("oddslink")
+            self.last_access_class = (
+                account_classes.get(lease.account_group, "restricted")
+                if account_classes is not None
+                else config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted")
+            )
+            if self.last_access_class not in ("free", "premium"):
+                self.last_access_class = "restricted"
             if isinstance(payload, dict) and payload.get("error"):
                 error = payload["error"]
                 message = (error.get("message") or error.get("code") or str(error)
                            if isinstance(error, dict) else str(error))
                 raise LimitsError(f"OddsLink API error: {message}")
             if isinstance(payload, list):
-                return payload
-            if isinstance(payload, dict) and isinstance(payload.get("events"), list):
-                return payload["events"]
-            raise LimitsError("OddsLink returned an unexpected events response format")
+                events = payload
+            elif isinstance(payload, dict) and isinstance(payload.get("events"), list):
+                events = payload["events"]
+            else:
+                raise LimitsError("OddsLink returned an unexpected events response format")
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                for book in event.get("bookmakers") or []:
+                    if not isinstance(book, dict):
+                        continue
+                    for market in book.get("markets") or []:
+                        if not isinstance(market, dict):
+                            continue
+                        for outcome in market.get("outcomes") or []:
+                            if isinstance(outcome, dict):
+                                outcome["source_provider"] = "oddslink"
+                                outcome["source_account_group"] = lease.account_group
+                                outcome["source_access_class"] = self.last_access_class
+            return events
         raise LimitsError(str(last_error or "No available OddsLink API keys"))
 
 
@@ -547,8 +594,8 @@ class MarketLimitsMonitor:
                 all_rows.extend(self._extract(
                     configured_sport, events, observed_at,
                     source_provider="oddslink",
-                    source_account_group=current_key_fingerprint,
-                    source_access_class=config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted"),
+                    source_account_group=client.last_account_group,
+                    source_access_class=client.last_access_class,
                     source_capability="posted_market_limits",
                 ))
             except LimitsError as exc:
