@@ -139,3 +139,12 @@ Still outstanding: independent access-class configuration and quota accounting f
 Provider key pools accept optional `group|API_KEY` entries in the existing comma/newline-separated key settings. Keys without a group remain in the shared `default` group. The service now passes the raw configured key-entry strings into the pool rather than flattening them first, preserving group identity for quota cooldowns and status reporting. A quota response from one key pauses every configured key in that same group, while keys in a different group remain independently eligible. API key bytes remain case-preserved; group labels are metadata, not credentials.
 
 This closes a key-pool wiring gap but does not yet enable independent free/premium access classification or independent polling schedules by account group. Provider access classes are still provider-level for ingestion and scheduling. Do not configure mixed free/premium account groups for one provider expecting separate entitlement behavior until that next layer is implemented and tested.
+
+
+### Tier-separated CLV tracking — 2026-11-26
+
+CLV entries now use access class as part of their exact-selection identity, allowing a free and premium observation for the same event/book/market/outcome/line to be stored independently. Existing SQLite databases are migrated transactionally by rebuilding the CLV table, preserving row IDs and historical values while assigning legacy unknown rows to the restricted class. The migration recreates the pending index and changes spread duplicate detection to include access class.
+
+Refresh processing now calculates free CLV from the free-only event view. Premium CLV is calculated from a premium-only projection of the paid view, with non-premium outcomes removed before market consensus is computed. This prevents a premium entry's fair price from being derived from free-tier quotes. Closing-consensus snapshot and quote selection are also restricted to the entry's exact access class. Subscriber-facing report scope remains free-only or free-plus-premium.
+
+These changes are implemented but require CI verification before acceptance. Per-account classification and independent account-group polling remain outstanding.
