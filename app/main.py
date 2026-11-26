@@ -544,19 +544,21 @@ def player_props(request: Request, sport: str | None = None, limit: int = Query(
 
 
 @app.get("/api/clv", dependencies=dependencies_for_route("GET", "/api/clv", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def closing_line_value(sport: str | None = None,
+def closing_line_value(request: Request, sport: str | None = None,
                        limit: int = Query(25, ge=1, le=100),
                        offset: int = Query(0, ge=0)):
-    result = service.clv_report(sport, 2000)
+    result = service.clv_report(sport, 2000) if _include_premium_data(request) else {
+        "entries": [], "note": "Historical CLV is temporarily withheld from free accounts until source-level classification is available for every archived calculation."
+    }
     page = _page_results(result.get("entries", []), limit, offset)
     return {**result, "entries": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"]}
 
 
 @app.get("/api/movement", dependencies=dependencies_for_route("GET", "/api/movement", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def movement(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
+def movement(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100),
              offset: int = Query(0, ge=0)):
-    rows = service.movement(sport, 1000)
+    rows = service.movement(sport, 1000, include_premium=_include_premium_data(request))
     page = _page_results(rows, limit, offset)
     return {"movements": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
@@ -564,23 +566,23 @@ def movement(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
 
 
 @app.get("/api/movement/history", dependencies=dependencies_for_route("GET", "/api/movement/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def movement_history(event_id: str, market: str, outcome: str, bookmaker: str,
+def movement_history(request: Request, event_id: str, market: str, outcome: str, bookmaker: str,
                      limit: int = Query(500, ge=1, le=1000),
                      description: str | None = None):
-    quotes = (service.movement_history(event_id, market, outcome, bookmaker, limit, description)
+    quotes = (service.movement_history(event_id, market, outcome, bookmaker, limit, description, _include_premium_data(request))
               if description is not None else
-              service.movement_history(event_id, market, outcome, bookmaker, limit))
+              service.movement_history(event_id, market, outcome, bookmaker, limit, include_premium=_include_premium_data(request)))
     return {"quotes": quotes}
 
 
 @app.get("/api/history", dependencies=dependencies_for_route("GET", "/api/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def history(event_id: str, market: str, outcome: str,
+def history(request: Request, event_id: str, market: str, outcome: str,
             bookmaker: str | None = None, point: float | None = None,
             limit: int = Query(100, ge=1, le=500),
             description: str | None = None):
-    quotes = (service.history(event_id, market, outcome, bookmaker, point, limit, description)
+    quotes = (service.history(event_id, market, outcome, bookmaker, point, limit, description, _include_premium_data(request))
               if description is not None else
-              service.history(event_id, market, outcome, bookmaker, point, limit))
+              service.history(event_id, market, outcome, bookmaker, point, limit, include_premium=_include_premium_data(request)))
     return {"quotes": quotes}
 
 
