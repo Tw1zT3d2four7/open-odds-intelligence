@@ -270,6 +270,12 @@ tbody tr:last-child td{border-bottom:0}
     <section class="view" id="view-communications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Communications</h2><p>Platform announcements and subscriber communications will be introduced with consent, targeting, and delivery safeguards.</p></div></section>
     <section class="view" id="view-security" hidden>
       <div class="panel" style="margin-bottom:18px">
+        <h2>Authentication policy</h2>
+        <p>Active environment controls. This view is read-only; policy changes are made through validated deployment configuration and require an application restart.</p>
+        <div class="audit-status" id="auth-policy-status" role="status" aria-live="polite">Authentication policy has not been loaded.</div>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Active value</th></tr></thead><tbody id="auth-policy-rows"><tr><td colspan="2">Select Security to load authentication policy.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
         <h2>Active account sessions</h2>
         <p>Inspect active sessions across subscriber and administrator accounts. The current administrator session is intentionally hidden and cannot be revoked here. Bearer tokens and credential hashes are never displayed.</p>
         <div class="audit-controls"><button id="sessions-refresh" type="button">Refresh sessions</button></div>
@@ -762,6 +768,43 @@ tbody tr:last-child td{border-bottom:0}
   const auditSubjectFilter = document.getElementById("audit-subject-filter");
   const sessionsStatus = document.getElementById("sessions-status");
   const sessionRows = document.getElementById("session-rows");
+  async function loadAuthenticationPolicy() {
+    const status = document.getElementById("auth-policy-status");
+    const rows = document.getElementById("auth-policy-rows");
+    status.textContent = "Loading active authentication policy…";
+    try {
+      const response = await fetch("/admin/authentication-policy", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Authentication policy unavailable");
+      const data = await response.json();
+      const labels = {
+        environment:"Environment", auth_mode:"Authentication mode",
+        identity_enabled:"Identity authentication", registration_enabled:"Subscriber registration",
+        subscriber_login_enabled:"Subscriber login",
+        email_verification_required:"Email verification required",
+        email_transport:"Email transport", password_recovery_enabled:"Password recovery",
+        administrator_mfa_required:"Administrator MFA required",
+        subscriber_mfa_required:"Subscriber MFA required",
+        rate_limiting_enabled:"Authentication rate limiting",
+        csrf_required:"CSRF protection",
+        subscriber_session_idle_seconds:"Subscriber idle timeout (seconds)",
+        administrator_session_idle_seconds:"Administrator idle timeout (seconds)"
+      };
+      rows.replaceChildren();
+      Object.entries(labels).forEach(([key,label]) => {
+        const row = document.createElement("tr");
+        cell(row, label);
+        const value = data[key];
+        cell(row, typeof value === "boolean" ? (value ? "Enabled" : "Disabled") : String(value));
+        rows.appendChild(row);
+      });
+      status.textContent = "Loaded active policy. Secret values are never returned.";
+    } catch (_error) {
+      status.textContent = "Authentication policy could not be loaded. Refresh or sign in again.";
+    }
+  }
+
   async function loadAdminSessions() {
     sessionsStatus.textContent = "Loading active account sessions…";
     try {
@@ -929,7 +972,7 @@ tbody tr:last-child td{border-bottom:0}
     selectView(button.dataset.view);
     if (button.dataset.view === "overview" && !overviewLoaded) loadOverview();
     if (button.dataset.view === "billing" && !billingLoaded) loadBilling();
-    if (button.dataset.view === "security") { loadAdminSessions(); if (!auditLoaded) loadAudit(); }
+    if (button.dataset.view === "security") { loadAuthenticationPolicy(); loadAdminSessions(); if (!auditLoaded) loadAudit(); }
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
   subscriberRows.addEventListener("click", event => {
