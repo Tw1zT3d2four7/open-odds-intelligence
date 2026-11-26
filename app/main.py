@@ -381,9 +381,15 @@ def market_limits(request: Request, sport: str | None = None,
                   offset: int = Query(0, ge=0)):
     rows = limits_monitor.current(sport, 2000, include_premium=_include_premium_data(request))
     page = _page_results(rows, limit, offset)
+    status = limits_monitor.status()
+    if (_include_premium_data(request) is False
+            and config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") != "free"):
+        # Do not disclose premium-source quota, diagnostics, or refresh timing
+        # through a subscriber-facing response.
+        status = {"enabled": False, "provider": "Premium source status is restricted."}
     return {"limits": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
-            "status": limits_monitor.status(),
+            "status": status,
             "note": "Only provider-reported posted market limits are shown. Missing values are not inferred; limits are not account-specific betting caps."}
 
 
