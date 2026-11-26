@@ -954,7 +954,20 @@ def test_admin_overview_is_mfa_protected_no_store_and_secret_minimized(tmp_path,
                 "last_alert_check": "2026-11-25T12:00:00+00:00",
                 "last_error": "provider error containing secret-token-value",
                 "last_alert_error": None,
-                "provider_keys": {"the_odds_api": {"raw_key": "must-not-leak"}},
+                "provider_keys": {"the_odds_api": {"raw_key": "must-not-leak", "account_groups": [{
+                    "account_group": "premium-account", "configured_keys": 2,
+                    "available_keys": 1, "quota_cooldown_keys": 1, "disabled_keys": 0,
+                    "usage": {
+                        "credits_remaining": 42,
+                        "usage_observed_at": "2026-11-25T12:00:00Z",
+                        "api_key": "must-not-leak",
+                    },
+                }]}},
+                "provider_account_access_classes": {
+                    "the_odds_api": {"premium-account": "premium"}
+                },
+                "provider_access_classes": {"the_odds_api": "free"},
+                "premium_provider_polling_enabled": False,
                 "provider_usage": {"raw": "must-not-leak"},
             }
 
@@ -981,6 +994,21 @@ def test_admin_overview_is_mfa_protected_no_store_and_secret_minimized(tmp_path,
     assert payload["sports"][0]["sport"] == "basketball_nba"
     assert payload["alerts"]["sent"] == 7
     assert payload["provider_error_present"] is True
+    assert payload["provider_accounts"] == [{
+        "provider": "the_odds_api",
+        "account_group": "premium-account",
+        "access_class": "premium",
+        "configured_keys": 2,
+        "available_keys": 1,
+        "quota_cooldown_keys": 1,
+        "disabled_keys": 0,
+        "status": "available",
+        "usage": {
+            "credits_remaining": 42,
+            "usage_observed_at": "2026-11-25T12:00:00Z",
+        },
+    }]
+    assert payload["premium_provider_polling_enabled"] is False
     assert "provider_keys" not in payload
     assert "provider_usage" not in payload
     assert "secret-token-value" not in response.text
