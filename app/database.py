@@ -79,6 +79,8 @@ class OddsDatabase:
                     close_at TEXT, close_fair_probability REAL,
                     close_fair_american INTEGER, closing_books INTEGER,
                     clv_percent REAL,
+                    source_provider TEXT NOT NULL DEFAULT '',
+                    source_account_group TEXT NOT NULL DEFAULT '',
                     source_access_class TEXT NOT NULL DEFAULT 'restricted',
                     UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_access_class)
                 );
@@ -115,6 +117,10 @@ class OddsDatabase:
                     db.execute(f"ALTER TABLE sent_alerts ADD COLUMN {column} {declaration}")
             db.execute("CREATE INDEX IF NOT EXISTS idx_sent_alerts_event_lifecycle ON sent_alerts(event_id, lifecycle_status)")
             clv_columns = {row["name"] for row in db.execute("PRAGMA table_info(clv_entries)")}
+            if "source_provider" not in clv_columns:
+                db.execute("ALTER TABLE clv_entries ADD COLUMN source_provider TEXT NOT NULL DEFAULT ''")
+            if "source_account_group" not in clv_columns:
+                db.execute("ALTER TABLE clv_entries ADD COLUMN source_account_group TEXT NOT NULL DEFAULT ''")
             if "source_access_class" not in clv_columns:
                 db.execute("ALTER TABLE clv_entries ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
             # Rebuild legacy CLV identity so free and premium observations of
@@ -151,6 +157,8 @@ class OddsDatabase:
                         close_at TEXT, close_fair_probability REAL,
                         close_fair_american INTEGER, closing_books INTEGER,
                         clv_percent REAL,
+                        source_provider TEXT NOT NULL DEFAULT '',
+                        source_account_group TEXT NOT NULL DEFAULT '',
                         source_access_class TEXT NOT NULL DEFAULT 'restricted',
                         UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_access_class)
                     )
@@ -161,12 +169,13 @@ class OddsDatabase:
                         point,point_key,bookmaker_key,bookmaker_title,entry_price,
                         entry_fair_probability,entry_ev_percent,entry_at,status,close_at,
                         close_fair_probability,close_fair_american,closing_books,clv_percent,
-                        source_access_class
+                        source_provider,source_account_group,source_access_class
                     )
                     SELECT id,event_id,sport,matchup,commence_time,market_key,outcome_name,
                         point,point_key,bookmaker_key,bookmaker_title,entry_price,
                         entry_fair_probability,entry_ev_percent,entry_at,status,close_at,
                         close_fair_probability,close_fair_american,closing_books,clv_percent,
+                        source_provider,source_account_group,
                         CASE WHEN source_access_class IN ('free','premium')
                              THEN source_access_class ELSE 'restricted' END
                     FROM clv_entries
@@ -945,11 +954,14 @@ class OddsDatabase:
                     """INSERT OR IGNORE INTO clv_entries(
                        event_id,sport,matchup,commence_time,market_key,outcome_name,
                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
-                       entry_fair_probability,entry_ev_percent,entry_at,source_access_class)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       entry_fair_probability,entry_ev_percent,entry_at,
+                       source_provider,source_account_group,source_access_class)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (event_id, sport, matchup, str(commence), market, outcome,
                      point, point_key, bookmaker_key, title, price,
                      fair_probability, ev_percent, str(observed_at),
+                     row.get("source_provider") if isinstance(row.get("source_provider"), str) else "",
+                     row.get("source_account_group") if isinstance(row.get("source_account_group"), str) else "",
                      row.get("source_access_class") if row.get("source_access_class") in {"free", "premium"} else "restricted"))
                 inserted += max(0, cur.rowcount)
         return inserted
