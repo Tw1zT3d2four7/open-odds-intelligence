@@ -261,7 +261,7 @@ class MarketLimitsMonitor:
                     source_account_group TEXT NOT NULL DEFAULT '',
                     source_access_class TEXT NOT NULL DEFAULT 'restricted',
                     source_capability TEXT NOT NULL DEFAULT 'posted_market_limits',
-                    UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point)
+                    UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point,source_provider,source_account_group,source_access_class,source_capability)
                 );
                 CREATE INDEX IF NOT EXISTS idx_limit_lookup
                 ON market_limit_quotes(event_id,bookmaker_key,market_key,outcome_name,point,id);
@@ -285,6 +285,72 @@ class MarketLimitsMonitor:
             ):
                 if column not in columns:
                     db.execute(f"ALTER TABLE market_limit_quotes ADD COLUMN {column} {declaration}")
+
+            expected_unique = [
+                "observed_at", "event_id", "bookmaker_key", "market_key",
+                "outcome_name", "point", "source_provider",
+                "source_account_group", "source_access_class", "source_capability",
+            ]
+            scoped_unique = False
+            for index in db.execute("PRAGMA index_list(market_limit_quotes)").fetchall():
+                if not index["unique"]:
+                    continue
+                index_columns = [
+                    row["name"] for row in db.execute(
+                        f"PRAGMA index_info('{index['name']}')"
+                    ).fetchall()
+                ]
+                if index_columns == expected_unique:
+                    scoped_unique = True
+                    break
+            if not scoped_unique:
+                db.execute("DROP TABLE IF EXISTS market_limit_quotes_scoped_migration")
+                db.execute("""
+                    CREATE TABLE market_limit_quotes_scoped_migration (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        observed_at TEXT NOT NULL,
+                        sport TEXT NOT NULL,
+                        event_id TEXT NOT NULL,
+                        commence_time TEXT NOT NULL DEFAULT '',
+                        home_team TEXT NOT NULL DEFAULT '',
+                        away_team TEXT NOT NULL DEFAULT '',
+                        bookmaker_key TEXT NOT NULL,
+                        bookmaker_title TEXT NOT NULL DEFAULT '',
+                        market_key TEXT NOT NULL,
+                        outcome_name TEXT NOT NULL,
+                        point REAL,
+                        price REAL,
+                        limit_amount REAL NOT NULL,
+                        currency TEXT NOT NULL DEFAULT 'bookmaker_currency',
+                        source_provider TEXT NOT NULL DEFAULT '',
+                        source_account_group TEXT NOT NULL DEFAULT '',
+                        source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                        source_capability TEXT NOT NULL DEFAULT 'posted_market_limits',
+                        UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point,
+                               source_provider,source_account_group,source_access_class,source_capability)
+                    )
+                """)
+                db.execute("""
+                    INSERT OR IGNORE INTO market_limit_quotes_scoped_migration(
+                        id,observed_at,sport,event_id,commence_time,home_team,away_team,
+                        bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,
+                        limit_amount,currency,source_provider,source_account_group,
+                        source_access_class,source_capability
+                    )
+                    SELECT id,observed_at,sport,event_id,commence_time,home_team,away_team,
+                        bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,
+                        limit_amount,currency,source_provider,source_account_group,
+                        source_access_class,source_capability
+                    FROM market_limit_quotes
+                """)
+                db.execute("DROP TABLE market_limit_quotes")
+                db.execute(
+                    "ALTER TABLE market_limit_quotes_scoped_migration RENAME TO market_limit_quotes"
+                )
+                db.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_limit_lookup
+                    ON market_limit_quotes(event_id,bookmaker_key,market_key,outcome_name,point,id)
+                """)
 
     @staticmethod
     def _extract(sport, events, observed_at, *, source_provider="oddslink",
