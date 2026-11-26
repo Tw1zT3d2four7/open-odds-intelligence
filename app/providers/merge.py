@@ -178,15 +178,15 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                         book["markets"].append(market)
                         market_map[market_key] = market
                     outcome_map = {
-                        _outcome_identity(item): index
+                        (item.get("source_access_class") or "restricted", _outcome_identity(item)): index
                         for index, item in enumerate(market["outcomes"])
                         if _outcome_identity(item) is not None
                     }
                     for raw_outcome in raw_market.get("outcomes") or []:
                         if not isinstance(raw_outcome, dict):
                             continue
-                        identity_key = _outcome_identity(raw_outcome)
-                        if identity_key is None:
+                        outcome_identity = _outcome_identity(raw_outcome)
+                        if outcome_identity is None:
                             continue
                         candidate = dict(raw_outcome)
                         candidate["name"] = _canonical_outcome_name(
@@ -195,6 +195,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                         candidate["source_provider"] = provider_name
                         access_class = (provider_access_classes or {}).get(provider_name)
                         candidate["source_access_class"] = access_class if access_class in {"free", "premium"} else "restricted"
+                        identity_key = (candidate["source_access_class"], outcome_identity)
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
                             candidate["size_source_access_class"] = access_class if access_class in {"free", "premium"} else "restricted"
