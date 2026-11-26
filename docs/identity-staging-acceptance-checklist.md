@@ -79,7 +79,7 @@ Using disposable staging identities and the fake email sender:
 
 Use synthetic provider fixtures first. Do not purchase a provider plan or enable live premium polling as part of the initial staging drill.
 
-The staging compose file is isolated on `127.0.0.1:18765`, uses `.env.staging` and `staging-data/`, and pulls the `:admin-staging` image. The feature-branch image workflow now publishes `:admin-staging`; the `:release` alias is reserved for an actual GitHub release event.
+The staging compose file is isolated on `127.0.0.1:18765`, uses `.env.staging` and `staging-data/`, and pulls the `:admin-staging` image. The feature-branch image workflow now publishes `:admin-staging`; the `:release` alias is reserved for an actual GitHub release event. A prior feature-branch build updated `:release` before this guard was corrected; that was an image publication only, not a deployment. Treat the existing `:release` alias as untrusted until a future official release rebuilds it, and use `:admin-staging` for staging.
 
 - Confirm free-tier operation with no premium provider credentials configured and verify that no premium provider requests are attempted.
 - Configure explicit provider account groups with `ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES` (for example, `the_odds_api|free-account=free,the_odds_api|premium-account=premium`). Keep `ODDS_PREMIUM_PROVIDER_POLLING_ENABLED=false`; verify only free groups can be leased by scheduled and manual refreshes.
