@@ -1252,3 +1252,36 @@ def test_clv_legacy_unique_index_is_migrated_without_losing_entries(tmp_path):
     assert legacy["source_provider"] == ""
     assert legacy["source_account_group"] == ""
     assert legacy["entry_price"] == -110
+
+
+
+def test_quote_account_group_columns_are_added_to_existing_database(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-quote-provenance.sqlite3"
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE quotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_id INTEGER NOT NULL,
+                event_id TEXT NOT NULL, sport TEXT NOT NULL,
+                sport_title TEXT NOT NULL DEFAULT '',
+                commence_time TEXT NOT NULL DEFAULT '',
+                home_team TEXT NOT NULL DEFAULT '', away_team TEXT NOT NULL DEFAULT '',
+                bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                outcome_description TEXT NOT NULL DEFAULT '', point REAL,
+                price INTEGER NOT NULL, source_updated_at TEXT,
+                source_provider TEXT NOT NULL DEFAULT '',
+                source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                is_main INTEGER, size_json TEXT,
+                size_source_provider TEXT NOT NULL DEFAULT '',
+                size_source_access_class TEXT NOT NULL DEFAULT 'restricted'
+            )
+        """)
+
+    db = OddsDatabase(path)
+    with db.connect() as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(quotes)")}
+    assert "source_account_group" in columns
+    assert "size_source_account_group" in columns
