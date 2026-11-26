@@ -117,6 +117,63 @@ class OddsDatabase:
             clv_columns = {row["name"] for row in db.execute("PRAGMA table_info(clv_entries)")}
             if "source_access_class" not in clv_columns:
                 db.execute("ALTER TABLE clv_entries ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
+            # Rebuild legacy CLV identity so free and premium observations of
+            # the same selection can coexist without overwriting one another.
+            clv_unique_indexes = db.execute("PRAGMA index_list(clv_entries)").fetchall()
+            scoped_unique = False
+            for index in clv_unique_indexes:
+                if not index["unique"]:
+                    continue
+                index_columns = [
+                    row["name"] for row in db.execute(
+                        f"PRAGMA index_info('{index['name']}')"
+                    ).fetchall()
+                ]
+                if index_columns == [
+                    "event_id", "market_key", "outcome_name",
+                    "point_key", "bookmaker_key", "source_access_class",
+                ]:
+                    scoped_unique = True
+                    break
+            if not scoped_unique:
+                db.execute("DROP TABLE IF EXISTS clv_entries_scoped_migration")
+                db.execute("""
+                    CREATE TABLE clv_entries_scoped_migration (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_id TEXT NOT NULL, sport TEXT NOT NULL DEFAULT '',
+                        matchup TEXT NOT NULL DEFAULT '', commence_time TEXT NOT NULL,
+                        market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                        point REAL, point_key TEXT NOT NULL DEFAULT '',
+                        bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                        entry_price INTEGER NOT NULL, entry_fair_probability REAL NOT NULL,
+                        entry_ev_percent REAL NOT NULL, entry_at TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        close_at TEXT, close_fair_probability REAL,
+                        close_fair_american INTEGER, closing_books INTEGER,
+                        clv_percent REAL,
+                        source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                        UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_access_class)
+                    )
+                """)
+                db.execute("""
+                    INSERT INTO clv_entries_scoped_migration(
+                        id,event_id,sport,matchup,commence_time,market_key,outcome_name,
+                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                        entry_fair_probability,entry_ev_percent,entry_at,status,close_at,
+                        close_fair_probability,close_fair_american,closing_books,clv_percent,
+                        source_access_class
+                    )
+                    SELECT id,event_id,sport,matchup,commence_time,market_key,outcome_name,
+                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                        entry_fair_probability,entry_ev_percent,entry_at,status,close_at,
+                        close_fair_probability,close_fair_american,closing_books,clv_percent,
+                        CASE WHEN source_access_class IN ('free','premium')
+                             THEN source_access_class ELSE 'restricted' END
+                    FROM clv_entries
+                """)
+                db.execute("DROP TABLE clv_entries")
+                db.execute("ALTER TABLE clv_entries_scoped_migration RENAME TO clv_entries")
+                db.execute("CREATE INDEX IF NOT EXISTS idx_clv_pending ON clv_entries(status, commence_time)")
             quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
             if "source_updated_at" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_updated_at TEXT")
@@ -877,8 +934,10 @@ class OddsDatabase:
                            WHERE event_id=? AND market_key='spreads'
                              AND outcome_name=? AND bookmaker_key=?
                              AND point IS NOT NULL AND ABS(point)=?
+                             AND source_access_class=?
                            LIMIT 1""",
-                        (event_id, outcome, bookmaker_key, abs(point)),
+                        (event_id, outcome, bookmaker_key, abs(point),
+                         row.get("source_access_class") if row.get("source_access_class") in {"free", "premium"} else "restricted"),
                     ).fetchone()
                     if legacy_or_current:
                         continue
