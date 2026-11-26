@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request, Response
 
+from .auth_config import AUTHENTICATION_POLICY as AUTH_POLICY
+
 SUBSCRIBER_COOKIE = "__Host-ooi_subscriber"
 ADMINISTRATOR_COOKIE = "__Host-ooi_admin"
 CSRF_COOKIE = "__Host-ooi_csrf"
@@ -98,14 +100,14 @@ def require_same_origin_csrf(request: Request) -> None:
         request_port = host_parts.port
         origin_authority = (parsed.hostname or "").casefold()
         request_authority = (host_parts.hostname or "").casefold()
-        origin_effective_port = origin_port or 443
-        request_effective_port = request_port or 443
+        origin_effective_port = origin_port or (80 if parsed.scheme == "http" else 443)
+        request_effective_port = request_port or (80 if parsed.scheme == "http" else 443)
     except ValueError:
         raise HTTPException(status_code=403, detail="Request origin is not allowed.")
     if (
         not origin
         or not host
-        or parsed.scheme != "https"
+        or parsed.scheme not in ({"https", "http"} if AUTH_POLICY.is_local_development else {"https"})
         or not parsed.netloc
         or not origin_authority
         or origin_authority != request_authority
@@ -120,6 +122,13 @@ def require_same_origin_csrf(request: Request) -> None:
         or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
+        or (
+            parsed.scheme == "http"
+            and (
+                not AUTH_POLICY.is_local_development
+                or origin_authority not in {"localhost", "127.0.0.1", "::1"}
+            )
+        )
     ):
         raise HTTPException(status_code=403, detail="Request origin is not allowed.")
 
