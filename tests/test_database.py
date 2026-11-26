@@ -1247,7 +1247,8 @@ def test_clv_legacy_unique_index_is_migrated_without_losing_entries(tmp_path):
     assert "source_provider" in columns
     assert "source_account_group" in columns
     assert ["event_id", "market_key", "outcome_name", "point_key",
-            "bookmaker_key", "source_access_class"] in unique_columns
+            "bookmaker_key", "source_provider", "source_account_group",
+            "source_access_class"] in unique_columns
     assert legacy["source_access_class"] == "restricted"
     assert legacy["source_provider"] == ""
     assert legacy["source_account_group"] == ""
