@@ -167,6 +167,11 @@ tbody tr:last-child td{border-bottom:0}
           <div class="audit-controls">
             <button id="promo-create" type="button">Create account and send activation</button>
           </div>
+          <div class="audit-controls">
+            <label for="promo-existing-identity">Existing complimentary subscriber ID</label>
+            <input id="promo-existing-identity" type="text" maxlength="128" autocomplete="off" placeholder="Select Manage comp from the directory">
+            <button id="promo-update" type="button">Extend access and update features</button>
+          </div>
           <p class="audit-status" id="promo-status" role="status" aria-live="polite">No complimentary account has been created.</p>
         </div>
         <p>Subscriber accounts, verification state, and entitlements. Suspend/reactivate actions require confirmation and an audited reason code.</p>
@@ -416,6 +421,15 @@ tbody tr:last-child td{border-bottom:0}
           sessionsAction.style.marginLeft = "6px";
           sessionsAction.setAttribute("aria-label", "Revoke all sessions for " + user.email);
           actionCell.appendChild(sessionsAction);
+          if (user.complimentary_expires_at) {
+            const promoAction = document.createElement("button");
+            promoAction.type = "button";
+            promoAction.textContent = "Manage comp";
+            promoAction.dataset.complimentaryIdentityId = user.identity_id;
+            promoAction.style.marginLeft = "6px";
+            promoAction.setAttribute("aria-label", "Manage complimentary access for " + user.email);
+            actionCell.appendChild(promoAction);
+          }
           row.appendChild(actionCell);
           subscriberRows.appendChild(row);
         });
@@ -435,6 +449,49 @@ tbody tr:last-child td{border-bottom:0}
   const promoCustomDays = document.getElementById("promo-custom-days");
   promoDuration.addEventListener("change", () => {
     promoCustomDays.disabled = promoDuration.value !== "custom";
+  });
+  document.getElementById("promo-update").addEventListener("click", async () => {
+    const identityId = document.getElementById("promo-existing-identity").value.trim();
+    const campaign = document.getElementById("promo-campaign").value.trim();
+    const reasonCode = document.getElementById("promo-reason").value;
+    const additionalDays = promoDuration.value === "custom" ? Number(promoCustomDays.value) : Number(promoDuration.value);
+    const entitlements = [...document.querySelectorAll("#promo-entitlements input:checked")].map(input => input.value);
+    const status = document.getElementById("promo-status");
+    if (!identityId || identityId.length > 128 || !campaign || !reasonCode || !entitlements.length ||
+        !Number.isInteger(additionalDays) || additionalDays < 1 || additionalDays > 366) {
+      status.textContent = "Select a complimentary subscriber, campaign, reason, duration, and at least one feature.";
+      return;
+    }
+    if (!window.confirm("Add " + additionalDays + " days to this complimentary grant and replace its feature selection?")) return;
+    let token = "";
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      const updateButton = document.getElementById("promo-update");
+      updateButton.disabled = true;
+      status.textContent = "Updating complimentary access…";
+      const response = await fetch("/admin/subscribers/complimentary", {
+        method:"PUT",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({identity_id:identityId,entitlements,additional_days:additionalDays,campaign,reason_code:reasonCode})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Complimentary access update failed.");
+      status.textContent = "Complimentary access updated. New expiration: " + data.expires_at + ".";
+      subscribersLoaded = false;
+      loadSubscribers();
+    } catch (error) {
+      status.textContent = error.message || "Complimentary access could not be updated.";
+    } finally {
+      document.getElementById("promo-update").disabled = false;
+    }
   });
   promoCreate.addEventListener("click", async () => {
     const email = document.getElementById("promo-email").value.trim();
@@ -806,6 +863,13 @@ tbody tr:last-child td{border-bottom:0}
     if (button.dataset.view === "security") { loadAdminSessions(); if (!auditLoaded) loadAudit(); }
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
+  subscriberRows.addEventListener("click", event => {
+    const promoAction = event.target.closest("button[data-complimentary-identity-id]");
+    if (promoAction) {
+      document.getElementById("promo-existing-identity").value = promoAction.dataset.complimentaryIdentityId;
+      document.getElementById("promo-status").textContent = "Selected complimentary subscriber. Choose the added time and replacement features, then extend access.";
+    }
+  });
   subscriberRows.addEventListener("click", event => {
     const action = event.target.closest("button[data-account-identity-id]");
     if (action) revokeSubscriberSessions(action.dataset.accountIdentityId, action);
