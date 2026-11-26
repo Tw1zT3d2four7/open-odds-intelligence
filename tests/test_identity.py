@@ -140,6 +140,11 @@ def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and
     assert '"grant_type":"complimentary"' in audit["metadata_json"]
     assert '"campaign":"November giveaway"' in audit["metadata_json"]
     assert '"reason_code":"giveaway_winner"' in audit["metadata_json"]
+    with pytest.raises(ValueError, match="cannot be removed or extended"):
+        store.set_subscriber_entitlements(
+            grant["identity_id"], ["dashboard", "odds"],
+            actor_identity_id=admin_id, reason_code="promotional_access",
+        )
     assert store.authenticate("winner@example.com", "administrator password", "subscriber") is None
     assert store.consume_password_reset_challenge(
         grant["activation_token"], "winner chooses this secure password"
