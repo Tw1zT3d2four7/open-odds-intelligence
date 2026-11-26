@@ -45,6 +45,7 @@ class OddsDatabase:
                     outcome_name TEXT NOT NULL, outcome_description TEXT NOT NULL DEFAULT '', point REAL, price INTEGER NOT NULL,
                     source_updated_at TEXT,
                     source_provider TEXT NOT NULL DEFAULT '',
+                    source_access_class TEXT NOT NULL DEFAULT 'restricted',
                     is_main INTEGER,
                     size_json TEXT,
                     size_source_provider TEXT NOT NULL DEFAULT ''
@@ -118,6 +119,8 @@ class OddsDatabase:
                 db.execute("ALTER TABLE quotes ADD COLUMN outcome_description TEXT NOT NULL DEFAULT ''")
             if "source_provider" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_provider TEXT NOT NULL DEFAULT ''")
+            if "source_access_class" not in quote_columns:
+                db.execute("ALTER TABLE quotes ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
             if "is_main" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN is_main INTEGER")
             if "size_json" not in quote_columns:
@@ -481,6 +484,7 @@ class OddsDatabase:
                                    *event_metadata, book_key, book_title, market_key,
                                    outcome_name, description, point, price, updated_at,
                                    str(outcome.get("source_provider") or ""),
+                                   outcome.get("source_access_class") if outcome.get("source_access_class") in {"free", "premium"} else "restricted",
                                    (1 if outcome.get("main") else 0) if "main" in outcome else None,
                                    json.dumps(outcome.get("size"), sort_keys=True)
                                    if isinstance(outcome.get("size"), dict) else None,
@@ -504,8 +508,8 @@ class OddsDatabase:
             ]
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
                 home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,point,price,
-                source_updated_at,source_provider,is_main,size_json,size_source_provider)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
+                source_updated_at,source_provider,source_access_class,is_main,size_json,size_source_provider)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
         return snapshot_id
 
     def latest_events(self, sport=None, limit=None, offset=0):
@@ -559,7 +563,7 @@ class OddsDatabase:
                 rows = db.execute(
                     """SELECT event_id,sport_title,commence_time,home_team,away_team,
                               bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,price,
-                              source_updated_at,source_provider,is_main,size_json,
+                              source_updated_at,source_provider,source_access_class,is_main,size_json,
                               size_source_provider,point
                        FROM quotes WHERE snapshot_id=?""" + page_clause + """
                        ORDER BY commence_time,event_id,bookmaker_key,market_key,outcome_name""",
@@ -606,6 +610,7 @@ class OddsDatabase:
                         outcome["updated_at"] = row["source_updated_at"]
                     if row["source_provider"]:
                         outcome["source_provider"] = row["source_provider"]
+                    outcome["source_access_class"] = row["source_access_class"] or "restricted"
                     if row["is_main"] is not None:
                         outcome["main"] = bool(row["is_main"])
                     if row["size_json"]:
