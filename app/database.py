@@ -1020,7 +1020,7 @@ class OddsDatabase:
                     (event_id, sport, matchup, str(commence), market, outcome,
                      point, point_key, bookmaker_key, title, price,
                      fair_probability, ev_percent, str(observed_at),
-                     source_provider, source_account_group, source_access_class)
+                     source_provider, source_account_group, source_access_class))
                 inserted += max(0, cur.rowcount)
         return inserted
 
