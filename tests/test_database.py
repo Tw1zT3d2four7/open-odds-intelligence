@@ -1139,3 +1139,91 @@ def test_snapshot_status_counts_distinct_books_in_latest_snapshot_per_sport(tmp_
     db.save_snapshot("basketball_nba", newer, "test", "2026-11-17T12:05:00Z")
     status = db.snapshot_status()
     assert status["bookmakers"] == 1
+
+
+def test_clv_keeps_free_and_premium_entries_for_same_selection_separate(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-tier-scope.sqlite3")
+    now = datetime.now(timezone.utc)
+    candidate = {
+        "event_id": "tiered-clv-event", "sport": "basketball_nba",
+        "matchup": "Away @ Home",
+        "commence_time": (now + timedelta(hours=8)).isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Shared Book", "bookmaker_key": "shared-book",
+        "price": -110, "fair_probability": 0.51, "ev_percent": 2.0,
+    }
+    free = dict(candidate, source_access_class="free")
+    premium = dict(candidate, source_access_class="premium", price=-115)
+    assert db.record_clv_candidates([free], now.isoformat()) == 1
+    assert db.record_clv_candidates([premium], now.isoformat()) == 1
+
+    free_report = db.clv_report("basketball_nba", include_premium=False)
+    paid_report = db.clv_report("basketball_nba", include_premium=True)
+    assert free_report["summary"]["total"] == 1
+    assert free_report["entries"][0]["source_access_class"] == "free"
+    assert paid_report["summary"]["total"] == 2
+    assert {row["source_access_class"] for row in paid_report["entries"]} == {
+        "free", "premium"
+    }
+    assert {row["entry_price"] for row in paid_report["entries"]} == {-110, -115}
+
+
+def test_clv_legacy_unique_index_is_migrated_without_losing_entries(tmp_path):
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    path = tmp_path / "clv-legacy-schema.sqlite3"
+    now = datetime.now(timezone.utc)
+    commence = (now + timedelta(hours=6)).isoformat()
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE clv_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL, sport TEXT NOT NULL DEFAULT '',
+                matchup TEXT NOT NULL DEFAULT '', commence_time TEXT NOT NULL,
+                market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                point REAL, point_key TEXT NOT NULL DEFAULT '',
+                bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                entry_price INTEGER NOT NULL, entry_fair_probability REAL NOT NULL,
+                entry_ev_percent REAL NOT NULL, entry_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                close_at TEXT, close_fair_probability REAL,
+                close_fair_american INTEGER, closing_books INTEGER, clv_percent REAL,
+                UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key)
+            )
+        """)
+        raw.execute("""
+            INSERT INTO clv_entries(
+                event_id,sport,matchup,commence_time,market_key,outcome_name,
+                point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                entry_fair_probability,entry_ev_percent,entry_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            "legacy-event", "basketball_nba", "Away @ Home", commence,
+            "h2h", "Home", None, "", "book", "Book", -110, 0.5, 1.0,
+            now.isoformat(),
+        ))
+
+    db = OddsDatabase(path)
+    with db.connect() as conn:
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(clv_entries)")]
+        unique_indexes = [
+            row for row in conn.execute("PRAGMA index_list(clv_entries)")
+            if row["unique"]
+        ]
+        unique_columns = [
+            [row["name"] for row in conn.execute(
+                f"PRAGMA index_info('{index['name']}')"
+            )]
+            for index in unique_indexes
+        ]
+        legacy = conn.execute(
+            "SELECT source_access_class,entry_price FROM clv_entries WHERE event_id='legacy-event'"
+        ).fetchone()
+    assert "source_access_class" in columns
+    assert ["event_id", "market_key", "outcome_name", "point_key",
+            "bookmaker_key", "source_access_class"] in unique_columns
+    assert legacy["source_access_class"] == "restricted"
+    assert legacy["entry_price"] == -110
