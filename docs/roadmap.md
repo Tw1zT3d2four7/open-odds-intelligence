@@ -38,6 +38,23 @@ The Admin Console must have its own layout, navigation, login flow, and server-s
 
 Subscribers must be able to register, verify email, sign in, recover access, manage account/notification preferences, view plan status, and access only features permitted by their plan. Free/Basic/Premium are candidate tiers; pricing, entitlements, trials, and limits remain open. Enforce entitlements server-side.
 
+### 2.3.1 Administrator-created promotional subscribers and comp access
+
+The Admin Console must support operator-created subscriber accounts for giveaways, occasional promotions, sponsorships, support compensation, and other complimentary-access cases. This is a separate access path from Stripe billing; it must never require or create a payment method, Stripe Customer, Checkout Session, invoice, or paid subscription.
+
+Required behavior:
+- An MFA-authenticated administrator can create a subscriber using an email address and a named grant reason/campaign (for example, giveaway, promotional access, or service recovery).
+- The workflow must not ask the administrator to set or see the subscriber's password. Send a short-lived, single-use account activation/password-setup link through the existing verified transactional email queue. Do not silently mark an email as verified; activation must prove control of the address.
+- The administrator selects a predefined access package or explicit feature set and a duration. Support bounded choices such as 7, 14, 30, 90, and 365 days, plus a custom end date where policy allows. The server calculates and stores the UTC expiration; browser-supplied timestamps must be timezone-aware and validated.
+- Complimentary access is represented by local, time-limited entitlement grants with a clear source/reason and campaign/reference metadata. It is not represented as an active Stripe subscription and must not appear as paid revenue or a paid plan.
+- Expiration automatically removes access through the existing entitlement expiry checks; no destructive account deletion. The account remains available for later paid conversion or a separately audited extension.
+- Prevent duplicate account creation for an existing email. Offer an explicit, audited path to extend or replace a grant on an existing subscriber instead.
+- Record actor, subject, grant package/features, start/end, reason/campaign, and action in the security audit trail. Never record passwords, activation tokens, or other secrets.
+- Provide an admin directory filter for complimentary access and show grant source, expiration, and remaining time. Keep Stripe billing state separate.
+- Require server-side administrator authorization, CSRF, strict request validation, rate limiting where appropriate, no-store responses, and tests for expired grants, duplicate emails, unauthorized access, replay, and audit attribution.
+
+This is a required Admin Console capability for promotions and giveaways. It is not authorization to enable paid billing or to grant complimentary access automatically.
+
 ### 2.4 Subscriber-selected notification channels
 
 Initial channels: Discord, SMS, and email. Potential later channels: browser notifications and Telegram. Subscribers should independently select channels, destinations, alert categories, sports/leagues, thresholds, quiet hours, and limits where supported by plan. Platform qualification rules and subscriber preferences must work together.
