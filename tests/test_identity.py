@@ -98,8 +98,8 @@ def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and
     admin_id = store.provision_administrator("promo-admin@example.com", "administrator password")
     with store.connect() as db:
         db.execute(
-            "UPDATE administrator_mfa SET enrolled_at=? WHERE identity_id=?",
-            (datetime.now(timezone.utc).isoformat(), admin_id),
+            "INSERT INTO administrator_mfa(identity_id, enrolled_at) VALUES (?, ?)",
+            (admin_id, datetime.now(timezone.utc).isoformat()),
         )
     expiry = datetime.now(timezone.utc) + timedelta(days=30)
     grant = store.create_complimentary_subscriber(
@@ -152,8 +152,8 @@ def test_complimentary_subscriber_rejects_duplicate_email_and_non_admin_actor(tm
     admin_id = store.provision_administrator("promo-admin@example.com", "administrator password")
     with store.connect() as db:
         db.execute(
-            "UPDATE administrator_mfa SET enrolled_at=? WHERE identity_id=?",
-            (datetime.now(timezone.utc).isoformat(), admin_id),
+            "INSERT INTO administrator_mfa(identity_id, enrolled_at) VALUES (?, ?)",
+            (admin_id, datetime.now(timezone.utc).isoformat()),
         )
     expiry = datetime.now(timezone.utc) + timedelta(days=7)
     store.create_complimentary_subscriber(
