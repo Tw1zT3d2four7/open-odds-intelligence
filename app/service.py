@@ -1169,7 +1169,7 @@ class OddsService:
         with self._events_cache_lock:
             self._events_cache.clear()
 
-    def events(self, sport=None, limit=None, offset=0, include_premium=True):
+    def events(self, sport=None, limit=None, offset=0, include_premium=None):
         """Return a short-lived shared snapshot for concurrent dashboard reads."""
         cache_key = (sport or "__all__") + f":{limit}:{offset}:premium={bool(include_premium)}"
         now = time.monotonic()
@@ -1201,7 +1201,8 @@ class OddsService:
                         market_copy = dict(market)
                         outcomes = [
                             dict(outcome) for outcome in market.get("outcomes") or []
-                            if outcome.get("source_access_class") == "free"
+                            if include_premium is None
+                            or outcome.get("source_access_class") == "free"
                             or (include_premium and outcome.get("source_access_class") == "premium")
                         ]
                         if outcomes:
@@ -1217,7 +1218,7 @@ class OddsService:
             return scoped
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None,
-                limit=100, outcome_description=None, include_premium=False):
+                limit=100, outcome_description=None, include_premium=None):
         return self.db.history(event_id, market_key, outcome_name, bookmaker_key, point,
                                limit, outcome_description, include_premium)
 
@@ -1228,7 +1229,7 @@ class OddsService:
         return self.db.movement(sport, limit, include_premium)
 
     def movement_history(self, event_id, market_key, outcome_name,
-                         bookmaker_key, limit=500, outcome_description=None, include_premium=False):
+                         bookmaker_key, limit=500, outcome_description=None, include_premium=None):
         return self.db.movement_history(
             event_id, market_key, outcome_name, bookmaker_key, limit, outcome_description,
             include_premium
