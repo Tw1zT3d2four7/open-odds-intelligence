@@ -75,6 +75,13 @@ def test_subscriber_registration_normalizes_email_and_never_assigns_admin(tmp_pa
     assert row["account_type"] == "subscriber"
     assert row["is_active"] == 1
     assert row["email_verified_at"] is None
+    free_grants = set(store.active_subscriber_entitlements(identity_id))
+    assert free_grants == {
+        "dashboard", "odds", "market_limits", "market_board", "simulation",
+        "player_props", "clv", "market_movement", "history",
+        "opportunities", "arbitrage",
+    }
+    assert "premium_data" not in free_grants
 
 
 @pytest.mark.parametrize("email", ["", "bad-address", "a@b", "person example.com", "x" * 255 + "@a.com"])
@@ -1772,3 +1779,78 @@ def test_billing_subscriptions_support_monthly_and_yearly_intervals_only(tmp_pat
             "SELECT billing_interval FROM billing_subscriptions ORDER BY billing_interval"
         ).fetchall()
     assert [row["billing_interval"] for row in rows] == ["month", "year"]
+
+@pytest.mark.parametrize(
+    ("price_id", "interval"),
+    [("price_monthly_test", "month"), ("price_annual_test", "year")],
+)
+def test_active_monthly_or_annual_subscription_grants_premium_data(
+    tmp_path, monkeypatch, price_id, interval
+):
+    from datetime import datetime, timedelta, timezone
+
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("paid@example.com", "correct horse battery")
+    monkeypatch.setattr(config, "STRIPE_PRICE_MONTHLY_ID", "price_monthly_test")
+    monkeypatch.setattr(config, "STRIPE_PRICE_YEARLY_ID", "price_annual_test")
+    now = datetime.now(timezone.utc)
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO billing_customers(identity_id,stripe_customer_id,created_at,updated_at) VALUES(?,?,?,?)",
+            (identity_id, "cus_paid_test", now.isoformat(), now.isoformat()),
+        )
+        db.execute(
+            """INSERT INTO billing_subscriptions(
+                id,identity_id,stripe_subscription_id,stripe_customer_id,
+                stripe_price_id,billing_interval,status,current_period_start,
+                current_period_end,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,'active',?,?,?,?)""",
+            (
+                "local-subscription", identity_id, "sub_paid_test", "cus_paid_test",
+                price_id, interval, (now - timedelta(days=1)).isoformat(),
+                (now + timedelta(days=29)).isoformat(), now.isoformat(), now.isoformat(),
+            ),
+        )
+
+    assert store.has_subscriber_entitlement(identity_id, "premium_data") is True
+    assert "premium_data" in store.active_subscriber_entitlements(identity_id)
+
+
+@pytest.mark.parametrize(
+    ("status", "period_end"),
+    [
+        ("canceled", datetime.now(timezone.utc) + timedelta(days=10)),
+        ("past_due", datetime.now(timezone.utc) + timedelta(days=10)),
+        ("active", datetime.now(timezone.utc) - timedelta(seconds=1)),
+    ],
+)
+def test_inactive_or_expired_subscription_does_not_grant_premium_data(
+    tmp_path, monkeypatch, status, period_end
+):
+    from datetime import datetime, timedelta, timezone
+
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("inactive-paid@example.com", "correct horse battery")
+    monkeypatch.setattr(config, "STRIPE_PRICE_MONTHLY_ID", "price_monthly_test")
+    monkeypatch.setattr(config, "STRIPE_PRICE_YEARLY_ID", "price_annual_test")
+    now = datetime.now(timezone.utc)
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO billing_customers(identity_id,stripe_customer_id,created_at,updated_at) VALUES(?,?,?,?)",
+            (identity_id, "cus_inactive_test", now.isoformat(), now.isoformat()),
+        )
+        db.execute(
+            """INSERT INTO billing_subscriptions(
+                id,identity_id,stripe_subscription_id,stripe_customer_id,
+                stripe_price_id,billing_interval,status,current_period_start,
+                current_period_end,created_at,updated_at
+            ) VALUES(?,?,?,?,?,'month',?,?,?, ?,?)""",
+            (
+                "local-inactive-sub", identity_id, "sub_inactive_test", "cus_inactive_test",
+                "price_monthly_test", status, (now - timedelta(days=1)).isoformat(),
+                period_end.isoformat(), now.isoformat(), now.isoformat(),
+            ),
+        )
+
+    assert store.has_subscriber_entitlement(identity_id, "premium_data") is False
+    assert "premium_data" not in store.active_subscriber_entitlements(identity_id)
