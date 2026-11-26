@@ -501,7 +501,7 @@ def test_complimentary_subscriber_admin_flow_requires_mfa_csrf_and_activation(tm
         "entitlements": ["dashboard", "odds"],
         "duration_days": 30,
         "campaign": "November giveaway",
-        "reason": "Verified giveaway winner",
+        "reason_code": "giveaway_winner",
     }
     denied = harness.post("/admin/subscribers/complimentary", payload)
     assert denied.status_code == 401
