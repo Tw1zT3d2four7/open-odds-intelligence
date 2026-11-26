@@ -79,19 +79,24 @@ Using disposable staging identities and the fake email sender:
 
 Use synthetic provider fixtures first. Do not purchase a provider plan or enable live premium polling as part of the initial staging drill.
 
+The staging compose file is isolated on `127.0.0.1:18765`, uses `.env.staging` and `staging-data/`, and pulls the `:admin-staging` image. The feature-branch image workflow now publishes `:admin-staging`; the `:release` alias is reserved for an actual GitHub release event.
+
 - Confirm free-tier operation with no premium provider credentials configured and verify that no premium provider requests are attempted.
-- Configure one provider capability as `premium` in `ODDS_PROVIDER_ACCESS_CLASSES` while keeping `ODDS_PREMIUM_PROVIDER_POLLING_ENABLED=false`; verify that no premium polling occurs.
-- Confirm a free subscriber receives only free-class quotes, sizes, derived market calculations, history, movement, and CLV.
-- Confirm a paid subscriber with the explicit `premium_data` entitlement receives free plus premium data when premium polling is separately enabled for the controlled test.
-- Use a fixture where free and premium providers quote the same bookmaker/market/selection at different timestamps; verify the free quote remains available to free accounts and the paid view resolves the permitted combined dataset.
+- Configure explicit provider account groups with `ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES` (for example, `the_odds_api|free-account=free,the_odds_api|premium-account=premium`). Keep `ODDS_PREMIUM_PROVIDER_POLLING_ENABLED=false`; verify only free groups can be leased by scheduled and manual refreshes.
+- Configure an optional reserve floor with `ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS` (for example, `the_odds_api|premium-account=credits_remaining:250`). Verify the Admin Overview shows the configured floor without exposing credentials.
+- Confirm a free subscriber receives only free-class quotes, sizes, derived market calculations, history, movement, market limits, and CLV. Confirm a paid subscriber with the explicit `premium_data` entitlement receives free plus premium data when premium polling is separately enabled for the controlled test.
+- Use fixtures where free and premium account groups quote the same bookmaker/market/selection at different timestamps. Verify free and premium entries remain separately stored, free views remain free-only, and paid views can use the permitted combined dataset without duplicate sportsbook counting.
+- Verify complete market calculations never combine opposite outcomes from different account groups. Verify size/limit provenance follows the account that supplied the size data, not automatically the account that supplied the odds.
+- Refresh one same-tier account group while another group remains stored; verify only the leased group is replaced and the other group's quote history, movement, and CLV provenance remain intact.
+- Drive provider-reported remaining quota to the configured floor. Confirm every key in that group enters cooldown, other groups remain available, a successful response does not clear the cooldown, and the cooldown survives a service restart.
 - Confirm cache keys, pagination, event provenance, and provider diagnostics do not reveal premium data or premium provider details to free accounts.
-- Confirm downgrade, cancellation, complimentary expiry, and explicit entitlement revocation immediately remove premium access, including history.
-- Confirm unknown or unclassified historical rows are restricted for subscriber views.
+- Confirm downgrade, cancellation, complimentary expiry, and explicit entitlement revocation immediately remove premium access, including history, movement, market limits, and CLV.
+- Confirm missing account groups, unlisted groups, and legacy quote/CLV/market-limit rows without trustworthy account provenance remain restricted.
 - Confirm global Discord alerts in identity mode never include premium-only data.
 - Confirm provider request schedules and quota accounting are platform-controlled rather than triggered by individual subscriber reads.
-- Confirm the admin diagnostics show source classes and the premium-polling safety switch without exposing API keys.
+- Confirm Admin Overview displays account groups, source classes, usage counters, configured quota floors, and reset state without exposing API keys, tokens, or authorization values.
 
-The premium source flag remains disabled after the test. Record actual provider plan terms and quotas separately before approving any production premium ingestion.
+The premium polling switch remains disabled after the test. Record actual provider plan terms, quota metrics, and pricing separately before approving any production premium ingestion. See `docs/provider-data-access-isolation.md` for the detailed provider-tier checklist.
 
 ## 6. Administrator acceptance
 
