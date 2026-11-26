@@ -695,7 +695,11 @@ def test_identity_and_session_audit_events_exclude_credentials_and_tokens(tmp_pa
     for row in events:
         assert token not in row["metadata_json"]
         assert "audit@example.com" not in row["metadata_json"]
-        assert row["metadata_json"] == "{}"
+        if row["event_type"] == "subscriber.registered":
+            assert '"plan_code":"free"' in row["metadata_json"]
+            assert '"premium_data"' not in row["metadata_json"]
+        else:
+            assert row["metadata_json"] == "{}"
 
 
 def test_revoke_all_sessions_audit_records_only_revocation_count(tmp_path):
@@ -1067,8 +1071,14 @@ def test_subscriber_entitlements_default_deny_and_require_mfa_admin_actor(tmp_pa
     subscriber_id = store.create_subscriber(
         "entitled@example.com", "a strong subscriber password"
     )
-    assert store.active_subscriber_entitlements(subscriber_id) == []
-    assert store.has_subscriber_entitlement(subscriber_id, "odds") is False
+    free_bundle = set(store.active_subscriber_entitlements(subscriber_id))
+    assert free_bundle == {
+        "dashboard", "odds", "market_limits", "market_board", "simulation",
+        "player_props", "clv", "market_movement", "history",
+        "opportunities", "arbitrage",
+    }
+    assert store.has_subscriber_entitlement(subscriber_id, "odds") is True
+    assert store.has_subscriber_entitlement(subscriber_id, "premium_data") is False
 
     other_subscriber = store.create_subscriber(
         "other-entitled@example.com", "another strong subscriber password"
@@ -1618,7 +1628,8 @@ def test_stripe_subscription_event_never_grants_entitlements(tmp_path):
             "SELECT COUNT(*) AS count FROM subscriber_entitlements WHERE identity_id=?",
             (subscriber_id,),
         ).fetchone()["count"]
-    assert grants == 0
+    assert grants == 11
+    assert store.has_subscriber_entitlement(subscriber_id, "premium_data") is False
 
 
 def test_stripe_webhook_failure_releases_lease_and_sanitizes_error_code(tmp_path):
