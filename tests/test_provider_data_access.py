@@ -93,3 +93,17 @@ def test_premium_size_metadata_is_not_exposed_with_free_quote(tmp_path):
     assert "size_source_provider" not in free_outcome
     assert paid_outcome["size"] == {"max": 1000}
     assert paid_outcome["size_source_access_class"] == "premium"
+
+def test_premium_provider_polling_is_disabled_by_default(tmp_path, monkeypatch):
+    from app import config
+
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    service = OddsService(database=db)
+    monkeypatch.setattr(config, "ODDS_PREMIUM_PROVIDER_POLLING_ENABLED", False)
+    monkeypatch.setattr(config, "ODDS_PROVIDER_ACCESS_CLASSES", {"paid-feed": "premium"})
+    monkeypatch.setattr(service, "active_provider_names", lambda: ["paid-feed"])
+
+    result = service._refresh_locked()
+
+    assert result["ok"] is False
+    assert "No configured API keys" in result["error"]
