@@ -769,18 +769,7 @@ class MarketLimitsMonitor:
             sql += " WHERE source_access_class='free'"
         elif include_premium is True:
             sql += " WHERE source_access_class IN ('free','premium')"
-        sql += """),
-        sequenced AS (
-            SELECT q.*,
-                   LAG(limit_amount) OVER (
-                       PARTITION BY event_id,bookmaker_key,market_key,outcome_name,point,
-                                    source_provider,source_account_group,source_access_class
-                       ORDER BY id
-                   ) AS previous_limit
-            FROM scoped q
-        )
-        SELECT * FROM sequenced
-        WHERE previous_limit IS NOT NULL AND limit_amount != previous_limit"""
+        sql += "),\n        sequenced AS (\n            SELECT q.*,\n                   LAG(limit_amount) OVER (\n                       PARTITION BY event_id,bookmaker_key,market_key,outcome_name,point,\n                                    source_provider,source_account_group,source_access_class\n                       ORDER BY id\n                   ) AS previous_limit\n            FROM scoped q\n        )\n        SELECT * FROM sequenced\n        WHERE previous_limit IS NOT NULL AND limit_amount != previous_limit"
         if sport:
             sql += " AND sport=?"
             args.append(sport)
