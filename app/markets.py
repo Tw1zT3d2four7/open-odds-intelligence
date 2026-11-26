@@ -246,14 +246,19 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
             best = {}
             for (market_key, line, _player_scope), quotes in line_sets.items():
                 for quote in quotes:
-                    peers = [q["probability"] for q in quotes
-                             if q["book"].get("key") != quote["book"].get("key")
-                             and q["identity"] == quote["identity"]]
-                    peer_books = {q["book"].get("key") for q in quotes
-                                  if q["book"].get("key") != quote["book"].get("key")
-                                  and q["identity"] == quote["identity"]}
+                    peer_probabilities = defaultdict(list)
+                    for peer in quotes:
+                        peer_book_key = peer["book"].get("key")
+                        if (peer_book_key and peer_book_key != quote["book"].get("key")
+                                and peer["identity"] == quote["identity"]):
+                            peer_probabilities[peer_book_key].append(peer["probability"])
+                    peer_books = set(peer_probabilities)
                     if len(peer_books) < min_consensus_books:
                         continue
+                    # Multiple account groups may contain the same sportsbook.
+                    # Collapse that sportsbook to one peer probability so it is
+                    # never counted more than once in the consensus.
+                    peers = [median(values) for values in peer_probabilities.values()]
                     fair = median(peers)
                     price = quote["outcome"]["price"]
                     ev = (fair * american_to_decimal(price) - 1) * 100
