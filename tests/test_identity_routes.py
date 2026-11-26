@@ -529,7 +529,7 @@ def test_complimentary_subscriber_admin_flow_requires_mfa_csrf_and_activation(tm
     assert harness.deliver_pending() == 1
     message = harness.sender.messages[0]
     assert message["recipient"] == "giveaway@example.test"
-    assert "reset-password#token=" in message["text"]
+    assert "reset-password?mode=activation#token=" in message["text"]
     token = unquote(message["text"].rsplit("#token=", 1)[1].split()[0])
     activated = harness.post("/auth/password-reset/consume", {
         "token": token,
