@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import config
+from .auth_config import AUTHENTICATION_POLICY as AUTH_POLICY
 from .auth import (
     ADMINISTRATOR_COOKIE,
     SUBSCRIBER_COOKIE,
@@ -247,6 +248,8 @@ def _rate_limit(
     identifier: str | None,
 ) -> None:
     """Atomically consume operation-specific IP, identity, cooldown and daily buckets."""
+    if AUTH_POLICY.is_local_development and not AUTH_POLICY.rate_limiting_enabled:
+        return
     ip = request_peer_ip(request)
     policies: list[tuple[str, int, int]] = []
     if operation == "subscriber-login":
@@ -325,13 +328,14 @@ def _public_origin() -> str:
         parsed = None
     if (
         parsed is None
-        or parsed.scheme != "https"
+        or parsed.scheme not in ({"https", "http"} if AUTH_POLICY.is_local_development else {"https"})
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
         or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
+        or (parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"})
     ):
         raise HTTPException(
             status_code=503,
@@ -397,9 +401,22 @@ def _send_challenge_email(
     )
 
 
+_LOCAL_OUTBOX_SENDER = object()
+
+
 def get_email_sender(request: Request):
-    """Validate provider and encrypted-queue configuration before accepting a challenge."""
+    """Validate the selected email transport before accepting a challenge."""
     configured = getattr(request.app.state, "email_sender", None)
+    if AUTH_POLICY.email_transport == "local_outbox":
+        if not AUTH_POLICY.is_local_development:
+            raise HTTPException(status_code=503, detail="Local email outbox is unavailable.")
+        try:
+            validate_email_queue_configuration()
+        except EmailDeliveryConfigurationError:
+            raise HTTPException(status_code=503, detail="Local email outbox is not configured.") from None
+        return _LOCAL_OUTBOX_SENDER
+    if AUTH_POLICY.email_transport == "disabled":
+        raise HTTPException(status_code=503, detail="Authentication email delivery is disabled.")
     try:
         validate_email_queue_configuration()
         sender = configured if configured is not None else create_email_sender()
@@ -745,6 +762,8 @@ def register_subscriber(
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
     sender=Depends(get_email_sender),
 ):
+    if not AUTH_POLICY.identity_enabled or not AUTH_POLICY.registration_enabled:
+        raise HTTPException(status_code=404, detail="Registration is unavailable.")
     _rate_limit(request, limiter, "subscriber-register", _identifier(payload.email))
     try:
         identity_id = store.create_subscriber(payload.email, payload.password)
@@ -793,6 +812,8 @@ def resend_verification(
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
     sender=Depends(get_email_sender),
 ):
+    if not AUTH_POLICY.identity_enabled or not AUTH_POLICY.email_verification_required:
+        raise HTTPException(status_code=404, detail="Email verification is unavailable.")
     _rate_limit(request, limiter, "verification-email", _identifier(payload.email))
     try:
         token = store.create_email_verification_challenge(payload.email)
@@ -822,6 +843,8 @@ def verify_email(
     store: IdentityStore = Depends(get_identity_store),
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
 ):
+    if not AUTH_POLICY.identity_enabled or not AUTH_POLICY.email_verification_required:
+        raise HTTPException(status_code=404, detail="Email verification is unavailable.")
     token_hash = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
     _rate_limit(request, limiter, "email-verification-consume", token_hash)
     try:
@@ -842,6 +865,8 @@ def request_password_reset(
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
     sender=Depends(get_email_sender),
 ):
+    if not AUTH_POLICY.identity_enabled or not AUTH_POLICY.password_recovery_enabled:
+        raise HTTPException(status_code=404, detail="Password recovery is unavailable.")
     _rate_limit(request, limiter, "password-reset-email", _identifier(payload.email))
     try:
         token = store.create_password_reset_challenge(payload.email)
@@ -870,6 +895,8 @@ def consume_password_reset(
     store: IdentityStore = Depends(get_identity_store),
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
 ):
+    if not AUTH_POLICY.identity_enabled or not AUTH_POLICY.password_recovery_enabled:
+        raise HTTPException(status_code=404, detail="Password recovery is unavailable.")
     token_hash = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
     _rate_limit(request, limiter, "password-reset-consume", token_hash)
     try:
@@ -895,6 +922,8 @@ def subscriber_login(
 ):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
+    if not AUTH_POLICY.identity_enabled or not AUTH_POLICY.subscriber_login_enabled:
+        raise HTTPException(status_code=404, detail="Subscriber sign-in is unavailable.")
     _rate_limit(request, limiter, "subscriber-login", _identifier(payload.email))
     try:
         identity_id = store.authenticate(payload.email, payload.password, "subscriber")
