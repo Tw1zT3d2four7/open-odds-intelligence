@@ -1087,6 +1087,91 @@ class IdentityStore:
         """Create an unverified subscriber. Public routes must call this only."""
         return self._create_identity(email, password, "subscriber")
 
+    def create_complimentary_subscriber(
+        self,
+        email: str,
+        entitlement_keys: list[str] | tuple[str, ...],
+        *,
+        actor_identity_id: str,
+        expires_at: datetime,
+        campaign: str,
+        reason: str,
+    ) -> dict:
+        """Atomically create a password-pending promo account, expiring grants and activation challenge."""
+        normalized_email = _normalize_email(email)
+        if not isinstance(actor_identity_id, str) or not actor_identity_id or len(actor_identity_id) > 128:
+            raise ValueError("An active MFA administrator is required.")
+        if not isinstance(entitlement_keys, (list, tuple)) or not entitlement_keys or len(entitlement_keys) > 32:
+            raise ValueError("Select at least one feature entitlement.")
+        if any(not isinstance(key, str) or key not in _ENTITLEMENT_KEYS for key in entitlement_keys):
+            raise ValueError("One or more entitlement keys are not supported.")
+        normalized = sorted(set(entitlement_keys))
+        if not isinstance(expires_at, datetime) or expires_at.tzinfo is None or expires_at.utcoffset() is None:
+            raise ValueError("Complimentary access expiry must include a timezone.")
+        now_dt = _now()
+        if expires_at.astimezone(timezone.utc) <= now_dt or expires_at.astimezone(timezone.utc) > now_dt + timedelta(days=366):
+            raise ValueError("Complimentary access must expire within 366 days.")
+        if not isinstance(campaign, str) or not campaign.strip() or len(campaign.strip()) > 80:
+            raise ValueError("A campaign or promotion name is required.")
+        if not isinstance(reason, str) or not reason.strip() or len(reason.strip()) > 500:
+            raise ValueError("A reason for complimentary access is required.")
+
+        now = _timestamp(now_dt)
+        expiry = _timestamp(expires_at.astimezone(timezone.utc))
+        identity_id = secrets.token_urlsafe(24)
+        # The random credential is never returned or sent; the recipient sets their own.
+        password_hash = _password_hash(secrets.token_urlsafe(48))
+        activation_token = secrets.token_urlsafe(32)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            actor = self._resolve_audit_actor(db, identity_id, actor_identity_id)
+            try:
+                db.execute(
+                    """INSERT INTO identities(
+                        id, email, account_type, password_hash, created_at, updated_at,
+                        password_changed_at
+                    ) VALUES (?, ?, 'subscriber', ?, ?, ?, ?)""",
+                    (identity_id, normalized_email, password_hash, now, now, now),
+                )
+            except sqlite3.IntegrityError:
+                db.rollback()
+                raise ValueError("A subscriber account already exists for this email address.") from None
+            for key in normalized:
+                db.execute(
+                    """INSERT INTO subscriber_entitlements(
+                        id, identity_id, entitlement_key, starts_at, expires_at,
+                        granted_by, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (secrets.token_urlsafe(18), identity_id, key, now, expiry, actor, now, now),
+                )
+            db.execute(
+                """INSERT INTO password_reset_challenges(
+                    id, identity_id, token_hash, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?)""",
+                (secrets.token_urlsafe(18), identity_id, _token_digest(activation_token),
+                 now, _timestamp(now_dt + timedelta(minutes=30))),
+            )
+            self._record_audit_event(
+                db, "subscriber.complimentary_access_granted", identity_id, now,
+                metadata={
+                    "entitlements": normalized,
+                    "expires_at": expiry,
+                    "grant_type": "complimentary",
+                    "campaign": campaign.strip(),
+                    "reason": reason.strip(),
+                    "activation_expires_at": _timestamp(now_dt + timedelta(minutes=30)),
+                },
+                actor_identity_id=actor,
+            )
+            db.commit()
+        return {
+            "identity_id": identity_id,
+            "email": normalized_email,
+            "entitlements": normalized,
+            "expires_at": expiry,
+            "activation_token": activation_token,
+        }
+
     def provision_initial_administrator(self, email: str, password: str) -> str:
         """Atomically create the first and only bootstrap administrator."""
         normalized_email = _normalize_email(email)
@@ -1325,13 +1410,27 @@ class IdentityStore:
             )
             db.execute(
                 """UPDATE identities SET password_hash=?, password_changed_at=?,
-                   updated_at=? WHERE id=?""",
-                (password_hash, now, now, challenge["identity_id"]),
+                   email_verified_at=COALESCE(email_verified_at, ?), updated_at=? WHERE id=?""",
+                (password_hash, now, now, now, challenge["identity_id"]),
             )
             db.execute(
                 """UPDATE sessions SET revoked_at=?
                    WHERE identity_id=? AND revoked_at IS NULL""",
                 (now, challenge["identity_id"]),
+            )
+            # A one-time reset/activation link proves control of the mailbox.
+            # This also lets administrator-created promotional accounts activate
+            # without bypassing the subscriber email-verification requirement.
+            db.execute(
+                """INSERT INTO security_audit_events(
+                    id, event_type, subject_identity_id, occurred_at, metadata_json
+                )
+                SELECT ?, 'subscriber.email_verified', ?, ?, '{}'
+                WHERE EXISTS (
+                    SELECT 1 FROM identities
+                    WHERE id=? AND account_type='subscriber' AND email_verified_at=?
+                )""",
+                (secrets.token_urlsafe(18), challenge["identity_id"], now, challenge["identity_id"], now),
             )
             db.execute(
                 """INSERT INTO security_audit_events(
