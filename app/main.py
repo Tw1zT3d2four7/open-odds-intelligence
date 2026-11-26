@@ -551,9 +551,9 @@ def player_props(request: Request, sport: str | None = None, limit: int = Query(
 def closing_line_value(request: Request, sport: str | None = None,
                        limit: int = Query(25, ge=1, le=100),
                        offset: int = Query(0, ge=0)):
-    result = service.clv_report(sport, 2000) if _include_premium_data(request) is not False else {
-        "entries": [], "note": "Historical CLV is temporarily withheld from free accounts until source-level classification is available for every archived calculation."
-    }
+    result = service.clv_report(
+        sport, 2000, include_premium=_include_premium_data(request)
+    )
     page = _page_results(result.get("entries", []), limit, offset)
     return {**result, "entries": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"]}
