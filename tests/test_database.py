@@ -1377,3 +1377,53 @@ def test_movement_timelines_do_not_mix_same_tier_account_groups(tmp_path):
         "movement-groups", "h2h", "Home", "book-a", include_premium=False
     )
     assert {row["source_account_group"] for row in timeline} == {"free-a", "free-b"}
+
+
+
+def test_clv_migration_restricts_old_provider_level_tier_labels(tmp_path):
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    path = tmp_path / "clv-provider-tier-legacy.sqlite3"
+    now = datetime.now(timezone.utc)
+    commence = (now + timedelta(hours=6)).isoformat()
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE clv_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL, sport TEXT NOT NULL DEFAULT '',
+                matchup TEXT NOT NULL DEFAULT '', commence_time TEXT NOT NULL,
+                market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                point REAL, point_key TEXT NOT NULL DEFAULT '',
+                bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                entry_price INTEGER NOT NULL, entry_fair_probability REAL NOT NULL,
+                entry_ev_percent REAL NOT NULL, entry_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                close_at TEXT, close_fair_probability REAL,
+                close_fair_american INTEGER, closing_books INTEGER, clv_percent REAL,
+                source_provider TEXT NOT NULL DEFAULT '',
+                source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_access_class)
+            )
+        """)
+        raw.execute("""
+            INSERT INTO clv_entries(
+                event_id,sport,matchup,commence_time,market_key,outcome_name,
+                point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                entry_fair_probability,entry_ev_percent,entry_at,source_provider,
+                source_access_class
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            "legacy-provider-tier", "basketball_nba", "Away @ Home", commence,
+            "h2h", "Home", None, "", "book", "Book", -110, 0.5, 1.0,
+            now.isoformat(), "the_odds_api", "free",
+        ))
+
+    db = OddsDatabase(path)
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT source_provider,source_account_group,source_access_class FROM clv_entries"
+        ).fetchone()
+    assert row["source_provider"] == "the_odds_api"
+    assert row["source_account_group"] == ""
+    assert row["source_access_class"] == "restricted"
