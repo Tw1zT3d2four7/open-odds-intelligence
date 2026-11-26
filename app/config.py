@@ -57,6 +57,39 @@ for _entry in _raw_provider_account_access_classes.replace("\n", ",").split(",")
         )
     ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.setdefault(_provider_name, {})[_account_group] = _access_class
 
+# Optional provider quota reserve floors use provider|group=metric:minimum.
+# When a provider reports a remaining-quota metric at/below the floor, the
+# whole account group is paused until its reported reset (or 24h fallback).
+ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS = {}
+_allowed_quota_metrics = {
+    "requests_remaining", "credits_remaining", "monthly_objects_remaining",
+    "datapoints_remaining", "remaining_requests", "remaining_credits",
+    "remaining_objects",
+}
+_raw_provider_account_quota_floors = os.getenv("ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS", "")
+for _entry in _raw_provider_account_quota_floors.replace("\\n", ",").split(","):
+    if not _entry.strip():
+        continue
+    if "=" not in _entry or "|" not in _entry.split("=", 1)[0] or ":" not in _entry.split("=", 1)[1]:
+        raise ValueError(
+            "ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS entries must use provider|group=metric:minimum."
+        )
+    _account_ref, _floor_spec = (part.strip() for part in _entry.split("=", 1))
+    _provider_name, _account_group = (part.strip().lower() for part in _account_ref.split("|", 1))
+    _metric, _minimum = (part.strip().lower() for part in _floor_spec.split(":", 1))
+    try:
+        _minimum = int(_minimum)
+    except (TypeError, ValueError):
+        raise ValueError("Provider account quota floors must be positive integers.") from None
+    if (not _provider_name or not _account_group or _metric not in _allowed_quota_metrics
+            or _minimum <= 0):
+        raise ValueError(
+            "Provider account quota floors require a supported remaining metric and a positive integer."
+        )
+    ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.setdefault(_provider_name, {}).setdefault(
+        _account_group, {}
+    )[_metric] = _minimum
+
 # Do not normalize or change API key case: provider keys are case-sensitive.
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY", "")
 # TheRundown key is case-sensitive; preserve it exactly.
