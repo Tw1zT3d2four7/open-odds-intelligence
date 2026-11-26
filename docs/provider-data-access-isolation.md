@@ -131,7 +131,7 @@ The current-limits query, change-history window, and exact-selection history app
 
 Automated coverage includes free-versus-paid current limits, exact-selection history, source-partitioned change windows, restricted legacy rows, and premium diagnostic redaction. CI run 45746913326 passed **990 tests with 1 non-blocking warning**.
 
-Still outstanding: independent access-class configuration and quota accounting for multiple account groups under the same provider; premium-specific CLV tracking; broader provider usage metering/cost guardrails; and isolated HTTPS staging acceptance. Premium polling remains disabled by default, and this implementation does not authorize provider purchases, production deployment, merge, or live billing.
+At the time of this update, premium-specific CLV tracking and per-account access-class configuration were still outstanding; both are now implemented in the sections above but await full CI verification. Broader provider usage metering/cost guardrails and isolated HTTPS staging acceptance remain outstanding. Premium polling remains disabled by default, and this implementation does not authorize provider purchases, production deployment, merge, or live billing.
 
 
 ### Provider account-group key handling — 2026-11-26
