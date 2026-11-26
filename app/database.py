@@ -119,12 +119,17 @@ class OddsDatabase:
                     db.execute(f"ALTER TABLE sent_alerts ADD COLUMN {column} {declaration}")
             db.execute("CREATE INDEX IF NOT EXISTS idx_sent_alerts_event_lifecycle ON sent_alerts(event_id, lifecycle_status)")
             clv_columns = {row["name"] for row in db.execute("PRAGMA table_info(clv_entries)")}
+            legacy_clv_account_provenance_missing = not {
+                "source_provider", "source_account_group"
+            }.issubset(clv_columns)
             if "source_provider" not in clv_columns:
                 db.execute("ALTER TABLE clv_entries ADD COLUMN source_provider TEXT NOT NULL DEFAULT ''")
             if "source_account_group" not in clv_columns:
                 db.execute("ALTER TABLE clv_entries ADD COLUMN source_account_group TEXT NOT NULL DEFAULT ''")
             if "source_access_class" not in clv_columns:
                 db.execute("ALTER TABLE clv_entries ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
+            if legacy_clv_account_provenance_missing:
+                db.execute("UPDATE clv_entries SET source_access_class='restricted'")
             # Rebuild legacy CLV identity so free and premium observations of
             # the same selection can coexist without overwriting one another.
             clv_unique_indexes = db.execute("PRAGMA index_list(clv_entries)").fetchall()
