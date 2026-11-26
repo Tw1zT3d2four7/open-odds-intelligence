@@ -491,6 +491,13 @@ class OddsService:
                     provider: dict(groups)
                     for provider, groups in config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.items()
                 },
+                "provider_account_quota_floors": {
+                    provider: {
+                        group: dict(metrics)
+                        for group, metrics in groups.items()
+                    }
+                    for provider, groups in config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.items()
+                },
                 "premium_provider_polling_enabled": config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED,
                 "providers": self.active_provider_names(),
                 "auto_refresh_providers": self.auto_refresh_provider_names(),
