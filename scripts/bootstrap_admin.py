@@ -6,6 +6,15 @@ not an HTTP endpoint and accepts no credentials through command-line arguments.
 from __future__ import annotations
 
 from getpass import getpass
+from pathlib import Path
+import sys
+
+# Direct execution sets sys.path[0] to /app/scripts inside the container.
+# Add the project root so the sibling "app" package is importable regardless
+# of whether this file is launched directly or via python -m.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.identity import IdentityStore
 
