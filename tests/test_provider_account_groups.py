@@ -133,6 +133,8 @@ def test_service_never_persists_raw_provider_credentials_from_usage_payload(tmp_
         "usage_observed_at": "2026-11-26T00:00:00Z",
         "api_key": "NeverPersistThisKey",
         "access_token": "NeverPersistThisToken",
+        "authorization": "Bearer NeverPersistThisAuthorization",
+        "password": "NeverPersistThisPassword",
     }
 
     service._record_provider_key_usage("example", pool, lease, usage)
@@ -144,4 +146,6 @@ def test_service_never_persists_raw_provider_credentials_from_usage_payload(tmp_
     assert "NeverPersistThisToken" not in per_key
     assert "NeverPersistThisKey" not in latest
     assert "NeverPersistThisToken" not in latest
+    assert "NeverPersistThisAuthorization" not in latest
+    assert "NeverPersistThisPassword" not in latest
     assert "credits_remaining" in latest
