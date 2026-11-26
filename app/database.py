@@ -771,17 +771,19 @@ class OddsDatabase:
     def movement_history(self, event_id, market_key, outcome_name,
                          bookmaker_key, limit=500, outcome_description=None, include_premium=None):
         """Return a chronological quote timeline, including every observed line."""
+        sql = """SELECT s.fetched_at, q.source_updated_at, q.point, q.price
+                 FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
+                 WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?
+                   AND q.bookmaker_key=? AND (? IS NULL OR q.outcome_description=?)"""
+        args = [event_id, market_key, outcome_name, bookmaker_key,
+                outcome_description, outcome_description]
+        if include_premium is not None:
+            sql += " AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))"
+            args.append(1 if include_premium else 0)
+        sql += " ORDER BY s.id DESC LIMIT ?"
+        args.append(max(1, min(int(limit), 1000)))
         with self.connect() as db:
-            rows = db.execute(
-                """SELECT s.fetched_at, q.source_updated_at, q.point, q.price
-                   FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
-                   WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?
-                     AND q.bookmaker_key=? AND (? IS NULL OR q.outcome_description=?)
-                   ORDER BY s.id DESC LIMIT ?""",
-                (event_id, market_key, outcome_name, bookmaker_key,
-                 outcome_description, outcome_description,
-                 max(1, min(int(limit), 1000))),
-            ).fetchall()
+            rows = db.execute(sql, args).fetchall()
         return [dict(row) for row in reversed(rows)]
 
 
