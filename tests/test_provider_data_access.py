@@ -31,15 +31,15 @@ def _event(provider="feed", access_class="free", event_id="event-1"):
 
 
 def test_provider_merge_assigns_explicit_access_class_and_fails_closed():
-    free, _ = merge_provider_events(
+    free = merge_provider_events(
         [("free-feed", [_event("free-feed")])],
         provider_access_classes={"free-feed": "free"},
     )
-    premium, _ = merge_provider_events(
+    premium = merge_provider_events(
         [("paid-feed", [_event("paid-feed")])],
         provider_access_classes={"paid-feed": "premium"},
     )
-    unknown, _ = merge_provider_events(
+    unknown = merge_provider_events(
         [("unclassified-feed", [_event("unclassified-feed")])],
         provider_access_classes={},
     )
