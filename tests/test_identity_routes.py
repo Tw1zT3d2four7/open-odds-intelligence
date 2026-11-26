@@ -1572,6 +1572,10 @@ def test_local_no_email_registration_creates_verified_account_without_queue(tmp_
     monkeypatch.setattr(identity_module, "AUTH_POLICY", local_policy)
     monkeypatch.setattr(routes_module, "AUTH_POLICY", local_policy)
     harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    policy_response = harness.client.get("/auth/csrf")
+    assert policy_response.json()["email_verification_required"] is False
+    assert policy_response.json()["password_recovery_enabled"] is False
+    assert harness.client.get("/forgot-password").status_code == 404
     response = harness.post("/auth/register", {
         "email": "local@example.com",
         "password": "a strong local password 123",
