@@ -111,9 +111,6 @@ async def lifespan(app: FastAPI):
     results_task = None
     alert_task = None
     email_task = None
-    if (not _include_premium_data(request)
-            and config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") != "free"):
-        return {"ok": False, "skipped": True, "error": "Market-limit source is not available in the free data tier."}
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
         and service._provider_key_pools["oddslink"].configured
@@ -310,6 +307,9 @@ def health():
 
 @app.post("/api/limits/refresh", dependencies=dependencies_for_route("POST", "/api/limits/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh_limits(request: Request):
+    if (not _include_premium_data(request)
+            and config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") != "free"):
+        return {"ok": False, "skipped": True, "error": "Market-limit source is not available in the free data tier."}
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
         and service._provider_key_pools["oddslink"].configured
