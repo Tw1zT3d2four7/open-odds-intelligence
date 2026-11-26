@@ -31,11 +31,11 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-def _include_premium_data(request: Request) -> bool:
-    """Return the server-authorized source scope established by route dependencies."""
-    return config.AUTH_MODE == "legacy_basic" or bool(
-        getattr(request.state, "include_premium_data", False)
-    )
+def _include_premium_data(request: Request) -> bool | None:
+    """Return True/False for identity subscribers; None preserves legacy operator scope."""
+    if config.AUTH_MODE == "legacy_basic":
+        return None
+    return bool(getattr(request.state, "include_premium_data", False))
 
 
 async def _limits_refresh_loop():
@@ -307,7 +307,7 @@ def health():
 
 @app.post("/api/limits/refresh", dependencies=dependencies_for_route("POST", "/api/limits/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh_limits(request: Request):
-    if (not _include_premium_data(request)
+    if (_include_premium_data(request) is False
             and config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") != "free"):
         return {"ok": False, "skipped": True, "error": "Market-limit source is not available in the free data tier."}
     oddslink_selected = (
@@ -335,7 +335,7 @@ def refresh_limits(request: Request):
 def market_limits(request: Request, sport: str | None = None,
                   limit: int = Query(25, ge=1, le=100),
                   offset: int = Query(0, ge=0)):
-    rows = (limits_monitor.current(sport, 2000) if _include_premium_data(request) or config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") == "free" else [])
+    rows = (limits_monitor.current(sport, 2000) if _include_premium_data(request) is not False or config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") == "free" else [])
     page = _page_results(rows, limit, offset)
     return {"limits": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
@@ -551,7 +551,7 @@ def player_props(request: Request, sport: str | None = None, limit: int = Query(
 def closing_line_value(request: Request, sport: str | None = None,
                        limit: int = Query(25, ge=1, le=100),
                        offset: int = Query(0, ge=0)):
-    result = service.clv_report(sport, 2000) if _include_premium_data(request) else {
+    result = service.clv_report(sport, 2000) if _include_premium_data(request) is not False else {
         "entries": [], "note": "Historical CLV is temporarily withheld from free accounts until source-level classification is available for every archived calculation."
     }
     page = _page_results(result.get("entries", []), limit, offset)
