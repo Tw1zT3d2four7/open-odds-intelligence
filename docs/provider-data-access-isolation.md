@@ -123,6 +123,7 @@ The feature branch now persists market-limit provenance alongside each posted-li
 
 - source_provider identifies the provider source.
 - Legacy market-limit rows may contain the older non-secret configured-keyset fingerprint in source_account_group; those fingerprints are not mapped to current account labels and legacy access classifications remain restricted. New observations store the normalized leased account-group label, which is independently classified and scoped.
+- Quote snapshots and CLV entries created before account-group provenance was available, or written without both provider and account-group labels, are also restricted. New database writes enforce this rule so an old provider-wide free/premium label cannot silently authorize an unknown account.
 - source_access_class records free, premium, or restricted.
 - source_capability identifies the posted_market_limits capability.
 - Existing SQLite databases receive additive columns. Historical rows without trustworthy classification retain the restricted default.
