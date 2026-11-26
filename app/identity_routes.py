@@ -1112,6 +1112,47 @@ def administrator_overview(
         status = odds_service.status()
         if not isinstance(status, dict):
             raise RuntimeError("Invalid service status response.")
+        provider_accounts = []
+        account_classes = status.get("provider_account_access_classes", {})
+        provider_classes = status.get("provider_access_classes", {})
+        quota_fields = {
+            "credits_remaining", "datapoints_remaining", "requests_remaining",
+            "monthly_objects_remaining", "requests_used", "credits_used",
+            "datapoints_used", "monthly_objects_used", "usage_observed_at",
+            "period_resets_at", "monthly_reset_at", "daily_reset_at",
+        }
+        for provider_name, pool in (status.get("provider_keys") or {}).items():
+            if not isinstance(provider_name, str) or not isinstance(pool, dict):
+                continue
+            provider_overrides = account_classes.get(provider_name, {})
+            for group in pool.get("account_groups", []):
+                if not isinstance(group, dict):
+                    continue
+                group_name = str(group.get("account_group") or "")[:80]
+                usage = group.get("usage") if isinstance(group.get("usage"), dict) else {}
+                safe_usage = {
+                    key: value for key, value in usage.items()
+                    if key in quota_fields and isinstance(value, (str, int, float))
+                    and not isinstance(value, bool)
+                }
+                available = max(0, int(group.get("available_keys") or 0))
+                cooldown = max(0, int(group.get("quota_cooldown_keys") or 0))
+                disabled = max(0, int(group.get("disabled_keys") or 0))
+                provider_accounts.append({
+                    "provider": provider_name[:40],
+                    "account_group": group_name,
+                    "access_class": str(
+                        provider_overrides.get(group_name)
+                        or provider_classes.get(provider_name)
+                        or "restricted"
+                    )[:16],
+                    "configured_keys": max(0, int(group.get("configured_keys") or 0)),
+                    "available_keys": available,
+                    "quota_cooldown_keys": cooldown,
+                    "disabled_keys": disabled,
+                    "status": "available" if available else "cooldown" if cooldown else "disabled" if disabled else "unknown",
+                    "usage": safe_usage,
+                })
         freshness = []
         for item in status.get("sport_freshness", []):
             if not isinstance(item, dict):
@@ -1135,6 +1176,8 @@ def administrator_overview(
             "stored_events": max(0, int(status.get("stored_events") or 0)),
             "stored_bookmakers": max(0, int(status.get("stored_bookmakers") or 0)),
             "sports": freshness,
+            "provider_accounts": provider_accounts,
+            "premium_provider_polling_enabled": bool(status.get("premium_provider_polling_enabled")),
             "alerts": {
                 "enabled": bool(status.get("alerts_enabled")),
                 "sent": max(0, int(status.get("alerts_sent") or 0)),
