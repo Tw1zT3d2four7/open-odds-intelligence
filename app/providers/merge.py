@@ -198,7 +198,11 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                         identity_key = (candidate["source_access_class"], outcome_identity)
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
-                            candidate["size_source_access_class"] = access_class if access_class in {"free", "premium"} else "restricted"
+                            size_provider = str(candidate.get("size_source_provider") or provider_name)
+                            size_access_class = (provider_access_classes or {}).get(size_provider)
+                            candidate["size_source_access_class"] = (
+                                size_access_class if size_access_class in {"free", "premium"} else "restricted"
+                            )
                         existing_index = outcome_map.get(identity_key)
                         if existing_index is None:
                             outcome_map[identity_key] = len(market["outcomes"])
