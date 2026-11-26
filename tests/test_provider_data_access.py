@@ -21,6 +21,7 @@ def _event(provider="feed", access_class="free", event_id="event-1"):
                     "name": "Home",
                     "price": -110,
                     "source_provider": provider,
+                    "source_account_group": "default",
                     "source_access_class": access_class,
                     "size": {"max": 1000},
                     "size_source_provider": "size-feed",
