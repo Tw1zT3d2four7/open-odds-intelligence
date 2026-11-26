@@ -136,7 +136,8 @@ def test_worker_reconciles_invoice_payment_state_without_granting_access(tmp_pat
     assert row["amount_paid"] == 2500
     assert row["currency"] == "usd"
     assert row["stripe_subscription_id"] == "sub_invoice"
-    assert entitlements == 0
+    assert entitlements == 11
+    assert store.has_subscriber_entitlement(subscriber_id, "premium_data") is False
 
     enqueue("evt_invoice_failed_later", "invoice.payment_failed", 1795653600, 0)
     second = process_pending_stripe_events(store)
