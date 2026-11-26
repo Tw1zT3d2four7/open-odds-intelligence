@@ -992,7 +992,7 @@ class OddsDatabase:
         except (TypeError, ValueError):
             return None
 
-    def _closing_consensus(self, db, entry, include_premium=None, source_access_class=None, source_provider=None, source_account_group=None):
+    def _closing_consensus(self, db, entry, include_premium=None, source_access_class=None):
         start = self._as_utc(entry["commence_time"])
         entry_at = self._as_utc(entry["entry_at"])
         if start is None or entry_at is None:
@@ -1004,12 +1004,6 @@ class OddsDatabase:
         if source_access_class in {"free", "premium"}:
             snapshot_sql += " AND q.source_access_class=?"
             snapshot_args.append(source_access_class)
-        if source_provider:
-            snapshot_sql += " AND q.source_provider=?"
-            snapshot_args.append(source_provider)
-        if source_account_group:
-            snapshot_sql += " AND q.source_account_group=?"
-            snapshot_args.append(source_account_group)
         if source_access_class not in {"free", "premium"} and include_premium is not None:
             snapshot_sql += " AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))"
             snapshot_args.append(1 if include_premium else 0)
@@ -1035,12 +1029,6 @@ class OddsDatabase:
             if source_access_class in {"free", "premium"}:
                 quote_sql += " AND source_access_class=?"
                 quote_args.append(source_access_class)
-            if source_provider:
-                quote_sql += " AND source_provider=?"
-                quote_args.append(source_provider)
-            if source_account_group:
-                quote_sql += " AND source_account_group=?"
-                quote_args.append(source_account_group)
             if source_access_class not in {"free", "premium"} and include_premium is not None:
                 quote_sql += " AND (source_access_class='free' OR (?=1 AND source_access_class='premium'))"
                 quote_args.append(1 if include_premium else 0)
@@ -1173,8 +1161,6 @@ class OddsDatabase:
                         if entry["source_access_class"] in {"free", "premium"}
                         else None
                     ),
-                    source_provider=entry["source_provider"],
-                    source_account_group=entry["source_account_group"],
                 )
                 if close:
                     db.execute(
