@@ -723,8 +723,12 @@ class OddsService:
                     provider_results_summary.setdefault(sport_key, {})[
                         "limits_ingest_warning"
                     ] = str(limits_error)
+            # CLV is currently recorded from the independently filtered free
+            # dataset. This avoids mixing free/premium versions of the same
+            # bookmaker selection in the shared CLV identity key.
+            clv_source_events = self.events(sport_key, include_premium=False)
             clv_candidates = analyze_markets(
-                events, min_ev=config.CLV_MIN_EV_PERCENT,
+                clv_source_events, min_ev=config.CLV_MIN_EV_PERCENT,
                 min_consensus_books=2, best_only=False,
             )["opportunities"]
             self.db.record_clv_candidates(clv_candidates, fetched_at)
