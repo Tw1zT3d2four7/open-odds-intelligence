@@ -340,3 +340,19 @@ The private Admin Console now includes a read-only `GET /admin/billing` operatio
 ### Subscriber pricing disclosure — approved
 
 The customer-facing subscription catalog uses one all-inclusive displayed price per billing interval: **$10.68/month** or **$104.05/year**, each automatically recurring. The displayed amount includes an allowance for standard domestic card-processing and Stripe Billing pay-as-you-go costs; the customer is not charged a separate processing surcharge at checkout. The account/pricing presentation must disclose the total price before purchase, automatic renewal, and cancellation terms before confirmation. The wording must not promise that the estimated fee allowance exactly offsets every possible payment cost: international-card, currency-conversion, tax, refund, dispute, and other exceptional charges may differ from the baseline assumptions. Checkout remains disabled until test-mode acceptance and entitlement/access rules are complete.
+
+### 2.12 Free and premium provider-data separation
+
+The product is explicitly freemium:
+
+- Free subscribers receive data sourced only from provider capabilities classified as free. The free product must remain useful with no premium credentials or paid provider spend configured.
+- Monthly and annual paid subscribers receive free plus premium-class provider data. Billing cadence does not change data access.
+- Complimentary subscribers receive only the features and data classes explicitly granted by an administrator, with the existing expiry and audit controls. Premium-data grants must be explicit and disclose potential provider-cost impact.
+- Subscriber entitlements and provider-plan capabilities are separate authorization dimensions. A paid customer cannot access data the platform is not licensed/configured to retrieve, and a premium provider credential never grants premium visibility to a free customer.
+- Classification is assigned to provider account/endpoint capability, not just provider brand. Preserve quote-level provenance and access class through ingestion, merges, historical storage, derived calculations, caches, APIs, dashboards, alerts, notifications, and exports. Mixed-source derived data inherits the most restrictive input class; free-only views must be independently computed from free inputs.
+- Enforce data scope server-side. Unknown or legacy-unclassified provenance fails closed. Cache and precomputed-data isolation must prevent premium-to-free leakage, including after downgrade, cancellation, revocation, or expiry.
+- Free provider schedules and quotas remain independent from premium sources. Premium spend, account-wide quotas, and subscriber usage require operator-visible controls before premium polling is enabled.
+- The detailed implementation and acceptance requirements are in [Provider Data Access Isolation](provider-data-access-isolation.md).
+
+**Implementation status:** Architecture requirement documented. Source-level classification, query enforcement, migration, delivery-path isolation, cost controls, and acceptance tests remain implementation work. Do not enable premium provider polling, purchase provider plans, merge, deploy, or enable live billing as part of this milestone.
+
