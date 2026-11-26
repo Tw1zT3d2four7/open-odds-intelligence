@@ -55,7 +55,7 @@ def test_source_access_class_survives_sqlite_snapshot_and_history(tmp_path):
     outcome = restored[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
     assert outcome["source_access_class"] == "premium"
 
-    free_history = db.history("event-1", "h2h", "Home", bookmaker_key="book")
+    free_history = db.history("event-1", "h2h", "Home", bookmaker_key="book", include_premium=False)
     paid_history = db.history(
         "event-1", "h2h", "Home", bookmaker_key="book", include_premium=True
     )
@@ -72,7 +72,7 @@ def test_service_cache_is_separated_between_free_and_premium_scopes(tmp_path):
     ])
     service = OddsService(database=db)
 
-    free = service.events("basketball_nba")
+    free = service.events("basketball_nba", include_premium=False)
     paid = service.events("basketball_nba", include_premium=True)
 
     assert [event["id"] for event in free] == ["event-free"]
