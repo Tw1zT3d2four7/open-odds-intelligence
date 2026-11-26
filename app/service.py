@@ -138,6 +138,18 @@ class OddsService:
                                 provider_name, {}
                             ).get(key_status.get("account_group"), {}),
                         )
+                        safe_usage = next(
+                            (
+                                item.get("usage", {})
+                                for item in pool.status().get("keys", [])
+                                if item.get("key_id") == key_status["key_id"]
+                            ),
+                            {},
+                        )
+                        self.db.set_state(
+                            f"provider_key_usage:{provider_name}:{key_status['key_id']}",
+                            json.dumps(safe_usage),
+                        )
                     except (TypeError, ValueError, json.JSONDecodeError):
                         continue
         self._simulation_results_status = {
@@ -173,7 +185,10 @@ class OddsService:
         if (saved_usage_provider == config.ODDS_PROVIDER and
             saved_usage_fingerprint in configured_fingerprints):
             try:
-                self._provider_usage = json.loads(self.db.get_state("provider_usage") or "{}")
+                self._provider_usage = self._safe_provider_usage(
+                    json.loads(self.db.get_state("provider_usage") or "{}")
+                )
+                self.db.set_state("provider_usage", json.dumps(self._provider_usage))
             except (TypeError, ValueError):
                 self._provider_usage = {}
         self._player_props_status = {"enabled": False, "reason": "Disabled by default."}
