@@ -74,3 +74,22 @@ def test_score_sync_cannot_poll_premium_only_account_when_premium_polling_is_off
 
     assert result["skipped"] is True
     assert result["reason"] == "disabled"
+
+
+
+def test_account_access_class_configuration_parses_comma_and_newline_entries(monkeypatch):
+    import importlib
+    from app import config
+
+    with monkeypatch.context() as scoped:
+        scoped.setenv(
+            "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES",
+            "The_Odds_API|FREE=free\nThe_Odds_API|Pro=premium",
+        )
+        importlib.reload(config)
+        assert config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES == {
+            "the_odds_api": {"free": "free", "pro": "premium"}
+        }
+
+    # Restore module-level config values to match the restored process environment.
+    importlib.reload(config)
