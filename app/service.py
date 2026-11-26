@@ -845,7 +845,9 @@ class OddsService:
             # Keep CLV calculations inside one access tier. Premium consensus
             # must never borrow free quotes (or vice versa), and the database
             # stores the same exact selection separately for each tier.
-            free_clv_events = self.events(sport_key, include_premium=False)
+            free_clv_events = self.events(
+                sport_key, include_premium=False, preserve_account_groups=True
+            )
             free_clv_candidates = analyze_markets(
                 free_clv_events, min_ev=config.CLV_MIN_EV_PERCENT,
                 min_consensus_books=2, best_only=False,
@@ -856,7 +858,9 @@ class OddsService:
             ]
             self.db.record_clv_candidates(free_clv_candidates, fetched_at)
 
-            premium_clv_events = self.events(sport_key, include_premium=True)
+            premium_clv_events = self.events(
+                sport_key, include_premium=True, preserve_account_groups=True
+            )
             premium_only_events = []
             for source_event in premium_clv_events:
                 premium_event = dict(source_event)
@@ -1340,10 +1344,10 @@ class OddsService:
         with self._events_cache_lock:
             self._events_cache.clear()
 
-    def events(self, sport=None, limit=None, offset=0, include_premium=None):
+    def events(self, sport=None, limit=None, offset=0, include_premium=None, preserve_account_groups=False):
         """Return a short-lived shared snapshot for concurrent dashboard reads."""
         scope_key = "all" if include_premium is None else ("paid" if include_premium else "free")
-        cache_key = (sport or "__all__") + f":{limit}:{offset}:scope={scope_key}"
+        cache_key = (sport or "__all__") + f":{limit}:{offset}:scope={scope_key}:groups={int(bool(preserve_account_groups))}"
         now = time.monotonic()
         cached = self._events_cache.get(cache_key)
         if cached and now - cached[0] < self._events_cache_ttl_seconds:
@@ -1399,6 +1403,12 @@ class OddsService:
                                 outcome.get("description") or outcome.get("participant") or "",
                                 outcome.get("point"),
                             )
+                            if preserve_account_groups:
+                                identity += (
+                                    outcome.get("source_provider") or "",
+                                    outcome.get("source_account_group") or "",
+                                    outcome.get("source_access_class") or "restricted",
+                                )
                             updated = str(outcome.get("updated_at") or outcome.get("source_updated_at") or "")
                             score = (updated, 1 if outcome.get("source_access_class") == "premium" else 0)
                             previous = outcome_map.get(identity)
