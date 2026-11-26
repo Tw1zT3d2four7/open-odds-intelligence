@@ -2379,12 +2379,18 @@ class IdentityStore:
                               (SELECT json_extract(a.metadata_json, '$.expires_at')
                                  FROM security_audit_events a
                                 WHERE a.subject_identity_id=i.id
-                                  AND a.event_type='subscriber.complimentary_access_granted'
+                                  AND a.event_type IN (
+                                    'subscriber.complimentary_access_granted',
+                                    'subscriber.complimentary_access_updated'
+                                  )
                                 ORDER BY a.occurred_at DESC LIMIT 1) AS complimentary_expires_at,
                               (SELECT json_extract(a.metadata_json, '$.campaign')
                                  FROM security_audit_events a
                                 WHERE a.subject_identity_id=i.id
-                                  AND a.event_type='subscriber.complimentary_access_granted'
+                                  AND a.event_type IN (
+                                    'subscriber.complimentary_access_granted',
+                                    'subscriber.complimentary_access_updated'
+                                  )
                                 ORDER BY a.occurred_at DESC LIMIT 1) AS complimentary_campaign
                        FROM identities i
                        LEFT JOIN subscriber_entitlements e
