@@ -101,6 +101,12 @@ def _quote_rank(outcome, provider_rank):
     return (updated if updated is not None else float("-inf"), -provider_rank)
 
 
+def _account_merge_scope(provider_name, account_group, provider_account_access_classes):
+    if not (provider_account_access_classes or {}).get(provider_name):
+        return "", ""
+    return provider_name, str(account_group or "")
+
+
 def _provider_access_class(provider_name, account_group, provider_access_classes, provider_account_access_classes):
     """Resolve tier by provider account; configured providers fail closed for unknown groups."""
     normalized_group = str(account_group or "").strip()
@@ -189,19 +195,20 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                         market = {"key": market_key, "outcomes": []}
                         book["markets"].append(market)
                         market_map[market_key] = market
-                    outcome_map = {
-                        (
+                    outcome_map = {}
+                    for index, item in enumerate(market["outcomes"]):
+                        outcome_identity = _outcome_identity(item)
+                        if outcome_identity is None:
+                            continue
+                        scoped_provider, scoped_group = _account_merge_scope(
+                            str(item.get("source_provider") or ""),
+                            item.get("source_account_group"),
+                            provider_account_access_classes,
+                        )
+                        outcome_map[(
                             item.get("source_access_class") or "restricted",
-                            (
-                                str(item.get("source_provider") or "")
-                                if item.get("source_account_group") else ""
-                            ),
-                            str(item.get("source_account_group") or ""),
-                            _outcome_identity(item),
-                        ): index
-                        for index, item in enumerate(market["outcomes"])
-                        if _outcome_identity(item) is not None
-                    }
+                            scoped_provider, scoped_group, outcome_identity,
+                        )] = index
                     for raw_outcome in raw_market.get("outcomes") or []:
                         if not isinstance(raw_outcome, dict):
                             continue
@@ -218,11 +225,13 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                             provider_name, candidate["source_account_group"],
                             provider_access_classes, provider_account_access_classes,
                         )
+                        scoped_provider, scoped_group = _account_merge_scope(
+                            provider_name, candidate["source_account_group"],
+                            provider_account_access_classes,
+                        )
                         identity_key = (
                             candidate["source_access_class"],
-                            provider_name if candidate["source_account_group"] else "",
-                            candidate["source_account_group"],
-                            outcome_identity,
+                            scoped_provider, scoped_group, outcome_identity,
                         )
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
