@@ -93,3 +93,27 @@ def test_account_access_class_configuration_parses_comma_and_newline_entries(mon
 
     # Restore module-level config values to match the restored process environment.
     importlib.reload(config)
+
+
+
+def test_account_group_status_aggregates_quota_without_exposing_credentials():
+    pool = ProviderKeyPool(
+        "example",
+        ["free-account|FirstCaseKey,free-account|SecondCaseKey"],
+    )
+    lease = pool.acquire()
+    pool.record_usage(lease, {
+        "credits_remaining": 42,
+        "period_resets_at": "2026-12-01T00:00:00Z",
+        "api_key": "NeverExposeThisValue",
+    })
+
+    status = pool.status()
+    assert len(status["account_groups"]) == 1
+    group = status["account_groups"][0]
+    assert group["account_group"] == "free-account"
+    assert group["configured_keys"] == 2
+    assert group["available_keys"] == 2
+    assert group["usage"]["credits_remaining"] == 42
+    assert "api_key" not in group["usage"]
+    assert "NeverExposeThisValue" not in repr(status)
