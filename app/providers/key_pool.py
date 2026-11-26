@@ -98,7 +98,7 @@ class ProviderKeyPool:
     def _fingerprint(key: str) -> str:
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
 
-    def acquire(self) -> KeyLease:
+    def acquire(self, allowed_account_groups: set[str] | None = None) -> KeyLease:
         with self._lock:
             if not self._keys:
                 raise NoAvailableKeys(self.provider)
@@ -108,6 +108,8 @@ class ProviderKeyPool:
             for offset in range(len(self._keys)):
                 index = (self._cursor + offset) % len(self._keys)
                 if index in self._disabled:
+                    continue
+                if allowed_account_groups is not None and self._groups[index] not in allowed_account_groups:
                     continue
                 blocked_until = self._blocked_until.get(index, 0.0)
                 if blocked_until > now:
