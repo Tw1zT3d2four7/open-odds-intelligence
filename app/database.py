@@ -868,7 +868,8 @@ class OddsDatabase:
     def movement_history(self, event_id, market_key, outcome_name,
                          bookmaker_key, limit=500, outcome_description=None, include_premium=None):
         """Return a chronological quote timeline, including every observed line."""
-        sql = """SELECT s.fetched_at, q.source_updated_at, q.point, q.price
+        sql = """SELECT s.fetched_at, q.source_updated_at, q.point, q.price,
+                        q.source_provider,q.source_account_group,q.source_access_class
                  FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
                  WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?
                    AND q.bookmaker_key=? AND (? IS NULL OR q.outcome_description=?)"""
