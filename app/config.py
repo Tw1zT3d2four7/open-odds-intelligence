@@ -33,6 +33,30 @@ for _entry in _raw_provider_access_classes.replace("\n", ",").split(","):
         raise ValueError("ODDS_PROVIDER_ACCESS_CLASSES supports only explicit free or premium classifications.")
     ODDS_PROVIDER_ACCESS_CLASSES[_provider_name] = _access_class
 
+# Optional account-specific overrides use provider|group=free or =premium.
+# Once a provider has any account overrides, unlisted groups fail closed.
+_raw_provider_account_access_classes = os.getenv(
+    "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES", ""
+)
+ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES = {}
+for _entry in _raw_provider_account_access_classes.replace("\\n", ",").split(","):
+    if not _entry.strip():
+        continue
+    if "=" not in _entry or "|" not in _entry.split("=", 1)[0]:
+        raise ValueError(
+            "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES entries must use provider|group=free or provider|group=premium."
+        )
+    _account_ref, _access_class = (part.strip() for part in _entry.split("=", 1))
+    _provider_name, _account_group = (
+        part.strip().lower() for part in _account_ref.split("|", 1)
+    )
+    _access_class = _access_class.lower()
+    if not _provider_name or not _account_group or _access_class not in {"free", "premium"}:
+        raise ValueError(
+            "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES supports only named provider/account groups and explicit free or premium classifications."
+        )
+    ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.setdefault(_provider_name, {})[_account_group] = _access_class
+
 # Do not normalize or change API key case: provider keys are case-sensitive.
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY", "")
 # TheRundown key is case-sensitive; preserve it exactly.
