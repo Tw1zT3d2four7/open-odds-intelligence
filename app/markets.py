@@ -248,7 +248,18 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
                     if ev < min_ev:
                         continue
                     identity = (market_key, line, quote["identity"])
+                    identity_source_classes = [
+                        item["outcome"].get("source_access_class")
+                        for item in quotes if item["identity"] == quote["identity"]
+                    ]
+                    if any(value not in {"free", "premium"} for value in identity_source_classes):
+                        derived_access_class = "restricted"
+                    elif "premium" in identity_source_classes:
+                        derived_access_class = "premium"
+                    else:
+                        derived_access_class = "free"
                     row = {
+                        "source_access_class": derived_access_class,
                         "event_id": event_id, "sport": event.get("sport_title"),
                         "sport_key": event.get("sport_key") or event.get("sport"),
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
