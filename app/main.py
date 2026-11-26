@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 from . import config
+from .auth_config import AUTHENTICATION_POLICY as AUTH_POLICY
 from .service import service
 
 # Reuse the monitor owned by the service so OddsLink odds refreshes and the
@@ -170,7 +171,8 @@ async def lifespan(app: FastAPI):
             and "therundown" in service.active_provider_names()
             and service._provider_key_pools["therundown"].configured):
         results_task = asyncio.create_task(_simulation_results_loop())
-    if config.AUTH_MODE == "identity" and config.EMAIL_PROVIDER == "resend":
+    if (config.AUTH_MODE == "identity" and config.EMAIL_PROVIDER == "resend"
+            and AUTH_POLICY.email_transport == "resend"):
         from .email_queue_worker import email_delivery_loop
         email_task = asyncio.create_task(email_delivery_loop())
     try:
