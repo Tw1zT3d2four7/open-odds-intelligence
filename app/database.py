@@ -48,7 +48,8 @@ class OddsDatabase:
                     source_access_class TEXT NOT NULL DEFAULT 'restricted',
                     is_main INTEGER,
                     size_json TEXT,
-                    size_source_provider TEXT NOT NULL DEFAULT ''
+                    size_source_provider TEXT NOT NULL DEFAULT '',
+                    size_source_access_class TEXT NOT NULL DEFAULT 'restricted'
                 );
                 CREATE INDEX IF NOT EXISTS idx_quotes_lookup
                     ON quotes(event_id, market_key, outcome_name, point, bookmaker_key);
@@ -127,6 +128,8 @@ class OddsDatabase:
                 db.execute("ALTER TABLE quotes ADD COLUMN size_json TEXT")
             if "size_source_provider" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN size_source_provider TEXT NOT NULL DEFAULT ''")
+            if "size_source_access_class" not in quote_columns:
+                db.execute("ALTER TABLE quotes ADD COLUMN size_source_access_class TEXT NOT NULL DEFAULT 'restricted'")
             # Older CLV rows stored the provider's display title instead of
             # the canonical sport key, which made sport-filtered reports miss them.
             # Recover the key from the immutable quote archive where possible.
@@ -488,7 +491,8 @@ class OddsDatabase:
                                    (1 if outcome.get("main") else 0) if "main" in outcome else None,
                                    json.dumps(outcome.get("size"), sort_keys=True)
                                    if isinstance(outcome.get("size"), dict) else None,
-                                   str(outcome.get("size_source_provider") or ""))
+                                   str(outcome.get("size_source_provider") or ""),
+                                   outcome.get("size_source_access_class") if outcome.get("size_source_access_class") in {"free", "premium"} else "restricted")
                             identity = (row[1], book_key, market_key, outcome_name, description, point)
                             if identity in conflicted_quotes:
                                 continue
@@ -508,8 +512,8 @@ class OddsDatabase:
             ]
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
                 home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,point,price,
-                source_updated_at,source_provider,source_access_class,is_main,size_json,size_source_provider)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
+                source_updated_at,source_provider,source_access_class,is_main,size_json,size_source_provider,size_source_access_class)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
         return snapshot_id
 
     def latest_events(self, sport=None, limit=None, offset=0):
@@ -564,7 +568,7 @@ class OddsDatabase:
                     """SELECT event_id,sport_title,commence_time,home_team,away_team,
                               bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,price,
                               source_updated_at,source_provider,source_access_class,is_main,size_json,
-                              size_source_provider,point
+                              size_source_provider,size_source_access_class,point
                        FROM quotes WHERE snapshot_id=?""" + page_clause + """
                        ORDER BY commence_time,event_id,bookmaker_key,market_key,outcome_name""",
                     page_args,
@@ -621,6 +625,8 @@ class OddsDatabase:
                             pass
                     if row["size_source_provider"]:
                         outcome["size_source_provider"] = row["size_source_provider"]
+                    if row["size_source_access_class"] in {"free", "premium"}:
+                        outcome["size_source_access_class"] = row["size_source_access_class"]
                     if row["point"] is not None:
                         outcome["point"] = row["point"]
                     market["outcomes"].append(outcome)
