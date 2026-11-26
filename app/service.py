@@ -738,15 +738,51 @@ class OddsService:
                     provider_results_summary.setdefault(sport_key, {})[
                         "limits_ingest_warning"
                     ] = str(limits_error)
-            # CLV is currently recorded from the independently filtered free
-            # dataset. This avoids mixing free/premium versions of the same
-            # bookmaker selection in the shared CLV identity key.
-            clv_source_events = self.events(sport_key, include_premium=False)
-            clv_candidates = analyze_markets(
-                clv_source_events, min_ev=config.CLV_MIN_EV_PERCENT,
+            # Keep CLV calculations inside one access tier. Premium consensus
+            # must never borrow free quotes (or vice versa), and the database
+            # stores the same exact selection separately for each tier.
+            free_clv_events = self.events(sport_key, include_premium=False)
+            free_clv_candidates = analyze_markets(
+                free_clv_events, min_ev=config.CLV_MIN_EV_PERCENT,
                 min_consensus_books=2, best_only=False,
             )["opportunities"]
-            self.db.record_clv_candidates(clv_candidates, fetched_at)
+            free_clv_candidates = [
+                row for row in free_clv_candidates
+                if row.get("source_access_class") == "free"
+            ]
+            self.db.record_clv_candidates(free_clv_candidates, fetched_at)
+
+            premium_clv_events = self.events(sport_key, include_premium=True)
+            premium_only_events = []
+            for source_event in premium_clv_events:
+                premium_event = dict(source_event)
+                premium_books = []
+                for source_book in source_event.get("bookmakers") or []:
+                    premium_book = dict(source_book)
+                    premium_markets = []
+                    for source_market in source_book.get("markets") or []:
+                        premium_market = dict(source_market)
+                        premium_market["outcomes"] = [
+                            outcome for outcome in source_market.get("outcomes") or []
+                            if outcome.get("source_access_class") == "premium"
+                        ]
+                        if premium_market["outcomes"]:
+                            premium_markets.append(premium_market)
+                    if premium_markets:
+                        premium_book["markets"] = premium_markets
+                        premium_books.append(premium_book)
+                premium_event["bookmakers"] = premium_books
+                if premium_books:
+                    premium_only_events.append(premium_event)
+            premium_clv_candidates = analyze_markets(
+                premium_only_events, min_ev=config.CLV_MIN_EV_PERCENT,
+                min_consensus_books=2, best_only=False,
+            )["opportunities"]
+            premium_clv_candidates = [
+                row for row in premium_clv_candidates
+                if row.get("source_access_class") == "premium"
+            ]
+            self.db.record_clv_candidates(premium_clv_candidates, fetched_at)
             count += len(events)
             successful_sports += 1
             # Report coverage from the complete merged snapshot, not only
