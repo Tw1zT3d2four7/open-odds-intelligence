@@ -189,6 +189,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                     outcome_map = {
                         (
                             item.get("source_access_class") or "restricted",
+                            str(item.get("source_provider") or ""),
                             str(item.get("source_account_group") or ""),
                             _outcome_identity(item),
                         ): index
@@ -211,7 +212,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                             provider_name, candidate["source_account_group"],
                             provider_access_classes, provider_account_access_classes,
                         )
-                        identity_key = (candidate["source_access_class"], candidate["source_account_group"], outcome_identity)
+                        identity_key = (candidate["source_access_class"], provider_name, candidate["source_account_group"], outcome_identity)
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
                             size_provider = str(candidate.get("size_source_provider") or provider_name)
