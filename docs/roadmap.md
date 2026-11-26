@@ -347,6 +347,8 @@ The product is explicitly freemium:
 
 - Free subscribers receive data sourced only from provider capabilities classified as free. The free product must remain useful with no premium credentials or paid provider spend configured.
 - Monthly and annual paid subscribers receive free plus premium-class provider data. Billing cadence does not change data access.
+- New registrations receive the fixed server-owned Free feature bundle (all current feature keys except `premium_data`); existing ungranted subscriber accounts receive it through identity schema migration 16.
+- A current active Stripe subscription grants `premium_data` only when its price ID exactly matches the configured monthly or annual price and its billing period is current. Invoice events alone do not grant premium access.
 - Complimentary subscribers receive only the features and data classes explicitly granted by an administrator, with the existing expiry and audit controls. Premium-data grants must be explicit and disclose potential provider-cost impact.
 - Subscriber entitlements and provider-plan capabilities are separate authorization dimensions. A paid customer cannot access data the platform is not licensed/configured to retrieve, and a premium provider credential never grants premium visibility to a free customer.
 - Classification is assigned to provider account/endpoint capability, not just provider brand. Preserve quote-level provenance and access class through ingestion, merges, historical storage, derived calculations, caches, APIs, dashboards, alerts, notifications, and exports. Mixed-source derived data inherits the most restrictive input class; free-only views must be independently computed from free inputs.
