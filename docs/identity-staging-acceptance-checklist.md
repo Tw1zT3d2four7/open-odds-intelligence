@@ -75,7 +75,25 @@ Using disposable staging identities and the fake email sender:
 - Confirm the account page uses a fresh script nonce and does not render untrusted values as HTML.
 - Confirm logout revokes the server-side session and clears cookies.
 
-## 5. Administrator acceptance
+## 5. Free and premium provider-data acceptance
+
+Use synthetic provider fixtures first. Do not purchase a provider plan or enable live premium polling as part of the initial staging drill.
+
+- Confirm free-tier operation with no premium provider credentials configured and verify that no premium provider requests are attempted.
+- Configure one provider capability as `premium` in `ODDS_PROVIDER_ACCESS_CLASSES` while keeping `ODDS_PREMIUM_PROVIDER_POLLING_ENABLED=false`; verify that no premium polling occurs.
+- Confirm a free subscriber receives only free-class quotes, sizes, derived market calculations, history, movement, and CLV.
+- Confirm a paid subscriber with the explicit `premium_data` entitlement receives free plus premium data when premium polling is separately enabled for the controlled test.
+- Use a fixture where free and premium providers quote the same bookmaker/market/selection at different timestamps; verify the free quote remains available to free accounts and the paid view resolves the permitted combined dataset.
+- Confirm cache keys, pagination, event provenance, and provider diagnostics do not reveal premium data or premium provider details to free accounts.
+- Confirm downgrade, cancellation, complimentary expiry, and explicit entitlement revocation immediately remove premium access, including history.
+- Confirm unknown or unclassified historical rows are restricted for subscriber views.
+- Confirm global Discord alerts in identity mode never include premium-only data.
+- Confirm provider request schedules and quota accounting are platform-controlled rather than triggered by individual subscriber reads.
+- Confirm the admin diagnostics show source classes and the premium-polling safety switch without exposing API keys.
+
+The premium source flag remains disabled after the test. Record actual provider plan terms and quotas separately before approving any production premium ingestion.
+
+## 6. Administrator acceptance
 
 Using a staging-only administrator provisioned through the private bootstrap process:
 
@@ -89,7 +107,7 @@ Using a staging-only administrator provisioned through the private bootstrap pro
 - Confirm admin audit history is bounded, filtered, actor-attributed, and free of email addresses, credentials, and bearer tokens.
 - Confirm all identity/admin responses are non-cacheable and private pages use a restrictive per-response CSP nonce.
 
-## 6. Route and authorization acceptance
+## 7. Route and authorization acceptance
 
 - Verify every registered application and framework route appears in the explicit route-policy inventory.
 - Exercise parameterized routes with real-looking disposable IDs: subscriber status, subscriber-wide session revocation, and individual session revocation.
@@ -100,7 +118,7 @@ Using a staging-only administrator provisioned through the private bootstrap pro
 - Confirm product feature access defaults to deny and a subscriber without the required grant receives 403.
 - Confirm storage failures return sanitized 503 responses and do not fall back to permissive access.
 
-## 7. Email queue and rate-limit acceptance
+## 8. Email queue and rate-limit acceptance
 
 - Confirm transactional email is queued and the HTTP request does not wait for provider delivery.
 - Confirm queue payloads and recipient data are encrypted at rest.
@@ -111,7 +129,7 @@ Using a staging-only administrator provisioned through the private bootstrap pro
 - Confirm IP and account/destination rate limits are enforced using the actual staging peer topology.
 - Confirm responses remain generic for known and unknown subscriber addresses.
 
-## 8. Backup and restore drill
+## 9. Backup and restore drill
 
 Use only the isolated staging identity database:
 
@@ -126,7 +144,7 @@ Use only the isolated staging identity database:
 
 Do not run this drill against a production volume.
 
-## 9. Exit criteria
+## 10. Exit criteria
 
 Staging acceptance is complete only when:
 
