@@ -225,6 +225,13 @@ class SubscriberStatusInput(StrictModel):
     is_active: bool
     reason_code: str = Field(pattern="^(support_request|policy_violation|security_concern|billing_issue|other)$")
 
+class ComplimentarySubscriberInput(StrictModel):
+    email: str = Field(min_length=3, max_length=254)
+    entitlements: list[str] = Field(min_length=1, max_length=32)
+    duration_days: int = Field(ge=1, le=366)
+    campaign: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=1, max_length=500)
+
 
 def _rate_limit(
     request: Request,
@@ -253,6 +260,11 @@ def _rate_limit(
             (f"auth:{operation}:identity:{identifier}", account_limit, 3600),
             (f"auth:{operation}:cooldown:{identifier}", 1, 60),
             (f"auth:{operation}:daily:{identifier}", 5, 86400),
+        ]
+    elif operation == "admin-complimentary-create":
+        policies = [
+            (f"auth:{operation}:ip:{ip}", 10, 3600),
+            (f"auth:{operation}:identity:{identifier}", 3, 3600),
         ]
     elif operation == "subscriber-password-change":
         policies = [
@@ -1154,6 +1166,59 @@ def administrator_subscribers(
             status_code=503,
             detail="Subscriber directory is temporarily unavailable.",
         ) from None
+
+
+@router.post(
+    "/admin/subscribers/complimentary",
+    dependencies=[Depends(require_administrator), Depends(require_authenticated_csrf)],
+)
+def create_complimentary_subscriber(
+    payload: ComplimentarySubscriberInput,
+    request: Request,
+    response: Response,
+    session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+    limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
+):
+    """Create a no-payment promotional account and queue its single-use activation link."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    _rate_limit(request, limiter, "admin-complimentary-create", _identifier(payload.email))
+    try:
+        sender = get_email_sender(request)
+        grant = store.create_complimentary_subscriber(
+            payload.email,
+            payload.entitlements,
+            actor_identity_id=session["identity_id"],
+            expires_at=datetime.now(timezone.utc) + timedelta(days=payload.duration_days),
+            campaign=payload.campaign,
+            reason=payload.reason,
+        )
+        _deliver_or_record_failure(
+            store, sender,
+            recipient=grant["email"],
+            token=grant["activation_token"],
+            identity_id=grant["identity_id"],
+            purpose="password_reset",
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Complimentary subscriber provisioning failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Complimentary subscriber could not be created or activation email queued.",
+        ) from None
+    return {
+        "identity_id": grant["identity_id"],
+        "email": grant["email"],
+        "entitlements": grant["entitlements"],
+        "expires_at": grant["expires_at"],
+        "activation_email_queued": True,
+        "billing_status": "complimentary",
+    }
 
 
 @router.get(
