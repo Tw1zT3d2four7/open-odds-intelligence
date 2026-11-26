@@ -258,6 +258,19 @@ def test_unlisted_account_group_is_restricted_when_provider_overrides_exist():
     outcome = merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
     assert outcome["source_access_class"] == "restricted"
 
+    legacy_event = _event("legacy-event", [_book("book", [
+        {"name": "Home", "price": -110}
+    ])])
+    legacy_merged = merge_provider_events(
+        [("the_odds_api", [legacy_event])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {"default": "free", "known-free": "free"}
+        },
+    )
+    legacy_outcome = legacy_merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert legacy_outcome["source_access_class"] == "restricted"
+
 
 
 def test_incremental_refresh_replaces_only_the_leased_account_group():
