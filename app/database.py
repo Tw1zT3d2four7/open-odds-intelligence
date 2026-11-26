@@ -130,6 +130,10 @@ class OddsDatabase:
                 db.execute("ALTER TABLE clv_entries ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
             if legacy_clv_account_provenance_missing:
                 db.execute("UPDATE clv_entries SET source_access_class='restricted'")
+            db.execute(
+                "UPDATE clv_entries SET source_access_class='restricted' "
+                "WHERE source_provider='' OR source_account_group=''"
+            )
             # Rebuild legacy CLV identity so free and premium observations of
             # the same selection can coexist without overwriting one another.
             clv_unique_indexes = db.execute("PRAGMA index_list(clv_entries)").fetchall()
@@ -218,6 +222,14 @@ class OddsDatabase:
                 db.execute("UPDATE quotes SET source_access_class='restricted'")
             if legacy_size_account_group_missing:
                 db.execute("UPDATE quotes SET size_source_access_class='restricted'")
+            db.execute(
+                "UPDATE quotes SET source_access_class='restricted' "
+                "WHERE source_provider='' OR source_account_group=''"
+            )
+            db.execute(
+                "UPDATE quotes SET size_source_access_class='restricted' "
+                "WHERE size_source_provider='' OR size_source_account_group=''"
+            )
             # Older CLV rows stored the provider's display title instead of
             # the canonical sport key, which made sport-filtered reports miss them.
             # Recover the key from the immutable quote archive where possible.
