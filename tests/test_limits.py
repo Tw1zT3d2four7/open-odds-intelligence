@@ -745,3 +745,54 @@ def test_market_limit_migration_restricts_old_provider_level_tier_labels(tmp_pat
         ).fetchone()
     assert row["source_account_group"] == "old-keyset-fingerprint"
     assert row["source_access_class"] == "restricted"
+
+
+
+def test_market_limit_tier_follows_size_source_not_odds_source(tmp_path):
+    monitor = MarketLimitsMonitor(tmp_path / "size-source-tier.sqlite3")
+    events = fixture()
+    outcome = events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome.update({
+        "source_provider": "the_odds_api",
+        "source_account_group": "free-account",
+        "source_access_class": "free",
+        "size_source_provider": "oddize",
+        "size_source_account_group": "premium-account",
+        "size_source_access_class": "premium",
+    })
+
+    rows = monitor._extract(
+        "americanfootball_nfl", events,
+        "2026-11-26T01:00:00Z",
+        source_provider="the_odds_api",
+        source_access_class="free",
+    )
+    selected = next(row for row in rows if row[9] == outcome["name"])
+    assert selected[13] == "oddize"
+    assert selected[14] == "premium-account"
+    assert selected[15] == "premium"
+
+
+def test_market_limit_size_from_unknown_provider_group_is_restricted(tmp_path):
+    monitor = MarketLimitsMonitor(tmp_path / "size-source-unknown.sqlite3")
+    events = fixture()
+    outcome = events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome.update({
+        "source_provider": "the_odds_api",
+        "source_account_group": "free-account",
+        "source_access_class": "free",
+        "size_source_provider": "oddize",
+        "size_source_account_group": "",
+        "size_source_access_class": "premium",
+    })
+
+    rows = monitor._extract(
+        "americanfootball_nfl", events,
+        "2026-11-26T01:00:00Z",
+        source_provider="the_odds_api",
+        source_access_class="free",
+    )
+    selected = next(row for row in rows if row[9] == outcome["name"])
+    assert selected[13] == "oddize"
+    assert selected[14] == ""
+    assert selected[15] == "restricted"
