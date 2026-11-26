@@ -276,9 +276,13 @@ class OddsService:
             allowed_classes.add("premium")
         account_classes = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get(provider_name)
         if account_classes is not None:
+            pool = self._provider_key_pools.get(provider_name)
+            configured_groups = {
+                item["account_group"] for item in (pool.status().get("keys", []) if pool else [])
+            }
             return {
                 group for group, access_class in account_classes.items()
-                if access_class in allowed_classes
+                if group in configured_groups and access_class in allowed_classes
             }
         provider_class = config.ODDS_PROVIDER_ACCESS_CLASSES.get(provider_name, "restricted")
         if provider_class not in allowed_classes:
@@ -439,6 +443,10 @@ class OddsService:
         alert_status = self.db.alert_status()
         return {"provider": config.ODDS_PROVIDER,
                 "provider_access_classes": dict(config.ODDS_PROVIDER_ACCESS_CLASSES),
+                "provider_account_access_classes": {
+                    provider: dict(groups)
+                    for provider, groups in config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.items()
+                },
                 "premium_provider_polling_enabled": config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED,
                 "providers": self.active_provider_names(),
                 "auto_refresh_providers": self.auto_refresh_provider_names(),
@@ -545,7 +553,7 @@ class OddsService:
             name for name in provider_names if self._provider_key_pools[name].configured
         ]
         if not configured_names:
-            self._last_error = "No configured API keys for the selected odds providers."
+            self._last_error = "No eligible configured API keys for the selected odds providers."
             return {"ok": False, "error": self._last_error, "events": 0}
         sports = [sport] if sport else config.ODDS_SPORTS
         count = 0
