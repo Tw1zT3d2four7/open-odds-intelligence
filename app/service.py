@@ -411,6 +411,8 @@ class OddsService:
             data_freshness = "current"
         alert_status = self.db.alert_status()
         return {"provider": config.ODDS_PROVIDER,
+                "provider_access_classes": dict(config.ODDS_PROVIDER_ACCESS_CLASSES),
+                "premium_provider_polling_enabled": config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED,
                 "providers": self.active_provider_names(),
                 "auto_refresh_providers": self.auto_refresh_provider_names(),
                 "configured": self.configured,
