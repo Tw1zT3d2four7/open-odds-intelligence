@@ -434,3 +434,120 @@ def test_standalone_limits_client_rotates_to_another_oddslink_account(monkeypatc
     assert client.fetch("nfl") == []
     assert [item[1] for item in calls if item[0] == "init"] == ["Key-One", "Key-Two"]
     assert client.usage["requests_remaining"] == 50
+
+
+def test_market_limit_provenance_is_persisted_and_scoped_for_current_and_history(tmp_path):
+    monitor = MarketLimitsMonitor(path=tmp_path / "scoped-limit-provenance.sqlite3")
+
+    def event(event_id, access_class, amount):
+        return [{
+            "id": event_id,
+            "sport_key": "americanfootball_nfl",
+            "commence_time": "2026-12-01T20:00:00Z",
+            "home_team": "Home",
+            "away_team": "Away",
+            "bookmakers": [{
+                "key": "book",
+                "title": "Book",
+                "markets": [{
+                    "key": "spreads",
+                    "outcomes": [{
+                        "name": "Home",
+                        "point": -3.5,
+                        "price": -110,
+                        "size": {"kind": "posted_limit", "amount": amount},
+                    }],
+                }],
+            }],
+        }]
+
+    monitor.ingest_events(
+        event("free-limit", "free", 10000),
+        observed_at="2026-11-25T10:00:00Z",
+        key_fingerprint="free-account-fingerprint",
+        source_access_class="free",
+    )
+    monitor.ingest_events(
+        event("premium-limit", "premium", 50000),
+        observed_at="2026-11-25T10:00:00Z",
+        key_fingerprint="premium-account-fingerprint",
+        source_access_class="premium",
+    )
+    monitor.ingest_events(
+        event("unknown-limit", "restricted", 90000),
+        observed_at="2026-11-25T10:00:00Z",
+        key_fingerprint="unknown-account-fingerprint",
+        source_access_class="restricted",
+    )
+
+    free_rows = monitor.current("americanfootball_nfl", 100, include_premium=False)
+    paid_rows = monitor.current("americanfootball_nfl", 100, include_premium=True)
+    assert {row["event_id"] for row in free_rows} == {"free-limit"}
+    assert {row["event_id"] for row in paid_rows} == {"free-limit", "premium-limit"}
+    assert all(row["source_provider"] == "oddslink" for row in paid_rows)
+    assert all(row["source_capability"] == "posted_market_limits" for row in paid_rows)
+    assert all(row["source_account_group"] for row in paid_rows)
+
+    assert len(monitor.history(
+        "free-limit", "book", "spreads", "Home", -3.5, include_premium=False
+    )) == 1
+    assert monitor.history(
+        "premium-limit", "book", "spreads", "Home", -3.5, include_premium=False
+    ) == []
+    assert len(monitor.history(
+        "premium-limit", "book", "spreads", "Home", -3.5, include_premium=True
+    )) == 1
+    assert monitor.history(
+        "unknown-limit", "book", "spreads", "Home", -3.5, include_premium=True
+    ) == []
+
+
+def test_market_limit_change_windows_are_scoped_before_aggregation(tmp_path):
+    monitor = MarketLimitsMonitor(path=tmp_path / "scoped-limit-changes.sqlite3")
+
+    def event(amount):
+        return [{
+            "id": "same-event",
+            "sport_key": "americanfootball_nfl",
+            "commence_time": "2026-12-01T20:00:00Z",
+            "home_team": "Home",
+            "away_team": "Away",
+            "bookmakers": [{
+                "key": "book",
+                "title": "Book",
+                "markets": [{
+                    "key": "spreads",
+                    "outcomes": [{
+                        "name": "Home",
+                        "point": -3.5,
+                        "price": -110,
+                        "size": {"kind": "posted_limit", "amount": amount},
+                    }],
+                }],
+            }],
+        }]
+
+    for timestamp, amount, access_class in (
+        ("2026-11-25T10:00:00Z", 10000, "free"),
+        ("2026-11-25T10:01:00Z", 50000, "premium"),
+        ("2026-11-25T10:02:00Z", 15000, "free"),
+        ("2026-11-25T10:03:00Z", 75000, "premium"),
+    ):
+        monitor.ingest_events(
+            event(amount),
+            observed_at=timestamp,
+            key_fingerprint=f"{access_class}-group",
+            source_access_class=access_class,
+        )
+
+    free_changes = monitor.changes(
+        direction="all", include_premium=False
+    )
+    paid_changes = monitor.changes(
+        direction="all", include_premium=True
+    )
+    assert len(free_changes) == 1
+    assert free_changes[0]["previous_limit"] == 10000
+    assert free_changes[0]["limit_amount"] == 15000
+    assert len(paid_changes) == 2
+    assert {row["source_access_class"] for row in paid_changes} == {"free", "premium"}
