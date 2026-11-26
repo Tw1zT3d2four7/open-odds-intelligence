@@ -79,3 +79,16 @@ The Admin Console is not a mechanism to switch a public production deployment in
 5. Add tests for every profile, invalid combination, remote access to development-only routes, disabled email, outbox challenge expiry/consumption, and production fail-closed behavior.
 6. Verify with the existing identity, route-policy, CSRF, rate-limit, MFA, queue, and billing suites.
 7. Keep the live server on its current image until the feature-branch build and local acceptance tests pass. No production mode change, deployment, or restart is authorized by this specification.
+
+## Current implementation boundary
+
+The initial policy parser and route gates are implemented, but not every proposed control is available yet. Until its complete runtime workflow exists, configuration must fail closed rather than accept a no-op setting:
+
+- Administrator MFA remains mandatory in every profile. `AUTH_ADMIN_MFA_REQUIRED=false` is rejected.
+- Subscriber MFA enrollment, verification, recovery, and session enforcement are not implemented. `AUTH_SUBSCRIBER_MFA_REQUIRED=true` is rejected.
+- CSRF is always enforced. `AUTH_CSRF_REQUIRED=false` is rejected.
+- The protected Admin Console currently displays effective policy values; it does not yet edit deployment environment settings.
+- The local outbox is a trusted-terminal development utility, not an HTTP endpoint. Its output contains one-time links and must be treated as secret.
+- Staging and production continue to reject the development local-outbox transport.
+
+These restrictions are intentional. A setting is not considered implemented merely because it parses or appears in the policy object; its enforcement, user workflow, audit behavior, and tests must all exist first.
