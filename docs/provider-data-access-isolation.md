@@ -132,3 +132,10 @@ The current-limits query, change-history window, and exact-selection history app
 Automated coverage includes free-versus-paid current limits, exact-selection history, source-partitioned change windows, restricted legacy rows, and premium diagnostic redaction. CI run 45746913326 passed **990 tests with 1 non-blocking warning**.
 
 Still outstanding: independent access-class configuration and quota accounting for multiple account groups under the same provider; premium-specific CLV tracking; broader provider usage metering/cost guardrails; and isolated HTTPS staging acceptance. Premium polling remains disabled by default, and this implementation does not authorize provider purchases, production deployment, merge, or live billing.
+
+
+### Provider account-group key handling — 2026-11-26
+
+Provider key pools accept optional `group|API_KEY` entries in the existing comma/newline-separated key settings. Keys without a group remain in the shared `default` group. The service now passes the raw configured key-entry strings into the pool rather than flattening them first, preserving group identity for quota cooldowns and status reporting. A quota response from one key pauses every configured key in that same group, while keys in a different group remain independently eligible. API key bytes remain case-preserved; group labels are metadata, not credentials.
+
+This closes a key-pool wiring gap but does not yet enable independent free/premium access classification or independent polling schedules by account group. Provider access classes are still provider-level for ingestion and scheduling. Do not configure mixed free/premium account groups for one provider expecting separate entitlement behavior until that next layer is implemented and tested.
