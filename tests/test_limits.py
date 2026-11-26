@@ -508,7 +508,7 @@ def test_market_limit_provenance_is_persisted_and_scoped_for_current_and_history
 def test_market_limit_change_windows_are_scoped_before_aggregation(tmp_path):
     monitor = MarketLimitsMonitor(path=tmp_path / "scoped-limit-changes.sqlite3")
 
-    def event(amount):
+    def event(amount, access_class):
         return [{
             "id": "same-event",
             "sport_key": "americanfootball_nfl",
@@ -524,6 +524,9 @@ def test_market_limit_change_windows_are_scoped_before_aggregation(tmp_path):
                         "name": "Home",
                         "point": -3.5,
                         "price": -110,
+                        "source_provider": "oddslink",
+                        "source_account_group": f"{access_class}-group",
+                        "source_access_class": access_class,
                         "size": {"kind": "posted_limit", "amount": amount},
                     }],
                 }],
@@ -537,7 +540,7 @@ def test_market_limit_change_windows_are_scoped_before_aggregation(tmp_path):
         ("2026-11-25T10:03:00Z", 75000, "premium"),
     ):
         monitor.ingest_events(
-            event(amount),
+            event(amount, access_class),
             observed_at=timestamp,
             key_fingerprint=f"{access_class}-group",
             source_access_class=access_class,
