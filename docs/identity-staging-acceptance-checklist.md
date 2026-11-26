@@ -2,6 +2,28 @@
 
 **Status:** Preparation checklist only. No deployment, production cutover, DNS change, or production restart is authorized by this document.
 
+## 0. Staging deployment scaffold
+
+The feature branch now includes a separate Compose file and a non-secret environment template:
+
+- `docker-compose.staging.yml` uses the isolated `admin-staging` GHCR image tag, a unique container name, a separate `./staging-data` bind mount, and host-loopback-only port `127.0.0.1:18765`.
+- `.env.staging.example` is a template only. Copy it to the untracked `.env.staging`, fill secrets using a private secret manager, and set `PUBLIC_BASE_URL` to the real HTTPS staging origin. Never commit `.env.staging`.
+- The staging Compose project does not reuse the production `data/` directory, production container name, or production port. Staging data is excluded from Docker build context.
+
+After the feature-branch image publication workflow succeeds and the isolation/configuration checks below are complete, an operator can start the staging container with:
+
+```bash
+cp .env.staging.example .env.staging
+chmod 600 .env.staging
+install -d -m 700 staging-data
+docker compose -f docker-compose.staging.yml pull
+docker compose -f docker-compose.staging.yml up -d
+docker compose -f docker-compose.staging.yml ps
+curl --fail http://127.0.0.1:18765/api/health
+```
+
+Do not run these commands against production. The port is deliberately bound to loopback; expose staging remotely only through a separately configured HTTPS reverse proxy after the peer topology and trusted-proxy behavior have been verified. Do not enable Stripe Checkout/Portal, external odds polling, Discord, SMS, or real email delivery until their individual staging credentials and acceptance steps are ready.
+
 ## 1. Isolation requirements
 
 Before testing, create a genuinely separate staging deployment:
