@@ -86,9 +86,19 @@ def test_account_access_class_configuration_parses_comma_and_newline_entries(mon
             "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES",
             "The_Odds_API|FREE=free\nThe_Odds_API|Pro=premium",
         )
+        scoped.setenv(
+            "ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS",
+            "The_Odds_API|FREE=credits_remaining:250\nThe_Odds_API|Pro=datapoints_remaining:1000",
+        )
         importlib.reload(config)
         assert config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES == {
             "the_odds_api": {"free": "free", "pro": "premium"}
+        }
+        assert config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS == {
+            "the_odds_api": {
+                "free": {"credits_remaining": 250},
+                "pro": {"datapoints_remaining": 1000},
+            }
         }
 
     # Restore module-level config values to match the restored process environment.
@@ -149,3 +159,27 @@ def test_service_never_persists_raw_provider_credentials_from_usage_payload(tmp_
     assert "NeverPersistThisAuthorization" not in latest
     assert "NeverPersistThisPassword" not in latest
     assert "credits_remaining" in latest
+
+
+
+def test_quota_reserve_floor_pauses_entire_account_group_after_success():
+    pool = ProviderKeyPool(
+        "example",
+        ["free-account|FreeKeyOne,free-account|FreeKeyTwo,premium-account|PremiumKey"],
+    )
+    lease = pool.acquire(allowed_account_groups={"free-account", "premium-account"})
+    pool.record_usage(
+        lease,
+        {"credits_remaining": 80, "period_resets_at": "2026-12-01T00:00:00Z"},
+        minimum_remaining={"credits_remaining": 100},
+    )
+    # A successful HTTP response must not clear the reserve-floor cooldown.
+    pool.mark_success(lease)
+
+    status = pool.status()
+    by_group = {item["account_group"]: item for item in status["account_groups"]}
+    assert by_group["free-account"]["available_keys"] == 0
+    assert by_group["free-account"]["quota_cooldown_keys"] == 2
+    assert by_group["free-account"]["usage"]["quota_floor_triggered"] == "credits_remaining"
+    assert by_group["free-account"]["usage"]["quota_floor_threshold"] == 100
+    assert by_group["premium-account"]["available_keys"] == 1
