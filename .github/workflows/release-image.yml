@@ -10,7 +10,9 @@ on:
 # Keep image tags isolated: main publishes :latest, development publishes :dev, and the admin feature branch publishes :release.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel a verified image build on every subsequent push. Newer commits
+  # wait as the single pending run, so the release tag is actually published.
+  cancel-in-progress: false
 
 permissions:
   contents: read
