@@ -628,7 +628,7 @@ class OddsDatabase:
         return events
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None,
-                limit=100, outcome_description=None, include_premium=False):
+                limit=100, outcome_description=None, include_premium=True):
         sql = """SELECT s.fetched_at,q.bookmaker_key,q.bookmaker_title,q.market_key,
                  q.outcome_name,q.outcome_description,q.point,q.price,q.source_updated_at,
                  q.source_provider,q.source_access_class FROM quotes q
@@ -652,7 +652,7 @@ class OddsDatabase:
             return [dict(row) for row in db.execute(sql, args).fetchall()]
 
 
-    def movement(self, sport=None, limit=200, include_premium=False):
+    def movement(self, sport=None, limit=200, include_premium=True):
         """Return one opening-to-latest movement summary per sportsbook selection.
 
         When a book offers a single line for a selection, line transitions are
@@ -765,7 +765,7 @@ class OddsDatabase:
 
 
     def movement_history(self, event_id, market_key, outcome_name,
-                         bookmaker_key, limit=500, outcome_description=None, include_premium=False):
+                         bookmaker_key, limit=500, outcome_description=None, include_premium=True):
         """Return a chronological quote timeline, including every observed line."""
         with self.connect() as db:
             rows = db.execute(
