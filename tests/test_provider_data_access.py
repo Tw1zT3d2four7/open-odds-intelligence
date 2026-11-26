@@ -126,3 +126,39 @@ def test_free_quote_is_retained_when_premium_source_has_same_selection(tmp_path)
 
     assert free_outcome["source_provider"] == "free-feed"
     assert paid_outcome["source_provider"] == "paid-feed"
+
+def test_clv_history_is_scoped_and_legacy_rows_fail_closed(tmp_path):
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    base = {
+        "sport": "NBA",
+        "sport_key": "basketball_nba",
+        "matchup": "Away @ Home",
+        "commence_time": "2099-12-01T00:00:00Z",
+        "market": "h2h",
+        "outcome": "Home",
+        "bookmaker": "Book",
+        "price": -110,
+        "fair_probability": 0.55,
+        "ev_percent": 5.0,
+    }
+    for event_id, access_class in (
+        ("free-entry", "free"),
+        ("premium-entry", "premium"),
+        ("legacy-entry", "restricted"),
+    ):
+        db.record_clv_candidates([{
+            **base,
+            "event_id": event_id,
+            "bookmaker_key": event_id,
+            "source_access_class": access_class,
+        }], observed_at="2026-11-25T12:00:00Z")
+
+    free = db.clv_report(include_premium=False)
+    paid = db.clv_report(include_premium=True)
+    legacy = db.clv_report()
+
+    assert {row["event_id"] for row in free["entries"]} == {"free-entry"}
+    assert {row["event_id"] for row in paid["entries"]} == {"free-entry", "premium-entry"}
+    assert {row["event_id"] for row in legacy["entries"]} == {
+        "free-entry", "premium-entry", "legacy-entry"
+    }
