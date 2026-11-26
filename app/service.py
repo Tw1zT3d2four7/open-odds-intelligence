@@ -132,7 +132,12 @@ class OddsService:
                 )
                 if saved:
                     try:
-                        pool.restore_usage(key_status["key_id"], json.loads(saved))
+                        pool.restore_usage(
+                            key_status["key_id"], json.loads(saved),
+                            minimum_remaining=config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.get(
+                                provider_name, {}
+                            ).get(key_status.get("account_group"), {}),
+                        )
                     except (TypeError, ValueError, json.JSONDecodeError):
                         continue
         self._simulation_results_status = {
@@ -232,7 +237,10 @@ class OddsService:
         return safe
 
     def _record_provider_key_usage(self, provider_name, pool, lease, usage):
-        pool.record_usage(lease, usage)
+        minimum_remaining = config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.get(
+            provider_name, {}
+        ).get(lease.account_group, {})
+        pool.record_usage(lease, usage, minimum_remaining=minimum_remaining)
         if usage:
             safe_usage = next(
                 (
