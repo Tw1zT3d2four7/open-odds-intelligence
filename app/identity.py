@@ -23,6 +23,7 @@ from cryptography.fernet import Fernet, InvalidToken
 import pyotp
 
 from . import config
+from .auth_config import AUTHENTICATION_POLICY as AUTH_POLICY
 
 
 _SCHEMA_VERSION = 16
@@ -2871,9 +2872,12 @@ class IdentityStore:
             if row is None:
                 db.rollback()
                 return None
-            idle_cutoff = _timestamp(
-                _now() - timedelta(seconds=config.SESSION_IDLE_TIMEOUT_SECONDS)
+            idle_seconds = (
+                AUTH_POLICY.administrator_session_idle_seconds
+                if row["account_type"] == "administrator"
+                else AUTH_POLICY.subscriber_session_idle_seconds
             )
+            idle_cutoff = _timestamp(_now() - timedelta(seconds=idle_seconds))
             if row["last_seen_at"] <= idle_cutoff:
                 db.execute(
                     "UPDATE sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL",
