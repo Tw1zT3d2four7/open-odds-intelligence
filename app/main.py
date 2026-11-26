@@ -37,6 +37,42 @@ def _include_premium_data(request: Request) -> bool | None:
         return None
     return bool(getattr(request.state, "include_premium_data", False))
 
+def _status_for_request(request: Request) -> dict:
+    """Remove premium provider diagnostics and counts from free subscriber responses."""
+    status = service.status()
+    if _include_premium_data(request) is not False:
+        return status
+    free_providers = {
+        name for name, access_class in config.ODDS_PROVIDER_ACCESS_CLASSES.items()
+        if access_class == "free"
+    }
+    status["providers"] = [name for name in status.get("providers", []) if name in free_providers]
+    status["auto_refresh_providers"] = [
+        name for name in status.get("auto_refresh_providers", []) if name in free_providers
+    ]
+    status["auto_refresh_schedule"] = {
+        name: value for name, value in status.get("auto_refresh_schedule", {}).items()
+        if name in free_providers
+    }
+    status["provider"] = (
+        status.get("provider") if status.get("provider") in free_providers else "free_sources"
+    )
+    status.pop("provider_usage", None)
+    status.pop("provider_keys", None)
+    status.pop("provider_coverage", None)
+    visible_events = service.events(include_premium=False)
+    status["live_data_available"] = bool(visible_events)
+    status["stored_events"] = len(visible_events)
+    status["stored_bookmakers"] = len({
+        book.get("key") for event in visible_events
+        for book in event.get("bookmakers") or [] if book.get("key")
+    })
+    if config.ODDS_PROVIDER_ACCESS_CLASSES.get("the_odds_api") != "free":
+        status["player_props"] = {
+            "enabled": False, "reason": "Player props are not included in the free provider data scope."
+        }
+    return status
+
 
 async def _limits_refresh_loop():
     while True:
@@ -366,7 +402,7 @@ def market_limits_history(request: Request, event_id: str, bookmaker: str, marke
 
 @app.get("/api/odds", dependencies=dependencies_for_route("GET", "/api/odds", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def odds(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    return {"events": service.events(sport, limit=limit, offset=offset, include_premium=_include_premium_data(request)), "limit": limit, "offset": offset, "status": service.status()}
+    return {"events": service.events(sport, limit=limit, offset=offset, include_premium=_include_premium_data(request)), "limit": limit, "offset": offset, "status": _status_for_request(request)}
 
 
 @app.post("/api/refresh", dependencies=dependencies_for_route("POST", "/api/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
@@ -543,7 +579,7 @@ def player_props(request: Request, sport: str | None = None, limit: int = Query(
     page = _page_results(quotes, limit, offset)
     return {"quotes": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
-            "status": service.status()["player_props"],
+            "status": _status_for_request(request)["player_props"],
             "note": "Player props are fetched only when explicitly enabled and only from supported provider event-odds endpoints. Each event-level request can consume provider quota."}
 
 
