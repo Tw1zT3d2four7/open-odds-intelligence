@@ -1158,6 +1158,7 @@ class IdentityStore:
                 db, "subscriber.complimentary_access_granted", identity_id, now,
                 metadata={
                     "entitlements": normalized,
+                    "starts_at": now,
                     "expires_at": expiry,
                     "grant_type": "complimentary",
                     "campaign": campaign.strip(),
