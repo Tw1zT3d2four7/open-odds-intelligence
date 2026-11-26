@@ -60,6 +60,8 @@ def _status_for_request(request: Request) -> dict:
     status.pop("provider_usage", None)
     status.pop("provider_keys", None)
     status.pop("provider_coverage", None)
+    status.pop("provider_access_classes", None)
+    status.pop("premium_provider_polling_enabled", None)
     visible_events = service.events(include_premium=False)
     status["live_data_available"] = bool(visible_events)
     status["stored_events"] = len(visible_events)
