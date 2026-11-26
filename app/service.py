@@ -692,6 +692,16 @@ class OddsService:
                         "quotes": quote_count,
                         "prop_quotes": prop_quote_count,
                     }
+                    # Preserve the non-secret account group on every quote so
+                    # mixed free/premium credentials under one provider stay isolated.
+                    for source_event in events or []:
+                        for source_book in source_event.get("bookmakers") or []:
+                            for source_market in source_book.get("markets") or []:
+                                for source_outcome in source_market.get("outcomes") or []:
+                                    if isinstance(source_outcome, dict):
+                                        source_outcome["source_account_group"] = lease.account_group
+                                        if "size" in source_outcome:
+                                            source_outcome["size_source_account_group"] = lease.account_group
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
                     if provider_name == "oddize":
@@ -713,6 +723,7 @@ class OddsService:
             events, snapshot_providers = merge_provider_snapshot(
                 existing_events, successful_providers, source_results,
                 provider_access_classes=config.ODDS_PROVIDER_ACCESS_CLASSES,
+                provider_account_access_classes=config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES,
             )
             fetched_at = datetime.now(timezone.utc).isoformat()
             snapshot_provider = "+".join(snapshot_providers)
