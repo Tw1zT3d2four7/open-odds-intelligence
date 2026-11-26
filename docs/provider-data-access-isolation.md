@@ -173,7 +173,7 @@ ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS=the_odds_api|premium=credits_remaining:250,od
 When a provider reports the configured remaining-quota metric at or below its floor, the entire account group is paused until the provider-reported reset time (with a 24-hour fallback if no reset is supplied). The pause survives successful HTTP responses and service restarts. The metric must match a supported provider-reported remaining counter; no dollar cost is inferred from it. Actual monetary cost estimates still require provider-specific pricing and billing data.
 
 
-Automated merge, key-pool, database migration, CLV, and Admin Overview tests cover same-provider free/premium coexistence, independent same-tier account groups, fail-closed unknown groups, eligible-group polling, quota reserve floors, and credential sanitization. CI run 45757602220 at commit 0473c22b358c0f58e89da38224f46beb728ab51b passed 1,011 tests with one non-blocking warning. Do not enable mixed-tier account configuration or premium polling in production until isolated staging acceptance passes.
+Automated merge, key-pool, database migration, CLV, and Admin Overview tests cover same-provider free/premium coexistence, independent same-tier account groups, fail-closed unknown groups, eligible-group polling, quota reserve floors, and credential sanitization. CI run 45760810581 at commit 0d89337bf3d45be5360ffe7f99cd0e08a10544da passed 1,025 tests with one non-blocking warning. Do not enable mixed-tier account configuration or premium polling in production until isolated staging acceptance passes.
 
 
 
