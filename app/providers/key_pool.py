@@ -125,7 +125,7 @@ class ProviderKeyPool:
             key = self._keys[index]
             return KeyLease(index, key, self._fingerprint(key), self._groups[index])
 
-    def record_usage(self, lease: KeyLease, usage: dict | None) -> None:
+    def record_usage(self, lease: KeyLease, usage: dict | None, minimum_remaining: dict | None = None) -> None:
         """Attach non-secret quota counters to the exact key that made the call."""
         if not isinstance(usage, dict):
             return
@@ -148,6 +148,16 @@ class ProviderKeyPool:
                     exhausted = exhausted or float(safe[name]) <= 0
                 except (TypeError, ValueError):
                     pass
+        for name, threshold in (minimum_remaining or {}).items():
+            if name not in safe or safe[name] is None:
+                continue
+            try:
+                if float(safe[name]) <= float(threshold):
+                    exhausted = True
+                    safe["quota_floor_triggered"] = name
+                    safe["quota_floor_threshold"] = int(threshold)
+            except (TypeError, ValueError, OverflowError):
+                continue
         if exhausted:
             delay = None
             now_utc = datetime.now(timezone.utc)
@@ -200,7 +210,7 @@ class ProviderKeyPool:
                     "Provider quota exhausted; key group paused until its quota resets."
                 )
 
-    def restore_usage(self, key_id: str, usage: dict | None) -> None:
+    def restore_usage(self, key_id: str, usage: dict | None, minimum_remaining: dict | None = None) -> None:
         """Restore last known non-secret quota counters for a configured key."""
         with self._lock:
             for index, key in enumerate(self._keys):
@@ -209,12 +219,26 @@ class ProviderKeyPool:
                     break
             else:
                 return
-        self.record_usage(lease, usage)
+        self.record_usage(lease, usage, minimum_remaining=minimum_remaining)
 
     def mark_success(self, lease: KeyLease) -> None:
         with self._lock:
-            self._blocked_until.pop(lease.index, None)
-            self._last_error.pop(lease.index, None)
+            usage = self._usage.get(lease.index, {})
+            exhausted = bool(usage.get("quota_floor_triggered"))
+            for name in (
+                "requests_remaining", "credits_remaining", "monthly_objects_remaining",
+                "datapoints_remaining", "remaining_requests", "remaining_credits",
+                "remaining_objects",
+            ):
+                try:
+                    exhausted = exhausted or (
+                        usage.get(name) is not None and float(usage[name]) <= 0
+                    )
+                except (TypeError, ValueError):
+                    continue
+            if not exhausted:
+                self._blocked_until.pop(lease.index, None)
+                self._last_error.pop(lease.index, None)
 
     def mark_failure(
         self,
