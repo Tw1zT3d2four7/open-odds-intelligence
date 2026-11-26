@@ -232,6 +232,13 @@ class ComplimentarySubscriberInput(StrictModel):
     campaign: str = Field(min_length=1, max_length=80)
     reason_code: str = Field(pattern="^(giveaway_winner|promotional_campaign|sponsorship|service_recovery|other)$")
 
+class ComplimentarySubscriberUpdateInput(StrictModel):
+    identity_id: str = Field(min_length=1, max_length=128)
+    entitlements: list[str] = Field(min_length=1, max_length=32)
+    additional_days: int = Field(ge=1, le=366)
+    campaign: str = Field(min_length=1, max_length=80)
+    reason_code: str = Field(pattern="^(giveaway_winner|promotional_campaign|sponsorship|service_recovery|other)$")
+
 
 def _rate_limit(
     request: Request,
@@ -1233,6 +1240,42 @@ def create_complimentary_subscriber(
         "activation_email_queued": activation_queued,
         "billing_status": "complimentary",
     }
+
+
+@router.put(
+    "/admin/subscribers/complimentary",
+    dependencies=[Depends(require_administrator), Depends(require_authenticated_csrf)],
+)
+def extend_complimentary_subscriber(
+    payload: ComplimentarySubscriberUpdateInput,
+    request: Request,
+    response: Response,
+    session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+    limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
+):
+    """Extend a complimentary grant and replace its feature set with MFA-admin audit."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    _rate_limit(request, limiter, "admin-complimentary-create", payload.identity_id)
+    try:
+        result = store.extend_complimentary_subscriber(
+            payload.identity_id,
+            payload.entitlements,
+            actor_identity_id=session["identity_id"],
+            additional_days=payload.additional_days,
+            campaign=payload.campaign,
+            reason_code=payload.reason_code,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        logger.exception("Complimentary subscriber grant update failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Complimentary subscriber access could not be updated.",
+        ) from None
+    return result
 
 
 @router.get(
