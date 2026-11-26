@@ -67,7 +67,7 @@ _allowed_quota_metrics = {
     "remaining_objects",
 }
 _raw_provider_account_quota_floors = os.getenv("ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS", "")
-for _entry in _raw_provider_account_quota_floors.replace("\\n", ",").split(","):
+for _entry in _raw_provider_account_quota_floors.replace("\n", ",").split(","):
     if not _entry.strip():
         continue
     if "=" not in _entry or "|" not in _entry.split("=", 1)[0] or ":" not in _entry.split("=", 1)[1]:
