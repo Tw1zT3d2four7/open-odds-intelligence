@@ -51,7 +51,7 @@ def test_identity_schema_initialization_is_idempotent(tmp_path):
     first.initialize()
     with first.connect() as db:
         versions = db.execute("SELECT version FROM schema_migrations").fetchall()
-    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    assert [row["version"] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
 
 def test_schema_refuses_a_newer_database_version(tmp_path):
@@ -1854,3 +1854,18 @@ def test_inactive_or_expired_subscription_does_not_grant_premium_data(
 
     assert store.has_subscriber_entitlement(identity_id, "premium_data") is False
     assert "premium_data" not in store.active_subscriber_entitlements(identity_id)
+
+def test_migration_16_assigns_free_bundle_to_existing_ungranted_subscribers(tmp_path):
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    identity_id = store.create_subscriber("legacy-free@example.com", "correct horse battery")
+    with store.connect() as db:
+        db.execute("DELETE FROM subscriber_entitlements WHERE identity_id=?", (identity_id,))
+        db.execute("DELETE FROM schema_migrations WHERE version=16")
+
+    store.initialize()
+
+    assert set(store.active_subscriber_entitlements(identity_id)) == {
+        "dashboard", "odds", "market_limits", "market_board", "simulation",
+        "player_props", "clv", "market_movement", "history",
+        "opportunities", "arbitrage",
+    }
