@@ -610,7 +610,8 @@ class OddsDatabase:
                         outcome["updated_at"] = row["source_updated_at"]
                     if row["source_provider"]:
                         outcome["source_provider"] = row["source_provider"]
-                    outcome["source_access_class"] = row["source_access_class"] or "restricted"
+                    if row["source_access_class"] in {"free", "premium"}:
+                        outcome["source_access_class"] = row["source_access_class"]
                     if row["is_main"] is not None:
                         outcome["main"] = bool(row["is_main"])
                     if row["size_json"]:
