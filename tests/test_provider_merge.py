@@ -263,6 +263,7 @@ def test_unlisted_account_group_is_restricted_when_provider_overrides_exist():
     legacy_event = _event("legacy-event", [_book("book", [
         {"name": "Home", "price": -110}
     ])])
+    legacy_event["bookmakers"][0]["markets"][0]["outcomes"][0].pop("source_account_group", None)
     legacy_merged = merge_provider_events(
         [("the_odds_api", [legacy_event])],
         provider_access_classes={"the_odds_api": "free"},
