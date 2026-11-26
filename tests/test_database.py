@@ -1154,8 +1154,8 @@ def test_clv_keeps_free_and_premium_entries_for_same_selection_separate(tmp_path
         "bookmaker": "Shared Book", "bookmaker_key": "shared-book",
         "price": -110, "fair_probability": 0.51, "ev_percent": 2.0,
     }
-    free = dict(candidate, source_access_class="free")
-    premium = dict(candidate, source_access_class="premium", price=-115)
+    free = dict(candidate, source_access_class="free", source_provider="the_odds_api", source_account_group="free-account")
+    premium = dict(candidate, source_access_class="premium", source_provider="the_odds_api", source_account_group="premium-account", price=-115)
     assert db.record_clv_candidates([free], now.isoformat()) == 1
     assert db.record_clv_candidates([premium], now.isoformat()) == 1
 
@@ -1168,6 +1168,10 @@ def test_clv_keeps_free_and_premium_entries_for_same_selection_separate(tmp_path
         "free", "premium"
     }
     assert {row["entry_price"] for row in paid_report["entries"]} == {-110, -115}
+    assert {row["source_account_group"] for row in paid_report["entries"]} == {
+        "free-account", "premium-account"
+    }
+    assert {row["source_provider"] for row in paid_report["entries"]} == {"the_odds_api"}
 
 
 def test_clv_legacy_unique_index_is_migrated_without_losing_entries(tmp_path):
@@ -1220,10 +1224,14 @@ def test_clv_legacy_unique_index_is_migrated_without_losing_entries(tmp_path):
             for index in unique_indexes
         ]
         legacy = conn.execute(
-            "SELECT source_access_class,entry_price FROM clv_entries WHERE event_id='legacy-event'"
+            "SELECT source_access_class,source_provider,source_account_group,entry_price FROM clv_entries WHERE event_id='legacy-event'"
         ).fetchone()
     assert "source_access_class" in columns
+    assert "source_provider" in columns
+    assert "source_account_group" in columns
     assert ["event_id", "market_key", "outcome_name", "point_key",
             "bookmaker_key", "source_access_class"] in unique_columns
     assert legacy["source_access_class"] == "restricted"
+    assert legacy["source_provider"] == ""
+    assert legacy["source_account_group"] == ""
     assert legacy["entry_price"] == -110
