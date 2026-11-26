@@ -131,6 +131,12 @@ def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and
     assert all(row["expires_at"] == grant["expires_at"] for row in grants)
     assert audit["actor_identity_id"] == admin_id
     assert audit["event_type"] == "subscriber.complimentary_access_granted"
+    directory = store.list_subscribers(email_query="winner@example.com")
+    assert directory["total"] == 1
+    listed = directory["subscribers"][0]
+    assert listed["complimentary_access_active"] is True
+    assert listed["complimentary_campaign"] == "November giveaway"
+    assert listed["complimentary_expires_at"] == grant["expires_at"]
     assert '"grant_type":"complimentary"' in audit["metadata_json"]
     assert '"campaign":"November giveaway"' in audit["metadata_json"]
     assert store.authenticate("winner@example.com", "administrator password", "subscriber") is None
