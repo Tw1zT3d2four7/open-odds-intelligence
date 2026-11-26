@@ -459,7 +459,7 @@ class MarketLimitsMonitor:
         unique_rows = {}
         conflicting = set()
         for row in rows:
-            identity = (row[0], row[2], row[6], row[8], row[9], row[10], row[13], row[14], row[15])
+            identity = (row[0], row[2], row[6], row[8], row[9], row[10], row[13], row[14], row[15], row[16])
             previous = unique_rows.get(identity)
             if previous is not None and previous != row:
                 conflicting.add(identity)
