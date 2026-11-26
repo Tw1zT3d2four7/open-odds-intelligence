@@ -103,9 +103,12 @@ def _quote_rank(outcome, provider_rank):
 
 def _provider_access_class(provider_name, account_group, provider_access_classes, provider_account_access_classes):
     """Resolve tier by provider account; configured providers fail closed for unknown groups."""
+    normalized_group = str(account_group or "").strip()
+    if not normalized_group:
+        return "restricted"
     account_classes = provider_account_access_classes or {}
     if provider_name in account_classes:
-        return account_classes[provider_name].get(str(account_group or ""), "restricted")
+        return account_classes[provider_name].get(normalized_group, "restricted")
     access_class = (provider_access_classes or {}).get(provider_name)
     return access_class if access_class in {"free", "premium"} else "restricted"
 
