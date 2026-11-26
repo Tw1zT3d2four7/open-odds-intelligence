@@ -1180,7 +1180,8 @@ class OddsService:
 
     def events(self, sport=None, limit=None, offset=0, include_premium=None):
         """Return a short-lived shared snapshot for concurrent dashboard reads."""
-        cache_key = (sport or "__all__") + f":{limit}:{offset}:premium={bool(include_premium)}"
+        scope_key = "all" if include_premium is None else ("paid" if include_premium else "free")
+        cache_key = (sport or "__all__") + f":{limit}:{offset}:scope={scope_key}"
         now = time.monotonic()
         cached = self._events_cache.get(cache_key)
         if cached and now - cached[0] < self._events_cache_ttl_seconds:
@@ -1214,7 +1215,7 @@ class OddsService:
                     markets = []
                     for market in book.get("markets") or []:
                         market_copy = dict(market)
-                        outcomes = []
+                        outcome_map = {}
                         for raw_outcome in market.get("outcomes") or []:
                             if not (
                                 include_premium is None
@@ -1231,7 +1232,17 @@ class OddsService:
                                 outcome.pop("size", None)
                                 outcome.pop("size_source_provider", None)
                                 outcome.pop("size_source_access_class", None)
-                            outcomes.append(outcome)
+                            identity = (
+                                outcome.get("name"),
+                                outcome.get("description") or outcome.get("participant") or "",
+                                outcome.get("point"),
+                            )
+                            updated = str(outcome.get("updated_at") or outcome.get("source_updated_at") or "")
+                            score = (updated, 1 if outcome.get("source_access_class") == "premium" else 0)
+                            previous = outcome_map.get(identity)
+                            if previous is None or score > previous[0]:
+                                outcome_map[identity] = (score, outcome)
+                        outcomes = [item[1] for item in outcome_map.values()]
                         if outcomes:
                             market_copy["outcomes"] = outcomes
                             markets.append(market_copy)
