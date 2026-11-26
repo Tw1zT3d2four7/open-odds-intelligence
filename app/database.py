@@ -757,7 +757,8 @@ class OddsDatabase:
                    q.event_id, q.sport,
                    q.sport_title, q.commence_time, q.home_team, q.away_team,
                    q.bookmaker_key, q.bookmaker_title, q.market_key,
-                   q.outcome_name, q.outcome_description, q.point, q.price
+                   q.outcome_name, q.outcome_description, q.point, q.price,
+                   q.source_provider, q.source_account_group, q.source_access_class
             FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
             WHERE (? IS NULL OR q.sport=?)
             ORDER BY s.id ASC, q.event_id, q.bookmaker_key,
@@ -773,7 +774,9 @@ class OddsDatabase:
         grouped = {}
         for row in rows:
             key = (row["event_id"], row["bookmaker_key"],
-                   row["market_key"], row["outcome_name"], row.get("outcome_description") or "")
+                   row["market_key"], row["outcome_name"], row.get("outcome_description") or "",
+                   row.get("source_provider") or "", row.get("source_account_group") or "",
+                   row.get("source_access_class") or "restricted")
             grouped.setdefault(key, {}).setdefault(row["snapshot_id"], {})[row["point"]] = row
 
         def implied(price):
@@ -834,6 +837,9 @@ class OddsDatabase:
                     "outcome": current["outcome_name"], "outcome_description": current.get("outcome_description") or "",
                     "bookmaker": current["bookmaker_title"],
                     "bookmaker_key": current["bookmaker_key"],
+                    "source_provider": current.get("source_provider") or "",
+                    "source_account_group": current.get("source_account_group") or "",
+                    "source_access_class": current.get("source_access_class") or "restricted",
                     "opening_point": opening["point"], "previous_point": previous["point"],
                     "point": current["point"], "opening_price": opening["price"],
                     "previous_price": previous["price"], "price": current["price"],
