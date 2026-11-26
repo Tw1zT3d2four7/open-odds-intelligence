@@ -967,6 +967,20 @@ class OddsDatabase:
                 sport = row.get("sport_key") or row.get("sport") or ""
                 matchup = row.get("matchup") or ""
                 title = row.get("bookmaker") or bookmaker_key
+                source_provider = (
+                    row.get("source_provider")
+                    if isinstance(row.get("source_provider"), str) else ""
+                )
+                source_account_group = (
+                    row.get("source_account_group")
+                    if isinstance(row.get("source_account_group"), str) else ""
+                )
+                source_access_class = (
+                    row.get("source_access_class")
+                    if row.get("source_access_class") in {"free", "premium"} else "restricted"
+                )
+                if not source_provider.strip() or not source_account_group.strip():
+                    source_access_class = "restricted"
                 if not all(isinstance(value, str) for value in (sport, matchup, title)):
                     continue
 
@@ -980,9 +994,7 @@ class OddsDatabase:
                              AND source_access_class=?
                            LIMIT 1""",
                         (event_id, outcome, bookmaker_key, abs(point),
-                         row.get("source_provider") if isinstance(row.get("source_provider"), str) else "",
-                         row.get("source_account_group") if isinstance(row.get("source_account_group"), str) else "",
-                         row.get("source_access_class") if row.get("source_access_class") in {"free", "premium"} else "restricted"),
+                         source_provider, source_account_group, source_access_class,
                     ).fetchone()
                     if legacy_or_current:
                         continue
@@ -996,9 +1008,7 @@ class OddsDatabase:
                     (event_id, sport, matchup, str(commence), market, outcome,
                      point, point_key, bookmaker_key, title, price,
                      fair_probability, ev_percent, str(observed_at),
-                     row.get("source_provider") if isinstance(row.get("source_provider"), str) else "",
-                     row.get("source_account_group") if isinstance(row.get("source_account_group"), str) else "",
-                     row.get("source_access_class") if row.get("source_access_class") in {"free", "premium"} else "restricted"))
+                     source_provider, source_account_group, source_access_class)
                 inserted += max(0, cur.rowcount)
         return inserted
 
