@@ -167,6 +167,8 @@ def subscriber_account_page(
 
 @router.get("/forgot-password", response_class=HTMLResponse)
 def password_recovery_page():
+    if not AUTH_POLICY.password_recovery_enabled:
+        raise HTTPException(status_code=404, detail="Password recovery is unavailable.")
     return _render_auth_page()
 
 
@@ -177,6 +179,8 @@ def email_verification_page():
 
 @router.get("/reset-password", response_class=HTMLResponse)
 def password_reset_page():
+    if not AUTH_POLICY.password_recovery_enabled:
+        raise HTTPException(status_code=404, detail="Password recovery is unavailable.")
     return _render_auth_page()
 
 
@@ -479,7 +483,11 @@ def csrf_bootstrap(response: Response):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     issue_csrf_cookie(response)
-    return {"ok": True}
+    return {
+        "ok": True,
+        "email_verification_required": AUTH_POLICY.email_verification_required,
+        "password_recovery_enabled": AUTH_POLICY.password_recovery_enabled,
+    }
 
 @router.get("/auth/account")
 def subscriber_account_summary(
