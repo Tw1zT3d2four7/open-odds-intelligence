@@ -701,3 +701,44 @@ def test_market_limit_legacy_unique_index_migrates_with_restricted_rows(tmp_path
     assert legacy["source_access_class"] == "restricted"
     assert legacy["source_account_group"] == ""
     assert count == 3
+
+
+
+def test_market_limit_migration_restricts_old_provider_level_tier_labels(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old-provider-tier-limits.sqlite3"
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE market_limit_quotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                observed_at TEXT NOT NULL, sport TEXT NOT NULL, event_id TEXT NOT NULL,
+                commence_time TEXT NOT NULL DEFAULT '', home_team TEXT NOT NULL DEFAULT '',
+                away_team TEXT NOT NULL DEFAULT '', bookmaker_key TEXT NOT NULL,
+                bookmaker_title TEXT NOT NULL DEFAULT '', market_key TEXT NOT NULL,
+                outcome_name TEXT NOT NULL, point REAL, price REAL,
+                limit_amount REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'bookmaker_currency',
+                source_provider TEXT NOT NULL DEFAULT '',
+                source_account_group TEXT NOT NULL DEFAULT '',
+                source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                source_capability TEXT NOT NULL DEFAULT 'posted_market_limits',
+                UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point)
+            )
+        """)
+        raw.execute("""
+            INSERT INTO market_limit_quotes(
+                observed_at,sport,event_id,bookmaker_key,bookmaker_title,market_key,
+                outcome_name,point,price,limit_amount,source_provider,
+                source_account_group,source_access_class
+            ) VALUES('2026-11-26T01:00:00Z','nfl','legacy-provider-tier','book','Book',
+                     'spreads','Home',2.5,-110,1000,'oddslink','old-keyset-fingerprint','free')
+        """)
+
+    monitor = MarketLimitsMonitor(path)
+    with monitor._connect() as db:
+        row = db.execute(
+            "SELECT source_account_group,source_access_class FROM market_limit_quotes WHERE event_id='legacy-provider-tier'"
+        ).fetchone()
+    assert row["source_account_group"] == "old-keyset-fingerprint"
+    assert row["source_access_class"] == "restricted"
