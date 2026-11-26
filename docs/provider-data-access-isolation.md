@@ -148,3 +148,19 @@ CLV entries now use access class as part of their exact-selection identity, allo
 Refresh processing now calculates free CLV from the free-only event view. Premium CLV is calculated from a premium-only projection of the paid view, with non-premium outcomes removed before market consensus is computed. This prevents a premium entry's fair price from being derived from free-tier quotes. Closing-consensus snapshot and quote selection are also restricted to the entry's exact access class. Subscriber-facing report scope remains free-only or free-plus-premium.
 
 These changes are implemented but require CI verification before acceptance. Per-account classification and independent account-group polling remain outstanding.
+
+
+### Provider account-tier enforcement — 2026-11-26
+
+The provider ingestion path now preserves the non-secret account-group label from the leased API key on every quote. ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES accepts comma/newline-separated entries in the form provider|group=free or provider|group=premium. For example:
+
+```dotenv
+ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES=the_odds_api|free=free,the_odds_api|pro=premium
+ODDS_PREMIUM_PROVIDER_POLLING_ENABLED=false
+```
+
+When a provider has account-specific overrides, any unlisted account group is classified as restricted. The same allowlist controls key acquisition: with premium polling disabled, only groups explicitly classified as free can be leased for manual or scheduled odds refreshes. Enabling premium polling makes explicitly premium groups eligible as well; restricted/unknown groups remain ineligible. This prevents a free refresh from accidentally rotating into a premium account. Group labels are normalized as non-secret identifiers; credential values remain case-sensitive.
+
+Merge identities include the access class, so a free and premium quote from the same provider/book/selection can coexist without overwriting each other. Account group and tier provenance survive incremental refreshes. Provider-level access classes remain the backward-compatible fallback only when no account-specific overrides exist for that provider.
+
+Automated merge and key-pool tests now cover same-provider free/premium coexistence, fail-closed unknown groups, and key leasing restricted to explicitly eligible account groups. Full CI verification is still required. Do not enable mixed-tier account configuration or premium polling in production until the complete data-scope and quota acceptance suite passes.
