@@ -260,6 +260,8 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
                         derived_access_class = "free"
                     row = {
                         "source_access_class": derived_access_class,
+                        "source_provider": quote["outcome"].get("source_provider") or "",
+                        "source_account_group": quote["outcome"].get("source_account_group") or "",
                         "event_id": event_id, "sport": event.get("sport_title"),
                         "sport_key": event.get("sport_key") or event.get("sport"),
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',
