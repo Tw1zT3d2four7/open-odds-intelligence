@@ -1115,6 +1115,7 @@ def administrator_overview(
         provider_accounts = []
         account_classes = status.get("provider_account_access_classes", {})
         provider_classes = status.get("provider_access_classes", {})
+        quota_floor_config = status.get("provider_account_quota_floors", {})
         quota_fields = {
             "credits_remaining", "datapoints_remaining", "requests_remaining",
             "monthly_objects_remaining", "requests_used", "credits_used",
@@ -1136,6 +1137,11 @@ def administrator_overview(
                     if key in quota_fields and isinstance(value, (str, int, float))
                     and not isinstance(value, bool)
                 }
+                configured_floors = quota_floor_config.get(provider_name, {}).get(group_name, {})
+                safe_floors = {
+                    key: value for key, value in configured_floors.items()
+                    if key in quota_fields and isinstance(value, int) and value > 0
+                }
                 available = max(0, int(group.get("available_keys") or 0))
                 cooldown = max(0, int(group.get("quota_cooldown_keys") or 0))
                 disabled = max(0, int(group.get("disabled_keys") or 0))
@@ -1153,6 +1159,7 @@ def administrator_overview(
                     "disabled_keys": disabled,
                     "status": "available" if available else "cooldown" if cooldown else "disabled" if disabled else "unknown",
                     "usage": safe_usage,
+                    "quota_floors": safe_floors,
                 })
         freshness = []
         for item in status.get("sport_freshness", []):
