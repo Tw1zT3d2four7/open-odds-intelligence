@@ -536,11 +536,7 @@ class OddsService:
         provider_names = self.active_provider_names()
         provider_names = [
             name for name in provider_names
-            if config.ODDS_PROVIDER_ACCESS_CLASSES.get(name) == "free"
-            or (
-                config.ODDS_PROVIDER_ACCESS_CLASSES.get(name) == "premium"
-                and config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED
-            )
+            if self._eligible_provider_account_groups(name)
         ]
         if providers is not None:
             requested_providers = set(providers)
@@ -561,6 +557,7 @@ class OddsService:
             source_usages = {}
             source_coverage = {}
             successful_providers = []
+            successful_provider_account_groups = {}
             skipped_providers = []
             skipped_unconfigured = []
             for provider_name in provider_names:
@@ -724,6 +721,7 @@ class OddsService:
                                             source_outcome["size_source_account_group"] = lease.account_group
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
+                    successful_provider_account_groups[provider_name] = {lease.account_group}
                     if provider_name == "oddize":
                         provider_results_summary.setdefault(sport_key, {}).update({
                             "oddize_props": oddize_props,
@@ -744,6 +742,7 @@ class OddsService:
                 existing_events, successful_providers, source_results,
                 provider_access_classes=config.ODDS_PROVIDER_ACCESS_CLASSES,
                 provider_account_access_classes=config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES,
+                refreshed_provider_account_groups=successful_provider_account_groups,
             )
             fetched_at = datetime.now(timezone.utc).isoformat()
             snapshot_provider = "+".join(snapshot_providers)
