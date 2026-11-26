@@ -42,7 +42,7 @@ _COMPLIMENTARY_REASON_CODES = frozenset({
 _ENTITLEMENT_KEYS = frozenset({
     "dashboard", "odds", "market_limits", "market_board", "simulation",
     "player_props", "clv", "market_movement", "history",
-    "opportunities", "arbitrage",
+    "opportunities", "arbitrage", "premium_data",
 })
 
 
