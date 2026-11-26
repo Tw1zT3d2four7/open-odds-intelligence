@@ -13,12 +13,29 @@ def fixture():
 
 def test_snapshot_round_trip_and_points(tmp_path):
     db = OddsDatabase(tmp_path / "history.sqlite3")
-    db.save_snapshot("basketball_nba", fixture(), "test", "2026-11-17T12:00:00Z")
+    events_to_save = fixture()
+    outcome = events_to_save[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome.update({
+        "source_provider": "the_odds_api",
+        "source_account_group": "free-account",
+        "source_access_class": "free",
+        "size": {"stake": 10},
+        "size_source_provider": "oddize",
+        "size_source_account_group": "props-account",
+        "size_source_access_class": "premium",
+    })
+    db.save_snapshot("basketball_nba", events_to_save, "test", "2026-11-17T12:00:00Z")
     events = db.latest_events("basketball_nba")
     assert len(events) == 1
     spread = next(m for m in events[0]["bookmakers"][0]["markets"] if m["key"] == "spreads")
     home = next(o for o in spread["outcomes"] if o["name"] == "Home")
     assert home["point"] == -3.5
+    assert home["source_provider"] == "the_odds_api"
+    assert home["source_account_group"] == "free-account"
+    assert home["source_access_class"] == "free"
+    assert home["size_source_provider"] == "oddize"
+    assert home["size_source_account_group"] == "props-account"
+    assert home["size_source_access_class"] == "premium"
     assert db.snapshot_status()["snapshots"] == 1
 
 
