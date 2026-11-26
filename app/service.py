@@ -113,16 +113,16 @@ class OddsService:
             self._last_provider_results = {}
         self._provider_key_pools = {
             "the_odds_api": ProviderKeyPool(
-                "the_odds_api", parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
+                "the_odds_api", [config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY]
             ),
             "oddize": ProviderKeyPool(
-                "oddize", parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
+                "oddize", [config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY]
             ),
             "oddslink": ProviderKeyPool(
-                "oddslink", parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
+                "oddslink", [config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY]
             ),
             "therundown": ProviderKeyPool(
-                "therundown", parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
+                "therundown", [config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY]
             ),
         }
         for provider_name, pool in self._provider_key_pools.items():
