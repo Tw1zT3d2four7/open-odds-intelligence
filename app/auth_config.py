@@ -128,11 +128,9 @@ def load_authentication_policy() -> AuthenticationPolicy:
             raise ValueError(
                 "Disable email verification or configure a delivery transport for local development."
             )
-        if policy.email_transport == "disabled" and (
-            policy.registration_enabled or policy.password_recovery_enabled
-        ):
+        if policy.email_transport == "disabled" and policy.password_recovery_enabled:
             raise ValueError(
-                "Email delivery cannot be disabled while registration or password recovery is enabled."
+                "Password recovery requires an email delivery transport."
             )
     return policy
 
