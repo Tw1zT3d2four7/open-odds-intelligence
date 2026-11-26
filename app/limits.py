@@ -67,13 +67,14 @@ def oddslink_keyset_fingerprint():
     return hashlib.sha256(material.encode("utf-8")).hexdigest() if material else ""
 
 
-def _eligible_oddslink_account_groups():
+def _eligible_oddslink_account_groups(configured_groups=None):
     allowed_classes = {"free"}
     if config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED:
         allowed_classes.add("premium")
+    if configured_groups is None:
+        configured_groups = {group for group, _ in oddslink_key_entries()}
     overrides = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get("oddslink")
     if overrides is not None:
-        configured_groups = {group for group, _ in oddslink_key_entries()}
         return {
             group for group, access_class in overrides.items()
             if group in configured_groups and access_class in allowed_classes
@@ -81,7 +82,7 @@ def _eligible_oddslink_account_groups():
     provider_class = config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted")
     if provider_class not in allowed_classes:
         return set()
-    return {group for group, _ in oddslink_key_entries()}
+    return set(configured_groups)
 
 
 class OddsLinkClient:
@@ -106,7 +107,9 @@ class OddsLinkClient:
         self.pool = ProviderKeyPool(
             "oddslink_limits", [f"{group}|{key}" for group, key in unique]
         )
-        self.allowed_account_groups = _eligible_oddslink_account_groups()
+        self.allowed_account_groups = _eligible_oddslink_account_groups(
+            {group for group, _ in unique}
+        )
         self.key_count = len(unique)
         self.last_account_group = ""
         self.last_access_class = "restricted"
@@ -597,8 +600,11 @@ class MarketLimitsMonitor:
                 all_rows.extend(self._extract(
                     configured_sport, events, observed_at,
                     source_provider="oddslink",
-                    source_account_group=client.last_account_group,
-                    source_access_class=client.last_access_class,
+                    source_account_group=getattr(client, "last_account_group", current_key_fingerprint),
+                    source_access_class=getattr(
+                        client, "last_access_class",
+                        config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted"),
+                    ),
                     source_capability="posted_market_limits",
                 ))
             except LimitsError as exc:
