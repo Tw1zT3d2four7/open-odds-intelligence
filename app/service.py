@@ -730,6 +730,9 @@ class OddsService:
                         observed_at=fetched_at,
                         usage=source_usages.get("oddslink"),
                         key_fingerprint=oddslink_keyset_fingerprint(),
+                        source_provider="oddslink",
+                        source_access_class=config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted"),
+                        source_capability="posted_market_limits",
                     )
                 except Exception as limits_error:
                     provider_results_summary.setdefault(sport_key, {})[
