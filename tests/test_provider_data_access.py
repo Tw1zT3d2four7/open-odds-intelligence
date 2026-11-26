@@ -78,9 +78,11 @@ def test_service_cache_is_separated_between_free_and_premium_scopes(tmp_path):
 
     free = service.events("basketball_nba", limit=1, include_premium=False)
     paid = service.events("basketball_nba", include_premium=True)
+    legacy = service.events("basketball_nba", include_premium=None)
 
     assert [event["id"] for event in free] == ["event-1-free"]
     assert {event["id"] for event in paid} == {"event-1-free", "event-0-premium"}
+    assert {event["id"] for event in legacy} == {"event-1-free", "event-0-premium"}
 
 def test_premium_size_metadata_is_not_exposed_with_free_quote(tmp_path):
     db = OddsDatabase(tmp_path / "odds.sqlite3")
