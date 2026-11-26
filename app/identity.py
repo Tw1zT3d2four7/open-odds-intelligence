@@ -2331,7 +2331,8 @@ class IdentityStore:
         }
 
     def list_subscribers(
-        self, *, limit: int = 25, offset: int = 0, email_query: str | None = None
+        self, *, limit: int = 25, offset: int = 0, email_query: str | None = None,
+        complimentary_only: bool | None = None,
     ) -> dict:
         """Return a bounded subscriber directory without authentication material."""
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
@@ -2351,6 +2352,20 @@ class IdentityStore:
             where += " AND i.email LIKE ? ESCAPE '\\'"
             values.append("%" + escaped + "%")
         now = _timestamp(_now())
+        if complimentary_only is not None and not isinstance(complimentary_only, bool):
+            raise ValueError("Complimentary directory filter must be true, false, or omitted.")
+        if complimentary_only is not None:
+            predicate = "EXISTS" if complimentary_only else "NOT EXISTS"
+            where += f""" AND {predicate} (
+                SELECT 1 FROM security_audit_events a
+                WHERE a.subject_identity_id=i.id
+                  AND a.event_type IN (
+                    'subscriber.complimentary_access_granted',
+                    'subscriber.complimentary_access_updated'
+                  )
+                  AND json_extract(a.metadata_json, '$.expires_at')>?
+            )"""
+            values.append(now)
         with self.connect() as db:
             db.execute("BEGIN")
             try:
