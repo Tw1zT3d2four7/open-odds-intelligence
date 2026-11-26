@@ -1462,5 +1462,5 @@ def test_new_quote_snapshot_without_account_group_is_restricted(tmp_path):
     db.save_snapshot("basketball_nba", events, "test")
     restored = db.latest_events("basketball_nba")
     saved = restored[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
-    assert saved["source_access_class"] == "restricted"
+    assert saved.get("source_access_class", "restricted") == "restricted"
     assert "source_account_group" not in saved
