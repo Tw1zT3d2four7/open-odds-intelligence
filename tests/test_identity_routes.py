@@ -1531,3 +1531,23 @@ def test_subscriber_billing_summary_is_private_bounded_and_self_only(tmp_path, m
 
     harness.post("/auth/logout", {})
     assert harness.client.get("/auth/billing").status_code == 401
+
+
+def test_local_outbox_transport_uses_encrypted_queue_without_provider_sender(tmp_path, monkeypatch):
+    from dataclasses import replace
+    import app.identity_routes as routes_module
+
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        routes_module, "AUTH_POLICY",
+        replace(
+            routes_module.AUTH_POLICY,
+            environment="development",
+            email_transport="local_outbox",
+        ),
+    )
+    request = harness.client.build_request("POST", "/auth/register")
+    request.app = harness.client.app
+    sender = routes_module.get_email_sender(request)
+    assert sender is routes_module._LOCAL_OUTBOX_SENDER
+    assert harness.sender.messages == []
