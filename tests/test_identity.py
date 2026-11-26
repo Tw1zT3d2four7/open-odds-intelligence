@@ -91,6 +91,87 @@ def test_registration_rejects_weak_or_oversized_password(tmp_path, password):
         store.create_subscriber("person@example.com", password)
 
 
+def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and_admin_audit(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator("promo-admin@example.com", "administrator password")
+    with store.connect() as db:
+        db.execute(
+            "UPDATE administrator_mfa SET enrolled_at=? WHERE identity_id=?",
+            (datetime.now(timezone.utc).isoformat(), admin_id),
+        )
+    expiry = datetime.now(timezone.utc) + timedelta(days=30)
+    grant = store.create_complimentary_subscriber(
+        "Winner@Example.com", ["dashboard", "odds"],
+        actor_identity_id=admin_id, expires_at=expiry,
+        campaign="November giveaway", reason="Giveaway winner",
+    )
+    assert grant["email"] == "winner@example.com"
+    assert set(grant["entitlements"]) == {"dashboard", "odds"}
+    assert grant["activation_token"]
+    with store.connect() as db:
+        identity = db.execute(
+            "SELECT account_type, email_verified_at, password_hash FROM identities WHERE id=?",
+            (grant["identity_id"],),
+        ).fetchone()
+        grants = db.execute(
+            "SELECT entitlement_key, expires_at, granted_by FROM subscriber_entitlements WHERE identity_id=?",
+            (grant["identity_id"],),
+        ).fetchall()
+        audit = db.execute(
+            "SELECT actor_identity_id, event_type, metadata_json FROM security_audit_events WHERE subject_identity_id=?",
+            (grant["identity_id"],),
+        ).fetchone()
+    assert identity["account_type"] == "subscriber"
+    assert identity["email_verified_at"] is None
+    assert identity["password_hash"] != grant["activation_token"]
+    assert {row["entitlement_key"] for row in grants} == {"dashboard", "odds"}
+    assert all(row["granted_by"] == admin_id for row in grants)
+    assert all(row["expires_at"] == grant["expires_at"] for row in grants)
+    assert audit["actor_identity_id"] == admin_id
+    assert audit["event_type"] == "subscriber.complimentary_access_granted"
+    assert '"grant_type":"complimentary"' in audit["metadata_json"]
+    assert '"campaign":"November giveaway"' in audit["metadata_json"]
+    assert store.authenticate("winner@example.com", "administrator password", "subscriber") is None
+    assert store.consume_password_reset_challenge(
+        grant["activation_token"], "winner chooses this secure password"
+    ) is True
+    assert store.authenticate(
+        "winner@example.com", "winner chooses this secure password", "subscriber"
+    ) == grant["identity_id"]
+    assert store.consume_password_reset_challenge(
+        grant["activation_token"], "another secure password value"
+    ) is False
+
+
+def test_complimentary_subscriber_rejects_duplicate_email_and_non_admin_actor(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator("promo-admin@example.com", "administrator password")
+    with store.connect() as db:
+        db.execute(
+            "UPDATE administrator_mfa SET enrolled_at=? WHERE identity_id=?",
+            (datetime.now(timezone.utc).isoformat(), admin_id),
+        )
+    expiry = datetime.now(timezone.utc) + timedelta(days=7)
+    store.create_complimentary_subscriber(
+        "winner@example.com", ["dashboard"], actor_identity_id=admin_id,
+        expires_at=expiry, campaign="Test giveaway", reason="Winner",
+    )
+    with pytest.raises(ValueError, match="already exists"):
+        store.create_complimentary_subscriber(
+            "WINNER@example.com", ["dashboard"], actor_identity_id=admin_id,
+            expires_at=expiry, campaign="Test giveaway", reason="Duplicate",
+        )
+    with pytest.raises(ValueError, match="MFA-enrolled administrator"):
+        store.create_complimentary_subscriber(
+            "other@example.com", ["dashboard"], actor_identity_id="missing-admin",
+            expires_at=expiry, campaign="Test giveaway", reason="Invalid actor",
+        )
+
+
 def test_email_uniqueness_is_case_insensitive(tmp_path):
     store = IdentityStore(tmp_path / "accounts.sqlite3")
     store.create_subscriber("Person@Example.com", "correct horse battery")
