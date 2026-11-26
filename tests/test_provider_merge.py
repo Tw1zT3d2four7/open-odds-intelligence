@@ -345,3 +345,28 @@ def test_same_tier_account_groups_keep_duplicate_book_quotes_independent():
         "free-account-a", "free-account-b"
     }
     assert {row["price"] for row in outcomes} == {-110, -105}
+
+
+
+def test_size_from_another_provider_without_its_account_group_is_restricted():
+    event = _event("size-source", [_book("book", [
+        {
+            "name": "Home", "price": -110,
+            "source_account_group": "free-account",
+            "size": {"stake": 10},
+            "size_source_provider": "oddize",
+        }
+    ])])
+
+    merged = merge_provider_events(
+        [("the_odds_api", [event])],
+        provider_access_classes={"the_odds_api": "free", "oddize": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {"free-account": "free"},
+            "oddize": {"premium-account": "premium"},
+        },
+    )
+
+    outcome = merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert outcome["source_access_class"] == "free"
+    assert outcome["size_source_access_class"] == "restricted"
