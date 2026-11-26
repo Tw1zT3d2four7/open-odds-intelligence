@@ -1120,8 +1120,14 @@ class IdentityStore:
             return result
 
     def create_subscriber(self, email: str, password: str) -> str:
-        """Create an unverified subscriber. Public routes must call this only."""
-        return self._create_identity(email, password, "subscriber")
+        """Create a subscriber; only an explicit local no-verification profile pre-verifies it."""
+        local_verified = (
+            AUTH_POLICY.is_local_development
+            and not AUTH_POLICY.email_verification_required
+        )
+        return self._create_identity(
+            email, password, "subscriber", email_verified=local_verified
+        )
 
     def create_complimentary_subscriber(
         self,
@@ -1340,21 +1346,28 @@ class IdentityStore:
         """Privileged bootstrap primitive; never expose through public HTTP routes."""
         return self._create_identity(email, password, "administrator")
 
-    def _create_identity(self, email: str, password: str, account_type: str) -> str:
+    def _create_identity(
+        self, email: str, password: str, account_type: str, *,
+        email_verified: bool = False,
+    ) -> str:
         if account_type not in _ACCOUNT_TYPES:
             raise ValueError("Unsupported account type.")
+        if type(email_verified) is not bool:
+            raise ValueError("Email verification state must be a Boolean.")
         normalized_email = _normalize_email(email)
         password_hash = _password_hash(password)
         now = _timestamp(_now())
         identity_id = secrets.token_urlsafe(24)
+        verified_at = now if email_verified else None
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute(
                 """INSERT INTO identities(
-                    id, email, account_type, password_hash, created_at, updated_at,
-                    password_changed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (identity_id, normalized_email, account_type, password_hash, now, now, now),
+                    id, email, account_type, password_hash, email_verified_at,
+                    created_at, updated_at, password_changed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (identity_id, normalized_email, account_type, password_hash,
+                 verified_at, now, now, now),
             )
             event_type = (
                 "subscriber.registered"
