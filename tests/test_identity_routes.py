@@ -484,6 +484,69 @@ def test_auth_email_origin_rejects_noncanonical_base_urls(
 
 
 
+def test_complimentary_subscriber_admin_flow_requires_mfa_csrf_and_activation(tmp_path, monkeypatch):
+    from urllib.parse import unquote
+
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    admin_id = harness.store.provision_administrator(
+        "promo-admin@example.test", "an administrator password 123"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+
+    payload = {
+        "email": "giveaway@example.test",
+        "entitlements": ["dashboard", "odds"],
+        "duration_days": 30,
+        "campaign": "November giveaway",
+        "reason": "Verified giveaway winner",
+    }
+    denied = harness.post("/admin/subscribers/complimentary", payload)
+    assert denied.status_code == 401
+
+    login = harness.post("/admin/auth/login", {
+        "email": "promo-admin@example.test",
+        "password": "an administrator password 123",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+    missing_csrf = harness.client.post(
+        "/admin/subscribers/complimentary", json=payload,
+        headers={"origin": "https://ooi.example"},
+    )
+    assert missing_csrf.status_code == 403
+
+    created = harness.post("/admin/subscribers/complimentary", payload)
+    assert created.status_code == 200
+    assert created.headers["cache-control"] == "no-store"
+    body = created.json()
+    assert body["billing_status"] == "complimentary"
+    assert body["activation_email_queued"] is True
+    assert body["entitlements"] == ["dashboard", "odds"]
+    assert "activation_token" not in created.text
+    assert harness.deliver_pending() == 1
+    message = harness.sender.messages[0]
+    assert message["recipient"] == "giveaway@example.test"
+    assert "reset-password#token=" in message["text"]
+    token = unquote(message["text"].rsplit("#token=", 1)[1].split()[0])
+    activated = harness.post("/auth/password-reset/consume", {
+        "token": token,
+        "new_password": "giveaway winner secure password",
+    })
+    assert activated.status_code == 200
+    assert harness.store.authenticate(
+        "giveaway@example.test", "giveaway winner secure password", "subscriber"
+    ) == body["identity_id"]
+    with harness.store.connect() as db:
+        audit = db.execute(
+            "SELECT actor_identity_id, event_type FROM security_audit_events WHERE subject_identity_id=? AND event_type='subscriber.complimentary_access_granted'",
+            (body["identity_id"],),
+        ).fetchone()
+    assert audit["actor_identity_id"] == admin_id
+
+
 def test_admin_entitlement_api_requires_mfa_session_and_csrf(tmp_path, monkeypatch):
     import time
 
