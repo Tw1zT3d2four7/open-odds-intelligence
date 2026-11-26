@@ -2261,7 +2261,7 @@ class IdentityStore:
         }
 
     def active_subscriber_entitlements(self, identity_id: str) -> list[str]:
-        """Return only currently active feature grants for an active subscriber."""
+        """Return active feature grants plus any currently paid premium-data scope."""
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
             raise ValueError("A valid subscriber identity reference is required.")
         now = _timestamp(_now())
@@ -2314,7 +2314,7 @@ class IdentityStore:
         )
 
     def has_subscriber_entitlement(self, identity_id: str, entitlement_key: str) -> bool:
-        """Fail closed unless an active subscriber has the requested feature grant."""
+        """Check an active feature grant or the configured active paid-data subscription."""
         if not isinstance(entitlement_key, str) or entitlement_key not in _ENTITLEMENT_KEYS:
             return False
         now = _timestamp(_now())
