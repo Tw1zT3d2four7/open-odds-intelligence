@@ -31,25 +31,31 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config --quiet
+          cp .env.staging.example .env.staging
+          docker compose -f docker-compose.staging.yml config --quiet
+          rm .env.staging
       - name: Validate environment template keys
         run: |
           python - <<'PY'
           from collections import Counter
           from pathlib import Path
           keys = []
-          for raw in Path(".env.example").read_text(encoding="utf-8").splitlines():
-              line = raw.strip()
-              if not line or line.startswith("#") or "=" not in line:
-                  continue
-              keys.append(line.split("=", 1)[0].strip())
-          duplicates = sorted(key for key, count in Counter(keys).items() if count > 1)
-          if duplicates:
-              raise SystemExit("Duplicate .env.example keys: " + ", ".join(duplicates))
+          for template in (".env.example", ".env.staging.example"):
+              keys = []
+              for raw in Path(template).read_text(encoding="utf-8").splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  keys.append(line.split("=", 1)[0].strip())
+              duplicates = sorted(key for key, count in Counter(keys).items() if count > 1)
+              if duplicates:
+                  raise SystemExit(f"Duplicate keys in {template}: " + ", ".join(duplicates))
           PY
       - name: Validate Docker build context exclusions
         run: |
           grep -Fxq '.env' .dockerignore
           grep -Fxq 'data/' .dockerignore
+          grep -Fxq 'staging-data/' .dockerignore
           grep -Fxq '*.sqlite3' .dockerignore
           rm .env
       - name: Validate simulator CLIs
