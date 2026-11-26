@@ -107,3 +107,22 @@ def test_premium_provider_polling_is_disabled_by_default(tmp_path, monkeypatch):
 
     assert result["ok"] is False
     assert "No configured API keys" in result["error"]
+
+def test_free_quote_is_retained_when_premium_source_has_same_selection(tmp_path):
+    free_event = _event("free-feed", "free")
+    paid_event = _event("paid-feed", "premium")
+    free_event["bookmakers"][0]["markets"][0]["outcomes"][0]["updated_at"] = "2026-11-25T10:00:00Z"
+    paid_event["bookmakers"][0]["markets"][0]["outcomes"][0]["updated_at"] = "2026-11-25T11:00:00Z"
+    merged = merge_provider_events(
+        [("free-feed", [free_event]), ("paid-feed", [paid_event])],
+        provider_access_classes={"free-feed": "free", "paid-feed": "premium"},
+    )
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    db.save_snapshot("basketball_nba", merged)
+    service = OddsService(database=db)
+
+    free_outcome = service.events("basketball_nba", include_premium=False)[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    paid_outcome = service.events("basketball_nba", include_premium=True)[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+
+    assert free_outcome["source_provider"] == "free-feed"
+    assert paid_outcome["source_provider"] == "paid-feed"
