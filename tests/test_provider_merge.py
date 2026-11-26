@@ -404,3 +404,19 @@ def test_incremental_refresh_replaces_only_one_of_two_same_tier_groups():
     outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
     prices = {row["source_account_group"]: row["price"] for row in outcomes}
     assert prices == {"free-a": -105, "free-b": -120}
+
+
+
+def test_provider_level_fallback_does_not_classify_missing_account_group_as_free():
+    event = _event("legacy-without-group", [_book("book", [
+        {"name": "Home", "price": -110}
+    ])])
+    outcome = event["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome.pop("source_account_group", None)
+
+    merged = merge_provider_events(
+        [("the_odds_api", [event])],
+        provider_access_classes={"the_odds_api": "free"},
+    )
+
+    assert merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["source_access_class"] == "restricted"
