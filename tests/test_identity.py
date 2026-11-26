@@ -1880,3 +1880,23 @@ def test_migration_16_assigns_free_bundle_to_existing_ungranted_subscribers(tmp_
         "player_props", "clv", "market_movement", "history",
         "opportunities", "arbitrage",
     }
+
+def test_complimentary_premium_data_grant_expires_without_stripe_subscription(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app import identity as identity_module
+
+    now = [datetime.now(timezone.utc)]
+    monkeypatch.setattr(identity_module, "_now", lambda: now[0])
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = _mfa_admin(store, monkeypatch, "comp-premium-admin@example.com")
+    grant = store.create_complimentary_subscriber(
+        "comp-premium@example.com", ["dashboard", "premium_data"],
+        actor_identity_id=admin_id,
+        expires_at=now[0] + timedelta(days=1),
+        campaign="Premium preview",
+        reason_code="promotional_campaign",
+    )
+
+    assert store.has_subscriber_entitlement(grant["identity_id"], "premium_data") is True
+    now[0] += timedelta(days=2)
+    assert store.has_subscriber_entitlement(grant["identity_id"], "premium_data") is False
