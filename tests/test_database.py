@@ -1337,3 +1337,36 @@ def test_clv_keeps_same_tier_account_group_entries_separate(tmp_path):
     assert {row["source_account_group"] for row in report["entries"]} == {
         "free-account-a", "free-account-b"
     }
+
+
+
+def test_movement_timelines_do_not_mix_same_tier_account_groups(tmp_path):
+    db = OddsDatabase(tmp_path / "movement-account-groups.sqlite3")
+
+    def snapshot(at, price_a, price_b):
+        return [{
+            "id": "movement-groups", "sport_key": "basketball_nba",
+            "sport_title": "NBA", "commence_time": "2026-12-01T00:00:00Z",
+            "home_team": "Home", "away_team": "Away",
+            "bookmakers": [{
+                "key": "book-a", "title": "Book A", "markets": [{
+                    "key": "h2h", "outcomes": [
+                        {"name": "Home", "price": price_a, "source_provider": "the_odds_api",
+                         "source_account_group": "free-a", "source_access_class": "free"},
+                        {"name": "Home", "price": price_b, "source_provider": "the_odds_api",
+                         "source_account_group": "free-b", "source_access_class": "free"},
+                    ],
+                }],
+            }],
+        }]
+
+    db.save_snapshot("basketball_nba", snapshot("2026-11-26T01:00:00Z", -110, -130),
+                     fetched_at="2026-11-26T01:00:00Z")
+    db.save_snapshot("basketball_nba", snapshot("2026-11-26T01:05:00Z", -115, -125),
+                     fetched_at="2026-11-26T01:05:00Z")
+
+    rows = db.movement("basketball_nba", include_premium=False)
+    by_group = {row["source_account_group"]: row for row in rows}
+    assert set(by_group) == {"free-a", "free-b"}
+    assert (by_group["free-a"]["previous_price"], by_group["free-a"]["price"]) == (-110, -115)
+    assert (by_group["free-b"]["previous_price"], by_group["free-b"]["price"]) == (-130, -125)
