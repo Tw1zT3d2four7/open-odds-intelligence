@@ -113,7 +113,7 @@ def test_checkout_uses_server_owned_monthly_price_and_persists_customer_mapping(
     assert billing.json()["customer_portal_available"] is True
 
 
-def test_checkout_to_subscription_webhook_reconciliation_never_grants_entitlements(
+def test_checkout_to_subscription_webhook_reconciliation_grants_paid_data_scope(
     billing_harness, monkeypatch
 ):
     client, store, identity_id = billing_harness
@@ -180,7 +180,7 @@ def test_checkout_to_subscription_webhook_reconciliation_never_grants_entitlemen
     worker_result = process_pending_stripe_events(store, limit=10)
     assert worker_result["created"] == 1
     assert store.billing_checkout_pending(identity_id) is False
-    assert store.active_subscriber_entitlements(identity_id) == []
+    assert "premium_data" in store.active_subscriber_entitlements(identity_id)
 
     billing = client.get("/auth/billing")
     assert billing.status_code == 200
