@@ -625,6 +625,9 @@ tbody tr:last-child td{border-bottom:0}
             ["credits", usage.credits_remaining],
             ["datapoints", usage.datapoints_remaining],
             ["requests", usage.requests_remaining],
+            ["remaining requests", usage.remaining_requests],
+            ["remaining credits", usage.remaining_credits],
+            ["remaining objects", usage.remaining_objects],
             ["monthly objects", usage.monthly_objects_remaining]
           ].filter(item => item[1] !== undefined && item[1] !== null)
            .map(item => item[0] + ": " + String(item[1])).join(" · ") || "Not reported";
