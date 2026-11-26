@@ -1427,3 +1427,24 @@ def test_clv_migration_restricts_old_provider_level_tier_labels(tmp_path):
     assert row["source_provider"] == "the_odds_api"
     assert row["source_account_group"] == ""
     assert row["source_access_class"] == "restricted"
+
+
+
+def test_new_clv_candidate_without_account_provenance_is_restricted(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-missing-account.sqlite3")
+    now = datetime.now(timezone.utc)
+    candidate = {
+        "event_id": "missing-account", "sport": "basketball_nba",
+        "matchup": "Away @ Home", "commence_time": (now + timedelta(hours=2)).isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Book", "bookmaker_key": "book",
+        "price": -110, "fair_probability": 0.5, "ev_percent": 1.0,
+        "source_access_class": "free",
+    }
+    assert db.record_clv_candidates([candidate], now.isoformat()) == 1
+    assert db.clv_report("basketball_nba", include_premium=False)["summary"]["total"] == 0
+    report = db.clv_report("basketball_nba")
+    assert report["summary"]["total"] == 1
+    assert report["entries"][0]["source_access_class"] == "restricted"
