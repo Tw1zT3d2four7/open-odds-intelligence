@@ -51,3 +51,36 @@ The script requires both `AUTH_ENVIRONMENT=development` and `AUTH_EMAIL_TRANSPOR
 Staging and production reject the local outbox and reject attempts to disable identity, required email verification, administrator MFA, rate limiting, or CSRF. Administrator MFA and CSRF remain mandatory even in local development; this no-email shortcut does not bypass administrator MFA. Production remains the default environment when no environment is set.
 
 This is a testing transport, not a substitute for staging acceptance. The Admin Console's protected, audited environment editor and the remaining independent feature controls are tracked separately and are not represented as complete by this local CLI.
+
+
+## Run the isolated localhost test stack
+
+The repository includes `docker-compose.local.yml` and `.env.local.example`. This stack builds the checked-out feature branch, binds only to host loopback at port `18765`, and uses `./local-test-data` instead of the production data directory. It does not replace or restart the existing service.
+
+From the repository checkout on the server:
+
+```bash
+cp .env.local.example .env.local
+python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+python3 -c 'import secrets; print(secrets.token_hex(32))'
+```
+
+Put the first generated value in `MFA_ENCRYPTION_KEY` and the second in `RATE_LIMIT_HASH_KEY` in `.env.local`. Keep these values private and stable for this local test database. Then start the separate test instance:
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
+```
+
+Open `http://localhost:18765/register` on the server itself. New local subscriber accounts are immediately verified and can sign in without email delivery. Local registration and login rate limits are disabled, while CSRF remains enabled. Password recovery is disabled.
+
+The local compose file binds to `127.0.0.1` only; it is not available from other LAN devices. Administrator MFA remains required. Bootstrap a separate local administrator with:
+
+```bash
+docker compose -f docker-compose.local.yml exec -w /app open-odds-intelligence-local python scripts/bootstrap_admin.py
+```
+
+Do not point a public reverse proxy at port 18765. Do not copy the production accounts database or production MFA seed into `local-test-data`. Stop this test stack with:
+
+```bash
+docker compose -f docker-compose.local.yml down
+```
