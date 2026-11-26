@@ -1370,3 +1370,7 @@ def test_movement_timelines_do_not_mix_same_tier_account_groups(tmp_path):
     assert set(by_group) == {"free-a", "free-b"}
     assert (by_group["free-a"]["previous_price"], by_group["free-a"]["price"]) == (-110, -115)
     assert (by_group["free-b"]["previous_price"], by_group["free-b"]["price"]) == (-130, -125)
+    timeline = db.movement_history(
+        "movement-groups", "h2h", "Home", "book-a", include_premium=False
+    )
+    assert {row["source_account_group"] for row in timeline} == {"free-a", "free-b"}
