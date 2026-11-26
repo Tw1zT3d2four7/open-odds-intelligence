@@ -47,6 +47,19 @@ Grant replacement is atomic. Invalid feature keys, non-subscriber identities, no
 - `GET /admin/subscriber-entitlements?identity_id=<id>` — reads current active grants.
 - `PUT /admin/subscriber-entitlements` — atomically replaces the grants for one subscriber.
 
+## Complimentary promotional access
+
+Giveaways, sponsorships, and occasional promotions use the same feature entitlement keys but are explicitly classified as **complimentary** in secret-free audit metadata. They are not Stripe subscriptions, paid plans, payment methods, customers, invoices, or revenue.
+
+- `POST /admin/subscribers/complimentary` creates a subscriber and its selected expiring grants in one identity-database transaction. The MFA administrator must choose a campaign, controlled reason code, features, and a duration from 1–366 days.
+- The new identity receives only a random inaccessible initial password hash. A 30-minute single-use activation challenge is sent through the encrypted transactional email queue. The recipient sets their own password; consuming the activation link proves mailbox control and verifies the email.
+- `PUT /admin/subscribers/complimentary` adds 1–366 days to the later of the current expiry or now, replaces the feature selection, and records the previous/new expiry, campaign, reason code, and actor.
+- The Users directory can filter active complimentary grants and displays campaign, expiry, and remaining days. Expiration is enforced by the same server-side entitlement checks as every other feature grant.
+- The ordinary manual entitlement editor cannot clear or extend a complimentary expiry. Use the dedicated audited extension route. Existing accounts without a complimentary grant cannot be converted through the extension endpoint.
+- If activation email queueing fails after the account/grant transaction commits, the Admin Console explicitly reports that the account exists but the email was not queued. The administrator can use the existing password-recovery email flow to send a fresh one-time link; retrying account creation is rejected as a duplicate.
+
+All create/update operations require an active MFA administrator session, same-origin CSRF protection, bounded rate limits, strict validation, no-store responses, and actor-attributed audit events. Activation tokens and initial random credentials are never returned to the browser or written to audit metadata.
+
 Both endpoints require an active administrator session created after mandatory MFA. The update additionally requires same-origin CSRF protection. The API never returns subscriber email addresses. Each update records a secret-free `subscriber.entitlements_updated` audit event with the administrator actor, subscriber subject, feature keys, and expiry.
 
 Public registration, subscriber profile changes, and browser-supplied role/entitlement fields cannot grant access.
