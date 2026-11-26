@@ -24,6 +24,7 @@ A future plan/subscription service can translate an active plan into a set of th
 | `history` | Odds history |
 | `opportunities` | Positive expected-value opportunities |
 | `arbitrage` | Arbitrage opportunities |
+| `premium_data` | Access to provider data classified as premium; does not grant access to a provider capability the platform has not licensed/configured |
 
 The route-to-feature mapping is maintained in `app/entitlements.py`. Tests require every `subscriber_entitled` product route to have exactly one mapping. Unknown routes and unknown feature keys fail closed.
 
@@ -77,6 +78,7 @@ The production deployment remains on `legacy_basic`. Identity mode must not be e
 - automatic grants from Stripe or another billing provider;
 - organization/team sharing;
 - usage metering and per-plan rate limits;
+- enforcement of the `premium_data` scope across provider ingestion, derived datasets, caches, APIs, history, and notification delivery (specified in [Provider Data Access Isolation](provider-data-access-isolation.md));
 - subscriber self-service plan changes.
 
 These belong to the Plans, Billing, and Subscriber Account roadmap phases.
