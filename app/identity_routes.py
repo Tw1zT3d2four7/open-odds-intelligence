@@ -355,7 +355,7 @@ def _send_challenge_email(
         lifetime = timedelta(hours=24)
         queue_purpose = "verification"
     elif purpose == "complimentary_activation":
-        path = "reset-password"
+        path = "reset-password?mode=activation"
         subject = "Activate your Open Odds Intelligence account"
         action = "activate your account and set your password"
         lifetime = timedelta(minutes=30)
