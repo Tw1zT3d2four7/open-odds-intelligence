@@ -197,6 +197,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                         candidate["source_access_class"] = access_class if access_class in {"free", "premium"} else "restricted"
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
+                            candidate["size_source_access_class"] = access_class if access_class in {"free", "premium"} else "restricted"
                         existing_index = outcome_map.get(identity_key)
                         if existing_index is None:
                             outcome_map[identity_key] = len(market["outcomes"])
@@ -209,7 +210,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                         if _quote_rank(candidate, provider_rank.get(provider_name, 999)) > _quote_rank(
                             existing, provider_rank.get(existing_provider, 999)
                         ):
-                            for metadata in ("size", "size_source_provider", "main"):
+                            for metadata in ("size", "size_source_provider", "size_source_access_class", "main"):
                                 if metadata not in candidate and metadata in existing:
                                     candidate[metadata] = existing[metadata]
                             market["outcomes"][existing_index] = candidate
