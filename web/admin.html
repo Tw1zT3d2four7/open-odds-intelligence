@@ -125,6 +125,41 @@ tbody tr:last-child td{border-bottom:0}
     <section class="view" id="view-users" hidden>
       <div class="panel">
         <h2>Subscriber directory</h2>
+        <div class="panel" style="margin:16px 0">
+          <h3>Add complimentary subscriber</h3>
+          <p>Create a no-payment promotional account. The subscriber receives a single-use activation link to verify their email and set their own password. Access expires automatically; this does not create a Stripe customer or subscription.</p>
+          <div class="audit-controls">
+            <label for="promo-email">Subscriber email</label>
+            <input id="promo-email" type="email" maxlength="254" autocomplete="off" required placeholder="person@example.com">
+            <label for="promo-campaign">Campaign / promotion</label>
+            <input id="promo-campaign" type="text" maxlength="80" required placeholder="Giveaway name">
+            <label for="promo-duration">Access duration</label>
+            <select id="promo-duration">
+              <option value="7">7 days</option><option value="14">14 days</option>
+              <option value="30" selected>30 days</option><option value="90">90 days</option>
+              <option value="180">180 days</option><option value="365">365 days</option>
+            </select>
+            <label for="promo-reason">Reason / notes</label>
+            <input id="promo-reason" type="text" maxlength="500" required placeholder="Giveaway winner, promotion, service recovery…">
+          </div>
+          <div class="checks" id="promo-entitlements">
+            <label class="check"><input type="checkbox" value="dashboard" checked> <strong>Dashboard</strong></label>
+            <label class="check"><input type="checkbox" value="odds" checked> <strong>Odds</strong></label>
+            <label class="check"><input type="checkbox" value="market_limits" checked> <strong>Market limits</strong></label>
+            <label class="check"><input type="checkbox" value="market_board" checked> <strong>Market board</strong></label>
+            <label class="check"><input type="checkbox" value="simulation" checked> <strong>Simulation</strong></label>
+            <label class="check"><input type="checkbox" value="player_props" checked> <strong>Player props</strong></label>
+            <label class="check"><input type="checkbox" value="clv" checked> <strong>CLV</strong></label>
+            <label class="check"><input type="checkbox" value="market_movement" checked> <strong>Market movement</strong></label>
+            <label class="check"><input type="checkbox" value="history" checked> <strong>History</strong></label>
+            <label class="check"><input type="checkbox" value="opportunities" checked> <strong>Opportunities</strong></label>
+            <label class="check"><input type="checkbox" value="arbitrage" checked> <strong>Arbitrage</strong></label>
+          </div>
+          <div class="audit-controls">
+            <button id="promo-create" type="button">Create account and send activation</button>
+          </div>
+          <p class="audit-status" id="promo-status" role="status" aria-live="polite">No complimentary account has been created.</p>
+        </div>
         <p>Subscriber accounts, verification state, and entitlements. Suspend/reactivate actions require confirmation and an audited reason code.</p>
         <div class="audit-controls">
           <label for="subscriber-search">Email search</label>
@@ -382,6 +417,52 @@ tbody tr:last-child td{border-bottom:0}
       subscriberStatus.textContent = "Subscriber directory could not be loaded. Refresh the page or sign in again.";
     }
   }
+
+  const promoCreate = document.getElementById("promo-create");
+  promoCreate.addEventListener("click", async () => {
+    const email = document.getElementById("promo-email").value.trim();
+    const campaign = document.getElementById("promo-campaign").value.trim();
+    const reason = document.getElementById("promo-reason").value.trim();
+    const durationDays = Number(document.getElementById("promo-duration").value);
+    const entitlements = [...document.querySelectorAll("#promo-entitlements input:checked")].map(input => input.value);
+    const status = document.getElementById("promo-status");
+    if (!email || !campaign || !reason || !entitlements.length || !Number.isInteger(durationDays)) {
+      status.textContent = "Enter an email, campaign, reason, duration, and at least one feature.";
+      return;
+    }
+    if (!window.confirm("Create a complimentary account for " + email + " with " + durationDays + " days of access? No payment method will be requested.")) return;
+    let token = "";
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      promoCreate.disabled = true;
+      status.textContent = "Creating complimentary subscriber and queueing activation email…";
+      const response = await fetch("/admin/subscribers/complimentary", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({email,entitlements,duration_days:durationDays,campaign,reason})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Complimentary account creation failed.");
+      status.textContent = "Created " + data.email + ". Activation email queued. Complimentary access expires " + data.expires_at + ". Identity: " + data.identity_id + ".";
+      document.getElementById("promo-email").value = "";
+      document.getElementById("promo-campaign").value = "";
+      document.getElementById("promo-reason").value = "";
+      subscribersLoaded = false;
+      loadSubscribers();
+    } catch (error) {
+      status.textContent = error.message || "Complimentary subscriber could not be created.";
+    } finally {
+      promoCreate.disabled = false;
+    }
+  });
 
   let overviewLoaded = false;
   async function loadOverview() {
