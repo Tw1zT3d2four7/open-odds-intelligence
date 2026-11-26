@@ -2,7 +2,7 @@
 
 **Implementation:** `app/identity_routes.py`  
 **Tests:** `tests/test_identity_routes.py`, `tests/test_route_policy.py`, `tests/test_route_authorization.py`  
-**Status:** Existing identity router is implemented and CI-tested. Complimentary-subscriber routes are now implemented and separately policy-classified on the current feature branch; the latest changes are awaiting CI verification. Registered in FastAPI but exposed only when `AUTH_MODE=identity`.  
+**Status:** Identity router and complimentary-subscriber workflows are implemented and CI-verified on `feature/admin-panel-and-subscriptions`. Latest full CI run `45732513612` passed **969 tests with 1 non-blocking warning**; Python compilation, dashboard JavaScript syntax, Docker Compose validation, build-context exclusions, and simulator CLI checks also passed. Registered in FastAPI but exposed only when `AUTH_MODE=identity`.  
 **Production impact:** No behavior change in default `legacy_basic` mode; identity mode remains authentication-only staging.
 
 ## Route inventory
