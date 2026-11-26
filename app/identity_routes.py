@@ -249,6 +249,13 @@ def _rate_limit(
 ) -> None:
     """Atomically consume operation-specific IP, identity, cooldown and daily buckets."""
     if AUTH_POLICY.is_local_development and not AUTH_POLICY.rate_limiting_enabled:
+        host = request.headers.get("host", "")
+        try:
+            local_host = urlsplit("//" + host).hostname in {"localhost", "127.0.0.1", "::1"}
+        except ValueError:
+            local_host = False
+        if not local_host:
+            raise HTTPException(status_code=403, detail="Development authentication controls are loopback-only.")
         return
     ip = request_peer_ip(request)
     policies: list[tuple[str, int, int]] = []
