@@ -219,3 +219,19 @@ def test_route_entitlement_sets_free_or_paid_source_scope(tmp_path, monkeypatch)
         )
         require_product_entitlement(request, session={"identity_id": "subscriber"})
         assert request.state.include_premium_data is premium
+
+def test_unclassified_provider_is_never_polled_even_when_premium_polling_is_enabled(
+    tmp_path, monkeypatch
+):
+    from app import config
+
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    service = OddsService(database=db)
+    monkeypatch.setattr(config, "ODDS_PREMIUM_PROVIDER_POLLING_ENABLED", True)
+    monkeypatch.setattr(config, "ODDS_PROVIDER_ACCESS_CLASSES", {"oddize": "restricted"})
+    monkeypatch.setattr(service, "active_provider_names", lambda: ["oddize"])
+
+    result = service._refresh_locked()
+
+    assert result["ok"] is False
+    assert "No configured API keys" in result["error"]
