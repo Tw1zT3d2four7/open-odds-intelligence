@@ -79,6 +79,7 @@ class OddsDatabase:
                     close_at TEXT, close_fair_probability REAL,
                     close_fair_american INTEGER, closing_books INTEGER,
                     clv_percent REAL,
+                    source_access_class TEXT NOT NULL DEFAULT 'restricted',
                     UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key)
                 );
                 CREATE INDEX IF NOT EXISTS idx_clv_pending
@@ -113,6 +114,9 @@ class OddsDatabase:
                 if column not in alert_columns:
                     db.execute(f"ALTER TABLE sent_alerts ADD COLUMN {column} {declaration}")
             db.execute("CREATE INDEX IF NOT EXISTS idx_sent_alerts_event_lifecycle ON sent_alerts(event_id, lifecycle_status)")
+            clv_columns = {row["name"] for row in db.execute("PRAGMA table_info(clv_entries)")}
+            if "source_access_class" not in clv_columns:
+                db.execute("ALTER TABLE clv_entries ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
             quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
             if "source_updated_at" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_updated_at TEXT")
@@ -882,11 +886,12 @@ class OddsDatabase:
                     """INSERT OR IGNORE INTO clv_entries(
                        event_id,sport,matchup,commence_time,market_key,outcome_name,
                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
-                       entry_fair_probability,entry_ev_percent,entry_at)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       entry_fair_probability,entry_ev_percent,entry_at,source_access_class)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (event_id, sport, matchup, str(commence), market, outcome,
                      point, point_key, bookmaker_key, title, price,
-                     fair_probability, ev_percent, str(observed_at)))
+                     fair_probability, ev_percent, str(observed_at),
+                     row.get("source_access_class") if row.get("source_access_class") in {"free", "premium"} else "restricted"))
                 inserted += max(0, cur.rowcount)
         return inserted
 
@@ -1024,7 +1029,7 @@ class OddsDatabase:
                             "clv_percent": clv}
         return None
 
-    def clv_report(self, sport=None, limit=500):
+    def clv_report(self, sport=None, limit=500, include_premium=None):
         """Resolve tracked entries against the last pregame no-vig peer consensus.
 
         Positive CLV means the captured entry price was longer than the fair
