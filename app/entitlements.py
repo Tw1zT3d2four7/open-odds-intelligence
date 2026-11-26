@@ -63,6 +63,7 @@ def require_product_entitlement(
 ) -> None:
     """Require an active subscriber session and an explicit matching feature grant."""
     if config.AUTH_MODE == "legacy_basic":
+        request.state.include_premium_data = True
         return
     entitlement = ROUTE_ENTITLEMENTS.get(request.url.path)
     if entitlement is None:
@@ -80,6 +81,9 @@ def require_product_entitlement(
             status_code=503,
             detail="Account authorization is temporarily unavailable.",
         ) from None
+    request.state.include_premium_data = bool(
+        allowed and store.has_subscriber_entitlement(session["identity_id"], "premium_data")
+    )
     if not allowed:
         raise HTTPException(
             status_code=403,
