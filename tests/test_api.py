@@ -680,7 +680,7 @@ def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
     assert payload["total"] == 31
     assert payload["offset"] == 25
     assert received["events"] == events
-    assert received["kwargs"] == {"include_premium": True}
+    assert received["kwargs"] == {"include_premium": None}
 
 
 def test_arbitrage_paginates_result_rows_not_source_events(monkeypatch):
