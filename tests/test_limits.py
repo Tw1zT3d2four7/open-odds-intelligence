@@ -609,3 +609,94 @@ def test_standalone_oddslink_limit_client_leases_only_free_account_groups(monkey
     outcomes = events[0]["bookmakers"][0]["markets"][0]["outcomes"]
     assert {row["source_account_group"] for row in outcomes} == {"free-account"}
     assert {row["source_access_class"] for row in outcomes} == {"free"}
+
+
+
+def test_market_limit_observations_from_same_tier_groups_coexist(tmp_path):
+    monitor = MarketLimitsMonitor(tmp_path / "limit-account-groups.sqlite3")
+    first = fixture()
+    second = fixture()
+    for events, group in ((first, "free-a"), (second, "free-b")):
+        for event in events:
+            for book in event.get("bookmakers", []):
+                for market in book.get("markets", []):
+                    for outcome in market.get("outcomes", []):
+                        outcome["source_provider"] = "oddslink"
+                        outcome["source_account_group"] = group
+                        outcome["source_access_class"] = "free"
+        result = monitor.ingest_events(
+            events, observed_at="2026-11-26T01:00:00Z",
+            source_provider="oddslink", source_access_class="free",
+        )
+        assert result["ok"] is True
+
+    with monitor._connect() as db:
+        rows = db.execute(
+            "SELECT DISTINCT source_account_group FROM market_limit_quotes ORDER BY source_account_group"
+        ).fetchall()
+    assert [row["source_account_group"] for row in rows] == ["free-a", "free-b"]
+
+
+def test_market_limit_legacy_unique_index_migrates_with_restricted_rows(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-limit-identity.sqlite3"
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE market_limit_quotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                observed_at TEXT NOT NULL, sport TEXT NOT NULL, event_id TEXT NOT NULL,
+                commence_time TEXT NOT NULL DEFAULT '', home_team TEXT NOT NULL DEFAULT '',
+                away_team TEXT NOT NULL DEFAULT '', bookmaker_key TEXT NOT NULL,
+                bookmaker_title TEXT NOT NULL DEFAULT '', market_key TEXT NOT NULL,
+                outcome_name TEXT NOT NULL, point REAL, price REAL,
+                limit_amount REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'bookmaker_currency',
+                UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point)
+            )
+        """)
+        raw.execute("""
+            INSERT INTO market_limit_quotes(
+                observed_at,sport,event_id,bookmaker_key,bookmaker_title,market_key,
+                outcome_name,point,price,limit_amount
+            ) VALUES('2026-11-26T01:00:00Z','nfl','legacy-event','book','Book',
+                     'spreads','Home',2.5,-110,1000)
+        """)
+
+    monitor = MarketLimitsMonitor(path)
+    with monitor._connect() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(market_limit_quotes)")}
+        indexes = db.execute("PRAGMA index_list(market_limit_quotes)").fetchall()
+        unique_columns = [
+            [item["name"] for item in db.execute(
+                f"PRAGMA index_info('{index['name']}')"
+            ).fetchall()]
+            for index in indexes if index["unique"]
+        ]
+        legacy = db.execute(
+            "SELECT source_access_class,source_account_group FROM market_limit_quotes WHERE event_id='legacy-event'"
+        ).fetchone()
+        for group, access_class in (("free-a", "free"), ("premium-a", "premium")):
+            db.execute("""
+                INSERT INTO market_limit_quotes(
+                    observed_at,sport,event_id,bookmaker_key,bookmaker_title,market_key,
+                    outcome_name,point,price,limit_amount,source_provider,
+                    source_account_group,source_access_class,source_capability
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                "2026-11-26T01:00:00Z", "nfl", "legacy-event", "book", "Book",
+                "spreads", "Home", 2.5, -115, 1000, "oddslink", group,
+                access_class, "posted_market_limits",
+            ))
+        count = db.execute(
+            "SELECT COUNT(*) FROM market_limit_quotes WHERE event_id='legacy-event'"
+        ).fetchone()[0]
+
+    assert "source_account_group" in columns
+    assert "source_access_class" in columns
+    assert ["observed_at", "event_id", "bookmaker_key", "market_key",
+            "outcome_name", "point", "source_provider", "source_account_group",
+            "source_access_class", "source_capability"] in unique_columns
+    assert legacy["source_access_class"] == "restricted"
+    assert legacy["source_account_group"] == ""
+    assert count == 3
