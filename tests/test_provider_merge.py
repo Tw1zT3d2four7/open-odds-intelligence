@@ -211,3 +211,49 @@ def test_successful_empty_provider_refresh_removes_only_that_providers_old_quote
     assert len(merged) == 1
     assert [book["key"] for book in merged[0]["bookmakers"]] == ["bet365"]
     assert merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["source_provider"] == "oddize"
+
+
+
+def test_same_provider_account_groups_keep_free_and_premium_quotes_separate():
+    free_event = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "free-account"}
+    ])])
+    premium_event = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -125, "source_account_group": "premium-account"}
+    ])])
+
+    merged = merge_provider_events(
+        [("the_odds_api", [free_event]),
+         ("the_odds_api", [premium_event])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {
+                "free-account": "free",
+                "premium-account": "premium",
+            }
+        },
+    )
+
+    outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    by_class = {row["source_access_class"]: row for row in outcomes}
+    assert set(by_class) == {"free", "premium"}
+    assert by_class["free"]["price"] == -110
+    assert by_class["premium"]["price"] == -125
+    assert by_class["premium"]["source_account_group"] == "premium-account"
+
+
+def test_unlisted_account_group_is_restricted_when_provider_overrides_exist():
+    event = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "unexpected"}
+    ])])
+
+    merged = merge_provider_events(
+        [("the_odds_api", [event])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {"known-free": "free"}
+        },
+    )
+
+    outcome = merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert outcome["source_access_class"] == "restricted"
