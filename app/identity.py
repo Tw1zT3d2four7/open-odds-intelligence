@@ -44,6 +44,7 @@ _ENTITLEMENT_KEYS = frozenset({
     "player_props", "clv", "market_movement", "history",
     "opportunities", "arbitrage", "premium_data",
 })
+_FREE_SUBSCRIBER_ENTITLEMENTS = tuple(sorted(_ENTITLEMENT_KEYS - {"premium_data"}))
 
 
 def _now() -> datetime:
@@ -1328,11 +1329,25 @@ class IdentityStore:
                 if account_type == "subscriber"
                 else "administrator.provisioned"
             )
+            if account_type == "subscriber":
+                for entitlement_key in _FREE_SUBSCRIBER_ENTITLEMENTS:
+                    db.execute(
+                        """INSERT INTO subscriber_entitlements(
+                            id, identity_id, entitlement_key, starts_at, expires_at,
+                            granted_by, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)""",
+                        (secrets.token_urlsafe(18), identity_id, entitlement_key,
+                         now, identity_id, now, now),
+                    )
             self._record_audit_event(
                 db,
                 event_type,
                 identity_id,
                 now,
+                metadata=(
+                    {"plan_code": "free", "entitlements": list(_FREE_SUBSCRIBER_ENTITLEMENTS)}
+                    if account_type == "subscriber" else None
+                ),
                 actor_identity_id=identity_id if account_type == "subscriber" else None,
             )
             db.commit()
