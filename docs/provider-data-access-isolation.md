@@ -122,7 +122,7 @@ Before external subscriber testing, add automated coverage proving:
 The feature branch now persists market-limit provenance alongside each posted-limit observation:
 
 - source_provider identifies the provider source.
-- source_account_group currently stores a non-secret fingerprint of the configured provider key set. It is useful for identifying which configured key set produced the observation, but it is **not yet independent per-account grouping**.
+- Legacy market-limit rows may contain the older non-secret configured-keyset fingerprint in source_account_group; those fingerprints are not mapped to current account labels and legacy access classifications remain restricted. New observations store the normalized leased account-group label, which is independently classified and scoped.
 - source_access_class records free, premium, or restricted.
 - source_capability identifies the posted_market_limits capability.
 - Existing SQLite databases receive additive columns. Historical rows without trustworthy classification retain the restricted default.
