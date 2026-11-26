@@ -1226,7 +1226,7 @@ class OddsService:
     def clv_report(self, sport=None, limit=500):
         return self.db.clv_report(sport, limit)
 
-    def movement(self, sport=None, limit=200, include_premium=False):
+    def movement(self, sport=None, limit=200, include_premium=None):
         return self.db.movement(sport, limit, include_premium)
 
     def movement_history(self, event_id, market_key, outcome_name,
