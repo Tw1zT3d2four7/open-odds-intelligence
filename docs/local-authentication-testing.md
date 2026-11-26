@@ -14,9 +14,9 @@ AUTH_ENVIRONMENT=development
 AUTH_IDENTITY_ENABLED=true
 AUTH_REGISTRATION_ENABLED=true
 AUTH_SUBSCRIBER_LOGIN_ENABLED=true
-AUTH_EMAIL_VERIFICATION_REQUIRED=true
-AUTH_EMAIL_TRANSPORT=local_outbox
-AUTH_PASSWORD_RECOVERY_ENABLED=true
+AUTH_EMAIL_VERIFICATION_REQUIRED=false
+AUTH_EMAIL_TRANSPORT=disabled
+AUTH_PASSWORD_RECOVERY_ENABLED=false
 AUTH_ADMIN_MFA_REQUIRED=true
 AUTH_SUBSCRIBER_MFA_REQUIRED=false
 AUTH_RATE_LIMITING_ENABLED=true
@@ -26,6 +26,8 @@ ACCOUNTS_DATABASE_PATH=./data/dev-accounts.sqlite3
 ```
 
 Keep `MFA_ENCRYPTION_KEY`, `EMAIL_QUEUE_ENCRYPTION_KEY`, and `RATE_LIMIT_HASH_KEY` as distinct, random secrets. The email queue encryption key must be stable while messages remain queued. The rate-limit hash key must remain stable to preserve existing bucket identities.
+
+With this no-email profile, new subscriber accounts are marked verified only by the explicit development policy. Registration does not create a verification challenge or queue an email. Password recovery is unavailable; use a fresh test account if you need to test registration again. The same settings are rejected in staging and production.
 
 The local HTTP origin exception is restricted to `localhost`, `127.0.0.1`, and `::1` in the development profile. It does not permit HTTP on a public hostname. The normal CSRF cookie/header double-submit check remains active. Do not use a public reverse proxy or expose this development instance to the internet.
 
@@ -44,8 +46,8 @@ The script requires both `AUTH_ENVIRONMENT=development` and `AUTH_EMAIL_TRANSPOR
 
 - `resend`: normal encrypted queue plus configured Resend delivery.
 - `local_outbox`: development only; encrypted queue is readable through the local CLI above; no external email worker runs.
-- `disabled`: no email delivery. It cannot be combined with required email verification, so registration/recovery flows that need email cannot work.
+- `disabled`: no email delivery. In development it may be combined with registration only when email verification and password recovery are both disabled. In that mode, new local subscribers are immediately verified. Staging and production reject this configuration.
 
-Staging and production reject the local outbox and reject attempts to disable identity, required email verification, administrator MFA, rate limiting, or CSRF. Production remains the default environment when no environment is set.
+Staging and production reject the local outbox and reject attempts to disable identity, required email verification, administrator MFA, rate limiting, or CSRF. Administrator MFA and CSRF remain mandatory even in local development; this no-email shortcut does not bypass administrator MFA. Production remains the default environment when no environment is set.
 
 This is a testing transport, not a substitute for staging acceptance. The Admin Console's protected, audited environment editor and the remaining independent feature controls are tracked separately and are not represented as complete by this local CLI.
