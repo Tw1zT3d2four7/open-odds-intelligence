@@ -80,7 +80,7 @@ class OddsDatabase:
                     close_fair_american INTEGER, closing_books INTEGER,
                     clv_percent REAL,
                     source_access_class TEXT NOT NULL DEFAULT 'restricted',
-                    UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key)
+                    UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_access_class)
                 );
                 CREATE INDEX IF NOT EXISTS idx_clv_pending
                     ON clv_entries(status, commence_time);
