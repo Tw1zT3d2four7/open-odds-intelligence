@@ -168,7 +168,7 @@ tbody tr:last-child td{border-bottom:0}
         </div>
         <div class="audit-status" id="subscriber-status" role="status" aria-live="polite">Subscriber directory has not been loaded.</div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Email</th><th>Status</th><th>Verified</th><th>Created</th><th>Entitlements</th><th>Identity</th><th>Account action</th></tr></thead>
+          <thead><tr><th>Email</th><th>Status</th><th>Verified</th><th>Created</th><th>Entitlements</th><th>Complimentary access</th><th>Identity</th><th>Account action</th></tr></thead>
           <tbody id="subscriber-rows"><tr><td colspan="7">Select Users to load subscribers.</td></tr></tbody>
         </table></div>
         <div class="audit-pagination"><button id="subscriber-previous" type="button" disabled>Previous</button><span id="subscriber-page">Page 1</span><button id="subscriber-next" type="button" disabled>Next</button></div>
@@ -375,7 +375,7 @@ tbody tr:last-child td{border-bottom:0}
       if (!data.subscribers.length) {
         const row = document.createElement("tr");
         const empty = document.createElement("td");
-        empty.colSpan = 7;
+        empty.colSpan = 8;
         empty.textContent = "No matching subscribers.";
         row.appendChild(empty);
         subscriberRows.appendChild(row);
@@ -387,6 +387,9 @@ tbody tr:last-child td{border-bottom:0}
           cell(row, user.email_verified ? "Verified" : "Unverified");
           cell(row, user.created_at);
           cell(row, (user.entitlements || []).join(", ") || "None");
+          cell(row, user.complimentary_access_active
+            ? ((user.complimentary_campaign || "Complimentary") + " · until " + user.complimentary_expires_at)
+            : (user.complimentary_expires_at ? "Complimentary access expired" : "—"));
           cell(row, user.identity_id);
           const actionCell = document.createElement("td");
           const action = document.createElement("button");
