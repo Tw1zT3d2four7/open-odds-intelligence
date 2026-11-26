@@ -1194,13 +1194,21 @@ def create_complimentary_subscriber(
             campaign=payload.campaign,
             reason=payload.reason,
         )
-        _deliver_or_record_failure(
-            store, sender,
-            recipient=grant["email"],
-            token=grant["activation_token"],
-            identity_id=grant["identity_id"],
-            purpose="password_reset",
-        )
+        try:
+            _deliver_or_record_failure(
+                store, sender,
+                recipient=grant["email"],
+                token=grant["activation_token"],
+                identity_id=grant["identity_id"],
+                purpose="password_reset",
+            )
+            activation_queued = True
+        except HTTPException:
+            # The account/grant transaction has committed. Keep it intact and
+            # make the delivery failure explicit so the operator can resend via
+            # the existing password-recovery flow rather than retrying creation.
+            activation_queued = False
+            logger.warning("Complimentary subscriber was created but activation email was not queued.")
     except HTTPException:
         raise
     except ValueError as exc:
@@ -1216,7 +1224,7 @@ def create_complimentary_subscriber(
         "email": grant["email"],
         "entitlements": grant["entitlements"],
         "expires_at": grant["expires_at"],
-        "activation_email_queued": True,
+        "activation_email_queued": activation_queued,
         "billing_status": "complimentary",
     }
 
