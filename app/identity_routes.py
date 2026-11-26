@@ -1120,6 +1120,7 @@ def administrator_overview(
             "monthly_objects_remaining", "requests_used", "credits_used",
             "datapoints_used", "monthly_objects_used", "usage_observed_at",
             "period_resets_at", "monthly_reset_at", "daily_reset_at",
+            "quota_floor_triggered", "quota_floor_threshold",
         }
         for provider_name, pool in (status.get("provider_keys") or {}).items():
             if not isinstance(provider_name, str) or not isinstance(pool, dict):
