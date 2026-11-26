@@ -1290,12 +1290,26 @@ def test_quote_account_group_columns_are_added_to_existing_database(tmp_path):
                 size_source_access_class TEXT NOT NULL DEFAULT 'restricted'
             )
         """)
+        raw.execute("""
+            INSERT INTO quotes(
+                snapshot_id,event_id,sport,sport_title,commence_time,home_team,away_team,
+                bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,
+                point,price,source_provider,source_access_class
+            ) VALUES(1,'legacy-event','basketball_nba','Basketball','2026-11-26T00:00:00Z',
+                     'Home','Away','book','Book','h2h','Home','',NULL,-110,'the_odds_api','free')
+        """)
 
     db = OddsDatabase(path)
     with db.connect() as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(quotes)")}
+        legacy = conn.execute(
+            "SELECT event_id,source_account_group,size_source_account_group FROM quotes"
+        ).fetchone()
     assert "source_account_group" in columns
     assert "size_source_account_group" in columns
+    assert legacy["event_id"] == "legacy-event"
+    assert legacy["source_account_group"] == ""
+    assert legacy["size_source_account_group"] == ""
 
 
 
