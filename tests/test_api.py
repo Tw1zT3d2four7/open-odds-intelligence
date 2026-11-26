@@ -758,3 +758,26 @@ def test_simulation_run_works_without_fitted_model_when_market_is_ready(monkeypa
     assert payload["data_quality"]["model_source"] == "broad_league_prior"
     assert payload["spread_market"]["consensus_home_spread"] == -3.5
     assert payload["total_market"]["consensus_line"] == 220.5
+
+
+def test_free_market_limits_response_hides_premium_provider_diagnostics(monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(main, "_include_premium_data", lambda request: False)
+    monkeypatch.setitem(config.ODDS_PROVIDER_ACCESS_CLASSES, "oddslink", "premium")
+    monkeypatch.setattr(main.limits_monitor, "current", lambda sport, limit, **kwargs: [])
+    monkeypatch.setattr(main.limits_monitor, "status", lambda: {
+        "enabled": True,
+        "requests_remaining": 999,
+        "diagnostic": {"premium_account": "configured"},
+    })
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/limits")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == {
+        "enabled": False,
+        "provider": "Premium source status is restricted.",
+    }
+    assert "requests_remaining" not in response.json()["status"]
