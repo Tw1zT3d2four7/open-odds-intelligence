@@ -87,3 +87,31 @@ def test_invalid_boolean_and_session_lifetimes_are_rejected(monkeypatch):
         _reload(monkeypatch, AUTH_REGISTRATION_ENABLED="sometimes")
     with pytest.raises(ValueError, match="between 60"):
         _reload(monkeypatch, AUTH_SUBSCRIBER_SESSION_IDLE_SECONDS="30")
+
+
+
+def test_development_can_register_without_email_when_verification_and_recovery_are_off(monkeypatch):
+    module = _reload(
+        monkeypatch,
+        AUTH_ENVIRONMENT="development",
+        AUTH_EMAIL_TRANSPORT="disabled",
+        AUTH_EMAIL_VERIFICATION_REQUIRED="false",
+        AUTH_PASSWORD_RECOVERY_ENABLED="false",
+        AUTH_REGISTRATION_ENABLED="true",
+    )
+    policy = module.AUTHENTICATION_POLICY
+    assert policy.registration_enabled
+    assert not policy.email_verification_required
+    assert not policy.password_recovery_enabled
+    assert policy.email_transport == "disabled"
+
+
+def test_development_cannot_disable_email_while_password_recovery_is_enabled(monkeypatch):
+    with pytest.raises(ValueError, match="Password recovery"):
+        _reload(
+            monkeypatch,
+            AUTH_ENVIRONMENT="development",
+            AUTH_EMAIL_TRANSPORT="disabled",
+            AUTH_EMAIL_VERIFICATION_REQUIRED="false",
+            AUTH_PASSWORD_RECOVERY_ENABLED="true",
+        )
