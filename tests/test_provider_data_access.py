@@ -197,3 +197,25 @@ def test_derived_ev_inherits_most_restrictive_consensus_source():
     result = analyze_markets([event], min_ev=-100, min_consensus_books=1, best_only=False)
     assert result["opportunities"]
     assert all(row["source_access_class"] == "premium" for row in result["opportunities"])
+
+def test_route_entitlement_sets_free_or_paid_source_scope(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from app import config
+    from app.entitlements import require_product_entitlement
+
+    class Store:
+        def __init__(self, premium):
+            self.premium = premium
+
+        def has_subscriber_entitlement(self, identity_id, entitlement):
+            return entitlement == "odds" or (entitlement == "premium_data" and self.premium)
+
+    monkeypatch.setattr(config, "AUTH_MODE", "identity")
+    for premium in (False, True):
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(identity_store=Store(premium))),
+            url=SimpleNamespace(path="/api/odds"),
+            state=SimpleNamespace(),
+        )
+        require_product_entitlement(request, session={"identity_id": "subscriber"})
+        assert request.state.include_premium_data is premium
