@@ -190,12 +190,13 @@ def test_checkout_to_subscription_webhook_reconciliation_grants_paid_data_scope(
     assert billing.json()["customer_portal_available"] is True
     with store.connect() as db:
         row = db.execute(
-            "SELECT stripe_customer_id, stripe_subscription_id, billing_interval, status "
+            "SELECT stripe_customer_id, stripe_subscription_id, plan_code, billing_interval, status "
             "FROM billing_subscriptions WHERE identity_id=?",
             (identity_id,),
         ).fetchone()
     assert row["stripe_customer_id"] == "cus_checkoutE2E"
     assert row["stripe_subscription_id"] == "sub_checkoutE2E"
+    assert row["plan_code"] == "monthly"
     assert row["billing_interval"] == "month"
     assert row["status"] == "active"
 
