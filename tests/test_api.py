@@ -82,7 +82,7 @@ def test_health_endpoint_exposes_alert_delivery_diagnostics(monkeypatch):
 def test_movement_history_endpoint_returns_all_observed_lines(monkeypatch):
     received = {}
 
-    def fake_history(event_id, market, outcome, bookmaker, limit):
+    def fake_history(event_id, market, outcome, bookmaker, limit, **kwargs):
         received.update(event_id=event_id, market=market, outcome=outcome,
                         bookmaker=bookmaker, limit=limit)
         return [
@@ -199,7 +199,7 @@ def test_clv_endpoint_rejects_out_of_range_limit():
 def test_movement_endpoint_paginates_result_rows(monkeypatch):
     rows = [{"row": index} for index in range(31)]
     received = {}
-    def fake_movement(sport, limit):
+    def fake_movement(sport, limit, **kwargs):
         received.update(sport=sport, limit=limit)
         return rows
     monkeypatch.setattr(main.service, "movement", fake_movement)
@@ -638,7 +638,7 @@ def test_odds_endpoint_returns_only_requested_event_page(monkeypatch):
     received = {}
     events = [{"id": f"event-{index}"} for index in range(25)]
 
-    def fake_events(sport=None, limit=None, offset=0):
+    def fake_events(sport=None, limit=None, offset=0, **kwargs):
         received.update(sport=sport, limit=limit, offset=offset)
         return events
 
@@ -680,7 +680,7 @@ def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
     assert payload["total"] == 31
     assert payload["offset"] == 25
     assert received["events"] == events
-    assert received["kwargs"] == {}
+    assert received["kwargs"] == {"include_premium": True}
 
 
 def test_arbitrage_paginates_result_rows_not_source_events(monkeypatch):
