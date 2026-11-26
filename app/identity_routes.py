@@ -53,7 +53,17 @@ from .email_queue import TransactionalEmailQueue, validate_email_queue_configura
 from .rate_limit import SQLiteRateLimiter, request_peer_ip
 
 logger = logging.getLogger(__name__)
-router = APIRouter(include_in_schema=False)
+
+
+def _require_identity_enabled() -> None:
+    if not AUTH_POLICY.identity_enabled:
+        raise HTTPException(status_code=404, detail="Identity authentication is unavailable.")
+
+
+router = APIRouter(
+    include_in_schema=False,
+    dependencies=[Depends(_require_identity_enabled)],
+)
 
 _AUTH_PAGE = Path(__file__).resolve().parent.parent / "web" / "auth.html"
 _ADMIN_PAGE = Path(__file__).resolve().parent.parent / "web" / "admin.html"
