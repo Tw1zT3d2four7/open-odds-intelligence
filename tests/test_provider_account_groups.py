@@ -183,3 +183,36 @@ def test_quota_reserve_floor_pauses_entire_account_group_after_success():
     assert by_group["free-account"]["usage"]["quota_floor_triggered"] == "credits_remaining"
     assert by_group["free-account"]["usage"]["quota_floor_threshold"] == 100
     assert by_group["premium-account"]["available_keys"] == 1
+
+
+
+def test_service_startup_scrubs_legacy_provider_usage_secrets(tmp_path, monkeypatch):
+    import hashlib
+    import json
+    from app import config
+    from app.database import OddsDatabase
+    from app.service import OddsService
+
+    key = "CaseSensitiveLegacyKey"
+    key_id = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+    monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
+    monkeypatch.setattr(config, "THE_ODDS_API_KEY", key)
+    monkeypatch.setattr(config, "THE_ODDS_API_KEYS", "")
+    database = OddsDatabase(tmp_path / "legacy-usage.sqlite3")
+    database.set_state("provider_usage_provider", "the_odds_api")
+    database.set_state("provider_usage_key_fingerprint", key_id)
+    database.set_state("provider_usage", json.dumps({
+        "credits_remaining": 9, "api_key": "LegacyGlobalSecret",
+    }))
+    database.set_state(
+        f"provider_key_usage:the_odds_api:{key_id}",
+        json.dumps({"credits_remaining": 8, "access_token": "LegacyPerKeySecret"}),
+    )
+
+    service = OddsService(database=database)
+
+    assert "LegacyGlobalSecret" not in database.get_state("provider_usage")
+    assert "LegacyPerKeySecret" not in database.get_state(
+        f"provider_key_usage:the_odds_api:{key_id}"
+    )
+    assert "credits_remaining" in service._provider_usage
