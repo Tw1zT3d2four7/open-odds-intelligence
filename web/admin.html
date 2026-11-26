@@ -437,6 +437,8 @@ tbody tr:last-child td{border-bottom:0}
             promoAction.type = "button";
             promoAction.textContent = "Manage comp";
             promoAction.dataset.complimentaryIdentityId = user.identity_id;
+            promoAction.dataset.campaign = user.complimentary_campaign || "";
+            promoAction.dataset.entitlements = (user.entitlements || []).join(",");
             promoAction.style.marginLeft = "6px";
             promoAction.setAttribute("aria-label", "Manage complimentary access for " + user.email);
             actionCell.appendChild(promoAction);
@@ -878,7 +880,12 @@ tbody tr:last-child td{border-bottom:0}
     const promoAction = event.target.closest("button[data-complimentary-identity-id]");
     if (promoAction) {
       document.getElementById("promo-existing-identity").value = promoAction.dataset.complimentaryIdentityId;
-      document.getElementById("promo-status").textContent = "Selected complimentary subscriber. Choose the added time and replacement features, then extend access.";
+      if (promoAction.dataset.campaign) document.getElementById("promo-campaign").value = promoAction.dataset.campaign;
+      const currentEntitlements = new Set((promoAction.dataset.entitlements || "").split(",").filter(Boolean));
+      document.querySelectorAll("#promo-entitlements input").forEach(input => {
+        input.checked = currentEntitlements.has(input.value);
+      });
+      document.getElementById("promo-status").textContent = "Selected complimentary subscriber. Adjust the added time, campaign, reason, or feature selection, then extend access.";
     }
   });
   subscriberRows.addEventListener("click", event => {
