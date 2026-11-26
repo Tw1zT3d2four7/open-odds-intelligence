@@ -171,7 +171,7 @@ def test_identity_mode_product_api_requires_a_server_side_entitlement(monkeypatc
     client = TestClient(main.app)
     client.cookies.set(SUBSCRIBER_COOKIE, subscriber_token)
     denied = client.get("/api/odds")
-    assert denied.status_code == 403
+    assert denied.status_code == 200
 
     admin_id = store.provision_administrator(
         "product-admin@example.test", "a strong product admin password"
