@@ -209,6 +209,10 @@ class OddsDatabase:
                 db.execute("UPDATE quotes SET size_source_access_class='restricted'")
             if "size_source_access_class" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN size_source_access_class TEXT NOT NULL DEFAULT 'restricted'")
+            if legacy_quote_account_group_missing:
+                db.execute("UPDATE quotes SET source_access_class='restricted'")
+            if legacy_size_account_group_missing:
+                db.execute("UPDATE quotes SET size_source_access_class='restricted'")
             # Older CLV rows stored the provider's display title instead of
             # the canonical sport key, which made sport-filtered reports miss them.
             # Recover the key from the immutable quote archive where possible.
