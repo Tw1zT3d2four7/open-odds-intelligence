@@ -1736,6 +1736,21 @@ class IdentityStore:
                 db.rollback()
                 raise ValueError("An active subscriber identity is required.")
             actor = self._resolve_audit_actor(db, identity_id, actor_identity_id)
+            complimentary = db.execute(
+                """SELECT json_extract(metadata_json, '$.expires_at') AS expires_at
+                   FROM security_audit_events
+                   WHERE subject_identity_id=?
+                     AND event_type='subscriber.complimentary_access_granted'
+                   ORDER BY occurred_at DESC LIMIT 1""",
+                (identity_id,),
+            ).fetchone()
+            if complimentary is not None and (
+                expiry is None or expiry != complimentary["expires_at"]
+            ):
+                db.rollback()
+                raise ValueError(
+                    "Complimentary access expiry cannot be removed or extended through the manual feature editor."
+                )
             db.execute(
                 "DELETE FROM subscriber_entitlements WHERE identity_id=?",
                 (identity_id,),
