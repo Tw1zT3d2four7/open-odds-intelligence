@@ -65,7 +65,7 @@ All create/update operations require an active MFA administrator session, same-o
 
 Both endpoints require an active administrator session created after mandatory MFA. The update additionally requires same-origin CSRF protection. The API never returns subscriber email addresses. Each update records a secret-free `subscriber.entitlements_updated` audit event with the administrator actor, subscriber subject, feature keys, and expiry.
 
-Public registration, subscriber profile changes, and browser-supplied role/entitlement fields cannot grant access.
+Public registration receives only the fixed server-owned Free bundle described above. It cannot choose feature keys, grant `premium_data`, or elevate its plan. Subscriber profile changes and browser-supplied role/entitlement fields cannot grant access.
 
 ## Authentication-mode behavior
 
