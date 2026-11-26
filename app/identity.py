@@ -2244,7 +2244,17 @@ class IdentityStore:
                 rows = db.execute(
                     """SELECT i.id, i.email, i.is_active, i.email_verified_at,
                               i.created_at,
-                              COALESCE(GROUP_CONCAT(e.entitlement_key, ','), '') AS entitlements
+                              COALESCE(GROUP_CONCAT(e.entitlement_key, ','), '') AS entitlements,
+                              (SELECT json_extract(a.metadata_json, '$.expires_at')
+                                 FROM security_audit_events a
+                                WHERE a.subject_identity_id=i.id
+                                  AND a.event_type='subscriber.complimentary_access_granted'
+                                ORDER BY a.occurred_at DESC LIMIT 1) AS complimentary_expires_at,
+                              (SELECT json_extract(a.metadata_json, '$.campaign')
+                                 FROM security_audit_events a
+                                WHERE a.subject_identity_id=i.id
+                                  AND a.event_type='subscriber.complimentary_access_granted'
+                                ORDER BY a.occurred_at DESC LIMIT 1) AS complimentary_campaign
                        FROM identities i
                        LEFT JOIN subscriber_entitlements e
                          ON e.identity_id=i.id AND e.starts_at<=?
@@ -2265,6 +2275,12 @@ class IdentityStore:
                 "is_active": bool(row["is_active"]),
                 "email_verified": row["email_verified_at"] is not None,
                 "created_at": row["created_at"],
+                "complimentary_expires_at": row["complimentary_expires_at"],
+                "complimentary_campaign": row["complimentary_campaign"],
+                "complimentary_access_active": bool(
+                    row["complimentary_expires_at"]
+                    and row["complimentary_expires_at"] > now
+                ),
                 "entitlements": sorted(
                     key for key in row["entitlements"].split(",") if key
                 ),
