@@ -175,7 +175,7 @@ def test_arbitrage_endpoint_requests_arbitrage_analysis(monkeypatch):
 def test_clv_endpoint_paginates_entries_and_preserves_summary(monkeypatch):
     received = {}
     entries = [{"id": index} for index in range(61)]
-    def fake_report(sport, limit):
+    def fake_report(sport, limit, **kwargs):
         received.update(sport=sport, limit=limit)
         return {"entries": entries, "summary": {"total": 61}}
     monkeypatch.setattr(main.service, "clv_report", fake_report)
