@@ -19,6 +19,10 @@ ODDS_PROVIDER_ACCESS_CLASSES = {
     "oddize": "free",
     "oddslink": "free",
 }
+# Premium sources are never polled until an operator explicitly enables them.
+ODDS_PREMIUM_PROVIDER_POLLING_ENABLED = os.getenv(
+    "ODDS_PREMIUM_PROVIDER_POLLING_ENABLED", "false"
+).strip().lower() in ("1", "true", "yes", "on")
 for _entry in _raw_provider_access_classes.replace("\\n", ",").split(","):
     if not _entry.strip():
         continue
