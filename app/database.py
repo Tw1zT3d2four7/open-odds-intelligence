@@ -627,12 +627,15 @@ class OddsDatabase:
         return events
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None,
-                limit=100, outcome_description=None):
+                limit=100, outcome_description=None, include_premium=False):
         sql = """SELECT s.fetched_at,q.bookmaker_key,q.bookmaker_title,q.market_key,
-                 q.outcome_name,q.outcome_description,q.point,q.price,q.source_updated_at FROM quotes q
+                 q.outcome_name,q.outcome_description,q.point,q.price,q.source_updated_at,
+                 q.source_provider,q.source_access_class FROM quotes q
                  JOIN snapshots s ON s.id=q.snapshot_id
                  WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?"""
         args = [event_id, market_key, outcome_name]
+        sql += " AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))"
+        args.append(1 if include_premium else 0)
         if bookmaker_key:
             sql += " AND q.bookmaker_key=?"
             args.append(bookmaker_key)
@@ -648,7 +651,7 @@ class OddsDatabase:
             return [dict(row) for row in db.execute(sql, args).fetchall()]
 
 
-    def movement(self, sport=None, limit=200):
+    def movement(self, sport=None, limit=200, include_premium=False):
         """Return one opening-to-latest movement summary per sportsbook selection.
 
         When a book offers a single line for a selection, line transitions are
@@ -664,11 +667,12 @@ class OddsDatabase:
                    q.outcome_name, q.outcome_description, q.point, q.price
             FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
             WHERE (? IS NULL OR q.sport=?)
+              AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))
             ORDER BY s.id ASC, q.event_id, q.bookmaker_key,
                      q.market_key, q.outcome_name, q.point
         """
         with self.connect() as db:
-            rows = [dict(row) for row in db.execute(sql, (sport, sport)).fetchall()]
+            rows = [dict(row) for row in db.execute(sql, (sport, sport, 1 if include_premium else 0)).fetchall()]
 
         grouped = {}
         for row in rows:
@@ -760,7 +764,7 @@ class OddsDatabase:
 
 
     def movement_history(self, event_id, market_key, outcome_name,
-                         bookmaker_key, limit=500, outcome_description=None):
+                         bookmaker_key, limit=500, outcome_description=None, include_premium=False):
         """Return a chronological quote timeline, including every observed line."""
         with self.connect() as db:
             rows = db.execute(
@@ -768,9 +772,11 @@ class OddsDatabase:
                    FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
                    WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?
                      AND q.bookmaker_key=? AND (? IS NULL OR q.outcome_description=?)
+                     AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))
                    ORDER BY s.id DESC LIMIT ?""",
                 (event_id, market_key, outcome_name, bookmaker_key,
-                 outcome_description, outcome_description, max(1, min(int(limit), 1000))),
+                 outcome_description, outcome_description, 1 if include_premium else 0,
+                 max(1, min(int(limit), 1000))),
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
