@@ -968,6 +968,9 @@ def test_admin_overview_is_mfa_protected_no_store_and_secret_minimized(tmp_path,
                 "provider_account_access_classes": {
                     "the_odds_api": {"premium-account": "premium"}
                 },
+                "provider_account_quota_floors": {
+                    "the_odds_api": {"premium-account": {"credits_remaining": 100}}
+                },
                 "provider_access_classes": {"the_odds_api": "free"},
                 "premium_provider_polling_enabled": False,
                 "provider_usage": {"raw": "must-not-leak"},
@@ -1011,6 +1014,7 @@ def test_admin_overview_is_mfa_protected_no_store_and_secret_minimized(tmp_path,
             "quota_floor_threshold": 50,
             "usage_observed_at": "2026-11-25T12:00:00Z",
         },
+        "quota_floors": {"credits_remaining": 100},
     }]
     assert payload["premium_provider_polling_enabled"] is False
     assert "provider_keys" not in payload
