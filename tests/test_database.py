@@ -1448,3 +1448,19 @@ def test_new_clv_candidate_without_account_provenance_is_restricted(tmp_path):
     report = db.clv_report("basketball_nba")
     assert report["summary"]["total"] == 1
     assert report["entries"][0]["source_access_class"] == "restricted"
+
+
+
+def test_new_quote_snapshot_without_account_group_is_restricted(tmp_path):
+    db = OddsDatabase(tmp_path / "quote-missing-account.sqlite3")
+    events = fixture()
+    outcome = events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome["source_provider"] = "the_odds_api"
+    outcome["source_access_class"] = "free"
+    outcome.pop("source_account_group", None)
+
+    db.save_snapshot("basketball_nba", events, "test")
+    restored = db.latest_events("basketball_nba")
+    saved = restored[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert saved["source_access_class"] == "restricted"
+    assert "source_account_group" not in saved
