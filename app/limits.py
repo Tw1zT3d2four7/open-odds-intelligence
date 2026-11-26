@@ -440,21 +440,24 @@ class MarketLimitsMonitor:
                         title = book.get("title")
                         if not isinstance(title, str) or not title.strip():
                             title = book_key
-                        row_provider = str(
-                            outcome.get("size_source_provider")
-                            or outcome.get("source_provider") or source_provider or ""
-                        )
-                        # Limit amounts come from size metadata, so their tier
-                        # must follow the size source rather than the odds quote.
-                        row_group = str(
-                            outcome.get("size_source_account_group")
-                            or outcome.get("source_account_group") or ""
-                        )
-                        row_class = (
-                            outcome.get("size_source_access_class")
-                            or outcome.get("source_access_class")
-                            or source_access_class
-                        )
+                        size_provider = str(outcome.get("size_source_provider") or "")
+                        odds_provider = str(outcome.get("source_provider") or source_provider or "")
+                        row_provider = size_provider or odds_provider
+                        # Limit amounts come from size metadata, so a different
+                        # size provider must supply its own group and tier.
+                        if size_provider and size_provider != odds_provider:
+                            row_group = str(outcome.get("size_source_account_group") or "")
+                            row_class = outcome.get("size_source_access_class") or "restricted"
+                        else:
+                            row_group = str(
+                                outcome.get("size_source_account_group")
+                                or outcome.get("source_account_group") or ""
+                            )
+                            row_class = (
+                                outcome.get("size_source_access_class")
+                                or outcome.get("source_access_class")
+                                or source_access_class
+                            )
                         if not row_provider or not row_group or row_class not in ("free", "premium"):
                             row_class = "restricted"
                         rows.append((
