@@ -120,6 +120,14 @@ tbody tr:last-child td{border-bottom:0}
           <tbody id="overview-sports"><tr><td colspan="4">Waiting for operational data.</td></tr></tbody>
         </table></div>
       </div>
+      <div class="panel">
+        <h2>Provider account quotas</h2>
+        <p id="overview-provider-policy">Provider quota telemetry is restricted to this MFA-protected administrator view.</p>
+        <div class="table-wrap" style="margin-top:14px"><table>
+          <thead><tr><th>Provider</th><th>Account group</th><th>Tier</th><th>Status</th><th>Available keys</th><th>Quota remaining</th><th>Last usage update</th></tr></thead>
+          <tbody id="overview-provider-accounts"><tr><td colspan="7">Waiting for provider account telemetry.</td></tr></tbody>
+        </table></div>
+      </div>
       <div class="panel"><h2>Security baseline</h2><p>The console is served only after server-side administrator session validation. State-changing operations will require CSRF protection and will be recorded in the security audit trail.</p><div class="checks"><div class="check"><strong>✓ Separate admin session</strong>Subscriber cookies cannot authorize this workspace.</div><div class="check"><strong>✓ MFA-gated sign-in</strong>Administrator sessions require a fresh second factor.</div><div class="check"><strong>✓ Protected page response</strong>No-store, no-referrer, and frame-denial headers are applied.</div></div></div>
     </section>
     <section class="view" id="view-users" hidden>
@@ -599,6 +607,40 @@ tbody tr:last-child td{border-bottom:0}
           rows.appendChild(row);
         });
       }
+      const accountRows = document.getElementById("overview-provider-accounts");
+      const accounts = Array.isArray(data.provider_accounts) ? data.provider_accounts : [];
+      accountRows.replaceChildren();
+      if (!accounts.length) {
+        const row = document.createElement("tr");
+        const empty = document.createElement("td");
+        empty.colSpan = 7;
+        empty.textContent = "No provider account groups are currently configured.";
+        row.appendChild(empty);
+        accountRows.appendChild(row);
+      } else {
+        accounts.forEach(account => {
+          const row = document.createElement("tr");
+          const usage = account.usage || {};
+          const quota = [
+            ["credits", usage.credits_remaining],
+            ["datapoints", usage.datapoints_remaining],
+            ["requests", usage.requests_remaining],
+            ["monthly objects", usage.monthly_objects_remaining]
+          ].filter(item => item[1] !== undefined && item[1] !== null)
+           .map(item => item[0] + ": " + String(item[1])).join(" · ") || "Not reported";
+          cell(row, account.provider);
+          cell(row, account.account_group);
+          cell(row, account.access_class);
+          cell(row, account.status);
+          cell(row, Number(account.available_keys || 0) + " / " + Number(account.configured_keys || 0));
+          cell(row, quota);
+          cell(row, usage.usage_observed_at || "—");
+          accountRows.appendChild(row);
+        });
+      }
+      document.getElementById("overview-provider-policy").textContent =
+        "Premium provider polling: " + (data.premium_provider_polling_enabled ? "enabled" : "disabled") +
+        ". Unknown account groups remain restricted; quota values are provider-reported and may vary by provider.";
       overviewLoaded = true;
     } catch (_error) {
       status.textContent = "Live platform diagnostics could not be loaded. Refresh the page or sign in again.";
