@@ -475,9 +475,9 @@ class MarketLimitsMonitor:
                     SELECT limit_amount,observed_at FROM market_limit_quotes
                     WHERE event_id=? AND bookmaker_key=? AND market_key=?
                       AND outcome_name=? AND point IS ? AND source_provider=?
-                      AND source_account_group=? AND source_access_class=?
+                      AND source_account_group=? AND source_access_class=? AND source_capability=?
                     ORDER BY id DESC LIMIT 1
-                """, (row[2], row[6], row[8], row[9], row[10], row[13], row[14], row[15])).fetchone()
+                """, (row[2], row[6], row[8], row[9], row[10], row[13], row[14], row[15], row[16])).fetchone()
                 db.execute("""
                     INSERT OR IGNORE INTO market_limit_quotes
                     (observed_at,sport,event_id,commence_time,home_team,away_team,
@@ -872,14 +872,14 @@ class MarketLimitsMonitor:
         """Return latest limits after applying the caller's provider-data scope."""
         sql = """SELECT q.* FROM market_limit_quotes q JOIN (
             SELECT event_id,bookmaker_key,market_key,outcome_name,point,
-                   source_provider,source_account_group,source_access_class,MAX(id) id
+                   source_provider,source_account_group,source_access_class,source_capability,MAX(id) id
             FROM market_limit_quotes"""
         args = []
         if include_premium is False:
             sql += " WHERE source_access_class='free'"
         elif include_premium is True:
             sql += " WHERE source_access_class IN ('free','premium')"
-        sql += " GROUP BY event_id,bookmaker_key,market_key,outcome_name,point,source_provider,source_account_group,source_access_class) x ON x.id=q.id"
+        sql += " GROUP BY event_id,bookmaker_key,market_key,outcome_name,point,source_provider,source_account_group,source_access_class,source_capability) x ON x.id=q.id"
         if sport:
             sql += " WHERE q.sport=?"
             args.append(sport)
