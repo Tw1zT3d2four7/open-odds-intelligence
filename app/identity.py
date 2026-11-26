@@ -1176,6 +1176,100 @@ class IdentityStore:
             "activation_token": activation_token,
         }
 
+    def extend_complimentary_subscriber(
+        self,
+        identity_id: str,
+        entitlement_keys: list[str] | tuple[str, ...],
+        *,
+        actor_identity_id: str,
+        additional_days: int,
+        campaign: str,
+        reason_code: str,
+    ) -> dict:
+        """Replace a promo subscriber's feature set and add bounded time to its expiry."""
+        if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
+            raise ValueError("A valid subscriber identity reference is required.")
+        if not isinstance(actor_identity_id, str) or not actor_identity_id or len(actor_identity_id) > 128:
+            raise ValueError("An active MFA administrator is required.")
+        if isinstance(additional_days, bool) or not isinstance(additional_days, int) or not 1 <= additional_days <= 366:
+            raise ValueError("Additional access must be between 1 and 366 days.")
+        if not isinstance(entitlement_keys, (list, tuple)) or not entitlement_keys or len(entitlement_keys) > 32:
+            raise ValueError("Select at least one feature entitlement.")
+        if any(not isinstance(key, str) or key not in _ENTITLEMENT_KEYS for key in entitlement_keys):
+            raise ValueError("One or more entitlement keys are not supported.")
+        normalized = sorted(set(entitlement_keys))
+        if not isinstance(campaign, str) or not campaign.strip() or len(campaign.strip()) > 80:
+            raise ValueError("A campaign or promotion name is required.")
+        if not isinstance(reason_code, str) or reason_code not in _COMPLIMENTARY_REASON_CODES:
+            raise ValueError("Choose a supported complimentary-access reason.")
+
+        now_dt = _now()
+        now = _timestamp(now_dt)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            subject = db.execute(
+                """SELECT id FROM identities
+                   WHERE id=? AND account_type='subscriber' AND is_active=1""",
+                (identity_id,),
+            ).fetchone()
+            if subject is None:
+                db.rollback()
+                raise ValueError("An active subscriber identity is required.")
+            actor = self._resolve_audit_actor(db, identity_id, actor_identity_id)
+            prior = db.execute(
+                """SELECT json_extract(metadata_json, '$.expires_at') AS expires_at
+                   FROM security_audit_events
+                   WHERE subject_identity_id=?
+                     AND event_type IN (
+                       'subscriber.complimentary_access_granted',
+                       'subscriber.complimentary_access_updated'
+                     )
+                   ORDER BY occurred_at DESC LIMIT 1""",
+                (identity_id,),
+            ).fetchone()
+            if prior is None or not prior["expires_at"]:
+                db.rollback()
+                raise ValueError("This subscriber does not have a complimentary access grant.")
+            base = datetime.fromisoformat(prior["expires_at"])
+            if base.tzinfo is None or base.utcoffset() is None:
+                db.rollback()
+                raise ValueError("Stored complimentary expiry is invalid.")
+            new_expiry_dt = max(now_dt, base.astimezone(timezone.utc)) + timedelta(days=additional_days)
+            if new_expiry_dt > now_dt + timedelta(days=732):
+                db.rollback()
+                raise ValueError("The resulting complimentary access period exceeds the allowed limit.")
+            expiry = _timestamp(new_expiry_dt)
+            db.execute("DELETE FROM subscriber_entitlements WHERE identity_id=?", (identity_id,))
+            for key in normalized:
+                db.execute(
+                    """INSERT INTO subscriber_entitlements(
+                        id, identity_id, entitlement_key, starts_at, expires_at,
+                        granted_by, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (secrets.token_urlsafe(18), identity_id, key, now, expiry, actor, now, now),
+                )
+            self._record_audit_event(
+                db, "subscriber.complimentary_access_updated", identity_id, now,
+                metadata={
+                    "entitlements": normalized,
+                    "starts_at": now,
+                    "expires_at": expiry,
+                    "grant_type": "complimentary",
+                    "campaign": campaign.strip(),
+                    "reason_code": reason_code,
+                    "additional_days": additional_days,
+                    "previous_expires_at": prior["expires_at"],
+                },
+                actor_identity_id=actor,
+            )
+            db.commit()
+        return {
+            "identity_id": identity_id,
+            "entitlements": normalized,
+            "expires_at": expiry,
+            "additional_days": additional_days,
+        }
+
     def provision_initial_administrator(self, email: str, password: str) -> str:
         """Atomically create the first and only bootstrap administrator."""
         normalized_email = _normalize_email(email)
@@ -1741,7 +1835,10 @@ class IdentityStore:
                 """SELECT json_extract(metadata_json, '$.expires_at') AS expires_at
                    FROM security_audit_events
                    WHERE subject_identity_id=?
-                     AND event_type='subscriber.complimentary_access_granted'
+                     AND event_type IN (
+                       'subscriber.complimentary_access_granted',
+                       'subscriber.complimentary_access_updated'
+                     )
                    ORDER BY occurred_at DESC LIMIT 1""",
                 (identity_id,),
             ).fetchone()
