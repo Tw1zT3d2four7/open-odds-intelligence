@@ -183,9 +183,14 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
                     line = _line_group(market_key, outcome.get("point"))
                     if market_key != "h2h" and line is None:
                         continue
-                    groups[(line, player_scope)].append(outcome)
+                    groups[(
+                        line, player_scope,
+                        str(outcome.get("source_provider") or ""),
+                        str(outcome.get("source_account_group") or ""),
+                        str(outcome.get("source_access_class") or "restricted"),
+                    )].append(outcome)
 
-                for (line, player_scope), items in groups.items():
+                for (line, player_scope, _source_provider, _source_account_group, _source_access_class), items in groups.items():
                     if len(items) != expected_outcomes:
                         continue
                     # A valid spread pair must describe opposite sides of the
