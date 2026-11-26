@@ -19,7 +19,9 @@
 | GET | `/admin/audit-events` | Administrator only | Bounded, paginated, no-store security audit history with event, actor, and subject filters; excludes account email addresses and credential material. |
 | GET | `/admin/sessions` | Administrator only | Bounded active-session inventory; exposes session metadata only, never bearer tokens, token hashes, or subscriber email addresses. |
 | POST | `/admin/sessions/{session_id}/revoke` | Administrator + CSRF | Revokes a selected session with a controlled reason code and MFA-admin audit attribution; the current administrator session cannot revoke itself. |
-| GET | `/admin/subscribers` | Administrator only | Bounded, paginated, searchable, no-store subscriber directory with minimal account and active-entitlement fields. |
+| GET | `/admin/subscribers` | Administrator only | Bounded, paginated, searchable, no-store subscriber directory with minimal account and active-entitlement fields plus complimentary campaign/expiry metadata and an active complimentary-access filter. |
+| POST | `/admin/subscribers/complimentary` | Administrator + CSRF | Creates a no-payment complimentary subscriber, time-limited feature grants, a hashed 30-minute activation challenge, and a secret-free actor-attributed audit event; queues an encrypted activation email. |
+| PUT | `/admin/subscribers/complimentary` | Administrator + CSRF | Adds a bounded number of days to an existing complimentary grant and replaces its feature selection; records previous/new expiry, campaign, reason, and MFA administrator actor. |
 | GET | `/forgot-password` | Public safe | Password-recovery request page. |
 | GET | `/verify-email` | Public safe | Reads the challenge token from the URL fragment and submits it in the request body. |
 | GET | `/reset-password` | Public safe | Reads the recovery token from the URL fragment and submits it in the request body. |
@@ -39,7 +41,7 @@
 | GET | `/admin/subscriber-entitlements` | Administrator only | Reads feature grants for one subscriber identity; never returns account email. |
 | PUT | `/admin/subscriber-entitlements` | Administrator + CSRF | Replaces a subscriber's feature grants; requires an active MFA-backed administrator session and records an audit event. |
 
-Public registration can create only a subscriber. Administrator provisioning remains exclusively in the private interactive bootstrap command.
+Public registration can create only a subscriber. Administrator provisioning of administrators remains exclusively in the private interactive bootstrap command. The separate complimentary-subscriber workflow is available only to an active MFA administrator and never creates a Stripe customer, payment method, Checkout Session, invoice, or paid subscription.
 
 ## Security behavior
 
@@ -52,6 +54,8 @@ Public registration can create only a subscriber. Administrator provisioning rem
 - Rate limits use atomic persistent IP and account/destination buckets. Verification and password-reset email requests include a 60-second per-destination cooldown and a daily cap. Bucket values are HMAC-hashed before persistence.
 - Forwarded client-IP headers are ignored until trusted proxy CIDRs are explicitly configured after deployment topology review.
 - Email links carry challenge tokens in the URL fragment (`#token=...`), which browsers do not send in HTTP requests or referrer headers. The page must read the fragment and POST the token in the request body.
+- Complimentary subscriber activation uses the existing encrypted password-reset queue with a dedicated activation email and a 30-minute single-use challenge. Setting a password through that link proves mailbox control and marks the subscriber email verified; the initial random password is never disclosed. The challenge digest, not the token, is stored outside the encrypted email payload.
+- Complimentary grants are local expiring feature entitlements. The grant/extension APIs require MFA administrator authorization, CSRF, bounded rate limits, controlled reason codes, and audit attribution. Manual feature editing cannot remove or extend a complimentary expiry; use the dedicated extension endpoint.
 - Email provider exceptions are sanitized. The API key is case-preserving and is never returned to the browser or written to audit events.
 - Delivery outcomes are recorded in a separate 90-day table with no recipient address or challenge token. A persistent Resend circuit opens after five consecutive failures within ten minutes, remains open for ten minutes, and permits one 60-second half-open probe.
 
@@ -71,7 +75,7 @@ Email resend operations additionally allow at most one request per destination p
 
 ## Current activation boundary
 
-The router is registered in FastAPI. Middleware resolves concrete paths and HTTP methods to registered route templates before policy lookup, so parameterized subscriber/session endpoints are classified by their explicit manifest entries. It hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all 29 routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy. Subscriber and administrator authentication dependencies set `Cache-Control: no-store` and `Pragma: no-cache` before session or CSRF validation, so rejected authentication responses are non-cacheable as well as successful responses.
+The router is registered in FastAPI. Middleware resolves concrete paths and HTTP methods to registered route templates before policy lookup, so parameterized subscriber/session endpoints are classified by their explicit manifest entries. It hides identity paths with 404 in `legacy_basic` and admits the classified identity endpoints in staged `identity` mode. In identity mode, all product routes use explicit session and entitlement dependencies and the public health response is minimal. A separate `IDENTITY_ROUTE_ACCESS_POLICY` classifies all 38 routes, and dependency-conformance tests verify that the router's actual security dependencies match that policy. Subscriber and administrator authentication dependencies set `Cache-Control: no-store` and `Pragma: no-cache` before session or CSRF validation, so rejected authentication responses are non-cacheable as well as successful responses.
 
 Verification and password-reset requests now enqueue messages in the versioned identity database. Recipient addresses and challenge links are encrypted with a dedicated Fernet key. A background worker claims messages with atomic leases, reuses stable Resend idempotency keys, retries only transient failures with bounded backoff, and discards messages whose one-time challenge has expired or already been consumed. The worker runs only in identity mode. Tests use a fake sender and never contact Resend.
 
