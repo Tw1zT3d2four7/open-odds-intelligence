@@ -340,7 +340,7 @@ class MarketLimitsMonitor:
                     SELECT id,observed_at,sport,event_id,commence_time,home_team,away_team,
                         bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,
                         limit_amount,currency,source_provider,source_account_group,
-                        source_access_class,source_capability
+                        'restricted',source_capability
                     FROM market_limit_quotes
                 """)
                 db.execute("DROP TABLE market_limit_quotes")
