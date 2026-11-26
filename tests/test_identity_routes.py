@@ -1116,7 +1116,11 @@ def test_subscriber_account_page_and_summary_are_private_and_minimal(tmp_path, m
         "email": "account-user@example.test",
         "account_status": "active",
         "email_verified": True,
-        "feature_access": [],
+        "feature_access": [
+            "arbitrage", "clv", "dashboard", "history", "market_board",
+            "market_limits", "market_movement", "odds", "opportunities",
+            "player_props", "simulation",
+        ],
     }
     assert "__Host-ooi_subscriber" not in response.text
     assert "token_hash" not in response.text
