@@ -195,6 +195,7 @@ class OddsDatabase:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_provider TEXT NOT NULL DEFAULT ''")
             if "source_account_group" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_account_group TEXT NOT NULL DEFAULT ''")
+                db.execute("UPDATE quotes SET source_access_class='restricted'")
             if "source_access_class" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
             if "is_main" not in quote_columns:
@@ -205,6 +206,7 @@ class OddsDatabase:
                 db.execute("ALTER TABLE quotes ADD COLUMN size_source_provider TEXT NOT NULL DEFAULT ''")
             if "size_source_account_group" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN size_source_account_group TEXT NOT NULL DEFAULT ''")
+                db.execute("UPDATE quotes SET size_source_access_class='restricted'")
             if "size_source_access_class" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN size_source_access_class TEXT NOT NULL DEFAULT 'restricted'")
             # Older CLV rows stored the provider's display title instead of
