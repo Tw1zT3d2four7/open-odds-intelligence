@@ -117,3 +117,31 @@ def test_account_group_status_aggregates_quota_without_exposing_credentials():
     assert group["usage"]["credits_remaining"] == 42
     assert "api_key" not in group["usage"]
     assert "NeverExposeThisValue" not in repr(status)
+
+
+
+def test_service_never_persists_raw_provider_credentials_from_usage_payload(tmp_path):
+    from app.database import OddsDatabase
+    from app.service import OddsService
+
+    database = OddsDatabase(tmp_path / "usage-sanitization.sqlite3")
+    service = OddsService(database=database)
+    pool = ProviderKeyPool("example", ["free-account|CaseSensitiveKey"])
+    lease = pool.acquire()
+    usage = {
+        "credits_remaining": 17,
+        "usage_observed_at": "2026-11-26T00:00:00Z",
+        "api_key": "NeverPersistThisKey",
+        "access_token": "NeverPersistThisToken",
+    }
+
+    service._record_provider_key_usage("example", pool, lease, usage)
+    service._remember_provider_usage(usage, "example", lease.fingerprint)
+
+    per_key = database.get_state(f"provider_key_usage:example:{lease.fingerprint}")
+    latest = database.get_state("provider_usage")
+    assert "NeverPersistThisKey" not in per_key
+    assert "NeverPersistThisToken" not in per_key
+    assert "NeverPersistThisKey" not in latest
+    assert "NeverPersistThisToken" not in latest
+    assert "credits_remaining" in latest
