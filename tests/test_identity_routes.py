@@ -555,6 +555,12 @@ def test_complimentary_subscriber_admin_flow_requires_mfa_csrf_and_activation(tm
     assert extended.headers["cache-control"] == "no-store"
     assert extended.json()["entitlements"] == ["dashboard"]
     assert extended.json()["expires_at"] > body["expires_at"]
+    promo_directory = harness.client.get("/admin/subscribers", params={"complimentary_only": "true"})
+    assert promo_directory.status_code == 200
+    assert promo_directory.json()["total"] == 1
+    nonpromo_directory = harness.client.get("/admin/subscribers", params={"complimentary_only": "false"})
+    assert nonpromo_directory.status_code == 200
+    assert nonpromo_directory.json()["total"] == 0
     with harness.store.connect() as db:
         audit = db.execute(
             "SELECT actor_identity_id, event_type FROM security_audit_events WHERE subject_identity_id=? AND event_type='subscriber.complimentary_access_granted'",
