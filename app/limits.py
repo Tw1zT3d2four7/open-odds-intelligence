@@ -440,10 +440,11 @@ class MarketLimitsMonitor:
                         title = book.get("title")
                         if not isinstance(title, str) or not title.strip():
                             title = book_key
-                        row_provider = outcome.get("source_provider") or source_provider
-                        row_group = outcome.get("source_account_group") or source_account_group
+                        row_provider = str(outcome.get("source_provider") or source_provider or "")
+                        # Legacy keyset fingerprints are not trustworthy account labels.
+                        row_group = str(outcome.get("source_account_group") or "")
                         row_class = outcome.get("source_access_class") or source_access_class
-                        if row_class not in ("free", "premium"):
+                        if not row_provider or not row_group or row_class not in ("free", "premium"):
                             row_class = "restricted"
                         rows.append((
                             observed_at, sport, event_id,
