@@ -242,7 +242,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
 
 
 
-def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provider_results, provider_access_classes=None):
+def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provider_results, provider_access_classes=None, provider_account_access_classes=None, refreshed_provider_account_groups=None):
     """Replace refreshed providers while retaining other providers' latest quotes.
 
     The database stores one current snapshot per sport. A provider-specific
@@ -267,7 +267,11 @@ def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provi
                     if not isinstance(raw_outcome, dict):
                         continue
                     provider = str(raw_outcome.get("source_provider") or "legacy")
-                    if provider in refreshed:
+                    account_group = str(raw_outcome.get("source_account_group") or "default")
+                    refreshed_groups = (refreshed_provider_account_groups or {}).get(provider)
+                    if provider in refreshed and (
+                        refreshed_groups is None or account_group in set(refreshed_groups)
+                    ):
                         continue
                     book = by_provider.setdefault(provider, {}).setdefault(
                         str(raw_book.get("key") or ""),
