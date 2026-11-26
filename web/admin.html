@@ -169,7 +169,7 @@ tbody tr:last-child td{border-bottom:0}
         <div class="audit-status" id="subscriber-status" role="status" aria-live="polite">Subscriber directory has not been loaded.</div>
         <div class="table-wrap"><table>
           <thead><tr><th>Email</th><th>Status</th><th>Verified</th><th>Created</th><th>Entitlements</th><th>Complimentary access</th><th>Identity</th><th>Account action</th></tr></thead>
-          <tbody id="subscriber-rows"><tr><td colspan="7">Select Users to load subscribers.</td></tr></tbody>
+          <tbody id="subscriber-rows"><tr><td colspan="8">Select Users to load subscribers.</td></tr></tbody>
         </table></div>
         <div class="audit-pagination"><button id="subscriber-previous" type="button" disabled>Previous</button><span id="subscriber-page">Page 1</span><button id="subscriber-next" type="button" disabled>Next</button></div>
       </div>
@@ -454,7 +454,11 @@ tbody tr:last-child td{border-bottom:0}
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Complimentary account creation failed.");
-      status.textContent = "Created " + data.email + ". Activation email queued. Complimentary access expires " + data.expires_at + ". Identity: " + data.identity_id + ".";
+      status.textContent = "Created " + data.email + ". " +
+        (data.activation_email_queued
+          ? "Activation email queued."
+          : "IMPORTANT: account created, but activation email was not queued. Use the existing password-recovery flow to resend the activation link.") +
+        " Complimentary access expires " + data.expires_at + ". Identity: " + data.identity_id + ".";
       document.getElementById("promo-email").value = "";
       document.getElementById("promo-campaign").value = "";
       document.getElementById("promo-reason").value = "";
