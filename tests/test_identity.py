@@ -127,6 +127,16 @@ def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and
     assert identity["email_verified_at"] is None
     assert identity["password_hash"] != grant["activation_token"]
     assert {row["entitlement_key"] for row in grants} == {"dashboard", "odds"}
+    assert grant["activation_token"] not in audit["metadata_json"]
+    with store.connect() as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM billing_customers WHERE identity_id=?",
+            (grant["identity_id"],),
+        ).fetchone()[0] == 0
+        assert db.execute(
+            "SELECT COUNT(*) FROM billing_subscriptions WHERE identity_id=?",
+            (grant["identity_id"],),
+        ).fetchone()[0] == 0
     assert all(row["granted_by"] == admin_id for row in grants)
     assert all(row["expires_at"] == grant["expires_at"] for row in grants)
     assert audit["actor_identity_id"] == admin_id
