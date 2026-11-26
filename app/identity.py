@@ -2292,30 +2292,26 @@ class IdentityStore:
             or monthly_price == annual_price
         ):
             return False
-        owns_connection = db is None
-        connection = self.connect() if owns_connection else None
-        try:
-            active_db = connection if owns_connection else db
-            rows = active_db.execute(
-                """SELECT s.stripe_price_id,s.billing_interval
-                   FROM billing_subscriptions s
-                   JOIN identities i ON i.id=s.identity_id
-                   WHERE s.identity_id=? AND i.account_type='subscriber' AND i.is_active=1
-                     AND s.status='active'
-                     AND s.current_period_start IS NOT NULL
-                     AND s.current_period_end IS NOT NULL
-                     AND s.current_period_start<=? AND s.current_period_end>?
-                     AND s.stripe_price_id IN (?,?)""",
-                (identity_id, now, now, monthly_price, annual_price),
-            ).fetchall()
-            return any(
-                (row["stripe_price_id"] == monthly_price and row["billing_interval"] == "month")
-                or (row["stripe_price_id"] == annual_price and row["billing_interval"] == "year")
-                for row in rows
-            )
-        finally:
-            if owns_connection:
-                connection.close()
+        if db is None:
+            with self.connect() as active_db:
+                return self._has_active_paid_data_subscription(active_db, identity_id, now)
+        rows = db.execute(
+            """SELECT s.stripe_price_id,s.billing_interval
+               FROM billing_subscriptions s
+               JOIN identities i ON i.id=s.identity_id
+               WHERE s.identity_id=? AND i.account_type='subscriber' AND i.is_active=1
+                 AND s.status='active'
+                 AND s.current_period_start IS NOT NULL
+                 AND s.current_period_end IS NOT NULL
+                 AND s.current_period_start<=? AND s.current_period_end>?
+                 AND s.stripe_price_id IN (?,?)""",
+            (identity_id, now, now, monthly_price, annual_price),
+        ).fetchall()
+        return any(
+            (row["stripe_price_id"] == monthly_price and row["billing_interval"] == "month")
+            or (row["stripe_price_id"] == annual_price and row["billing_interval"] == "year")
+            for row in rows
+        )
 
     def has_subscriber_entitlement(self, identity_id: str, entitlement_key: str) -> bool:
         """Fail closed unless an active subscriber has the requested feature grant."""
