@@ -1551,3 +1551,44 @@ def test_local_outbox_transport_uses_encrypted_queue_without_provider_sender(tmp
     sender = routes_module.get_email_sender(request)
     assert sender is routes_module._LOCAL_OUTBOX_SENDER
     assert harness.sender.messages == []
+
+
+
+def test_local_no_email_registration_creates_verified_account_without_queue(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import app.identity as identity_module
+    import app.identity_routes as routes_module
+
+    local_policy = SimpleNamespace(
+        is_local_development=True,
+        identity_enabled=True,
+        registration_enabled=True,
+        email_verification_required=False,
+        email_transport="disabled",
+        password_recovery_enabled=False,
+        rate_limiting_enabled=True,
+    )
+    monkeypatch.setattr(identity_module, "AUTH_POLICY", local_policy)
+    monkeypatch.setattr(routes_module, "AUTH_POLICY", local_policy)
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    response = harness.post("/auth/register", {
+        "email": "local@example.com",
+        "password": "a strong local password 123",
+    })
+    assert response.status_code == 202
+    assert response.json()["message"] == "Account created. You can sign in."
+    assert harness.sender.messages == []
+    with harness.store.connect() as db:
+        identity = db.execute(
+            "SELECT email_verified_at FROM identities WHERE email='local@example.com'"
+        ).fetchone()
+        queued = db.execute(
+            "SELECT COUNT(*) FROM transactional_email_queue"
+        ).fetchone()[0]
+    assert identity["email_verified_at"]
+    assert queued == 0
+    login = harness.post("/auth/login", {
+        "email": "local@example.com",
+        "password": "a strong local password 123",
+    })
+    assert login.status_code == 200
