@@ -1182,14 +1182,18 @@ class OddsService:
             cached = self._events_cache.get(cache_key)
             if cached and now - cached[0] < self._events_cache_ttl_seconds:
                 return cached[1]
-            stored = self.db.latest_events(sport, limit=limit, offset=offset)
+            stored = self.db.latest_events(
+                sport,
+                limit=None if include_premium is not None else limit,
+                offset=0 if include_premium is not None else offset,
+            )
             if stored:
                 result = stored
             elif sport:
                 result = list(self._cache.get(sport, []))[offset:offset + limit if limit is not None else None]
             else:
                 result = [event for group in self._cache.values() for event in group]
-                if limit is not None:
+                if limit is not None and include_premium is None:
                     result = result[offset:offset + limit]
             scoped = []
             for event in result:
@@ -1215,6 +1219,8 @@ class OddsService:
                 if books:
                     event_copy["bookmakers"] = books
                     scoped.append(event_copy)
+            if limit is not None and include_premium is not None:
+                scoped = scoped[offset:offset + limit]
             self._events_cache[cache_key] = (time.monotonic(), scoped)
             return scoped
 
