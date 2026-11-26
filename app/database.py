@@ -1021,7 +1021,7 @@ class OddsDatabase:
                              AND source_access_class=?
                            LIMIT 1""",
                         (event_id, outcome, bookmaker_key, abs(point),
-                         source_provider, source_account_group, source_access_class,
+                         source_provider, source_account_group, source_access_class),
                     ).fetchone()
                     if legacy_or_current:
                         continue
