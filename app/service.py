@@ -553,7 +553,7 @@ class OddsService:
             name for name in provider_names if self._provider_key_pools[name].configured
         ]
         if not configured_names:
-            self._last_error = "No eligible configured API keys for the selected odds providers."
+            self._last_error = "No configured API keys for the selected odds providers."
             return {"ok": False, "error": self._last_error, "events": 0}
         sports = [sport] if sport else config.ODDS_SPORTS
         count = 0
