@@ -101,7 +101,16 @@ def _quote_rank(outcome, provider_rank):
     return (updated if updated is not None else float("-inf"), -provider_rank)
 
 
-def merge_provider_events(provider_results, preferred_provider_names=None, provider_access_classes=None):
+def _provider_access_class(provider_name, account_group, provider_access_classes, provider_account_access_classes):
+    """Resolve tier by provider account; configured providers fail closed for unknown groups."""
+    account_classes = provider_account_access_classes or {}
+    if provider_name in account_classes:
+        return account_classes[provider_name].get(str(account_group or "default"), "restricted")
+    access_class = (provider_access_classes or {}).get(provider_name)
+    return access_class if access_class in {"free", "premium"} else "restricted"
+
+
+def merge_provider_events(provider_results, preferred_provider_names=None, provider_access_classes=None, provider_account_access_classes=None):
     """Merge normalized event lists in explicit source-priority order.
 
     Event identity is strict: sport, ordered home/away identities, and kickoff
@@ -193,15 +202,20 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                             candidate, event, target
                         )
                         candidate["source_provider"] = provider_name
-                        access_class = (provider_access_classes or {}).get(provider_name)
-                        candidate["source_access_class"] = access_class if access_class in {"free", "premium"} else "restricted"
+                        candidate["source_account_group"] = str(candidate.get("source_account_group") or "default")
+                        candidate["source_access_class"] = _provider_access_class(
+                            provider_name, candidate["source_account_group"],
+                            provider_access_classes, provider_account_access_classes,
+                        )
                         identity_key = (candidate["source_access_class"], outcome_identity)
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
                             size_provider = str(candidate.get("size_source_provider") or provider_name)
-                            size_access_class = (provider_access_classes or {}).get(size_provider)
-                            candidate["size_source_access_class"] = (
-                                size_access_class if size_access_class in {"free", "premium"} else "restricted"
+                            size_group = str(candidate.get("size_source_account_group") or candidate["source_account_group"])
+                            candidate["size_source_account_group"] = size_group
+                            candidate["size_source_access_class"] = _provider_access_class(
+                                size_provider, size_group, provider_access_classes,
+                                provider_account_access_classes,
                             )
                         existing_index = outcome_map.get(identity_key)
                         if existing_index is None:
@@ -215,12 +229,12 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                         if _quote_rank(candidate, provider_rank.get(provider_name, 999)) > _quote_rank(
                             existing, provider_rank.get(existing_provider, 999)
                         ):
-                            for metadata in ("size", "size_source_provider", "size_source_access_class", "main"):
+                            for metadata in ("size", "size_source_provider", "size_source_account_group", "size_source_access_class", "main"):
                                 if metadata not in candidate and metadata in existing:
                                     candidate[metadata] = existing[metadata]
                             market["outcomes"][existing_index] = candidate
                         else:
-                            for metadata in ("size", "size_source_provider", "main"):
+                            for metadata in ("size", "size_source_provider", "size_source_account_group", "main"):
                                 if metadata not in existing and metadata in candidate:
                                     existing[metadata] = candidate[metadata]
 
@@ -283,6 +297,7 @@ def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provi
         retained_results + new_results,
         preferred_provider_names=refreshed,
         provider_access_classes=provider_access_classes,
+        provider_account_access_classes=provider_account_access_classes,
     )
     provider_names = list(dict.fromkeys(
         [name for name, _ in retained_results] +
