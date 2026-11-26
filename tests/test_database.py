@@ -1286,3 +1286,30 @@ def test_quote_account_group_columns_are_added_to_existing_database(tmp_path):
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(quotes)")}
     assert "source_account_group" in columns
     assert "size_source_account_group" in columns
+
+
+
+def test_clv_keeps_same_tier_account_group_entries_separate(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-account-groups.sqlite3")
+    now = datetime.now(timezone.utc)
+    base = {
+        "event_id": "same-tier-groups", "sport": "basketball_nba",
+        "matchup": "Away @ Home",
+        "commence_time": (now + timedelta(hours=4)).isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Shared Book", "bookmaker_key": "shared-book",
+        "price": -110, "fair_probability": 0.51, "ev_percent": 2.0,
+        "source_provider": "the_odds_api", "source_access_class": "free",
+    }
+    first = dict(base, source_account_group="free-account-a")
+    second = dict(base, source_account_group="free-account-b", price=-115)
+    assert db.record_clv_candidates([first], now.isoformat()) == 1
+    assert db.record_clv_candidates([second], now.isoformat()) == 1
+
+    report = db.clv_report("basketball_nba", include_premium=False)
+    assert report["summary"]["total"] == 2
+    assert {row["source_account_group"] for row in report["entries"]} == {
+        "free-account-a", "free-account-b"
+    }
