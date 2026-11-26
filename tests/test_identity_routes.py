@@ -1546,8 +1546,8 @@ def test_local_outbox_transport_uses_encrypted_queue_without_provider_sender(tmp
             email_transport="local_outbox",
         ),
     )
-    request = harness.client.build_request("POST", "/auth/register")
-    request.app = harness.client.app
+    from types import SimpleNamespace
+    request = SimpleNamespace(app=harness.client.app)
     sender = routes_module.get_email_sender(request)
     assert sender is routes_module._LOCAL_OUTBOX_SENDER
     assert harness.sender.messages == []
