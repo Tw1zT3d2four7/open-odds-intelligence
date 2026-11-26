@@ -331,6 +331,10 @@ class OddsService:
             if name in selected
             and interval > 0
             and self._provider_key_pools[name].configured
+            and (
+                config.ODDS_PROVIDER_ACCESS_CLASSES.get(name) == "free"
+                or config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED
+            )
         }
 
     def auto_refresh_provider_names(self):
