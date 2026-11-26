@@ -1563,6 +1563,7 @@ def test_local_no_email_registration_creates_verified_account_without_queue(tmp_
         is_local_development=True,
         identity_enabled=True,
         registration_enabled=True,
+        subscriber_login_enabled=True,
         email_verification_required=False,
         email_transport="disabled",
         password_recovery_enabled=False,
