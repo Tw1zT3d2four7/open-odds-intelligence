@@ -2250,7 +2250,46 @@ class IdentityStore:
                    ORDER BY e.entitlement_key""",
                 (identity_id, now, now),
             ).fetchall()
-        return [row["entitlement_key"] for row in rows]
+        entitlements = [row["entitlement_key"] for row in rows]
+        if "premium_data" not in entitlements and self._has_active_paid_data_subscription(db=None, identity_id=identity_id, now=now):
+            entitlements.append("premium_data")
+            entitlements.sort()
+        return entitlements
+
+    def _has_active_paid_data_subscription(self, db, identity_id: str, now: str) -> bool:
+        """Map only the configured monthly/yearly Stripe prices to premium data access."""
+        monthly_price = config.STRIPE_PRICE_MONTHLY_ID
+        annual_price = config.STRIPE_PRICE_YEARLY_ID
+        if (
+            not isinstance(monthly_price, str) or not monthly_price.startswith("price_")
+            or not isinstance(annual_price, str) or not annual_price.startswith("price_")
+            or monthly_price == annual_price
+        ):
+            return False
+        owns_connection = db is None
+        connection = self.connect() if owns_connection else None
+        try:
+            active_db = connection if owns_connection else db
+            rows = active_db.execute(
+                """SELECT s.stripe_price_id,s.billing_interval
+                   FROM billing_subscriptions s
+                   JOIN identities i ON i.id=s.identity_id
+                   WHERE s.identity_id=? AND i.account_type='subscriber' AND i.is_active=1
+                     AND s.status='active'
+                     AND s.current_period_start IS NOT NULL
+                     AND s.current_period_end IS NOT NULL
+                     AND s.current_period_start<=? AND s.current_period_end>?
+                     AND s.stripe_price_id IN (?,?)""",
+                (identity_id, now, now, monthly_price, annual_price),
+            ).fetchall()
+            return any(
+                (row["stripe_price_id"] == monthly_price and row["billing_interval"] == "month")
+                or (row["stripe_price_id"] == annual_price and row["billing_interval"] == "year")
+                for row in rows
+            )
+        finally:
+            if owns_connection:
+                connection.close()
 
     def has_subscriber_entitlement(self, identity_id: str, entitlement_key: str) -> bool:
         """Fail closed unless an active subscriber has the requested feature grant."""
@@ -2269,7 +2308,11 @@ class IdentityStore:
                    LIMIT 1""",
                 (identity_id, entitlement_key, now, now),
             ).fetchone()
-        return row is not None
+            if row is not None:
+                return True
+            if entitlement_key == "premium_data":
+                return self._has_active_paid_data_subscription(db, identity_id, now)
+        return False
 
     def set_subscriber_status(
         self,
