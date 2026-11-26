@@ -906,15 +906,18 @@ class OddsService:
             and config.DISCORD_WEBHOOK_URL
             and "therundown" in self.active_provider_names()
             and pool is not None and pool.configured
+            and bool(self._eligible_provider_account_groups("therundown"))
         )
 
     def sync_simulation_results(self):
         """Collect verified final scores for archived games using the configured key pool."""
         discord_enabled = self.discord_results_sync_enabled()
+        eligible_account_groups = self._eligible_provider_account_groups("therundown")
         simulator_enabled = bool(
             config.SIMULATION_RESULTS_SYNC_ENABLED
             and "therundown" in self.active_provider_names()
             and self._provider_key_pools["therundown"].configured
+            and eligible_account_groups
         )
         if not (discord_enabled or simulator_enabled):
             self._simulation_results_status.update({
@@ -957,7 +960,7 @@ class OddsService:
                 last_error = None
                 for _ in range(pool.status()["configured_keys"]):
                     try:
-                        lease = pool.acquire()
+                        lease = pool.acquire(allowed_account_groups=eligible_account_groups)
                     except NoAvailableKeys as exc:
                         last_error = ProviderError(str(exc))
                         break
