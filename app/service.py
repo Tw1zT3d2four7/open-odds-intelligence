@@ -218,12 +218,33 @@ class OddsService:
         self._last_alert_sent = 0
         self._last_alert_error = None
 
+    @staticmethod
+    def _safe_provider_usage(usage):
+        if not isinstance(usage, dict):
+            return {}
+        safe = {}
+        for name, value in usage.items():
+            normalized = str(name).lower()
+            if any(secret in normalized for secret in ("key", "token", "secret", "email", "customer")):
+                continue
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                safe[str(name)] = value
+        return safe
+
     def _record_provider_key_usage(self, provider_name, pool, lease, usage):
         pool.record_usage(lease, usage)
         if usage:
+            safe_usage = next(
+                (
+                    item.get("usage", {})
+                    for item in pool.status().get("keys", [])
+                    if item.get("key_id") == lease.fingerprint
+                ),
+                {},
+            )
             self.db.set_state(
                 f"provider_key_usage:{provider_name}:{lease.fingerprint}",
-                json.dumps(usage),
+                json.dumps(safe_usage),
             )
 
     def _current_provider_key_fingerprint(self, provider_name=None):
@@ -245,7 +266,7 @@ class OddsService:
         if not usage:
             return
         provider_name = provider_name or config.ODDS_PROVIDER
-        self._provider_usage = dict(usage)
+        self._provider_usage = self._safe_provider_usage(usage)
         self.db.set_state("provider_usage", json.dumps(self._provider_usage))
         self.db.set_state("provider_usage_provider", provider_name)
         self.db.set_state(
