@@ -959,6 +959,8 @@ def test_admin_overview_is_mfa_protected_no_store_and_secret_minimized(tmp_path,
                     "available_keys": 1, "quota_cooldown_keys": 1, "disabled_keys": 0,
                     "usage": {
                         "credits_remaining": 42,
+                        "quota_floor_triggered": "credits_remaining",
+                        "quota_floor_threshold": 50,
                         "usage_observed_at": "2026-11-25T12:00:00Z",
                         "api_key": "must-not-leak",
                     },
@@ -1005,6 +1007,8 @@ def test_admin_overview_is_mfa_protected_no_store_and_secret_minimized(tmp_path,
         "status": "available",
         "usage": {
             "credits_remaining": 42,
+            "quota_floor_triggered": "credits_remaining",
+            "quota_floor_threshold": 50,
             "usage_observed_at": "2026-11-25T12:00:00Z",
         },
     }]
