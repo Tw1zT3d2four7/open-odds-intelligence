@@ -583,18 +583,33 @@ class OddsDatabase:
                             book_title = book.get("title")
                             if not isinstance(book_title, str) or not book_title.strip():
                                 book_title = book_key
+                            source_provider = str(outcome.get("source_provider") or "")
+                            source_account_group = str(outcome.get("source_account_group") or "")
+                            source_access_class = (
+                                outcome.get("source_access_class")
+                                if outcome.get("source_access_class") in {"free", "premium"}
+                                else "restricted"
+                            )
+                            if not source_provider or not source_account_group:
+                                source_access_class = "restricted"
+                            size_source_provider = str(outcome.get("size_source_provider") or "")
+                            size_source_account_group = str(outcome.get("size_source_account_group") or "")
+                            size_source_access_class = (
+                                outcome.get("size_source_access_class")
+                                if outcome.get("size_source_access_class") in {"free", "premium"}
+                                else "restricted"
+                            )
+                            if not size_source_provider or not size_source_account_group:
+                                size_source_access_class = "restricted"
                             row = (snapshot_id, event_id, sport,
                                    *event_metadata, book_key, book_title, market_key,
                                    outcome_name, description, point, price, updated_at,
-                                   str(outcome.get("source_provider") or ""),
-                                   str(outcome.get("source_account_group") or ""),
-                                   outcome.get("source_access_class") if outcome.get("source_access_class") in {"free", "premium"} else "restricted",
+                                   source_provider, source_account_group, source_access_class,
                                    (1 if outcome.get("main") else 0) if "main" in outcome else None,
                                    json.dumps(outcome.get("size"), sort_keys=True)
                                    if isinstance(outcome.get("size"), dict) else None,
-                                   str(outcome.get("size_source_provider") or ""),
-                                   str(outcome.get("size_source_account_group") or ""),
-                                   outcome.get("size_source_access_class") if outcome.get("size_source_access_class") in {"free", "premium"} else "restricted")
+                                   size_source_provider, size_source_account_group,
+                                   size_source_access_class)
                             identity = (row[1], book_key, market_key, outcome_name, description, point, row[15], row[16], row[17])
                             if identity in conflicted_quotes:
                                 continue
