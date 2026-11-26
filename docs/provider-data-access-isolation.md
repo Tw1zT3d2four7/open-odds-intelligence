@@ -131,23 +131,23 @@ The current-limits query, change-history window, and exact-selection history app
 
 Automated coverage includes free-versus-paid current limits, exact-selection history, source-partitioned change windows, restricted legacy rows, and premium diagnostic redaction. CI run 45746913326 passed **990 tests with 1 non-blocking warning**.
 
-At the time of this update, premium-specific CLV tracking and per-account access-class configuration were still outstanding; both are now implemented in the sections above but await full CI verification. Broader provider usage metering/cost guardrails and isolated HTTPS staging acceptance remain outstanding. Premium polling remains disabled by default, and this implementation does not authorize provider purchases, production deployment, merge, or live billing.
+Premium-specific CLV tracking and per-account access-class enforcement are now implemented and covered by CI. Provider quota telemetry and configurable reserve floors are also implemented; provider-specific monetary cost estimates and isolated HTTPS staging acceptance remain outstanding. Premium polling remains disabled by default, and this implementation does not authorize provider purchases, production deployment, merge, or live billing.
 
 
 ### Provider account-group key handling — 2026-11-26
 
 Provider key pools accept optional `group|API_KEY` entries in the existing comma/newline-separated key settings. Keys without a group remain in the shared `default` group. The service now passes the raw configured key-entry strings into the pool rather than flattening them first, preserving group identity for quota cooldowns and status reporting. A quota response from one key pauses every configured key in that same group, while keys in a different group remain independently eligible. API key bytes remain case-preserved; group labels are metadata, not credentials.
 
-This closes a key-pool wiring gap but does not yet enable independent free/premium access classification or independent polling schedules by account group. Provider access classes are still provider-level for ingestion and scheduling. Do not configure mixed free/premium account groups for one provider expecting separate entitlement behavior until that next layer is implemented and tested.
+This was the foundation for the later account-tier enforcement described below. Group labels now flow through quote ingestion, storage, refresh replacement, market limits, CLV, and score synchronization. Account-specific access-class overrides and premium polling gates are enforced at lease time; do not enable premium polling in production before isolated staging acceptance.
 
 
 ### Tier-separated CLV tracking — 2026-11-26
 
-CLV entries now use access class as part of their exact-selection identity, allowing a free and premium observation for the same event/book/market/outcome/line to be stored independently. Existing SQLite databases are migrated transactionally by rebuilding the CLV table, preserving row IDs and historical values while assigning legacy unknown rows to the restricted class. The migration recreates the pending index and changes spread duplicate detection to include access class.
+CLV entries now use provider, account group, and access class as part of their exact-selection identity, allowing observations from separate provider accounts and tiers for the same event/book/market/outcome/line to be stored independently. Existing SQLite databases are migrated transactionally by rebuilding the CLV table, preserving row IDs and historical values while assigning legacy unknown rows to the restricted class. The migration recreates the pending index and changes spread duplicate detection to include access class.
 
-Refresh processing now calculates free CLV from the free-only event view. Premium CLV is calculated from a premium-only projection of the paid view, with non-premium outcomes removed before market consensus is computed. This prevents a premium entry's fair price from being derived from free-tier quotes. Closing-consensus snapshot and quote selection are also restricted to the entry's exact access class. Subscriber-facing report scope remains free-only or free-plus-premium. CLV rows now also retain the source provider and non-secret account-group label for the entry quote, with an additive migration that preserves existing records and leaves legacy provenance blank.
+Refresh processing now calculates free CLV from the free-only event view. Premium CLV is calculated from a premium-only projection of the paid view, with non-premium outcomes removed before market consensus is computed. This prevents a premium entry's fair price from being derived from free-tier quotes. Closing-consensus snapshot and quote selection are restricted to the entry's access class, while same-tier account groups remain distinct entry provenance. Subscriber-facing report scope remains free-only or free-plus-premium. CLV rows now also retain the source provider and non-secret account-group label for the entry quote, with an additive migration that preserves existing records and leaves legacy provenance blank.
 
-These changes are implemented but require CI verification before acceptance. Per-account classification and independent account-group polling remain outstanding.
+These changes are implemented and covered by the 1,011-test CI checkpoint recorded below. Per-account classification and independent account-group polling are now implemented as described in the following section.
 
 
 ### Provider account-tier enforcement — 2026-11-26
@@ -173,3 +173,21 @@ When a provider reports the configured remaining-quota metric at or below its fl
 
 
 Automated merge, key-pool, database migration, CLV, and Admin Overview tests cover same-provider free/premium coexistence, independent same-tier account groups, fail-closed unknown groups, eligible-group polling, quota reserve floors, and credential sanitization. CI run 45757602220 at commit 0473c22b358c0f58e89da38224f46beb728ab51b passed 1,011 tests with one non-blocking warning. Do not enable mixed-tier account configuration or premium polling in production until isolated staging acceptance passes.
+
+
+
+## Isolated HTTPS staging acceptance checklist
+
+Run this checklist only in the dedicated non-production staging environment described in docs/roadmap.md. Do not point it at production keys, production data, or the production domain.
+
+1. Keep ODDS_PREMIUM_PROVIDER_POLLING_ENABLED=false. Configure one explicitly free and one explicitly premium account group for a provider. Confirm scheduled and manual refreshes lease only the free group; confirm the premium key remains available and is never called.
+2. Confirm a free subscriber receives only free quotes, quote history, market-limit observations, movement data, and CLV entries. Confirm a paid test subscriber receives free plus premium data. Verify cache keys and history windows do not mix the tiers.
+3. In staging only, enable premium polling and configure a quota reserve floor for the premium group. Confirm premium quotes become available only to the paid test subscriber.
+4. Return a provider usage response at or below the configured reserve floor. Confirm every key in that account group enters cooldown, other groups remain available, the Admin Overview reports the floor trigger and reset, and a successful HTTP response does not clear the cooldown.
+5. Restart the staging service while the group is paused. Confirm the saved quota telemetry restores the group cooldown and that no credential-like values appear in SQLite state, logs, health responses, or Admin Overview.
+6. Refresh one account group while another same-tier or premium group has stored quotes. Confirm only the leased group's old quotes are replaced; the other group's quote history and CLV provenance remain intact.
+7. Remove an account-group classification and test an unrecognized group. Confirm both fail closed as restricted and do not appear in free or paid subscriber data. Confirm legacy rows without trustworthy account-group provenance remain restricted.
+8. Exercise OddsLink standalone market-limit polling and TheRundown score synchronization with a premium-only group while premium polling is disabled. Confirm neither background path can lease that group.
+9. Export the staging database and configuration backup, perform the documented restore/rollback drill, then disable provider polling and stop staging workers.
+
+Acceptance requires captured evidence for each check, no leaked credentials, no cross-tier data, and explicit operator sign-off. Passing automated CI is not a substitute for this live staging exercise.
