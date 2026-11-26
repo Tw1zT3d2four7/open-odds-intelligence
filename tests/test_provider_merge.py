@@ -257,3 +257,51 @@ def test_unlisted_account_group_is_restricted_when_provider_overrides_exist():
 
     outcome = merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
     assert outcome["source_access_class"] == "restricted"
+
+
+
+def test_incremental_refresh_replaces_only_the_leased_account_group():
+    free = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "free-account"}
+    ])])
+    premium = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -125, "source_account_group": "premium-account"}
+    ])])
+    access = {
+        "the_odds_api": {"free-account": "free", "premium-account": "premium"}
+    }
+    existing = merge_provider_events(
+        [("the_odds_api", [free]), ("the_odds_api", [premium])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes=access,
+    )
+
+    refreshed_free = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -105, "source_account_group": "free-account"}
+    ])])
+    merged, _ = merge_provider_snapshot(
+        existing,
+        ["the_odds_api"],
+        [("the_odds_api", [refreshed_free])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes=access,
+        refreshed_provider_account_groups={"the_odds_api": {"free-account"}},
+    )
+    outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    by_class = {row["source_access_class"]: row for row in outcomes}
+    assert by_class["free"]["price"] == -105
+    assert by_class["premium"]["price"] == -125
+
+    # An empty successful free-account refresh removes only that account's old
+    # quotes; premium-account data remains available in the snapshot.
+    empty_refresh, _ = merge_provider_snapshot(
+        merged,
+        ["the_odds_api"],
+        [("the_odds_api", [])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes=access,
+        refreshed_provider_account_groups={"the_odds_api": {"free-account"}},
+    )
+    remaining = empty_refresh[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert [row["source_access_class"] for row in remaining] == ["premium"]
+    assert remaining[0]["price"] == -125
