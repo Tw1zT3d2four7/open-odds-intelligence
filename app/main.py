@@ -111,6 +111,9 @@ async def lifespan(app: FastAPI):
     results_task = None
     alert_task = None
     email_task = None
+    if (not _include_premium_data(request)
+            and config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") != "free"):
+        return {"ok": False, "skipped": True, "error": "Market-limit source is not available in the free data tier."}
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
         and service._provider_key_pools["oddslink"].configured
@@ -306,7 +309,7 @@ def health():
 
 
 @app.post("/api/limits/refresh", dependencies=dependencies_for_route("POST", "/api/limits/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def refresh_limits():
+def refresh_limits(request: Request):
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
         and service._provider_key_pools["oddslink"].configured
@@ -329,10 +332,10 @@ def refresh_limits():
 
 
 @app.get("/api/limits", dependencies=dependencies_for_route("GET", "/api/limits", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def market_limits(sport: str | None = None,
+def market_limits(request: Request, sport: str | None = None,
                   limit: int = Query(25, ge=1, le=100),
                   offset: int = Query(0, ge=0)):
-    rows = limits_monitor.current(sport, 2000)
+    rows = (limits_monitor.current(sport, 2000) if _include_premium_data(request) or config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") == "free" else [])
     page = _page_results(rows, limit, offset)
     return {"limits": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
@@ -341,11 +344,11 @@ def market_limits(sport: str | None = None,
 
 
 @app.get("/api/limits/changes", dependencies=dependencies_for_route("GET", "/api/limits/changes", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def market_limits_changes(sport: str | None = None,
+def market_limits_changes(request: Request, sport: str | None = None,
                           direction: str = Query("increased", pattern="^(increased|decreased|all)$"),
                           limit: int = Query(25, ge=1, le=100),
                           offset: int = Query(0, ge=0)):
-    rows = limits_monitor.changes(sport, direction, 2000)
+    rows = (limits_monitor.changes(sport, direction, 2000) if _include_premium_data(request) or config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") == "free" else [])
     page = _page_results(rows, limit, offset)
     return {"changes": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
@@ -353,12 +356,13 @@ def market_limits_changes(sport: str | None = None,
 
 
 @app.get("/api/limits/history", dependencies=dependencies_for_route("GET", "/api/limits/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def market_limits_history(event_id: str, bookmaker: str, market: str,
+def market_limits_history(request: Request, event_id: str, bookmaker: str, market: str,
                           outcome: str, point: float | None = None,
                           limit: int = Query(500, ge=1, le=2000)):
-    return {"observations": limits_monitor.history(
+    observations = (limits_monitor.history(
         event_id, bookmaker, market, outcome, point, limit
-    )}
+    ) if _include_premium_data(request) or config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") == "free" else [])
+    return {"observations": observations}
 
 @app.get("/api/odds", dependencies=dependencies_for_route("GET", "/api/odds", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def odds(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
