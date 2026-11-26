@@ -1168,7 +1168,7 @@ class OddsService:
         with self._events_cache_lock:
             self._events_cache.clear()
 
-    def events(self, sport=None, limit=None, offset=0, include_premium=False):
+    def events(self, sport=None, limit=None, offset=0, include_premium=True):
         """Return a short-lived shared snapshot for concurrent dashboard reads."""
         cache_key = (sport or "__all__") + f":{limit}:{offset}:premium={bool(include_premium)}"
         now = time.monotonic()
