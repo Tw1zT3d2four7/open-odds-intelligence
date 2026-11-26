@@ -150,3 +150,45 @@ def test_same_origin_csrf_rejects_malformed_host_authority(host):
     with pytest.raises(HTTPException) as error:
         require_same_origin_csrf(request)
     assert error.value.status_code == 403
+
+
+def test_http_csrf_origin_is_allowed_only_for_loopback_development(monkeypatch):
+    from dataclasses import replace
+    import app.auth as auth_module
+
+    monkeypatch.setattr(
+        auth_module, "AUTH_POLICY",
+        replace(auth_module.AUTH_POLICY, environment="development"),
+    )
+    token = "local-development-csrf"
+    request = make_request(
+        headers={
+            "host": "localhost:8765",
+            "origin": "http://localhost:8765",
+            "x-ooi-csrf-token": token,
+        },
+        cookie=f"{CSRF_COOKIE}={token}",
+    )
+    require_same_origin_csrf(request)
+
+
+def test_http_csrf_origin_is_never_allowed_for_public_host_in_development(monkeypatch):
+    from dataclasses import replace
+    import app.auth as auth_module
+
+    monkeypatch.setattr(
+        auth_module, "AUTH_POLICY",
+        replace(auth_module.AUTH_POLICY, environment="development"),
+    )
+    token = "local-development-csrf"
+    request = make_request(
+        headers={
+            "host": "odds.example.com",
+            "origin": "http://odds.example.com",
+            "x-ooi-csrf-token": token,
+        },
+        cookie=f"{CSRF_COOKIE}={token}",
+    )
+    with pytest.raises(HTTPException) as error:
+        require_same_origin_csrf(request)
+    assert error.value.status_code == 403
