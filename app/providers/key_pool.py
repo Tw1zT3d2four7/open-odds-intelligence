@@ -48,7 +48,7 @@ def parse_api_key_entries(*values: str | None) -> list[tuple[str, str]]:
                 continue
             if "|" in item:
                 group, key = item.split("|", 1)
-                group, key = group.strip(), key.strip()
+                group, key = group.strip().lower(), key.strip()
                 if not group or not key:
                     continue
             else:
