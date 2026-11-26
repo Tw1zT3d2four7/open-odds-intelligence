@@ -24,6 +24,12 @@ def test_snapshot_round_trip_and_points(tmp_path):
         "size_source_account_group": "props-account",
         "size_source_access_class": "premium",
     })
+    events_to_save[0]["bookmakers"][0]["markets"][0]["outcomes"].append({
+        "name": "Home", "price": -105, "point": -3.5,
+        "source_provider": "the_odds_api",
+        "source_account_group": "free-account-b",
+        "source_access_class": "free",
+    })
     db.save_snapshot("basketball_nba", events_to_save, "test", "2026-11-17T12:00:00Z")
     events = db.latest_events("basketball_nba")
     assert len(events) == 1
@@ -36,6 +42,10 @@ def test_snapshot_round_trip_and_points(tmp_path):
     assert home["size_source_provider"] == "oddize"
     assert home["size_source_account_group"] == "props-account"
     assert home["size_source_access_class"] == "premium"
+    assert {
+        item["source_account_group"]
+        for item in spread["outcomes"] if item["name"] == "Home"
+    } == {"free-account", "free-account-b"}
     assert db.snapshot_status()["snapshots"] == 1
 
 
