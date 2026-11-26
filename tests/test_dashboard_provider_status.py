@@ -31,4 +31,5 @@ def test_private_admin_overview_renders_account_group_quota_telemetry():
     assert 'id="overview-provider-policy"' in html
     assert "data.provider_accounts" in html
     assert "credits_remaining" in html
+    assert "quota_floor_triggered" in html
     assert "premium_provider_polling_enabled" in html
