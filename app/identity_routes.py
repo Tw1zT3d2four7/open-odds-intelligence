@@ -1460,6 +1460,35 @@ def revoke_subscriber_account_sessions(
 
 
 @router.get(
+    "/admin/authentication-policy",
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_authentication_policy(
+    response: Response,
+    _session: dict = Depends(require_administrator),
+):
+    """Expose active non-secret auth policy to the MFA-protected admin console."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return {
+        "environment": AUTH_POLICY.environment,
+        "auth_mode": config.AUTH_MODE,
+        "identity_enabled": AUTH_POLICY.identity_enabled,
+        "registration_enabled": AUTH_POLICY.registration_enabled,
+        "subscriber_login_enabled": AUTH_POLICY.subscriber_login_enabled,
+        "email_verification_required": AUTH_POLICY.email_verification_required,
+        "email_transport": AUTH_POLICY.email_transport,
+        "password_recovery_enabled": AUTH_POLICY.password_recovery_enabled,
+        "administrator_mfa_required": AUTH_POLICY.administrator_mfa_required,
+        "subscriber_mfa_required": AUTH_POLICY.subscriber_mfa_required,
+        "rate_limiting_enabled": AUTH_POLICY.rate_limiting_enabled,
+        "csrf_required": AUTH_POLICY.csrf_required,
+        "subscriber_session_idle_seconds": AUTH_POLICY.subscriber_session_idle_seconds,
+        "administrator_session_idle_seconds": AUTH_POLICY.administrator_session_idle_seconds,
+    }
+
+
+@router.get(
     "/admin/sessions",
     dependencies=[Depends(require_administrator)],
 )
