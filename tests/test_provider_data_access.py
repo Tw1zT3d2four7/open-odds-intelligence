@@ -25,6 +25,7 @@ def _event(provider="feed", access_class="free", event_id="event-1"):
                     "source_access_class": access_class,
                     "size": {"max": 1000},
                     "size_source_provider": "size-feed",
+                    "size_source_account_group": "default",
                     "size_source_access_class": "premium",
                 }],
             }],
