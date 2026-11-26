@@ -470,3 +470,33 @@ def test_clv_analysis_keeps_same_tier_account_group_candidates_separate():
         if row["bookmaker_key"] == "book-a" and row["outcome"] == "Home"
     ]
     assert {row["source_account_group"] for row in book_a_home} == {"free-a", "free-b"}
+
+
+
+def test_market_analysis_never_builds_a_two_way_market_from_different_account_groups():
+    from app.markets import analyze_markets
+
+    events = [{
+        "id": "split-account-market", "sport_key": "basketball_nba",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [
+            {"key": "book-a", "title": "Book A", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -110, "source_provider": "the_odds_api",
+                     "source_account_group": "free-account", "source_access_class": "free"},
+                    {"name": "Away", "price": -110, "source_provider": "the_odds_api",
+                     "source_account_group": "premium-account", "source_access_class": "premium"},
+                ]}]},
+            {"key": "book-b", "title": "Book B", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -115, "source_provider": "the_odds_api",
+                     "source_account_group": "free-account", "source_access_class": "free"},
+                    {"name": "Away", "price": -105, "source_provider": "the_odds_api",
+                     "source_account_group": "premium-account", "source_access_class": "premium"},
+                ]}]},
+        ],
+    }]
+
+    result = analyze_markets(events, min_ev=-100, min_consensus_books=1)
+    assert result["opportunities"] == []
+    assert result["arbitrage"] == []
