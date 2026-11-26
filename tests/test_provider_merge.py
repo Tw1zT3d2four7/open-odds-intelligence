@@ -14,6 +14,8 @@ def _event(event_id, books, home="Home", away="Away", start="2026-11-23T20:00:00
 
 
 def _book(key, outcomes, market="h2h"):
+    for outcome in outcomes:
+        outcome.setdefault("source_account_group", "default")
     return {"key": key, "title": key.title(), "markets": [
         {"key": market, "outcomes": outcomes}
     ]}
