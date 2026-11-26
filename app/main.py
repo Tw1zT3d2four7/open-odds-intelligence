@@ -31,6 +31,13 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
+def _include_premium_data(request: Request) -> bool:
+    """Return the server-authorized source scope established by route dependencies."""
+    return config.AUTH_MODE == "legacy_basic" or bool(
+        getattr(request.state, "include_premium_data", False)
+    )
+
+
 async def _limits_refresh_loop():
     while True:
         delay = config.LIMITS_REFRESH_INTERVAL_SECONDS
@@ -354,8 +361,8 @@ def market_limits_history(event_id: str, bookmaker: str, market: str,
     )}
 
 @app.get("/api/odds", dependencies=dependencies_for_route("GET", "/api/odds", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def odds(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    return {"events": service.events(sport, limit=limit, offset=offset), "limit": limit, "offset": offset, "status": service.status()}
+def odds(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return {"events": service.events(sport, limit=limit, offset=offset, include_premium=_include_premium_data(request)), "limit": limit, "offset": offset, "status": service.status()}
 
 
 @app.post("/api/refresh", dependencies=dependencies_for_route("POST", "/api/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
@@ -375,16 +382,16 @@ def _page_results(items, limit, offset):
 
 
 @app.get("/api/market-board", dependencies=dependencies_for_route("GET", "/api/market-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def market_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    page = _page_results(market_board(service.events(sport)), limit, offset)
+def market_board_api(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    page = _page_results(market_board(service.events(sport, include_premium=_include_premium_data(request))), limit, offset)
     return {"quotes": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"]}
 
 
 @app.get("/api/bookmaker-board", dependencies=dependencies_for_route("GET", "/api/bookmaker-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def bookmaker_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+def bookmaker_board_api(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
     """Return every valid quote, paginated as 25 rendered sportsbook rows."""
-    page = _page_results(market_board(service.events(sport), best_only=False), limit, offset)
+    page = _page_results(market_board(service.events(sport, include_premium=_include_premium_data(request)), best_only=False), limit, offset)
     return {"quotes": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"]}
 
@@ -407,7 +414,7 @@ def _simulation_snapshot_freshness(sport: str):
                  if isinstance(item, dict) and item.get("sport") == sport), None)
 
 
-def _simulation_games_for_sport(sport: str):
+def _simulation_games_for_sport(sport: str, include_premium: bool = False):
     games = []
     fitted_models = load_fitted_models(config.SIMULATION_MODEL_PATH)
     league_model = fitted_models.get(sport)
@@ -417,7 +424,7 @@ def _simulation_games_for_sport(sport: str):
         if isinstance(freshness, dict) else "unavailable"
     )
     freshness_age = freshness.get("age_seconds") if isinstance(freshness, dict) else None
-    for event in service.events(sport):
+    for event in service.events(sport, include_premium=include_premium):
         if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
             continue
         from .simulation import market_readiness
@@ -448,22 +455,22 @@ def _simulation_games_for_sport(sport: str):
 
 
 @app.get("/api/simulation/games", dependencies=dependencies_for_route("GET", "/api/simulation/games", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def simulation_games(sport: str):
+def simulation_games(request: Request, sport: str):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
-    games = _simulation_games_for_sport(sport)
+    games = _simulation_games_for_sport(sport, _include_premium_data(request))
     return {"games": games, "note": "Games come from the latest locally stored odds snapshot; this read-only request makes no provider call."}
 
 
 @app.post("/api/simulation/games/refresh", dependencies=dependencies_for_route("POST", "/api/simulation/games/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def refresh_simulation_games(sport: str):
+def refresh_simulation_games(request: Request, sport: str):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
     result = service.refresh(sport)
     if not result.get("ok"):
         detail = result.get("error") or "The selected league could not be refreshed."
         raise HTTPException(status_code=502, detail=detail)
-    games = _simulation_games_for_sport(sport)
+    games = _simulation_games_for_sport(sport, _include_premium_data(request))
     return {
         "games": games,
         "refresh": result,
@@ -472,10 +479,10 @@ def refresh_simulation_games(sport: str):
 
 
 @app.post("/api/simulation/run", dependencies=dependencies_for_route("POST", "/api/simulation/run", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
+def simulate_game(request: Request, sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
-    event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
+    event = next((item for item in service.events(sport, include_premium=_include_premium_data(request)) if str(item.get("id")) == event_id), None)
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
     from .simulation import _validate_upcoming_event
@@ -505,8 +512,8 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
 
 
 @app.get("/api/player-props", dependencies=dependencies_for_route("GET", "/api/player-props", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    events = service.events(sport)
+def player_props(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    events = service.events(sport, include_premium=_include_premium_data(request))
     quotes = []
     for event in events:
         for book in event.get("bookmakers", []):
@@ -578,11 +585,11 @@ def history(event_id: str, market: str, outcome: str,
 
 
 @app.get("/api/opportunities", dependencies=dependencies_for_route("GET", "/api/opportunities", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def opportunities(sport: str | None = None,
+def opportunities(request: Request, sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20),
                   limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport), min_ev, min_consensus_books)
+    result = analyze_markets(service.events(sport, include_premium=_include_premium_data(request)), min_ev, min_consensus_books)
     page = _page_results(result["opportunities"], limit, offset)
     return {"opportunities": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
@@ -590,8 +597,8 @@ def opportunities(sport: str | None = None,
 
 
 @app.get("/api/arbitrage", dependencies=dependencies_for_route("GET", "/api/arbitrage", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport), min_ev=101, arbitrage_only=True)
+def arbitrage(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    result = analyze_markets(service.events(sport, include_premium=_include_premium_data(request)), min_ev=101, arbitrage_only=True)
     page = _page_results(result["arbitrage"], limit, offset)
     return {"arbitrage": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
