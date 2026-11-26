@@ -1118,6 +1118,7 @@ def administrator_overview(
         quota_floor_config = status.get("provider_account_quota_floors", {})
         quota_fields = {
             "credits_remaining", "datapoints_remaining", "requests_remaining",
+            "remaining_requests", "remaining_credits", "remaining_objects",
             "monthly_objects_remaining", "requests_used", "credits_used",
             "datapoints_used", "monthly_objects_used", "usage_observed_at",
             "period_resets_at", "monthly_reset_at", "daily_reset_at",
