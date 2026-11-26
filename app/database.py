@@ -1038,8 +1038,13 @@ class OddsDatabase:
         """
         now = datetime.now(timezone.utc)
         with self.connect() as db:
-            pending_sql = "SELECT * FROM clv_entries WHERE status='pending'"
-            pending_args = []
+            scope_clause = ""
+            scope_args = []
+            if include_premium is not None:
+                scope_clause = " AND (source_access_class='free' OR (?=1 AND source_access_class='premium'))"
+                scope_args.append(1 if include_premium else 0)
+            pending_sql = "SELECT * FROM clv_entries WHERE status='pending'" + scope_clause
+            pending_args = list(scope_args)
             if sport:
                 pending_sql += " AND sport=?"
                 pending_args.append(sport)
@@ -1068,10 +1073,10 @@ class OddsDatabase:
                             "UPDATE clv_entries SET status='insufficient_close_data' WHERE id=?",
                             (entry["id"],),
                         )
-            sql = "SELECT * FROM clv_entries"
-            args = []
+            sql = "SELECT * FROM clv_entries WHERE 1=1" + scope_clause
+            args = list(scope_args)
             if sport:
-                sql += " WHERE sport=?"
+                sql += " AND sport=?"
                 args.append(sport)
             sql += " ORDER BY entry_at DESC LIMIT ?"
             args.append(max(1, min(int(limit), 2000)))
@@ -1082,10 +1087,13 @@ class OddsDatabase:
                 AVG(CASE WHEN status='closed' THEN clv_percent END) average_clv_percent,
                 SUM(CASE WHEN status='closed' AND clv_percent>0 THEN 1 ELSE 0 END) positive_clv,
                 SUM(CASE WHEN status='closed' AND clv_percent<0 THEN 1 ELSE 0 END) negative_clv
-                FROM clv_entries"""
+                FROM clv_entries WHERE 1=1""" + scope_clause
             if sport:
-                summary_sql += " WHERE sport=?"
-            summary = db.execute(summary_sql, [sport] if sport else []).fetchone()
+                summary_sql += " AND sport=?"
+            summary_args = list(scope_args)
+            if sport:
+                summary_args.append(sport)
+            summary = db.execute(summary_sql, summary_args).fetchone()
         return {"entries": rows, "summary": dict(summary),
                 "method": "Entry American odds compared with last pregame no-vig consensus price from at least two other complete same-line sportsbooks. Positive means the entry price beat that consensus close; this is not betting profit or a win-rate measure."}
 
