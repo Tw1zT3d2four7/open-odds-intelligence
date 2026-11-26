@@ -144,6 +144,8 @@ def test_clv_history_is_scoped_and_legacy_rows_fail_closed(tmp_path):
         "price": -110,
         "fair_probability": 0.55,
         "ev_percent": 5.0,
+        "source_provider": "the_odds_api",
+        "source_account_group": "default",
     }
     for event_id, access_class in (
         ("free-entry", "free"),
