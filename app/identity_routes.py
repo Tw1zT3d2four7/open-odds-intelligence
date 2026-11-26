@@ -230,7 +230,7 @@ class ComplimentarySubscriberInput(StrictModel):
     entitlements: list[str] = Field(min_length=1, max_length=32)
     duration_days: int = Field(ge=1, le=366)
     campaign: str = Field(min_length=1, max_length=80)
-    reason: str = Field(min_length=1, max_length=500)
+    reason_code: str = Field(pattern="^(giveaway_winner|promotional_campaign|sponsorship|service_recovery|other)$")
 
 
 def _rate_limit(
@@ -1198,7 +1198,7 @@ def create_complimentary_subscriber(
             actor_identity_id=session["identity_id"],
             expires_at=datetime.now(timezone.utc) + timedelta(days=payload.duration_days),
             campaign=payload.campaign,
-            reason=payload.reason,
+            reason_code=payload.reason_code,
         )
         try:
             _deliver_or_record_failure(
