@@ -2,7 +2,7 @@
 
 **Implementation:** `app/identity_routes.py`  
 **Tests:** `tests/test_identity_routes.py`, `tests/test_route_policy.py`, `tests/test_route_authorization.py`  
-**Status:** Implemented, separately policy-classified, and CI-tested. Registered in FastAPI but exposed only when `AUTH_MODE=identity`.  
+**Status:** Existing identity router is implemented and CI-tested. Complimentary-subscriber routes are now implemented and separately policy-classified on the current feature branch; the latest changes are awaiting CI verification. Registered in FastAPI but exposed only when `AUTH_MODE=identity`.  
 **Production impact:** No behavior change in default `legacy_basic` mode; identity mode remains authentication-only staging.
 
 ## Route inventory
