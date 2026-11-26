@@ -433,6 +433,12 @@ def get_email_sender(request: Request):
             raise HTTPException(status_code=503, detail="Local email outbox is not configured.") from None
         return _LOCAL_OUTBOX_SENDER
     if AUTH_POLICY.email_transport == "disabled":
+        if (
+            AUTH_POLICY.is_local_development
+            and not AUTH_POLICY.email_verification_required
+            and not AUTH_POLICY.password_recovery_enabled
+        ):
+            return None
         raise HTTPException(status_code=503, detail="Authentication email delivery is disabled.")
     try:
         validate_email_queue_configuration()
@@ -795,6 +801,8 @@ def register_subscriber(
             status_code=503,
             detail="Registration is temporarily unavailable. Please try again later.",
         ) from None
+    if not AUTH_POLICY.email_verification_required:
+        return {"message": "Account created. You can sign in."}
     try:
         token = store.create_email_verification_challenge(payload.email)
         if token:
