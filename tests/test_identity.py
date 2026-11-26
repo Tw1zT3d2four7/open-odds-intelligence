@@ -1900,3 +1900,45 @@ def test_complimentary_premium_data_grant_expires_without_stripe_subscription(tm
     assert store.has_subscriber_entitlement(grant["identity_id"], "premium_data") is True
     now[0] += timedelta(days=2)
     assert store.has_subscriber_entitlement(grant["identity_id"], "premium_data") is False
+
+
+
+def test_only_local_no_verification_profile_preverifies_new_subscriber(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import app.identity as identity_module
+
+    monkeypatch.setattr(
+        identity_module, "AUTH_POLICY",
+        SimpleNamespace(is_local_development=True, email_verification_required=False),
+    )
+    store = IdentityStore(tmp_path / "local-accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "local@example.com", "a strong password 123"
+    )
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT email_verified_at FROM identities WHERE id=?", (identity_id,)
+        ).fetchone()
+    assert row["email_verified_at"]
+    assert store.authenticate(
+        "local@example.com", "a strong password 123", "subscriber"
+    ) == identity_id
+
+
+def test_non_development_subscriber_remains_unverified(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import app.identity as identity_module
+
+    monkeypatch.setattr(
+        identity_module, "AUTH_POLICY",
+        SimpleNamespace(is_local_development=False, email_verification_required=False),
+    )
+    store = IdentityStore(tmp_path / "production-accounts.sqlite3")
+    identity_id = store.create_subscriber(
+        "person@example.com", "a strong password 123"
+    )
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT email_verified_at FROM identities WHERE id=?", (identity_id,)
+        ).fetchone()
+    assert row["email_verified_at"] is None
