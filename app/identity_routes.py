@@ -354,6 +354,12 @@ def _send_challenge_email(
         action = "verify your email address"
         lifetime = timedelta(hours=24)
         queue_purpose = "verification"
+    elif purpose == "complimentary_activation":
+        path = "reset-password"
+        subject = "Activate your Open Odds Intelligence account"
+        action = "activate your account and set your password"
+        lifetime = timedelta(minutes=30)
+        queue_purpose = "password_reset"
     else:
         path = "reset-password"
         subject = "Reset your Open Odds Intelligence password"
@@ -1200,7 +1206,7 @@ def create_complimentary_subscriber(
                 recipient=grant["email"],
                 token=grant["activation_token"],
                 identity_id=grant["identity_id"],
-                purpose="password_reset",
+                purpose="complimentary_activation",
             )
             activation_queued = True
         except HTTPException:
