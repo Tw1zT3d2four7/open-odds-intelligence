@@ -147,6 +147,8 @@ def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and
     assert listed["complimentary_access_active"] is True
     assert listed["complimentary_campaign"] == "November giveaway"
     assert listed["complimentary_expires_at"] == grant["expires_at"]
+    assert store.list_subscribers(complimentary_only=True)["total"] == 1
+    assert store.list_subscribers(complimentary_only=False)["total"] == 0
     assert '"grant_type":"complimentary"' in audit["metadata_json"]
     assert '"campaign":"November giveaway"' in audit["metadata_json"]
     assert '"reason_code":"giveaway_winner"' in audit["metadata_json"]
