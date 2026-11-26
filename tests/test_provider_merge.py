@@ -318,3 +318,30 @@ def test_incremental_refresh_replaces_only_the_leased_account_group():
     remaining = empty_refresh[0]["bookmakers"][0]["markets"][0]["outcomes"]
     assert [row["source_access_class"] for row in remaining] == ["premium"]
     assert remaining[0]["price"] == -125
+
+
+
+def test_same_tier_account_groups_keep_duplicate_book_quotes_independent():
+    first = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "free-account-a"}
+    ])])
+    second = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -105, "source_account_group": "free-account-b"}
+    ])])
+
+    merged = merge_provider_events(
+        [("the_odds_api", [first]), ("the_odds_api", [second])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {
+                "free-account-a": "free",
+                "free-account-b": "free",
+            }
+        },
+    )
+
+    outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert {row["source_account_group"] for row in outcomes} == {
+        "free-account-a", "free-account-b"
+    }
+    assert {row["price"] for row in outcomes} == {-110, -105}
