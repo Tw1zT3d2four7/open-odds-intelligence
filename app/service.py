@@ -694,7 +694,8 @@ class OddsService:
             # the other providers' still-current sportsbook data.
             existing_events = self.db.latest_events(sport=sport_key)
             events, snapshot_providers = merge_provider_snapshot(
-                existing_events, successful_providers, source_results
+                existing_events, successful_providers, source_results,
+                provider_access_classes=config.ODDS_PROVIDER_ACCESS_CLASSES,
             )
             fetched_at = datetime.now(timezone.utc).isoformat()
             snapshot_provider = "+".join(snapshot_providers)
@@ -1167,9 +1168,9 @@ class OddsService:
         with self._events_cache_lock:
             self._events_cache.clear()
 
-    def events(self, sport=None, limit=None, offset=0):
+    def events(self, sport=None, limit=None, offset=0, include_premium=False):
         """Return a short-lived shared snapshot for concurrent dashboard reads."""
-        cache_key = (sport or "__all__") + f":{limit}:{offset}"
+        cache_key = (sport or "__all__") + f":{limit}:{offset}:premium={bool(include_premium)}"
         now = time.monotonic()
         cached = self._events_cache.get(cache_key)
         if cached and now - cached[0] < self._events_cache_ttl_seconds:
@@ -1188,8 +1189,31 @@ class OddsService:
                 result = [event for group in self._cache.values() for event in group]
                 if limit is not None:
                     result = result[offset:offset + limit]
-            self._events_cache[cache_key] = (time.monotonic(), result)
-            return result
+            scoped = []
+            for event in result:
+                event_copy = dict(event)
+                books = []
+                for book in event.get("bookmakers") or []:
+                    book_copy = dict(book)
+                    markets = []
+                    for market in book.get("markets") or []:
+                        market_copy = dict(market)
+                        outcomes = [
+                            dict(outcome) for outcome in market.get("outcomes") or []
+                            if outcome.get("source_access_class") == "free"
+                            or (include_premium and outcome.get("source_access_class") == "premium")
+                        ]
+                        if outcomes:
+                            market_copy["outcomes"] = outcomes
+                            markets.append(market_copy)
+                    if markets:
+                        book_copy["markets"] = markets
+                        books.append(book_copy)
+                if books:
+                    event_copy["bookmakers"] = books
+                    scoped.append(event_copy)
+            self._events_cache[cache_key] = (time.monotonic(), scoped)
+            return scoped
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None,
                 limit=100, outcome_description=None):
