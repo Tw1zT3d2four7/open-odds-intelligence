@@ -235,3 +235,34 @@ def test_unclassified_provider_is_never_polled_even_when_premium_polling_is_enab
 
     assert result["ok"] is False
     assert "No configured API keys" in result["error"]
+
+
+
+def test_internal_clv_event_view_preserves_same_tier_account_groups(tmp_path):
+    first = _event("feed", "free", "account-groups")
+    second = _event("feed", "free", "account-groups")
+    first["bookmakers"][0]["markets"][0]["outcomes"][0]["source_account_group"] = "free-a"
+    second["bookmakers"][0]["markets"][0]["outcomes"][0]["source_account_group"] = "free-b"
+    first["bookmakers"][0]["markets"][0]["outcomes"][0]["updated_at"] = "2026-11-26T01:00:00Z"
+    second["bookmakers"][0]["markets"][0]["outcomes"][0]["updated_at"] = "2026-11-26T02:00:00Z"
+    merged = merge_provider_events(
+        [("feed", [first]), ("feed", [second])],
+        provider_access_classes={"feed": "free"},
+        provider_account_access_classes={
+            "feed": {"free-a": "free", "free-b": "free"}
+        },
+    )
+    db = OddsDatabase(tmp_path / "clv-account-view.sqlite3")
+    db.save_snapshot("basketball_nba", merged)
+    service = OddsService(database=db)
+
+    subscriber_view = service.events("basketball_nba", include_premium=False)
+    clv_view = service.events(
+        "basketball_nba", include_premium=False, preserve_account_groups=True
+    )
+
+    assert len(subscriber_view[0]["bookmakers"][0]["markets"][0]["outcomes"]) == 1
+    assert {
+        row["source_account_group"]
+        for row in clv_view[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    } == {"free-a", "free-b"}
