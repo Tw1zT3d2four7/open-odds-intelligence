@@ -462,7 +462,7 @@ def simulation_games(request: Request, sport: str):
     return {"games": games, "note": "Games come from the latest locally stored odds snapshot; this read-only request makes no provider call."}
 
 
-@app.post("/api/simulation/games/refresh", dependencies=dependencies_for_route("POST", "/api/simulation/games/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+@app.post("/api/simulation/games/refresh", dependencies=dependencies_for_route("POST", "/api/simulation/games/refresh", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh_simulation_games(request: Request, sport: str):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
