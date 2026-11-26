@@ -16,9 +16,9 @@ A subscriber must satisfy both. A paid subscription cannot manufacture provider 
 
 | Customer access | Eligible source classes |
 |---|---|
-| Free | Free |
-| Monthly paid | Free + Premium |
-| Annual paid | Free + Premium |
+| Free | Fixed server-owned Free feature bundle; Free provider data only |
+| Monthly paid | Free + Premium provider data while the configured monthly Stripe price is active |
+| Annual paid | Free + Premium provider data while the configured annual Stripe price is active |
 | Complimentary grant | Exactly the explicitly granted features and data classes, with a mandatory expiry |
 
 Free must remain useful and operational with no premium credentials, paid provider accounts, or paid provider spend configured. Monthly and annual plans have the same provider-data class; billing cadence changes price and renewal, not data classification. The approved monthly/yearly prices remain governed by the billing roadmap.
