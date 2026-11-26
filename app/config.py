@@ -10,6 +10,25 @@ ODDS_PROVIDERS = [
     item.strip().lower() for item in os.getenv("ODDS_PROVIDERS", "").split(",")
     if item.strip()
 ]
+# Source access classification is configured per provider account. Known free-tier
+# integrations remain free by default; unknown providers fail closed in the data layer.
+_raw_provider_access_classes = os.getenv("ODDS_PROVIDER_ACCESS_CLASSES", "")
+ODDS_PROVIDER_ACCESS_CLASSES = {
+    "therundown": "free",
+    "the_odds_api": "free",
+    "oddize": "free",
+    "oddslink": "free",
+}
+for _entry in _raw_provider_access_classes.replace("\\n", ",").split(","):
+    if not _entry.strip():
+        continue
+    if "=" not in _entry:
+        raise ValueError("ODDS_PROVIDER_ACCESS_CLASSES entries must use provider=free or provider=premium.")
+    _provider_name, _access_class = (part.strip().lower() for part in _entry.split("=", 1))
+    if not _provider_name or _access_class not in {"free", "premium"}:
+        raise ValueError("ODDS_PROVIDER_ACCESS_CLASSES supports only explicit free or premium classifications.")
+    ODDS_PROVIDER_ACCESS_CLASSES[_provider_name] = _access_class
+
 # Do not normalize or change API key case: provider keys are case-sensitive.
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY", "")
 # TheRundown key is case-sensitive; preserve it exactly.
