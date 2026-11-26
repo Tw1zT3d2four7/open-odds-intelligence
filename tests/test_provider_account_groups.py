@@ -1,4 +1,4 @@
-from app.providers.key_pool import ProviderKeyPool
+from app.providers.key_pool import NoAvailableKeys, ProviderKeyPool
 
 
 def test_grouped_provider_keys_keep_account_groups_and_share_quota():
@@ -25,3 +25,28 @@ def test_grouped_provider_keys_keep_account_groups_and_share_quota():
 def test_ungrouped_provider_keys_keep_legacy_shared_default_group():
     pool = ProviderKeyPool("example", ["One-Key,Two-Key"])
     assert {item["account_group"] for item in pool.status()["keys"]} == {"default"}
+
+
+
+def test_account_group_polling_filter_never_leases_premium_or_unknown_groups():
+    pool = ProviderKeyPool(
+        "example",
+        ["free-account|Free-Key,premium-account|Premium-Key,unknown|Other-Key"],
+    )
+
+    first = pool.acquire(allowed_account_groups={"free-account"})
+    second = pool.acquire(allowed_account_groups={"free-account"})
+    assert first.account_group == second.account_group == "free-account"
+    assert first.key == second.key == "Free-Key"
+    assert {item["account_group"]: item["status"] for item in pool.status()["keys"]} == {
+        "free-account": "available",
+        "premium-account": "available",
+        "unknown": "available",
+    }
+
+    try:
+        pool.acquire(allowed_account_groups={"not-configured"})
+    except NoAvailableKeys:
+        pass
+    else:
+        raise AssertionError("An ineligible account group must never be leased")
