@@ -962,7 +962,7 @@ class OddsDatabase:
         except (TypeError, ValueError):
             return None
 
-    def _closing_consensus(self, db, entry, include_premium=None):
+    def _closing_consensus(self, db, entry, include_premium=None, source_access_class=None):
         start = self._as_utc(entry["commence_time"])
         entry_at = self._as_utc(entry["entry_at"])
         if start is None or entry_at is None:
@@ -971,7 +971,10 @@ class OddsDatabase:
                            JOIN quotes q ON q.snapshot_id=s.id
                            WHERE q.event_id=?"""
         snapshot_args = [entry["event_id"]]
-        if include_premium is not None:
+        if source_access_class in {"free", "premium"}:
+            snapshot_sql += " AND q.source_access_class=?"
+            snapshot_args.append(source_access_class)
+        elif include_premium is not None:
             snapshot_sql += " AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))"
             snapshot_args.append(1 if include_premium else 0)
         snapshot_sql += " ORDER BY s.id DESC"
@@ -993,7 +996,10 @@ class OddsDatabase:
             quote_sql = """SELECT bookmaker_key,market_key,outcome_name,point,price
                            FROM quotes WHERE snapshot_id=? AND event_id=? AND market_key=?"""
             quote_args = [snapshot["id"], entry["event_id"], entry["market_key"]]
-            if include_premium is not None:
+            if source_access_class in {"free", "premium"}:
+                quote_sql += " AND source_access_class=?"
+                quote_args.append(source_access_class)
+            elif include_premium is not None:
                 quote_sql += " AND (source_access_class='free' OR (?=1 AND source_access_class='premium'))"
                 quote_args.append(1 if include_premium else 0)
             quotes = db.execute(quote_sql, quote_args).fetchall()
@@ -1119,11 +1125,13 @@ class OddsDatabase:
                 start = self._as_utc(entry["commence_time"])
                 if start is None or now < start:
                     continue
-                entry_scope = (
-                    entry["source_access_class"] == "premium"
-                    if entry["source_access_class"] in {"free", "premium"} else None
+                close = self._closing_consensus(
+                    db, entry, source_access_class=(
+                        entry["source_access_class"]
+                        if entry["source_access_class"] in {"free", "premium"}
+                        else None
+                    ),
                 )
-                close = self._closing_consensus(db, entry, include_premium=entry_scope)
                 if close:
                     db.execute(
                         """UPDATE clv_entries SET status='closed',close_at=?,
