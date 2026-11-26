@@ -514,6 +514,32 @@ class IdentityStore:
                         "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                         (15, _timestamp(_now())),
                     )
+                if current < 16:
+                    # Existing subscribers with no prior grants receive only the
+                    # fixed Free bundle. Existing manual/complimentary grants remain untouched.
+                    ungranted = db.execute(
+                        """SELECT i.id FROM identities i
+                           WHERE i.account_type='subscriber'
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM subscriber_entitlements e
+                                 WHERE e.identity_id=i.id
+                             )"""
+                    ).fetchall()
+                    migration_now = _timestamp(_now())
+                    for subscriber in ungranted:
+                        for entitlement_key in _FREE_SUBSCRIBER_ENTITLEMENTS:
+                            db.execute(
+                                """INSERT INTO subscriber_entitlements(
+                                    id,identity_id,entitlement_key,starts_at,expires_at,
+                                    granted_by,created_at,updated_at
+                                ) VALUES(?,?,?,?,NULL,?,?,?)""",
+                                (secrets.token_urlsafe(18), subscriber["id"], entitlement_key,
+                                 migration_now, subscriber["id"], migration_now, migration_now),
+                            )
+                    db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                        (16, migration_now),
+                    )
                 db.commit()
             except Exception:
                 db.rollback()
