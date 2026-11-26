@@ -505,6 +505,11 @@ class OddsService:
 
     def _refresh_locked(self, sport=None, providers=None):
         provider_names = self.active_provider_names()
+        if not config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED:
+            provider_names = [
+                name for name in provider_names
+                if config.ODDS_PROVIDER_ACCESS_CLASSES.get(name) == "free"
+            ]
         if providers is not None:
             requested_providers = set(providers)
             provider_names = [name for name in provider_names if name in requested_providers]
