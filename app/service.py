@@ -725,8 +725,18 @@ class OddsService:
                                 for source_outcome in source_market.get("outcomes") or []:
                                     if isinstance(source_outcome, dict):
                                         source_outcome["source_account_group"] = lease.account_group
+                                        account_classes = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get(provider_name)
+                                        source_class = (
+                                            account_classes.get(lease.account_group, "restricted")
+                                            if account_classes is not None
+                                            else config.ODDS_PROVIDER_ACCESS_CLASSES.get(provider_name, "restricted")
+                                        )
+                                        source_outcome["source_access_class"] = (
+                                            source_class if source_class in {"free", "premium"} else "restricted"
+                                        )
                                         if "size" in source_outcome:
                                             source_outcome["size_source_account_group"] = lease.account_group
+                                            source_outcome["size_source_access_class"] = source_outcome["source_access_class"]
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
                     successful_provider_account_groups[provider_name] = {lease.account_group}
