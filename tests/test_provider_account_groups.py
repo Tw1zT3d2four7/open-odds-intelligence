@@ -198,6 +198,10 @@ def test_service_startup_scrubs_legacy_provider_usage_secrets(tmp_path, monkeypa
     monkeypatch.setattr(config, "ODDS_PROVIDER", "the_odds_api")
     monkeypatch.setattr(config, "THE_ODDS_API_KEY", key)
     monkeypatch.setattr(config, "THE_ODDS_API_KEYS", "")
+    monkeypatch.setattr(
+        config, "ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS",
+        {"the_odds_api": {"default": {"credits_remaining": 100}}},
+    )
     database = OddsDatabase(tmp_path / "legacy-usage.sqlite3")
     database.set_state("provider_usage_provider", "the_odds_api")
     database.set_state("provider_usage_key_fingerprint", key_id)
@@ -206,7 +210,11 @@ def test_service_startup_scrubs_legacy_provider_usage_secrets(tmp_path, monkeypa
     }))
     database.set_state(
         f"provider_key_usage:the_odds_api:{key_id}",
-        json.dumps({"credits_remaining": 8, "access_token": "LegacyPerKeySecret"}),
+        json.dumps({
+            "credits_remaining": 8,
+            "period_resets_at": "2026-12-01T00:00:00Z",
+            "access_token": "LegacyPerKeySecret",
+        }),
     )
 
     service = OddsService(database=database)
@@ -216,3 +224,4 @@ def test_service_startup_scrubs_legacy_provider_usage_secrets(tmp_path, monkeypa
         f"provider_key_usage:the_odds_api:{key_id}"
     )
     assert "credits_remaining" in service._provider_usage
+    assert service._provider_key_pools["the_odds_api"].status()["keys"][0]["status"] == "quota_cooldown"
