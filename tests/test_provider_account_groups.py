@@ -50,3 +50,27 @@ def test_account_group_polling_filter_never_leases_premium_or_unknown_groups():
         pass
     else:
         raise AssertionError("An ineligible account group must never be leased")
+
+
+
+def test_score_sync_cannot_poll_premium_only_account_when_premium_polling_is_off(tmp_path, monkeypatch):
+    from app import config
+    from app.database import OddsDatabase
+    from app.service import OddsService
+
+    service = OddsService(database=OddsDatabase(tmp_path / "odds.sqlite3"))
+    service._provider_key_pools["therundown"] = ProviderKeyPool(
+        "therundown", ["premium-account|PremiumCaseKey"]
+    )
+    monkeypatch.setattr(
+        config, "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES",
+        {"therundown": {"premium-account": "premium"}},
+    )
+    monkeypatch.setattr(config, "ODDS_PREMIUM_PROVIDER_POLLING_ENABLED", False)
+    monkeypatch.setattr(config, "SIMULATION_RESULTS_SYNC_ENABLED", True)
+    monkeypatch.setattr(service, "active_provider_names", lambda: ["therundown"])
+
+    result = service.sync_simulation_results()
+
+    assert result["skipped"] is True
+    assert result["reason"] == "disabled"
