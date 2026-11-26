@@ -280,9 +280,32 @@ class ProviderKeyPool:
                     "last_error": self._last_error.get(index),
                     "usage": self._usage.get(index, {}),
                 })
+            groups = {}
+            for item in keys:
+                group = item["account_group"]
+                summary = groups.setdefault(group, {
+                    "account_group": group,
+                    "configured_keys": 0,
+                    "available_keys": 0,
+                    "quota_cooldown_keys": 0,
+                    "disabled_keys": 0,
+                    "usage": {},
+                })
+                summary["configured_keys"] += 1
+                if item["status"] == "available":
+                    summary["available_keys"] += 1
+                elif item["status"] == "quota_cooldown":
+                    summary["quota_cooldown_keys"] += 1
+                else:
+                    summary["disabled_keys"] += 1
+                observed = str(item.get("usage", {}).get("usage_observed_at") or "")
+                previous = str(summary["usage"].get("usage_observed_at") or "")
+                if item.get("usage") and observed >= previous:
+                    summary["usage"] = dict(item["usage"])
             return {
                 "provider": self.provider,
                 "configured_keys": len(self._keys),
                 "available_keys": sum(item["status"] == "available" for item in keys),
+                "account_groups": [groups[name] for name in sorted(groups)],
                 "keys": keys,
             }
