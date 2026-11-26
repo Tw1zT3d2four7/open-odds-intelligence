@@ -1,4 +1,5 @@
 from app.database import OddsDatabase
+from app.markets import analyze_markets
 from app.providers.merge import merge_provider_events
 from app.service import OddsService
 
@@ -162,3 +163,35 @@ def test_clv_history_is_scoped_and_legacy_rows_fail_closed(tmp_path):
     assert {row["event_id"] for row in legacy["entries"]} == {
         "free-entry", "premium-entry", "legacy-entry"
     }
+
+def test_derived_ev_inherits_most_restrictive_consensus_source():
+    event = {
+        "id": "derived-event",
+        "sport_key": "basketball_nba",
+        "sport_title": "NBA",
+        "commence_time": "2099-12-01T00:00:00Z",
+        "home_team": "Home",
+        "away_team": "Away",
+        "bookmakers": [],
+    }
+    for book, access_class, home_price, away_price in (
+        ("free-book", "free", 150, -170),
+        ("premium-book", "premium", 180, -210),
+        ("peer-one", "free", 160, -180),
+        ("peer-two", "free", 155, -175),
+    ):
+        event["bookmakers"].append({
+            "key": book,
+            "title": book,
+            "markets": [{
+                "key": "h2h",
+                "outcomes": [
+                    {"name": "Home", "price": home_price, "source_access_class": access_class},
+                    {"name": "Away", "price": away_price, "source_access_class": access_class},
+                ],
+            }],
+        })
+
+    result = analyze_markets([event], min_ev=-100, min_consensus_books=1, best_only=False)
+    assert result["opportunities"]
+    assert all(row["source_access_class"] == "premium" for row in result["opportunities"])
