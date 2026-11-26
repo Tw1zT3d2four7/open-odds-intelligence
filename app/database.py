@@ -84,7 +84,7 @@ class OddsDatabase:
                     source_provider TEXT NOT NULL DEFAULT '',
                     source_account_group TEXT NOT NULL DEFAULT '',
                     source_access_class TEXT NOT NULL DEFAULT 'restricted',
-                    UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_access_class)
+                    UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_provider,source_account_group,source_access_class)
                 );
                 CREATE INDEX IF NOT EXISTS idx_clv_pending
                     ON clv_entries(status, commence_time);
@@ -139,7 +139,8 @@ class OddsDatabase:
                 ]
                 if index_columns == [
                     "event_id", "market_key", "outcome_name",
-                    "point_key", "bookmaker_key", "source_access_class",
+                    "point_key", "bookmaker_key", "source_provider",
+                    "source_account_group", "source_access_class",
                 ]:
                     scoped_unique = True
                     break
@@ -957,9 +958,12 @@ class OddsDatabase:
                            WHERE event_id=? AND market_key='spreads'
                              AND outcome_name=? AND bookmaker_key=?
                              AND point IS NOT NULL AND ABS(point)=?
+                             AND source_provider=? AND source_account_group=?
                              AND source_access_class=?
                            LIMIT 1""",
                         (event_id, outcome, bookmaker_key, abs(point),
+                         row.get("source_provider") if isinstance(row.get("source_provider"), str) else "",
+                         row.get("source_account_group") if isinstance(row.get("source_account_group"), str) else "",
                          row.get("source_access_class") if row.get("source_access_class") in {"free", "premium"} else "restricted"),
                     ).fetchone()
                     if legacy_or_current:
@@ -988,7 +992,7 @@ class OddsDatabase:
         except (TypeError, ValueError):
             return None
 
-    def _closing_consensus(self, db, entry, include_premium=None, source_access_class=None):
+    def _closing_consensus(self, db, entry, include_premium=None, source_access_class=None, source_provider=None, source_account_group=None):
         start = self._as_utc(entry["commence_time"])
         entry_at = self._as_utc(entry["entry_at"])
         if start is None or entry_at is None:
@@ -1000,7 +1004,13 @@ class OddsDatabase:
         if source_access_class in {"free", "premium"}:
             snapshot_sql += " AND q.source_access_class=?"
             snapshot_args.append(source_access_class)
-        elif include_premium is not None:
+        if source_provider:
+            snapshot_sql += " AND q.source_provider=?"
+            snapshot_args.append(source_provider)
+        if source_account_group:
+            snapshot_sql += " AND q.source_account_group=?"
+            snapshot_args.append(source_account_group)
+        if source_access_class not in {"free", "premium"} and include_premium is not None:
             snapshot_sql += " AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))"
             snapshot_args.append(1 if include_premium else 0)
         snapshot_sql += " ORDER BY s.id DESC"
@@ -1025,7 +1035,13 @@ class OddsDatabase:
             if source_access_class in {"free", "premium"}:
                 quote_sql += " AND source_access_class=?"
                 quote_args.append(source_access_class)
-            elif include_premium is not None:
+            if source_provider:
+                quote_sql += " AND source_provider=?"
+                quote_args.append(source_provider)
+            if source_account_group:
+                quote_sql += " AND source_account_group=?"
+                quote_args.append(source_account_group)
+            if source_access_class not in {"free", "premium"} and include_premium is not None:
                 quote_sql += " AND (source_access_class='free' OR (?=1 AND source_access_class='premium'))"
                 quote_args.append(1 if include_premium else 0)
             quotes = db.execute(quote_sql, quote_args).fetchall()
@@ -1157,6 +1173,8 @@ class OddsDatabase:
                         if entry["source_access_class"] in {"free", "premium"}
                         else None
                     ),
+                    source_provider=entry["source_provider"],
+                    source_account_group=entry["source_account_group"],
                 )
                 if close:
                     db.execute(
