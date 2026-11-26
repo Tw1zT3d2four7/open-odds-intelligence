@@ -163,7 +163,7 @@ class OddsDatabase:
                         source_provider TEXT NOT NULL DEFAULT '',
                         source_account_group TEXT NOT NULL DEFAULT '',
                         source_access_class TEXT NOT NULL DEFAULT 'restricted',
-                        UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_access_class)
+                        UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_provider,source_account_group,source_access_class)
                     )
                 """)
                 db.execute("""
