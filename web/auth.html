@@ -97,6 +97,14 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
     "/reset-password": {title:"Choose a new password",badge:"Account recovery",button:"Update password",help:"Choose a strong password with at least 12 characters.",kind:"reset"}
   };
   const view = views[path] || views["/login"];
+  const complimentaryActivation = view.kind === "reset" &&
+    new URLSearchParams(window.location.search).get("mode") === "activation";
+  if (complimentaryActivation) {
+    view.title = "Activate your account";
+    view.badge = "Complimentary access";
+    view.button = "Activate account";
+    view.help = "Choose a password to verify your email and activate your complimentary access.";
+  }
   const el = id => document.getElementById(id);
   function setLinks(items) {
     const container = el("links");
@@ -205,7 +213,9 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
       } else if (view.kind === "reset") {
         const new_password = el("new-password").value;
         await post("/auth/password-reset/consume", {token:challengeToken,new_password});
-        show("Your password has been updated. Please sign in again.", "success");
+        show(complimentaryActivation
+          ? "Your account is activated and your email is verified. Please sign in."
+          : "Your password has been updated. Please sign in again.", "success");
         button.disabled = true;
       }
     } catch (error) {
