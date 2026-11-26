@@ -510,6 +510,9 @@ class MarketLimitsMonitor:
         if not api_key:
             self.last_error = "Market limits feed is disabled. Add a free OddsLink API key as ODDSLINK_API_KEY or ODDSLINK_API_KEYS."
             return {"ok": False, "error": self.last_error, "observations": 0}
+        if not _eligible_oddslink_account_groups():
+            self.last_error = "No OddsLink account groups are eligible for market-limit polling."
+            return {"ok": False, "error": self.last_error, "observations": 0}
         now = datetime.now(timezone.utc)
         observed_at = now.isoformat()
         # Persist the last attempt so container restarts cannot reset the
