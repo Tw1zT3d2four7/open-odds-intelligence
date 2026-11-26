@@ -1190,7 +1190,9 @@ class OddsService:
             if stored:
                 result = stored
             elif sport:
-                result = list(self._cache.get(sport, []))[offset:offset + limit if limit is not None else None]
+                result = list(self._cache.get(sport, []))
+                if limit is not None and include_premium is None:
+                    result = result[offset:offset + limit]
             else:
                 result = [event for group in self._cache.values() for event in group]
                 if limit is not None and include_premium is None:
