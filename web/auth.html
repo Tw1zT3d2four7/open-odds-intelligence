@@ -226,8 +226,15 @@ footer{padding:18px;text-align:center;color:#6f829b;font-size:11px}
   });
 
   fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"})
-    .then(response => {
+    .then(async response => {
       if (!response.ok || !csrfToken()) throw new Error("Secure form initialization failed.");
+      const policy = await response.json();
+      if (view.kind === "register" && policy.email_verification_required === false) {
+        el("help").textContent = "Local testing mode: create an account and sign in immediately. No verification email is sent.";
+      }
+      if (view.kind === "login" && policy.password_recovery_enabled === false) {
+        setLinks([["/register", "Create an account"]]);
+      }
       if (["verify","reset"].includes(view.kind) && !challengeToken) return;
       button.disabled = false;
     })
