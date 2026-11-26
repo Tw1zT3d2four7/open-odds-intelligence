@@ -67,6 +67,12 @@ def _status_for_request(request: Request) -> dict:
         book.get("key") for event in visible_events
         for book in event.get("bookmakers") or [] if book.get("key")
     })
+    status["last_updated"] = None
+    status["last_error"] = None
+    status["sport_freshness"] = []
+    status["data_freshness"] = "partial" if visible_events else "unavailable"
+    status.pop("stored_snapshots", None)
+    status.pop("odds_bookmakers", None)
     if config.ODDS_PROVIDER_ACCESS_CLASSES.get("the_odds_api") != "free":
         status["player_props"] = {
             "enabled": False, "reason": "Player props are not included in the free provider data scope."
