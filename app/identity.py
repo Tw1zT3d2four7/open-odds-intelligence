@@ -25,7 +25,7 @@ import pyotp
 from . import config
 
 
-_SCHEMA_VERSION = 15
+_SCHEMA_VERSION = 16
 _PASSWORD_HASHER = PasswordHasher()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASHER.hash("identity-lookup-dummy-password")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
