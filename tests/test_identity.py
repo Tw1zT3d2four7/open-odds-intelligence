@@ -105,7 +105,7 @@ def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and
     grant = store.create_complimentary_subscriber(
         "Winner@Example.com", ["dashboard", "odds"],
         actor_identity_id=admin_id, expires_at=expiry,
-        campaign="November giveaway", reason="Giveaway winner",
+        campaign="November giveaway", reason_code="giveaway_winner",
     )
     assert grant["email"] == "winner@example.com"
     assert set(grant["entitlements"]) == {"dashboard", "odds"}
@@ -139,6 +139,7 @@ def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and
     assert listed["complimentary_expires_at"] == grant["expires_at"]
     assert '"grant_type":"complimentary"' in audit["metadata_json"]
     assert '"campaign":"November giveaway"' in audit["metadata_json"]
+    assert '"reason_code":"giveaway_winner"' in audit["metadata_json"]
     assert store.authenticate("winner@example.com", "administrator password", "subscriber") is None
     assert store.consume_password_reset_challenge(
         grant["activation_token"], "winner chooses this secure password"
@@ -164,17 +165,17 @@ def test_complimentary_subscriber_rejects_duplicate_email_and_non_admin_actor(tm
     expiry = datetime.now(timezone.utc) + timedelta(days=7)
     store.create_complimentary_subscriber(
         "winner@example.com", ["dashboard"], actor_identity_id=admin_id,
-        expires_at=expiry, campaign="Test giveaway", reason="Winner",
+        expires_at=expiry, campaign="Test giveaway", reason_code="giveaway_winner",
     )
     with pytest.raises(ValueError, match="already exists"):
         store.create_complimentary_subscriber(
             "WINNER@example.com", ["dashboard"], actor_identity_id=admin_id,
-            expires_at=expiry, campaign="Test giveaway", reason="Duplicate",
+            expires_at=expiry, campaign="Test giveaway", reason_code="giveaway_winner",
         )
     with pytest.raises(ValueError, match="MFA-enrolled administrator"):
         store.create_complimentary_subscriber(
             "other@example.com", ["dashboard"], actor_identity_id="missing-admin",
-            expires_at=expiry, campaign="Test giveaway", reason="Invalid actor",
+            expires_at=expiry, campaign="Test giveaway", reason_code="giveaway_winner",
         )
 
 
