@@ -225,7 +225,7 @@ class OddsService:
         safe = {}
         for name, value in usage.items():
             normalized = str(name).lower()
-            if any(secret in normalized for secret in ("key", "token", "secret", "email", "customer")):
+            if any(secret in normalized for secret in ("key", "token", "secret", "email", "customer", "password", "authorization", "credential", "bearer")):
                 continue
             if isinstance(value, (str, int, float, bool)) or value is None:
                 safe[str(name)] = value
