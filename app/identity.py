@@ -852,6 +852,11 @@ class IdentityStore:
                     interval = None
                 if not isinstance(price_id, str):
                     price_id = None
+                plan_code = (
+                    "monthly" if price_id == config.STRIPE_PRICE_MONTHLY_ID and interval == "month"
+                    else "yearly" if price_id == config.STRIPE_PRICE_YEARLY_ID and interval == "year"
+                    else None
+                )
 
                 def period_timestamp(value):
                     if value is None:
@@ -876,13 +881,13 @@ class IdentityStore:
                     db.execute(
                         """INSERT INTO billing_subscriptions(
                             id, identity_id, stripe_subscription_id, stripe_customer_id,
-                            stripe_price_id, billing_interval, status, current_period_start,
+                            stripe_price_id, plan_code, billing_interval, status, current_period_start,
                             current_period_end, cancel_at_period_end, canceled_at, ended_at,
                             created_at, updated_at, last_event_created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             secrets.token_urlsafe(24), customer["identity_id"],
-                            subscription_id, customer_id, price_id, interval, status,
+                            subscription_id, customer_id, price_id, plan_code, interval, status,
                             period_start, period_end, int(cancel_at_period_end),
                             canceled_at, ended_at, now, now, occurred_at,
                         ),
@@ -890,13 +895,13 @@ class IdentityStore:
                 else:
                     db.execute(
                         """UPDATE billing_subscriptions SET
-                            stripe_price_id=?, billing_interval=?, status=?,
+                            stripe_price_id=?, plan_code=?, billing_interval=?, status=?,
                             current_period_start=?, current_period_end=?,
                             cancel_at_period_end=?, canceled_at=?, ended_at=?,
                             updated_at=?, last_event_created_at=?
                            WHERE stripe_subscription_id=?""",
                         (
-                            price_id, interval, status, period_start, period_end,
+                            price_id, plan_code, interval, status, period_start, period_end,
                             int(cancel_at_period_end), canceled_at, ended_at,
                             now, occurred_at, subscription_id,
                         ),
