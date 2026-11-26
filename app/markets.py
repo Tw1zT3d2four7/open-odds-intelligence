@@ -213,12 +213,19 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
                             "identity": identity, "probability": probability,
                         })
                     # One canonical complete set per book / market / line.
-                    candidate_sets[(market_key, line, player_scope)][signature][book_key] = quotes
+                    source_identity = (
+                        book_key,
+                        str(items[0].get("source_provider") or ""),
+                        str(items[0].get("source_account_group") or ""),
+                        str(items[0].get("source_access_class") or "restricted"),
+                    )
+                    candidate_sets[(market_key, line, player_scope)][signature][source_identity] = quotes
 
         # Exclude incomplete or mismatched sets. A tied modal signature is
         # ambiguous, so fail closed rather than mixing different market types.
         for market_line, signatures in candidate_sets.items():
-            counts = [(len(books), signature) for signature, books in signatures.items()]
+            counts = [(len({source[0] for source in sources}), signature)
+                      for signature, sources in signatures.items()]
             if not counts:
                 continue
             highest = max(count for count, _ in counts)
