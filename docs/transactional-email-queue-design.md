@@ -2,7 +2,7 @@
 
 **Status:** Implemented in identity schema v7; CI-tested with the isolated identity routes  
 **Working branch:** `feature/admin-panel-and-subscriptions`  
-**Scope:** Subscriber verification and password-recovery email only  
+**Scope:** Subscriber verification, password recovery, and complimentary-account activation (activation uses the existing password-reset challenge purpose)  
 **Production impact:** None. This design does not enable public registration or change the live odds pipeline.
 
 ## Goals
@@ -86,6 +86,7 @@ Registration, verification resend, and password-reset request handlers should:
 - not create an account if the required queue encryption/provider configuration is unavailable.
 
 Verification and reset token consumption remain one-time, expiring, and replay-protected. A queued email whose challenge has already been consumed or expired must be discarded without delivery.
+Complimentary account activation reuses the password-reset challenge table and queue purpose so the schema's constrained purpose values remain unchanged. Its email template is distinct and links to `/reset-password?mode=activation#token=...`. Consuming the challenge sets the recipient's password, verifies subscriber mailbox ownership, revokes any prior sessions, and records secret-free audit events. The raw activation token remains Fernet-encrypted in the queued payload and SHA-256 hashed in the challenge/queue references.
 
 ## Delivery history and cleanup
 
