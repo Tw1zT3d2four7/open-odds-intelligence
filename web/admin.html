@@ -632,6 +632,11 @@ tbody tr:last-child td{border-bottom:0}
             quota += " · reserve floor: " + usage.quota_floor_triggered +
               " ≤ " + String(usage.quota_floor_threshold || "configured");
           }
+          const floors = account.quota_floors || {};
+          const floorText = Object.entries(floors)
+            .map(([metric, value]) => metric + " ≤ " + String(value))
+            .join(", ");
+          if (floorText) quota += " · configured pause floor: " + floorText;
           cell(row, account.provider);
           cell(row, account.account_group);
           cell(row, account.access_class);
