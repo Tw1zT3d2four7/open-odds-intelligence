@@ -21,6 +21,9 @@ def _event(provider="feed", access_class="free", event_id="event-1"):
                     "price": -110,
                     "source_provider": provider,
                     "source_access_class": access_class,
+                    "size": {"max": 1000},
+                    "size_source_provider": "size-feed",
+                    "size_source_access_class": "premium",
                 }],
             }],
         }],
@@ -77,3 +80,16 @@ def test_service_cache_is_separated_between_free_and_premium_scopes(tmp_path):
 
     assert [event["id"] for event in free] == ["event-1-free"]
     assert {event["id"] for event in paid} == {"event-1-free", "event-0-premium"}
+
+def test_premium_size_metadata_is_not_exposed_with_free_quote(tmp_path):
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    db.save_snapshot("basketball_nba", [_event("free-feed", "free")])
+    service = OddsService(database=db)
+
+    free_outcome = service.events("basketball_nba", include_premium=False)[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    paid_outcome = service.events("basketball_nba", include_premium=True)[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+
+    assert "size" not in free_outcome
+    assert "size_source_provider" not in free_outcome
+    assert paid_outcome["size"] == {"max": 1000}
+    assert paid_outcome["size_source_access_class"] == "premium"
