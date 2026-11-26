@@ -179,6 +179,12 @@ tbody tr:last-child td{border-bottom:0}
           <label for="subscriber-search">Email search</label>
           <input id="subscriber-search" type="search" maxlength="254" placeholder="Search subscriber email">
           <button id="subscriber-search-button" type="button">Search</button>
+          <label for="subscriber-access-filter">Access source</label>
+          <select id="subscriber-access-filter">
+            <option value="">All subscribers</option>
+            <option value="true">Complimentary access</option>
+            <option value="false">No active complimentary grant</option>
+          </select>
         </div>
         <div class="audit-status" id="subscriber-status" role="status" aria-live="polite">Subscriber directory has not been loaded.</div>
         <div class="table-wrap"><table>
@@ -373,11 +379,13 @@ tbody tr:last-child td{border-bottom:0}
   const subscriberRows = document.getElementById("subscriber-rows");
   const subscriberPage = document.getElementById("subscriber-page");
   const subscriberSearch = document.getElementById("subscriber-search");
+  const subscriberAccessFilter = document.getElementById("subscriber-access-filter");
   async function loadSubscribers() {
     subscriberStatus.textContent = "Loading subscriber directory…";
     const params = new URLSearchParams({limit:String(subscriberLimit),offset:String(subscriberOffset)});
     const query = subscriberSearch.value.trim();
     if (query) params.set("email_query", query);
+    if (subscriberAccessFilter.value !== "") params.set("complimentary_only", subscriberAccessFilter.value);
     try {
       const response = await fetch("/admin/subscribers?" + params.toString(), {
         credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
@@ -401,8 +409,11 @@ tbody tr:last-child td{border-bottom:0}
           cell(row, user.email_verified ? "Verified" : "Unverified");
           cell(row, user.created_at);
           cell(row, (user.entitlements || []).join(", ") || "None");
+          const promoExpiry = user.complimentary_expires_at ? Date.parse(user.complimentary_expires_at) : NaN;
+          const promoDaysLeft = Number.isFinite(promoExpiry)
+            ? Math.max(0, Math.ceil((promoExpiry - Date.now()) / 86400000)) : 0;
           cell(row, user.complimentary_access_active
-            ? ((user.complimentary_campaign || "Complimentary") + " · until " + user.complimentary_expires_at)
+            ? ((user.complimentary_campaign || "Complimentary") + " · " + promoDaysLeft + " day(s) left · until " + user.complimentary_expires_at)
             : (user.complimentary_expires_at ? "Complimentary access expired" : "—"));
           cell(row, user.identity_id);
           const actionCell = document.createElement("td");
@@ -915,6 +926,7 @@ tbody tr:last-child td{border-bottom:0}
     }
   });
   document.getElementById("subscriber-search-button").addEventListener("click", () => { subscriberOffset = 0; loadSubscribers(); });
+  subscriberAccessFilter.addEventListener("change", () => { subscriberOffset = 0; loadSubscribers(); });
   document.getElementById("subscriber-previous").addEventListener("click", () => { subscriberOffset = Math.max(0, subscriberOffset - subscriberLimit); loadSubscribers(); });
   document.getElementById("subscriber-next").addEventListener("click", () => { subscriberOffset += subscriberLimit; loadSubscribers(); });
   subscriberSearch.addEventListener("keydown", event => {
