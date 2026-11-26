@@ -115,3 +115,20 @@ Before external subscriber testing, add automated coverage proving:
 - This design does not authorize purchasing provider subscriptions, entering premium credentials, changing provider contracts, enabling premium polling, enabling live Stripe billing, deploying production, or merging branches.
 - Do not promise a specific league, book, market, prop, refresh interval, or historical depth until verified against the actual provider plan and observed response.
 - Keep all implementation on `feature/admin-panel-and-subscriptions`. No changes to `main` or production without explicit approval.
+
+
+## Implementation update — 2026-11-26
+
+The feature branch now persists market-limit provenance alongside each posted-limit observation:
+
+- source_provider identifies the provider source.
+- source_account_group currently stores a non-secret fingerprint of the configured provider key set. It is useful for identifying which configured key set produced the observation, but it is **not yet independent per-account grouping**.
+- source_access_class records free, premium, or restricted.
+- source_capability identifies the posted_market_limits capability.
+- Existing SQLite databases receive additive columns. Historical rows without trustworthy classification retain the restricted default.
+
+The current-limits query, change-history window, and exact-selection history apply the caller's free/premium scope before selecting latest observations or calculating changes. Change windows are partitioned by source metadata so separate source streams are not compared as if they were one feed. Identity-mode free subscribers receive only free-class limit records; paid subscribers receive free and premium records; restricted/unknown records remain hidden from both subscriber tiers. The limits endpoint also suppresses premium-source quota and diagnostic details from free subscribers.
+
+Automated coverage includes free-versus-paid current limits, exact-selection history, source-partitioned change windows, restricted legacy rows, and premium diagnostic redaction. CI run 45746913326 passed **990 tests with 1 non-blocking warning**.
+
+Still outstanding: independent access-class configuration and quota accounting for multiple account groups under the same provider; premium-specific CLV tracking; broader provider usage metering/cost guardrails; and isolated HTTPS staging acceptance. Premium polling remains disabled by default, and this implementation does not authorize provider purchases, production deployment, merge, or live billing.
