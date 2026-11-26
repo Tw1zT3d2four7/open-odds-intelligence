@@ -151,7 +151,12 @@ class OddsLinkClient:
                 last_error = exc
                 continue
             self.pool.mark_success(lease)
-            self.pool.record_usage(lease, provider.usage)
+            self.pool.record_usage(
+                lease, provider.usage,
+                minimum_remaining=config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.get(
+                    "oddslink", {}
+                ).get(lease.account_group, {}),
+            )
             self.usage = dict(provider.usage)
             self.last_key_fingerprint = lease.fingerprint
             self.last_account_group = lease.account_group
