@@ -779,8 +779,13 @@ class OddsService:
                                             source_class if source_class in {"free", "premium"} else "restricted"
                                         )
                                         if "size" in source_outcome:
-                                            source_outcome["size_source_account_group"] = lease.account_group
-                                            source_outcome["size_source_access_class"] = source_outcome["source_access_class"]
+                                            size_provider = str(
+                                                source_outcome.get("size_source_provider") or provider_name
+                                            )
+                                            if size_provider == provider_name:
+                                                source_outcome["size_source_provider"] = provider_name
+                                                source_outcome["size_source_account_group"] = lease.account_group
+                                                source_outcome["size_source_access_class"] = source_outcome["source_access_class"]
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
                     successful_provider_account_groups[provider_name] = {lease.account_group}
