@@ -379,7 +379,7 @@ def refresh_limits(request: Request):
 def market_limits(request: Request, sport: str | None = None,
                   limit: int = Query(25, ge=1, le=100),
                   offset: int = Query(0, ge=0)):
-    rows = (limits_monitor.current(sport, 2000) if _include_premium_data(request) is not False or config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") == "free" else [])
+    rows = limits_monitor.current(sport, 2000, include_premium=_include_premium_data(request))
     page = _page_results(rows, limit, offset)
     return {"limits": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
@@ -392,7 +392,9 @@ def market_limits_changes(request: Request, sport: str | None = None,
                           direction: str = Query("increased", pattern="^(increased|decreased|all)$"),
                           limit: int = Query(25, ge=1, le=100),
                           offset: int = Query(0, ge=0)):
-    rows = (limits_monitor.changes(sport, direction, 2000) if _include_premium_data(request) or config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") == "free" else [])
+    rows = limits_monitor.changes(
+        sport, direction, 2000, include_premium=_include_premium_data(request)
+    )
     page = _page_results(rows, limit, offset)
     return {"changes": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
@@ -403,9 +405,10 @@ def market_limits_changes(request: Request, sport: str | None = None,
 def market_limits_history(request: Request, event_id: str, bookmaker: str, market: str,
                           outcome: str, point: float | None = None,
                           limit: int = Query(500, ge=1, le=2000)):
-    observations = (limits_monitor.history(
-        event_id, bookmaker, market, outcome, point, limit
-    ) if _include_premium_data(request) or config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") == "free" else [])
+    observations = limits_monitor.history(
+        event_id, bookmaker, market, outcome, point, limit,
+        include_premium=_include_premium_data(request),
+    )
     return {"observations": observations}
 
 @app.get("/api/odds", dependencies=dependencies_for_route("GET", "/api/odds", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
