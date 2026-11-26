@@ -539,6 +539,22 @@ def test_complimentary_subscriber_admin_flow_requires_mfa_csrf_and_activation(tm
     assert harness.store.authenticate(
         "giveaway@example.test", "giveaway winner secure password", "subscriber"
     ) == body["identity_id"]
+    csrf = harness.client.cookies.get("__Host-ooi_csrf")
+    extended = harness.client.put(
+        "/admin/subscribers/complimentary",
+        json={
+            "identity_id": body["identity_id"],
+            "entitlements": ["dashboard"],
+            "additional_days": 14,
+            "campaign": "November giveaway extension",
+            "reason_code": "giveaway_winner",
+        },
+        headers={"origin": "https://ooi.example", "x-ooi-csrf-token": csrf},
+    )
+    assert extended.status_code == 200
+    assert extended.headers["cache-control"] == "no-store"
+    assert extended.json()["entitlements"] == ["dashboard"]
+    assert extended.json()["expires_at"] > body["expires_at"]
     with harness.store.connect() as db:
         audit = db.execute(
             "SELECT actor_identity_id, event_type FROM security_audit_events WHERE subject_identity_id=? AND event_type='subscriber.complimentary_access_granted'",
