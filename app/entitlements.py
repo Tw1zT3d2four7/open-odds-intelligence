@@ -26,8 +26,11 @@ def require_product_administrator(
 ) -> dict:
     """Preserve legacy operator access; require an MFA-backed admin in identity mode."""
     if config.AUTH_MODE == "legacy_basic":
+        request.state.include_premium_data = True
         return {"account_type": "legacy_operator"}
-    return require_administrator(request, get_identity_store(request))
+    session = require_administrator(request, get_identity_store(request))
+    request.state.include_premium_data = True
+    return session
 
 
 def require_product_csrf(request: Request) -> None:
