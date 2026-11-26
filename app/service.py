@@ -1012,8 +1012,9 @@ class OddsService:
         sent = 0
         delivery_limit = config.DISCORD_ALERT_MAX_PER_CYCLE
         rate_limited = False
-        # Global Discord delivery is not subscriber-scoped; keep it on the public/free dataset.
-        events = self.events(include_premium=False)
+        # Global Discord delivery is not subscriber-scoped in identity mode;
+        # keep it on the public/free dataset while preserving legacy operator behavior.
+        events = self.events(include_premium=False if config.AUTH_MODE == "identity" else None)
         events_by_id = {
             str(event.get("id")): event for event in events
             if isinstance(event, dict) and event.get("id") is not None
