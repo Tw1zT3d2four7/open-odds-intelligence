@@ -105,7 +105,7 @@ def _provider_access_class(provider_name, account_group, provider_access_classes
     """Resolve tier by provider account; configured providers fail closed for unknown groups."""
     account_classes = provider_account_access_classes or {}
     if provider_name in account_classes:
-        return account_classes[provider_name].get(str(account_group or "default"), "restricted")
+        return account_classes[provider_name].get(str(account_group or ""), "restricted")
     access_class = (provider_access_classes or {}).get(provider_name)
     return access_class if access_class in {"free", "premium"} else "restricted"
 
@@ -202,7 +202,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None, provi
                             candidate, event, target
                         )
                         candidate["source_provider"] = provider_name
-                        candidate["source_account_group"] = str(candidate.get("source_account_group") or "default")
+                        candidate["source_account_group"] = str(candidate.get("source_account_group") or "")
                         candidate["source_access_class"] = _provider_access_class(
                             provider_name, candidate["source_account_group"],
                             provider_access_classes, provider_account_access_classes,
@@ -267,7 +267,7 @@ def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provi
                     if not isinstance(raw_outcome, dict):
                         continue
                     provider = str(raw_outcome.get("source_provider") or "legacy")
-                    account_group = str(raw_outcome.get("source_account_group") or "default")
+                    account_group = str(raw_outcome.get("source_account_group") or "")
                     refreshed_groups = (refreshed_provider_account_groups or {}).get(provider)
                     if provider in refreshed and (
                         refreshed_groups is None or account_group in set(refreshed_groups)
