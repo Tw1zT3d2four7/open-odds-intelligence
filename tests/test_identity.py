@@ -165,6 +165,18 @@ def test_complimentary_subscriber_is_created_unverified_with_expiring_grants_and
     assert store.consume_password_reset_challenge(
         grant["activation_token"], "another secure password value"
     ) is False
+    updated = store.extend_complimentary_subscriber(
+        grant["identity_id"], ["dashboard"],
+        actor_identity_id=admin_id, additional_days=30,
+        campaign="November giveaway extension", reason_code="giveaway_winner",
+    )
+    assert updated["entitlements"] == ["dashboard"]
+    assert updated["additional_days"] == 30
+    assert updated["expires_at"] > grant["expires_at"]
+    refreshed = store.list_subscribers(email_query="winner@example.com")["subscribers"][0]
+    assert refreshed["complimentary_campaign"] == "November giveaway extension"
+    assert refreshed["complimentary_expires_at"] == updated["expires_at"]
+    assert refreshed["entitlements"] == ["dashboard"]
 
 
 def test_complimentary_subscriber_rejects_duplicate_email_and_non_admin_actor(tmp_path):
