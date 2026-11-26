@@ -269,14 +269,40 @@ class OddsService:
             return OddsLinkProvider(api_key)
         raise ProviderError(f"Unsupported odds provider: {provider_name}")
 
+    def _eligible_provider_account_groups(self, provider_name):
+        """Return only account groups allowed to be polled under current tier controls."""
+        allowed_classes = {"free"}
+        if config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED:
+            allowed_classes.add("premium")
+        account_classes = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get(provider_name)
+        if account_classes is not None:
+            return {
+                group for group, access_class in account_classes.items()
+                if access_class in allowed_classes
+            }
+        provider_class = config.ODDS_PROVIDER_ACCESS_CLASSES.get(provider_name, "restricted")
+        if provider_class not in allowed_classes:
+            return set()
+        pool = self._provider_key_pools.get(provider_name)
+        if pool is None:
+            return set()
+        return {
+            item["account_group"] for item in pool.status().get("keys", [])
+        }
+
     def _fetch_provider_odds_with_rotation(self, provider_name, sport):
         pool = self._provider_key_pools.get(provider_name)
         if pool is None or not pool.configured:
             raise ProviderError(f"No API keys configured for provider: {provider_name}")
+        allowed_account_groups = self._eligible_provider_account_groups(provider_name)
+        if not allowed_account_groups:
+            raise ProviderError(
+                f"No provider account groups are eligible for polling: {provider_name}"
+            )
         last_error = None
         for _ in range(pool.status()["configured_keys"]):
             try:
-                lease = pool.acquire()
+                lease = pool.acquire(allowed_account_groups=allowed_account_groups)
             except NoAvailableKeys as exc:
                 raise ProviderError(str(exc)) from exc
             provider = self._new_provider(provider_name, lease.key)
@@ -331,13 +357,7 @@ class OddsService:
             if name in selected
             and interval > 0
             and self._provider_key_pools[name].configured
-            and (
-                config.ODDS_PROVIDER_ACCESS_CLASSES.get(name) == "free"
-                or (
-                    config.ODDS_PROVIDER_ACCESS_CLASSES.get(name) == "premium"
-                    and config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED
-                )
-            )
+            and bool(self._eligible_provider_account_groups(name))
         }
 
     def auto_refresh_provider_names(self):
