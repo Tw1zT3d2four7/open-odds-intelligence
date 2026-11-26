@@ -1236,7 +1236,16 @@ class OddsService:
                         book_copy["markets"] = markets
                         books.append(book_copy)
                 if books:
+                    visible_sources = sorted({
+                        str(outcome.get("source_provider"))
+                        for book in books
+                        for market in book.get("markets") or []
+                        for outcome in market.get("outcomes") or []
+                        if outcome.get("source_provider")
+                    })
                     event_copy["bookmakers"] = books
+                    event_copy["sources"] = visible_sources
+                    event_copy["source"] = "+".join(visible_sources) if visible_sources else "stored"
                     scoped.append(event_copy)
             if limit is not None and include_premium is not None:
                 scoped = scoped[offset:offset + limit]
