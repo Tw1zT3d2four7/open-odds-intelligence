@@ -101,7 +101,7 @@ def _quote_rank(outcome, provider_rank):
     return (updated if updated is not None else float("-inf"), -provider_rank)
 
 
-def merge_provider_events(provider_results, preferred_provider_names=None):
+def merge_provider_events(provider_results, preferred_provider_names=None, provider_access_classes=None):
     """Merge normalized event lists in explicit source-priority order.
 
     Event identity is strict: sport, ordered home/away identities, and kickoff
@@ -193,6 +193,8 @@ def merge_provider_events(provider_results, preferred_provider_names=None):
                             candidate, event, target
                         )
                         candidate["source_provider"] = provider_name
+                        access_class = (provider_access_classes or {}).get(provider_name)
+                        candidate["source_access_class"] = access_class if access_class in {"free", "premium"} else "restricted"
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
                         existing_index = outcome_map.get(identity_key)
@@ -220,7 +222,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None):
 
 
 
-def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provider_results):
+def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provider_results, provider_access_classes=None):
     """Replace refreshed providers while retaining other providers' latest quotes.
 
     The database stores one current snapshot per sport. A provider-specific
@@ -274,6 +276,7 @@ def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provi
     merged = merge_provider_events(
         retained_results + new_results,
         preferred_provider_names=refreshed,
+        provider_access_classes=provider_access_classes,
     )
     provider_names = list(dict.fromkeys(
         [name for name, _ in retained_results] +
