@@ -214,12 +214,12 @@ def test_movement_endpoint_paginates_result_rows(monkeypatch):
 
 
 def test_limits_endpoints_expose_observations_and_changes(monkeypatch):
-    monkeypatch.setattr(main.limits_monitor, "current", lambda sport, limit: [{"sport": sport, "limit": limit}])
+    monkeypatch.setattr(main.limits_monitor, "current", lambda sport, limit, **kwargs: [{"sport": sport, "limit": limit}])
     monkeypatch.setattr(main.limits_monitor, "status", lambda: {"enabled": True})
-    monkeypatch.setattr(main.limits_monitor, "changes", lambda sport, direction, limit: [
+    monkeypatch.setattr(main.limits_monitor, "changes", lambda sport, direction, limit, **kwargs: [
         {"sport": sport, "direction": direction, "limit": limit}
     ])
-    monkeypatch.setattr(main.limits_monitor, "history", lambda event_id, bookmaker, market, outcome, point, limit: [
+    monkeypatch.setattr(main.limits_monitor, "history", lambda event_id, bookmaker, market, outcome, point, limit, **kwargs: [
         {"event_id": event_id, "bookmaker": bookmaker, "market": market, "outcome": outcome,
          "point": point, "limit": limit}
     ])
