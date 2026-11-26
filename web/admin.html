@@ -498,6 +498,7 @@ tbody tr:last-child td{border-bottom:0}
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Complimentary access update failed.");
       status.textContent = "Complimentary access updated. New expiration: " + data.expires_at + ".";
+      subscriberAccessFilter.value = "true";
       subscribersLoaded = false;
       loadSubscribers();
     } catch (error) {
@@ -546,6 +547,7 @@ tbody tr:last-child td{border-bottom:0}
       document.getElementById("promo-email").value = "";
       document.getElementById("promo-campaign").value = "";
       document.getElementById("promo-reason").value = "";
+      subscriberAccessFilter.value = "true";
       subscribersLoaded = false;
       loadSubscribers();
     } catch (error) {
