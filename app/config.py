@@ -39,7 +39,7 @@ _raw_provider_account_access_classes = os.getenv(
     "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES", ""
 )
 ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES = {}
-for _entry in _raw_provider_account_access_classes.replace("\\n", ",").split(","):
+for _entry in _raw_provider_account_access_classes.replace("\n", ",").split(","):
     if not _entry.strip():
         continue
     if "=" not in _entry or "|" not in _entry.split("=", 1)[0]:
