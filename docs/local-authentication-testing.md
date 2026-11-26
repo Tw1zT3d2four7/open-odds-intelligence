@@ -4,9 +4,9 @@ This workflow is for an isolated developer workstation only. It does not change 
 
 ## Configure a local development instance
 
-Use a separate `.env` and a separate accounts database. Do not copy the live accounts database, administrator MFA seed, provider credentials, or production session data into the development instance.
+Use a separate `.env.local` and a separate local test data directory. Do not copy the live accounts database, administrator MFA seed, provider credentials, or production session data into the development instance.
 
-Set these values in the local development `.env`:
+The ready-to-run localhost stack below uses `.env.local.example`. Its no-email settings are:
 
 ```dotenv
 AUTH_MODE=identity
@@ -19,13 +19,13 @@ AUTH_EMAIL_TRANSPORT=disabled
 AUTH_PASSWORD_RECOVERY_ENABLED=false
 AUTH_ADMIN_MFA_REQUIRED=true
 AUTH_SUBSCRIBER_MFA_REQUIRED=false
-AUTH_RATE_LIMITING_ENABLED=true
+AUTH_RATE_LIMITING_ENABLED=false
 AUTH_CSRF_REQUIRED=true
-PUBLIC_BASE_URL=http://localhost:8765
-ACCOUNTS_DATABASE_PATH=./data/dev-accounts.sqlite3
+PUBLIC_BASE_URL=http://localhost:18765
+ACCOUNTS_DATABASE_PATH=./data/local-accounts.sqlite3
 ```
 
-Keep `MFA_ENCRYPTION_KEY`, `EMAIL_QUEUE_ENCRYPTION_KEY`, and `RATE_LIMIT_HASH_KEY` as distinct, random secrets. The email queue encryption key must be stable while messages remain queued. The rate-limit hash key must remain stable to preserve existing bucket identities.
+Keep `MFA_ENCRYPTION_KEY` and `RATE_LIMIT_HASH_KEY` as distinct, random secrets. The local disabled-email profile does not need an email queue key. Keep generated keys stable for the life of the local test database.
 
 With this no-email profile, new subscriber accounts are marked verified only by the explicit development policy. Registration does not create a verification challenge or queue an email. Password recovery is unavailable; use a fresh test account if you need to test registration again. The same settings are rejected in staging and production.
 
@@ -61,7 +61,7 @@ From the repository checkout on the server:
 
 ```bash
 cp .env.local.example .env.local
-python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'
 python3 -c 'import secrets; print(secrets.token_hex(32))'
 ```
 
