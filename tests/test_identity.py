@@ -1,7 +1,7 @@
 import hashlib
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from cryptography.fernet import Fernet
