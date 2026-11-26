@@ -17,7 +17,7 @@ def _application_routes():
 
 def test_every_application_route_has_an_explicit_target_access_class():
     routes = _application_routes()
-    assert len(routes) == 62
+    assert len(routes) == 64
     assert unclassified_routes(routes) == []
     assert stale_policy_entries(routes) == []
 
@@ -30,7 +30,7 @@ def test_policy_inventory_covers_all_application_and_framework_http_routes():
         for method in (route.methods or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert len(actual) == 62
+    assert len(actual) == 64
     assert set(application_route_access_policy()) == actual
 
 
@@ -85,8 +85,8 @@ def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
         route for route in identity_router.routes
         if getattr(route, "methods", None)
     ]
-    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == 36
-    assert len(routes) == 36
+    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == 38
+    assert len(routes) == 38
     assert unclassified_routes(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
     assert stale_policy_entries(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
 
@@ -104,6 +104,8 @@ def test_identity_route_policy_distinguishes_public_mutations_and_session_logout
     assert classify_route("POST", "/auth/sessions/revoke-all", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
     assert classify_route("GET", "/admin/audit-events", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/admin/subscribers", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("POST", "/admin/subscribers/complimentary", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("PUT", "/admin/subscribers/complimentary", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/admin/subscribers", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/admin/billing", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("POST", "/admin/subscribers/{identity_id}/status", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
