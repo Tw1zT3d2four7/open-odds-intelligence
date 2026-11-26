@@ -572,7 +572,7 @@ class OddsDatabase:
                                    str(outcome.get("size_source_provider") or ""),
                                    str(outcome.get("size_source_account_group") or ""),
                                    outcome.get("size_source_access_class") if outcome.get("size_source_access_class") in {"free", "premium"} else "restricted")
-                            identity = (row[1], book_key, market_key, outcome_name, description, point, row[16], row[17])
+                            identity = (row[1], book_key, market_key, outcome_name, description, point, row[15], row[16], row[17])
                             if identity in conflicted_quotes:
                                 continue
                             previous = rows_by_identity.get(identity)
