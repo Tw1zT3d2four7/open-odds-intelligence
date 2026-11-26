@@ -1,13 +1,13 @@
 # Subscriber Feature Entitlements
 
-**Status:** Implemented server-side foundation; commercial plan bundles are a later roadmap phase.  
+**Status:** Free plan bundle and paid premium-data mapping are implemented on the feature branch.  
 **Working branch:** `feature/admin-panel-and-subscriptions`
 
 ## Purpose
 
 Entitlements are feature grants, not subscription plans. They provide a default-deny authorization layer for existing product routes without deciding plan names, prices, trials, billing terms, or quotas prematurely.
 
-A future plan/subscription service can translate an active plan into a set of these feature keys. Until then, an administrator may grant a specific feature set to an individual subscriber through the protected admin API.
+The Free plan is assigned automatically at registration using a fixed server-owned bundle of every current feature key except `premium_data`. The public registration request cannot choose or elevate entitlements. Existing ungranted subscribers receive the same Free bundle through schema migration 16. Administrators may still replace individual subscriber grants through the protected API, and complimentary accounts remain limited to their explicitly selected expiring grants.
 
 ## Feature keys
 
@@ -39,7 +39,9 @@ The versioned identity database stores one row per subscriber/feature grant in `
 - administrator identity that granted the feature;
 - created/updated timestamps.
 
-A feature is active only when the identity is an active subscriber, the grant has started, and its expiry is either absent or in the future. No grant means no access. Deactivating an identity immediately prevents its grants from authorizing requests.
+A stored feature grant is active only when the identity is an active subscriber, the grant has started, and its expiry is either absent or in the future. Deactivating an identity immediately prevents its grants from authorizing requests.
+
+The `premium_data` key also has one billing-derived path: a subscriber with an active Stripe subscription whose price ID exactly matches the configured monthly or annual price receives premium-data access while the recorded billing period is current. The price ID and interval must match the configured plan, and period start/end must be present. Canceled, past-due, unpaid, paused, expired, unrecognized-price, or unconfigured subscriptions fail closed. Cancel-at-period-end remains eligible only while Stripe reports the subscription active and the current paid period has not ended. Complimentary premium access remains an explicit expiring grant and does not require Stripe.
 
 Grant replacement is atomic. Invalid feature keys, non-subscriber identities, non-timezone-aware expiry values, expired timestamps, and non-administrator actors are rejected. Expiry timestamps are normalized to UTC before storage.
 
@@ -74,8 +76,8 @@ The production deployment remains on `legacy_basic`. Identity mode must not be e
 
 ## Deliberately deferred
 
-- plan names, prices, trials, and quotas;
-- automatic grants from Stripe or another billing provider;
+- trials and plan-specific usage quotas;
+- automatic feature-bundle changes beyond the Free bundle and premium-data mapping;
 - organization/team sharing;
 - usage metering and per-plan rate limits;
 - enforcement of the `premium_data` scope across provider ingestion, derived datasets, caches, APIs, history, and notification delivery (specified in [Provider Data Access Isolation](provider-data-access-isolation.md));
