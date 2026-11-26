@@ -163,4 +163,13 @@ When a provider has account-specific overrides, any unlisted account group is cl
 
 Merge identities include the access class, so a free and premium quote from the same provider/book/selection can coexist without overwriting each other. Account group and tier provenance survive incremental refreshes. Provider-level access classes remain the backward-compatible fallback only when no account-specific overrides exist for that provider. The standalone OddsLink posted-market-limit poller uses the same eligible-group rules and stamps each returned quote with its leased account group and access class; a premium-only account cannot be selected when premium polling is disabled. TheRundown final-score synchronization also uses the same allowlist, so a score-only background job cannot bypass the premium-polling switch.
 
+Provider quota reserve floors can be configured per account group using ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS. Example:
+
+```dotenv
+ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS=the_odds_api|premium=credits_remaining:250,oddize|premium=monthly_objects_remaining:1000
+```
+
+When a provider reports the configured remaining-quota metric at or below its floor, the entire account group is paused until the provider-reported reset time (with a 24-hour fallback if no reset is supplied). The pause survives successful HTTP responses and service restarts. The metric must match a supported provider-reported remaining counter; no dollar cost is inferred from it. Actual monetary cost estimates still require provider-specific pricing and billing data.
+
+
 Automated merge and key-pool tests now cover same-provider free/premium coexistence, fail-closed unknown groups, and key leasing restricted to explicitly eligible account groups. Full CI verification is still required. Do not enable mixed-tier account configuration or premium polling in production until the complete data-scope and quota acceptance suite passes.
