@@ -551,3 +551,61 @@ def test_market_limit_change_windows_are_scoped_before_aggregation(tmp_path):
     assert free_changes[0]["limit_amount"] == 15000
     assert len(paid_changes) == 2
     assert {row["source_access_class"] for row in paid_changes} == {"free", "premium"}
+
+
+
+def test_limit_extract_uses_quote_account_group_and_access_class():
+    events = fixture()
+    for outcome in events[0]["bookmakers"][0]["markets"][0]["outcomes"]:
+        outcome["source_provider"] = "oddslink"
+        outcome["source_account_group"] = "free-account"
+        outcome["source_access_class"] = "free"
+
+    rows = MarketLimitsMonitor._extract(
+        "americanfootball_nfl", events, "2026-11-19T12:00:00Z",
+        source_account_group="legacy-fingerprint",
+        source_access_class="premium",
+    )
+
+    assert len(rows) == 2
+    assert {row[14] for row in rows} == {"free-account"}
+    assert {row[15] for row in rows} == {"free"}
+
+
+def test_standalone_oddslink_limit_client_leases_only_free_account_groups(monkeypatch):
+    import app.limits as module
+
+    monkeypatch.setattr(
+        module.config, "ODDSLINK_API_KEYS",
+        "free-account|FreeCaseKey,premium-account|PremiumCaseKey",
+    )
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "")
+    monkeypatch.setattr(module.config, "ODDS_PREMIUM_PROVIDER_POLLING_ENABLED", False)
+    monkeypatch.setattr(
+        module.config, "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES",
+        {"oddslink": {"free-account": "free", "premium-account": "premium"}},
+    )
+    calls = []
+
+    class FakeProvider:
+        usage = {"requests_remaining": "99"}
+
+        def __init__(self, key):
+            calls.append(key)
+
+        def fetch_usage(self):
+            return 99
+
+        def _request(self, path, params=None):
+            return {"events": fixture()}
+
+    monkeypatch.setattr(module, "OddsLinkProvider", FakeProvider)
+    client = module.OddsLinkClient()
+    events = client.fetch("nfl")
+
+    assert calls == ["FreeCaseKey"]
+    assert client.last_account_group == "free-account"
+    assert client.last_access_class == "free"
+    outcomes = events[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert {row["source_account_group"] for row in outcomes} == {"free-account"}
+    assert {row["source_access_class"] for row in outcomes} == {"free"}
