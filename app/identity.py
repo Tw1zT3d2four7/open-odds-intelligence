@@ -1189,8 +1189,11 @@ class IdentityStore:
         """Replace a promo subscriber's feature set and add bounded time to its expiry."""
         if not isinstance(identity_id, str) or not identity_id or len(identity_id) > 128:
             raise ValueError("A valid subscriber identity reference is required.")
-        if not isinstance(actor_identity_id, str) or not actor_identity_id or len(actor_identity_id) > 128:
-            raise ValueError("An active MFA administrator is required.")
+        if (
+            not isinstance(actor_identity_id, str) or not actor_identity_id
+            or len(actor_identity_id) > 128 or actor_identity_id == identity_id
+        ):
+            raise ValueError("A separate MFA administrator actor is required.")
         if isinstance(additional_days, bool) or not isinstance(additional_days, int) or not 1 <= additional_days <= 366:
             raise ValueError("Additional access must be between 1 and 366 days.")
         if not isinstance(entitlement_keys, (list, tuple)) or not entitlement_keys or len(entitlement_keys) > 32:
