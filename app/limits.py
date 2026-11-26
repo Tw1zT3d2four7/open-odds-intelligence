@@ -320,6 +320,7 @@ class MarketLimitsMonitor:
                         if not isinstance(title, str) or not title.strip():
                             title = book_key
                         row_provider = outcome.get("source_provider") or source_provider
+                        row_group = outcome.get("source_account_group") or source_account_group
                         row_class = outcome.get("source_access_class") or source_access_class
                         if row_class not in ("free", "premium"):
                             row_class = "restricted"
@@ -327,7 +328,7 @@ class MarketLimitsMonitor:
                             observed_at, sport, event_id,
                             *metadata, book_key, title, market_key, outcome_name,
                             point, price, amount, str(row_provider or ""),
-                            str(source_account_group or ""), row_class,
+                            str(row_group or ""), row_class,
                             str(source_capability or "posted_market_limits"),
                         ))
 
