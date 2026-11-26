@@ -141,8 +141,15 @@ tbody tr:last-child td{border-bottom:0}
             </select>
             <label for="promo-custom-days">Custom duration (1–366 days)</label>
             <input id="promo-custom-days" type="number" min="1" max="366" step="1" value="30" disabled>
-            <label for="promo-reason">Reason / notes</label>
-            <input id="promo-reason" type="text" maxlength="500" required placeholder="Giveaway winner, promotion, service recovery…">
+            <label for="promo-reason">Grant reason</label>
+            <select id="promo-reason" required>
+              <option value="">Choose a reason</option>
+              <option value="giveaway_winner">Giveaway winner</option>
+              <option value="promotional_campaign">Promotional campaign</option>
+              <option value="sponsorship">Sponsorship</option>
+              <option value="service_recovery">Service recovery</option>
+              <option value="other">Other approved reason</option>
+            </select>
           </div>
           <div class="checks" id="promo-entitlements">
             <label class="check"><input type="checkbox" value="dashboard"> <strong>Dashboard</strong></label>
@@ -432,11 +439,11 @@ tbody tr:last-child td{border-bottom:0}
   promoCreate.addEventListener("click", async () => {
     const email = document.getElementById("promo-email").value.trim();
     const campaign = document.getElementById("promo-campaign").value.trim();
-    const reason = document.getElementById("promo-reason").value.trim();
+    const reasonCode = document.getElementById("promo-reason").value;
     const durationDays = promoDuration.value === "custom" ? Number(promoCustomDays.value) : Number(promoDuration.value);
     const entitlements = [...document.querySelectorAll("#promo-entitlements input:checked")].map(input => input.value);
     const status = document.getElementById("promo-status");
-    if (!email || !campaign || !reason || !entitlements.length || !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 366) {
+    if (!email || !campaign || !reasonCode || !entitlements.length || !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 366) {
       status.textContent = "Enter an email, campaign, reason, duration, and at least one feature.";
       return;
     }
@@ -457,7 +464,7 @@ tbody tr:last-child td{border-bottom:0}
       const response = await fetch("/admin/subscribers/complimentary", {
         method:"POST",credentials:"same-origin",cache:"no-store",
         headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
-        body:JSON.stringify({email,entitlements,duration_days:durationDays,campaign,reason})
+        body:JSON.stringify({email,entitlements,duration_days:durationDays,campaign,reason_code:reasonCode})
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Complimentary account creation failed.");
