@@ -64,6 +64,7 @@ IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("POST", "/auth/billing/portal"): "subscriber_only",
     ("GET", "/admin"): "administrator_only",
     ("GET", "/admin/overview"): "administrator_only",
+    ("GET", "/admin/workspace/status"): "administrator_only",
     ("GET", "/admin/authentication-policy"): "administrator_only",
     ("GET", "/forgot-password"): "public_minimal",
     ("GET", "/verify-email"): "public_minimal",
