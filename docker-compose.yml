@@ -1,6 +1,9 @@
 services:
   open-odds-intelligence:
+    # Production image from main:
     image: ghcr.io/tw1zt3d2four7/open-odds-intelligence:latest
+    # To test the dev branch image instead, comment out :latest and uncomment :dev:
+    # image: ghcr.io/tw1zt3d2four7/open-odds-intelligence:dev
     pull_policy: always
     container_name: open-odds-intelligence
     restart: unless-stopped
