@@ -1,7 +1,6 @@
 # Subscriber Feature Entitlements
 
-**Status:** Free plan bundle and paid premium-data mapping are implemented on the feature branch.  
-**Working branch:** `feature/admin-panel-and-subscriptions`
+**Status:** Free-plan feature bundle, default-deny route entitlements, complimentary grants, and paid premium-data mapping are implemented in the current `main`/`development` baseline. Reviewed 2026-11-27.
 
 ## Purpose
 
