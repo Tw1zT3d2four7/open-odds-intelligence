@@ -172,6 +172,7 @@ async function get(path){const r=await fetch(path);if(!r.ok)throw Error("API "+r
 function csrfHeaders(){const match=document.cookie.match(/(?:^|;\s*)__Host-ooi_csrf=([^;]+)/);return match?{"x-ooi-csrf-token":decodeURIComponent(match[1])}:{}}
 function post(path){return fetch(path,{method:"POST",headers:csrfHeaders()})}
 async function getSafe(path,fallback,failures){try{return await get(path)}catch(err){failures.push(err.message);return fallback}}
+async function getWorkspaceHealth(failures){try{return await get("/admin/workspace/status")}catch(adminError){try{return await get("/api/health")}catch(publicError){failures.push(publicError.message);return {}}}}
 function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
 function pageQuery(extra={}){return query({limit:state.pageSize,offset:state.page*state.pageSize,...extra})}
 function setTab(tab){document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["ev","arb","board","allbooks","movement","limits","clv","props","calculators","simulation"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==tab));const paged=["ev","arb","board","allbooks","movement","clv","props"].includes(tab);const pager=$("paginationBottom");if(paged){$("view-"+tab).appendChild(pager);pager.classList.remove("hidden")}else{$("view-ev").appendChild(pager);pager.classList.add("hidden")}pager.setAttribute("aria-hidden",String(!paged));$("limitChangesPagination").classList.toggle("hidden",tab!=="limits");$("limitsPagination").classList.toggle("hidden",tab!=="limits")}
@@ -216,7 +217,7 @@ async function load(){
   const activeTab=document.querySelector('nav[aria-label="Market views"] .tab.active')?.dataset.tab||"ev";
   const request=(tab,path,fallback)=>activeTab===tab?getSafe(path,fallback,apiFailures):Promise.resolve(fallback);
   const [health,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
-   getSafe(location.pathname==="/admin/workspace"?"/admin/workspace/status":"/api/health",{},apiFailures),
+   getWorkspaceHealth(apiFailures),
    request("ev","/api/opportunities"+pageQuery({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]}),
    request("arb","/api/arbitrage"+pageQuery(),{arbitrage:[]}),
    request("board","/api/market-board"+pageQuery(),{quotes:[]}),
