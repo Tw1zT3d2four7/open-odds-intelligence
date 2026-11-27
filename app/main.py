@@ -317,7 +317,7 @@ async def prevent_identity_response_caching(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
     identity_page_paths = {
-        "/login", "/register", "/admin", "/admin/login", "/account",
+        "/", "/login", "/register", "/admin", "/admin/login", "/account",
         "/forgot-password", "/verify-email", "/reset-password",
     }
     protected_product = False
