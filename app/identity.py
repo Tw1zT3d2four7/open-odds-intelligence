@@ -1120,13 +1120,10 @@ class IdentityStore:
             return result
 
     def create_subscriber(self, email: str, password: str) -> str:
-        """Create a subscriber; only an explicit local no-verification profile pre-verifies it."""
-        local_verified = (
-            AUTH_POLICY.is_local_development
-            and not AUTH_POLICY.email_verification_required
-        )
+        """Create a subscriber, pre-verifying only when policy does not require verification."""
+        email_verified = not AUTH_POLICY.email_verification_required
         return self._create_identity(
-            email, password, "subscriber", email_verified=local_verified
+            email, password, "subscriber", email_verified=email_verified
         )
 
     def create_complimentary_subscriber(
