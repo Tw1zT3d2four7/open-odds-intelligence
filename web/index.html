@@ -516,7 +516,7 @@ document.getElementById("workspaceSignOut").addEventListener("click", async () =
   const button=document.getElementById("workspaceSignOut");button.disabled=true;
   try {
     let token=csrfHeaders()["x-ooi-csrf-token"];
-    if(!token){const csrf=await fetch("/auth/csrf",{credentials:"same-origin",cache:"no-store"});if(!csrf.ok)throw new Error("Secure sign-out could not be initialized.");const match=document.cookie.match(/(?:^|;\\s*)__Host-ooi_csrf=([^;]+)/);token=match?decodeURIComponent(match[1]):"";}
+    if(!token){const csrf=await fetch("/auth/csrf",{credentials:"same-origin",cache:"no-store"});if(!csrf.ok)throw new Error("Secure sign-out could not be initialized.");token=csrfHeaders()["x-ooi-csrf-token"]||"";}
     if(!token)throw new Error("Security token unavailable. Reload the page and try again.");
     const endpoint=isAdminWorkspace?"/admin/auth/logout":"/auth/logout";
     const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"X-Ooi-Csrf-Token":token}});
