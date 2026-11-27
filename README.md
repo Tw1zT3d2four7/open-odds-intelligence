@@ -4,7 +4,7 @@
 
 # Open Odds Intelligence
 
-Open-source, self-hosted sports odds comparison and market-monitoring platform. Independent of OddsLogic and sportsbooks.
+Open-source, self-hosted sports odds comparison and market-monitoring platform with an optional subscriber account and administrator workspace. Independent of OddsLogic and sportsbooks.
 
 ## Current working features
 
@@ -30,7 +30,7 @@ Open-source, self-hosted sports odds comparison and market-monitoring platform. 
 - Independent provider refresh schedules: TheRundown every four hours; Oddize and OddsLink daily; The Odds API manual by default and daily at most when explicitly scheduled. Each provider is refreshed only when its own interval is due.
 - Optional Discord EV and arbitrage alerts with persistent duplicate suppression and retry after delivery failure.
 - Discord notifications use structured embeds for value, arbitrage and posted-market-limit changes, with separate fields, localized event times, clear alert types and no automatic user mentions.
-- Docker Compose deployment and GitHub Actions tests.
+- Subscriber registration, email verification, password recovery, separate subscriber/administrator sessions, administrator TOTP MFA, CSRF protection, and explicit route-level authorization in staged identity mode.\n- Admin Console foundations for subscriber lifecycle, session revocation, audit history, complimentary access, entitlement management, and billing operations.\n- Guarded Stripe test-mode Checkout and Customer Portal flows; all billing activation switches remain off by default.\n- Docker Compose deployment and GitHub Actions tests.
 
 TheRundown ATP/WTA ingestion uses sport IDs 38 and 39 and the provider's pre-match moneyline, game-spread and total markets. Tennis competitors are normalized from the moneyline participant order into the shared matchup fields; those fields are neutral participant slots, not a claim that either player is a home competitor. The Odds API tennis coverage is tournament-specific: configure active `tennis_atp_*` and `tennis_wta_*` keys in `ODDS_SPORTS` rather than using generic aliases. Live simulation no longer treats sportsbook prices as model predictions: score-based leagues require historical team ratings, while tennis and MMA require independent Elo ratings. A matchup without adequate historical coverage is blocked rather than silently sampled from the market.
 
@@ -52,11 +52,11 @@ The EV calculation uses the median of other sportsbooks' no-vig probabilities fo
 
 ## Access control and deployment security
 
-The dashboard and API support optional HTTP Basic authentication. Set both `AUTH_USERNAME` and `AUTH_PASSWORD` in the private server-side `.env` file to protect the dashboard and all API routes. Leave both blank only for a trusted private development network. If exactly one is configured, all application routes other than `/api/health` fail closed with HTTP 503 rather than silently running without authentication. `/api/health` remains unauthenticated even during a credential-configuration error so Docker and orchestrators can report container health; restrict that endpoint at the network or reverse-proxy layer if its operational details should not be public. Usernames must not contain a colon (Basic authentication reserves it as the username/password separator). Basic authentication must be used over HTTPS when traffic crosses an untrusted network; place the application behind a TLS-terminating reverse proxy before enabling remote access. Do not put credentials in the repository, screenshots, issue reports, or chat.
+Authentication is controlled by the explicit `AUTH_MODE` setting. The default `legacy_basic` mode preserves the existing optional HTTP Basic authentication contract: set both `AUTH_USERNAME` and `AUTH_PASSWORD` to require credentials, leave both blank only on a trusted private network, and never configure only one. Partial Basic Auth configuration fails closed with HTTP 503. The separate subscriber/admin identity router is available only when `AUTH_MODE=identity` is explicitly selected. In that mode, subscriber and administrator sessions use separate host-only cookies; administrator access requires TOTP or a single-use recovery code; browser mutations require same-origin CSRF; and product routes enforce server-side feature entitlements. Identity mode is implemented and covered by CI, but remains a staged opt-in deployment mode. Do not switch a public or production deployment until the non-production acceptance, reverse-proxy/TLS, backup/restore, key-recovery, and rollback gates in `docs/identity-staging-acceptance-checklist.md` and `docs/PRODUCTION_OPERATIONS.md` are complete. `/api/health` remains public for container liveness and returns minimal information in identity mode. Never put credentials, API keys, session tokens, MFA seeds, or recovery codes in the repository, screenshots, issue reports, or chat.
 
 ## Not implemented yet
 
-This is an active development build, not a feature-complete OddsLogic replacement. Additional provider integrations and full historical strategy backtesting remain future work. Subscriber authentication, billing persistence, guarded test-mode Stripe Checkout/Customer Portal, and the private billing operations view are implemented on the `feature/admin-panel-and-subscriptions` branch; they are not enabled by default and are not ready for public commercial access. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. The backtesting implementation plan is documented in [docs/BACKTESTING_DESIGN.md](docs/BACKTESTING_DESIGN.md); it requires prospective quote history and trustworthy settlement data, and will not fabricate missing results. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
+This is an active development build, not a feature-complete OddsLogic replacement. The subscriber/admin platform is now part of the `main` and `development` baselines. Registration, verification, password recovery, separate account sessions, administrator MFA, route entitlements, the Admin Console foundation, encrypted transactional email, billing persistence, and guarded Stripe test-mode endpoints are implemented. Identity mode remains opt-in and public commercial launch is not approved: complete isolated staging acceptance, verify provider redistribution rights, approve plan/entitlement and subscription lifecycle policies, and finish the remaining notification and operational gates first. Additional provider integrations and full historical strategy backtesting remain future work. CLV tracking requires new observations after installation and enough complete pregame snapshots to calculate valid closes. The backtesting implementation plan is documented in [docs/BACKTESTING_DESIGN.md](docs/BACKTESTING_DESIGN.md); it requires prospective quote history and trustworthy settlement data, and will not fabricate missing results. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
 
 No fabricated odds or limits are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
@@ -102,7 +102,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Open http://localhost:8765. SQLite data persists in `./data/odds_history.sqlite3` through the Compose data volume.
+The default `docker-compose.yml` currently pulls the `local-release` image. Open http://localhost:8765. SQLite data persists in `./data/odds_history.sqlite3` through the Compose data volume. Do not use `docker compose down -v` for updates.
 
 Local install:
 
@@ -199,3 +199,23 @@ When TheRundown is the active odds provider, an optional score-only results coll
 ## Production operations
 
 See [docs/PRODUCTION_OPERATIONS.md](docs/PRODUCTION_OPERATIONS.md) for safe SQLite backups and restores, image update and rollback procedures, operational health checks, the current security boundary, and the gates that must be met before commercial subscriber access. The runbook does not change or automate the existing deployment.
+
+
+## Documentation
+
+The implementation and operations documentation is maintained under [docs/](docs/). Start with these references:
+
+- [Production operations runbook](docs/PRODUCTION_OPERATIONS.md) — deployment, backup/restore, image updates, health checks, and launch gates.
+- [Free provider API keys](docs/FREE_PROVIDER_KEYS.md) — free-tier provider setup, key handling, quota behavior, and source limits.
+- [Admin Console and subscriber roadmap](docs/roadmap.md) — product decisions, implementation state, and remaining launch work.
+- [Identity and access architecture](docs/identity-access-architecture.md) — account separation, sessions, MFA, authorization, and migration boundaries.
+- [Identity HTTP route inventory](docs/identity-http-routes.md) and [route access matrix](docs/route-access-matrix.md) — concrete routes and access requirements.
+- [Authentication environment profiles](docs/authentication-environment-profiles.md), [rate-limit policy](docs/auth-rate-limit-policy.md), and [Basic Auth transition plan](docs/basic-auth-transition.md) — staged authentication controls and cutover safeguards.
+- [Identity staging acceptance checklist](docs/identity-staging-acceptance-checklist.md), [backup/restore runbook](docs/identity-backup-restore.md), and [backup drill](docs/identity-backup-drill.md) — non-production verification and recovery.
+- [Entitlement model](docs/entitlement-model.md) and [provider-data isolation](docs/provider-data-access-isolation.md) — subscriber feature grants and free/premium data boundaries.
+- [Transactional email delivery](docs/transactional-email-delivery.md) and [durable email queue](docs/transactional-email-queue-design.md) — authentication email delivery and queue behavior.
+- [Stripe test-mode acceptance](docs/stripe-test-mode-acceptance.md) and [subscription lifecycle proposal](docs/subscription-lifecycle-policy-proposal.md) — billing test gates and policy decisions.
+- [Environment configuration manager design](docs/environment-configuration-design.md), [notification delivery design](docs/notification-delivery-design.md), and [subscriber email-change design](docs/subscriber-email-change-design.md) — proposals only; they do not authorize implementation.
+- [Testing plan](docs/TESTING_PLAN.md), [simulator validation](docs/SIMULATOR_VALIDATION.md), [backtesting design](docs/BACKTESTING_DESIGN.md), and [simulation results import](docs/simulation-results-import.md) — data validation and paper-only model evaluation.
+
+Documents explicitly labeled **Draft**, **Proposal**, or **Design** remain planning artifacts. Their inclusion does not mean the proposed feature is implemented or approved for production.
