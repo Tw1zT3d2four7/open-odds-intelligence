@@ -214,7 +214,7 @@ async function load(){
   const activeTab=document.querySelector('nav[aria-label="Market views"] .tab.active')?.dataset.tab||"ev";
   const request=(tab,path,fallback)=>activeTab===tab?getSafe(path,fallback,apiFailures):Promise.resolve(fallback);
   const [health,ev,arb,board,allBooks,movement,limits,limitChanges,clv,playerProps]=await Promise.all([
-   getSafe("/api/health",{},apiFailures),
+   getSafe(location.pathname==="/admin/workspace"?"/admin/workspace/status":"/api/health",{},apiFailures),
    request("ev","/api/opportunities"+pageQuery({min_ev:state.minEv,min_consensus_books:state.consensus}),{opportunities:[]}),
    request("arb","/api/arbitrage"+pageQuery(),{arbitrage:[]}),
    request("board","/api/market-board"+pageQuery(),{quotes:[]}),
