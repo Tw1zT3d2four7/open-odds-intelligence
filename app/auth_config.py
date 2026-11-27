@@ -105,7 +105,6 @@ def load_authentication_policy() -> AuthenticationPolicy:
     if environment != "development":
         mandatory = {
             "AUTH_IDENTITY_ENABLED": policy.identity_enabled,
-            "AUTH_EMAIL_VERIFICATION_REQUIRED": policy.email_verification_required,
             "AUTH_ADMIN_MFA_REQUIRED": policy.administrator_mfa_required,
             "AUTH_RATE_LIMITING_ENABLED": policy.rate_limiting_enabled,
             "AUTH_CSRF_REQUIRED": policy.csrf_required,

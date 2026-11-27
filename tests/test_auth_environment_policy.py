@@ -38,7 +38,6 @@ def test_production_defaults_keep_security_floor(monkeypatch):
     "override",
     [
         {"AUTH_IDENTITY_ENABLED": "false"},
-        {"AUTH_EMAIL_VERIFICATION_REQUIRED": "false"},
         {"AUTH_ADMIN_MFA_REQUIRED": "false"},
         {"AUTH_RATE_LIMITING_ENABLED": "false"},
         {"AUTH_CSRF_REQUIRED": "false"},
@@ -48,6 +47,19 @@ def test_production_defaults_keep_security_floor(monkeypatch):
 def test_production_rejects_weak_or_local_only_overrides(monkeypatch, override):
     with pytest.raises(ValueError):
         _reload(monkeypatch, **override)
+
+
+def test_production_can_disable_email_verification_without_weakening_security(monkeypatch):
+    module = _reload(
+        monkeypatch,
+        AUTH_EMAIL_VERIFICATION_REQUIRED="false",
+    )
+    policy = module.AUTHENTICATION_POLICY
+    assert not policy.email_verification_required
+    assert policy.identity_enabled
+    assert policy.administrator_mfa_required
+    assert policy.rate_limiting_enabled
+    assert policy.csrf_required
 
 
 def test_staging_keeps_mandatory_security_but_allows_resend(monkeypatch):
