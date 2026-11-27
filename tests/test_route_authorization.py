@@ -223,6 +223,7 @@ def test_policy_dependencies_enforce_admin_session_and_csrf_over_http():
     client = TestClient(app)
 
     client.cookies.set(cookies["subscriber_cookie"], "subscriber-entitled")
+    client.cookies.set(cookies["csrf_cookie"], "csrf-value")
     subscriber = client.post(
         "/api/refresh",
         headers={
