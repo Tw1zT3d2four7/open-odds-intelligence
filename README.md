@@ -102,7 +102,7 @@ docker compose pull
 docker compose up -d
 ```
 
-The default `docker-compose.yml` currently pulls the `local-release` image. Open http://localhost:8765. SQLite data persists in `./data/odds_history.sqlite3` through the Compose data volume. Do not use `docker compose down -v` for updates.
+The default `docker-compose.yml` pulls `ghcr.io/tw1zt3d2four7/open-odds-intelligence:latest` from `main`. The `dev` branch publishes the separate `:dev` image for testing. Open http://localhost:8765. SQLite data persists in `./data/odds_history.sqlite3` through the Compose data volume. Do not use `docker compose down -v` for updates.
 
 Local install:
 
