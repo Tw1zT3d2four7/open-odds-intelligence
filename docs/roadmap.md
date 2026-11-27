@@ -270,9 +270,11 @@ The Environment Configuration manager remains a separate protected-admin workstr
 
 ## 5. Non-negotiable safeguards
 
-- All work stays on `feature/admin-panel-and-subscriptions`, based on `development`.
-- Do not commit directly to `main` or `development`.
-- Do not merge/promote, deploy, or restart production without explicit approval.
+- `main` is the production source baseline and publishes the `:latest` image.
+- `dev` is the integration/testing baseline and publishes the `:dev` image.
+- Keep only `main` and `dev` as long-lived branches; use short-lived feature branches only when needed and retire them after their work is merged or verified as already present.
+- Promote work from `dev` to `main` through reviewed pull requests and passing CI.
+- Do not deploy, change production runtime settings, or restart production without explicit approval.
 - No local Docker image builds.
 - Preserve existing dashboard/provider/alert behavior unless separately reviewed.
 - Never delete, replace, or reset persistent volumes or the odds-history database.
@@ -297,9 +299,16 @@ The Environment Configuration manager remains a separate protected-admin workstr
 
 ## 7. Current verified milestone
 
-**Latest verified implementation commit:** `c4ec830296d70828f71ac833bcc89c1522126d93`  
-**CI run:** `45724675805` — **966 passed, 1 warning**.  
-**Working branch:** `feature/admin-panel-and-subscriptions` (no merge or production deployment).
+**Current baseline review:** 2026-11-27  
+**Production branch:** `main` (publishes `:latest`).  
+**Development branch:** `dev` (publishes `:dev`).  
+**Application tree:** `main` and `dev` are synchronized.  
+**Latest verified full test suite:** 1,075 passed, 1 non-blocking deprecation warning.  
+**Deployment boundary:** code promotion and image publication do not authorize a production restart, identity-mode cutover, subscriber launch, or live billing activation.
+
+
+
+> **Historical implementation notes:** The following milestone descriptions were written while work was isolated on earlier feature branches. References to those branches, older commit hashes, CI run IDs, and statements that features were not yet merged are retained as development history, not as current branch or deployment instructions. Current branch and image policy is defined above and in the repository's root README.
 
 The identity backup tooling now publishes completed encrypted backups atomically without overwriting existing files. Failure-path tests verify that an interrupted publication cannot leave a partial final backup; restore remains an explicit offline-only operation with an encrypted pre-restore snapshot. This is CI-verified tooling only: no production backup or restore has been run.
 
