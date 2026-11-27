@@ -98,7 +98,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/development' }}
-            type=raw,value=local-release,enable=${{ github.ref == 'refs/heads/feature/admin-panel-and-subscriptions' }}
+            type=raw,value=local-release,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/admin-panel-and-subscriptions' }}
             type=raw,value=release,enable=${{ github.event_name == 'release' }}
             type=raw,value=recovery-test,enable=${{ github.ref == 'refs/heads/recovery/pre-admin-performance' }}
             type=semver,pattern={{version}}
