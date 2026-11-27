@@ -154,6 +154,10 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
         received.update(events=events, min_ev=min_ev, min_consensus_books=min_consensus_books)
         return {"opportunities": [{"event_id": "event"}], "arbitrage": []}
     monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current"}],
+    })
     monkeypatch.setattr(main, "analyze_markets", fake_analysis)
     with TestClient(main.app) as client:
         response = client.get("/api/opportunities?sport=basketball_nba&min_ev=2.5&min_consensus_books=3")
@@ -167,7 +171,11 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
 
 def test_arbitrage_endpoint_requests_arbitrage_analysis(monkeypatch):
     received = {}
-    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [{"id": sport}])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [{"id": sport, "sport_key": sport}])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "baseball_mlb", "freshness": "current"}],
+    })
     def fake_analysis(events, min_ev, arbitrage_only=False):
         received.update(events=events, min_ev=min_ev, arbitrage_only=arbitrage_only)
         return {"opportunities": [], "arbitrage": [{"event_id": "event", "arb_percent": 1.2}]}
@@ -177,6 +185,42 @@ def test_arbitrage_endpoint_requests_arbitrage_analysis(monkeypatch):
     assert response.status_code == 200
     assert received == {"events": [{"id": "baseball_mlb"}], "min_ev": 101, "arbitrage_only": True}
     assert response.json()["arbitrage"][0]["arb_percent"] == 1.2
+
+
+def test_opportunities_and_arbitrage_fail_closed_without_configured_provider(monkeypatch):
+    monkeypatch.setattr(main.service, "events", lambda *args, **kwargs: [{
+        "id": "stale-event", "sport_key": "basketball_nba"
+    }])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": False,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current"}],
+    })
+    with TestClient(main.app) as client:
+        opportunities = client.get("/api/opportunities?sport=basketball_nba")
+        arbitrage = client.get("/api/arbitrage?sport=basketball_nba")
+    assert opportunities.status_code == 200
+    assert opportunities.json()["opportunities"] == []
+    assert opportunities.json()["total"] == 0
+    assert opportunities.json()["data_status"] == "unavailable"
+    assert arbitrage.status_code == 200
+    assert arbitrage.json()["arbitrage"] == []
+    assert arbitrage.json()["total"] == 0
+    assert arbitrage.json()["data_status"] == "unavailable"
+
+
+def test_market_analysis_excludes_stale_sport_snapshots(monkeypatch):
+    monkeypatch.setattr(main.service, "events", lambda *args, **kwargs: [{
+        "id": "stale-event", "sport_key": "basketball_nba"
+    }])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "stale"}],
+    })
+    with TestClient(main.app) as client:
+        response = client.get("/api/opportunities?sport=basketball_nba")
+    assert response.status_code == 200
+    assert response.json()["opportunities"] == []
+    assert response.json()["data_status"] == "unavailable"
 
 
 def test_clv_endpoint_paginates_entries_and_preserves_summary(monkeypatch):
