@@ -2726,7 +2726,7 @@ class IdentityStore:
                 (identity_id,),
             )
             db.commit()
-        return pyotp.TOTP(secret).provisioning_uri(name=identity["email"], issuer_name=config.APP_NAME)
+        return pyotp.TOTP(secret).provisioning_uri(name=identity["email"], issuer_name="Odds Intelligence")
 
     def confirm_administrator_mfa_enrollment(self, identity_id: str, code: str) -> list[str]:
         """Confirm pending TOTP enrollment; return single-use recovery codes exactly once."""
