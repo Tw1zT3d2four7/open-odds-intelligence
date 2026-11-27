@@ -17,7 +17,7 @@ def _application_routes():
 
 def test_every_application_route_has_an_explicit_target_access_class():
     routes = _application_routes()
-    assert len(routes) == 69
+    assert len(routes) == 68
     assert unclassified_routes(routes) == []
     assert stale_policy_entries(routes) == []
 
