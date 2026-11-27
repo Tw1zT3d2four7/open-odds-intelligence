@@ -67,8 +67,9 @@ def test_identity_mode_protects_product_routes_and_exposes_only_staged_auth_page
     monkeypatch.setattr(main.limits_monitor, "status", lambda: {"status": "ok"})
 
     client = TestClient(main.app)
-    dashboard = client.get("/")
-    assert dashboard.status_code == 401
+    dashboard = client.get("/", follow_redirects=False)
+    assert dashboard.status_code == 303
+    assert dashboard.headers["location"] == "/login"
     assert dashboard.headers["cache-control"] == "no-store"
     odds = client.get("/api/odds")
     assert odds.status_code == 401
@@ -112,8 +113,9 @@ def test_identity_mode_never_falls_back_to_configured_legacy_basic_credentials(m
     )
 
     client = TestClient(main.app)
-    response = client.get("/", auth=("operator", "legacy-secret"))
-    assert response.status_code == 401
+    response = client.get("/", auth=("operator", "legacy-secret"), follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
 
 
 
