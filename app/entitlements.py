@@ -18,7 +18,18 @@ def require_product_subscriber(
     """Use the legacy Basic Auth boundary unchanged until identity mode is selected."""
     if config.AUTH_MODE == "legacy_basic":
         return {"account_type": "legacy_operator"}
-    return require_subscriber(request, get_identity_store(request))
+    store = get_identity_store(request)
+    # Product workspaces are available to both paid subscribers and MFA-authenticated
+    # administrators. Admins bypass subscriber feature grants but retain the same
+    # server-side session validation and receive the full provider data scope.
+    try:
+        session = require_administrator(request, store)
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
+        return require_subscriber(request, store)
+    request.state.include_premium_data = True
+    return session
 
 
 def require_product_administrator(
@@ -66,6 +77,9 @@ def require_product_entitlement(
 ) -> None:
     """Require an active subscriber session and an explicit matching feature grant."""
     if config.AUTH_MODE == "legacy_basic":
+        request.state.include_premium_data = True
+        return
+    if session.get("account_type") in {"administrator", "legacy_operator"}:
         request.state.include_premium_data = True
         return
     entitlement = ROUTE_ENTITLEMENTS.get(request.url.path)
