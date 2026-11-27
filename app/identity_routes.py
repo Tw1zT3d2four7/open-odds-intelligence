@@ -127,7 +127,7 @@ def _render_account_page() -> HTMLResponse:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
         f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; "
-        "connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        "connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
     )
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
