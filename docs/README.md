@@ -1,6 +1,6 @@
 # Documentation Index
 
-Reviewed against the current `main` baseline on 2026-11-27. The same application baseline is synchronized to `development`.
+Reviewed against the current `main` baseline on 2026-11-27. The same application baseline is synchronized to `dev`.
 
 This index distinguishes implemented behavior from planning documents. A document marked **Design**, **Draft**, **Proposal**, or **Checklist** is not proof that the proposed work is implemented or approved for production.
 
@@ -51,3 +51,8 @@ This index distinguishes implemented behavior from planning documents. A documen
 ## Important deployment boundary
 
 The codebase contains the subscriber/admin identity and billing implementation, but the default `AUTH_MODE` remains `legacy_basic`. Identity mode is a staged opt-in and public commercial launch remains gated on non-production acceptance, proxy/TLS verification, backup/restore and key recovery, provider licensing/data-isolation acceptance, approved billing policy, and remaining operational work. Stripe Checkout/Portal activation switches remain default-off. Do not treat a green CI run or merged code as approval to enable these production features.
+
+
+## Container image channels
+
+The repository publishes exactly two rolling image tags: `ghcr.io/tw1zt3d2four7/open-odds-intelligence:latest` from `main`, and `ghcr.io/tw1zt3d2four7/open-odds-intelligence:dev` from `dev`. The standard `docker-compose.yml` uses `latest`. Feature branches do not publish images.
