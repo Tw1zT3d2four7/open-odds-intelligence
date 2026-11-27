@@ -2,27 +2,13 @@
 
 **Status:** Preparation checklist only. No deployment, production cutover, DNS change, or production restart is authorized by this document.
 
-## 0. Staging deployment scaffold
+## 0. Staging acceptance boundary
 
-The current `main`/`dev` baseline includes a separate Compose file and a non-secret environment template:
+This document is an acceptance checklist, not a second deployment definition. The repository has exactly one root `docker-compose.yml`, one committed safe template `.env.example`, and one private host `.env` shared by the selected `:latest` or `:dev` image. Do not add staging/local Compose files, environment templates, or deployment variants to the repository.
 
-- `docker-compose.staging.yml` uses the isolated `admin-staging` GHCR image tag, a unique container name, a separate `./staging-data` bind mount, and host-loopback-only port `127.0.0.1:18765`.
-- `.env.staging.example` is a template only. Copy it to the untracked `.env.staging`, fill secrets using a private secret manager, and set `PUBLIC_BASE_URL` to the real HTTPS staging origin. Never commit `.env.staging`.
-- The staging Compose project does not reuse the production `data/` directory, production container name, or production port. Staging data is excluded from Docker build context.
+The Compose file defaults to `:latest`; its commented `:dev` line is the only image-channel alternative. Switching channels uses the same service, container name, ports, private `.env`, and persistent `./data` volume. Run only one image at a time against that data directory. Never switch a live production instance to a development image merely to perform acceptance testing.
 
-After the merged-baseline image publication workflow succeeds and the isolation/configuration checks below are complete, an operator can start the staging container with:
-
-```bash
-cp .env.staging.example .env.staging
-chmod 600 .env.staging
-install -d -m 700 staging-data
-docker compose -f docker-compose.staging.yml pull
-docker compose -f docker-compose.staging.yml up -d
-docker compose -f docker-compose.staging.yml ps
-curl --fail http://127.0.0.1:18765/api/health
-```
-
-Do not run these commands against production. The port is deliberately bound to loopback; expose staging remotely only through a separately configured HTTPS reverse proxy after the peer topology and trusted-proxy behavior have been verified. Do not enable Stripe Checkout/Portal, external odds polling, Discord, SMS, or real email delivery until their individual staging credentials and acceptance steps are ready.
+Identity-mode acceptance must be performed only after a separately approved, genuinely isolated test environment exists. That environment must not reuse production accounts, secrets, database files, volumes, hostname, or public routing. Any temporary test configuration and data must remain outside the repository and must not become another tracked Compose or environment file. No deployment, production cutover, DNS change, or production restart is authorized by this checklist.
 
 ## 1. Isolation requirements
 
@@ -79,7 +65,7 @@ Using disposable staging identities and the fake email sender:
 
 Use synthetic provider fixtures first. Do not purchase a provider plan or enable live premium polling as part of the initial staging drill.
 
-The staging compose file is isolated on `127.0.0.1:18765`, uses `.env.staging` and `staging-data/`, and pulls the `:admin-staging` image. The feature-branch image workflow now publishes `:admin-staging`; the `:release` alias is reserved for an actual GitHub release event. A prior feature-branch build updated `:release` before this guard was corrected; that was an image publication only, not a deployment. Treat the existing `:release` alias as untrusted until a future official release rebuilds it, and use `:admin-staging` for staging.
+Do not use a second Compose file, environment template, or image tag for this checklist. The supported image channels are `:latest` from `main` and `:dev` from `dev`; both use the single root Compose definition and the same configuration contract. Perform provider-tier checks only in the separately approved isolated test environment described above, never by pointing tests at production data.
 
 - Confirm free-tier operation with no premium provider credentials configured and verify that no premium provider requests are attempted.
 - Configure explicit provider account groups with `ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES` (for example, `the_odds_api|free-account=free,the_odds_api|premium-account=premium`). Keep `ODDS_PREMIUM_PROVIDER_POLLING_ENABLED=false`; verify only free groups can be leased by scheduled and manual refreshes.
