@@ -795,6 +795,9 @@ def register_subscriber(
     if not AUTH_POLICY.identity_enabled or not AUTH_POLICY.registration_enabled:
         raise HTTPException(status_code=404, detail="Registration is unavailable.")
     _rate_limit(request, limiter, "subscriber-register", _identifier(payload.email))
+    # Validate mail delivery before creating an unverified account, but do not
+    # require any mail transport in local-development mode when verification is off.
+    sender = get_email_sender(request) if AUTH_POLICY.email_verification_required else None
     try:
         identity_id = store.create_subscriber(payload.email, payload.password)
     except sqlite3.IntegrityError:
@@ -811,10 +814,6 @@ def register_subscriber(
     if not AUTH_POLICY.email_verification_required:
         return {"message": "Account created. You can sign in."}
 
-    # Email delivery is required only when this environment requires email
-    # verification. In isolated local-development mode, signup and sign-in
-    # must remain usable without Resend or an external mail transport.
-    sender = get_email_sender(request)
     try:
         token = store.create_email_verification_challenge(payload.email)
         if token:
