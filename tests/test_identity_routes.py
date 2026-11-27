@@ -131,6 +131,39 @@ def test_local_registration_skips_email_transport_and_allows_immediate_login(tmp
     assert harness.sender.messages == []
 
 
+def test_production_registration_without_verification_allows_immediate_login(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    no_verification_policy = replace(
+        identity_routes.AUTH_POLICY,
+        environment="production",
+        email_verification_required=False,
+    )
+    monkeypatch.setattr(identity_routes, "AUTH_POLICY", no_verification_policy)
+    monkeypatch.setattr(identity_module, "AUTH_POLICY", no_verification_policy)
+
+    response = harness.post("/auth/register", {
+        "email": "subscriber@example.com",
+        "password": "a strong password 123",
+    })
+    assert response.status_code == 202
+    assert response.json()["message"] == "Account created. You can sign in."
+
+    with harness.store.connect() as db:
+        account = db.execute(
+            "SELECT email_verified_at FROM identities WHERE email=?",
+            ("subscriber@example.com",),
+        ).fetchone()
+    assert account is not None
+    assert account["email_verified_at"] is not None
+
+    login = harness.post("/auth/login", {
+        "email": "subscriber@example.com",
+        "password": "a strong password 123",
+    })
+    assert login.status_code == 200
+    assert login.json()["ok"] is True
+
+
 def test_duplicate_registration_returns_same_generic_response_without_resending(tmp_path, monkeypatch):
     harness = IdentityRouteHarness(tmp_path, monkeypatch)
     harness.store.create_subscriber("person@example.com", "a strong password 123")
