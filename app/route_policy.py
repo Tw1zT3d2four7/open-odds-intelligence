@@ -16,6 +16,7 @@ from starlette.routing import BaseRoute
 # mode gate; they are never treated as authorization by themselves.
 ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/"): "public_minimal",
+    ("GET", "/workspace"): "subscriber_entitled",
     # Dedicated full-workspace entry point for MFA-authenticated administrators.
     ("GET", "/admin/workspace"): "administrator_only",
     ("GET", "/api/health"): "public_minimal",
