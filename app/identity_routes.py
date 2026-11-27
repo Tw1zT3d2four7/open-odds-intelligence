@@ -791,7 +791,6 @@ def register_subscriber(
     request: Request,
     store: IdentityStore = Depends(get_identity_store),
     limiter: SQLiteRateLimiter = Depends(get_rate_limiter),
-    sender=Depends(get_email_sender),
 ):
     if not AUTH_POLICY.identity_enabled or not AUTH_POLICY.registration_enabled:
         raise HTTPException(status_code=404, detail="Registration is unavailable.")
@@ -811,6 +810,11 @@ def register_subscriber(
         ) from None
     if not AUTH_POLICY.email_verification_required:
         return {"message": "Account created. You can sign in."}
+
+    # Email delivery is required only when this environment requires email
+    # verification. In isolated local-development mode, signup and sign-in
+    # must remain usable without Resend or an external mail transport.
+    sender = get_email_sender(request)
     try:
         token = store.create_email_verification_challenge(payload.email)
         if token:
