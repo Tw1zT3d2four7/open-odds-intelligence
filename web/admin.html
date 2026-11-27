@@ -1143,7 +1143,16 @@ tbody tr:last-child td{border-bottom:0}
     if (event.key === "Enter") { auditOffset = 0; loadAudit(); }
   }));
 
+  // Prime every implemented Admin Console panel after the MFA-authenticated
+  // session is established. This avoids presenting empty tabs until each is
+  // manually opened and surfaces backend failures immediately in each panel.
   loadOverview();
+  loadSubscribers();
+  loadBilling();
+  loadPlatform();
+  loadAuthenticationPolicy();
+  loadAdminSessions();
+  loadAudit();
 
   document.getElementById("logout").addEventListener("click", async () => {
     const message = document.getElementById("message");
