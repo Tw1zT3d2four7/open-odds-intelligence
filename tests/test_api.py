@@ -63,6 +63,49 @@ def test_manual_refresh_endpoint_passes_sport_and_returns_alert_diagnostics(monk
     assert response.json()["alerts_qualified"] == 3
 
 
+
+def test_subscriber_workspace_status_exposes_metrics_without_operational_diagnostics(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True, "sports": ["basketball_nba"],
+        "sport_freshness": [{
+            "sport": "basketball_nba", "event_count": 12,
+            "last_updated": "2026-11-27T12:00:00Z", "age_seconds": 30,
+            "freshness": "current",
+        }],
+        "provider": "therundown", "providers": ["therundown"],
+        "provider_keys": {"therundown": {"keys": [{"key_id": "secret"}]}},
+        "provider_usage": {"requests_remaining": 999},
+        "provider_coverage": {"basketball_nba": {}},
+        "auto_refresh_schedule": {"therundown": 300},
+        "refresh_interval_seconds": 300,
+        "last_updated": "2026-11-27T12:00:00Z",
+        "last_error": "provider diagnostic",
+        "alerts_enabled": True, "alert_error": "discord diagnostic",
+        "simulation_results": {"last_error": "score sync diagnostic"},
+    })
+    monkeypatch.setattr(main.service, "events", lambda **kwargs: [{
+        "bookmakers": [{"key": "book-a"}, {"key": "book-b"}]
+    }])
+    request = SimpleNamespace(state=SimpleNamespace(include_premium_data=True))
+
+    payload = main._status_for_request(request)
+
+    assert payload["stored_events"] == 1
+    assert payload["stored_bookmakers"] == 2
+    assert payload["sport_freshness"] == [
+        {"sport": "basketball_nba", "event_count": 12}
+    ]
+    forbidden = {
+        "provider", "providers", "provider_keys", "provider_usage",
+        "provider_coverage", "auto_refresh_schedule", "refresh_interval_seconds",
+        "last_updated", "last_error", "alerts_enabled", "alert_error",
+        "simulation_results",
+    }
+    assert forbidden.isdisjoint(payload)
+    assert "last_updated" not in payload["sport_freshness"][0]
+
 def test_health_endpoint_exposes_alert_delivery_diagnostics(monkeypatch):
     monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
     monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "")
