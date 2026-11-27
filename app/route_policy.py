@@ -53,9 +53,8 @@ ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
 # the AUTH_MODE=identity middleware allowlist. Product route dependencies remain
 # a separate integration milestone.
 IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
-    # Static authentication entry points and the site front door are public safe reads;
-    # mutations remain protected by the dedicated public_csrf class below.
-    ("GET", "/"): "public_minimal",
+    # Static authentication entry points are public safe reads; mutations
+    # remain protected by the dedicated public_csrf class below.
     ("GET", "/login"): "public_minimal",
     ("GET", "/register"): "public_minimal",
     ("GET", "/admin/login"): "public_minimal",
