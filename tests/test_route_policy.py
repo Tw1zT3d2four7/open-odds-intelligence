@@ -119,7 +119,7 @@ def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
         route for route in identity_router.routes
         if getattr(route, "methods", None)
     ]
-    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == len(routes) + 3
+    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == len(routes)
     assert len(routes) == 41
     assert unclassified_routes(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
     assert stale_policy_entries(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
@@ -127,9 +127,9 @@ def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
 
 def test_identity_route_policy_distinguishes_public_mutations_and_session_logout():
     assert classify_route("GET", "/auth/csrf", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
-    assert classify_route("GET", "/favicon.svg", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
-    assert classify_route("GET", "/logo.svg", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
-    assert classify_route("GET", "/brand", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
+    assert classify_route("GET", "/favicon.svg") == "public_minimal"
+    assert classify_route("GET", "/logo.svg") == "public_minimal"
+    assert classify_route("GET", "/brand") == "public_minimal"
     assert classify_route("GET", "/admin", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/admin/overview", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/admin/workspace/status", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
