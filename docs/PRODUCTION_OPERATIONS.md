@@ -2,7 +2,7 @@
 
 This runbook covers safe operation of a **single-owner, self-hosted** Open Odds Intelligence deployment. It does not certify the application as a multi-tenant subscription service. Complete the commercial-readiness gates below before accepting subscribers or exposing the application to the public internet.
 
-**Current baseline note (2026-11-27):** The subscriber/admin platform has been merged into `main` and synchronized to `development`. The default runtime remains `legacy_basic`; this runbook still treats the deployed service as a single-owner deployment until identity-mode staging acceptance, provider licensing/data-isolation checks, backup/restore drills, and the remaining commercial launch gates are completed. Code availability is not production activation.
+**Current baseline note (2026-11-27):** The subscriber/admin platform has been merged into `main` and synchronized to `dev`. The default runtime remains `legacy_basic`; this runbook still treats the deployed service as a single-owner deployment until identity-mode staging acceptance, provider licensing/data-isolation checks, backup/restore drills, and the remaining commercial launch gates are completed. Code availability is not production activation.
 
 ## 1. Persistent data
 
@@ -116,7 +116,7 @@ Optional HTTP Basic authentication protects routes with one configured username/
 - `/api/health` is intentionally unauthenticated for container health checks; restrict exposure at the reverse proxy or network layer if needed.
 - Provider credentials and database files belong only on the server. Never expose them in browser code, logs, screenshots, support tickets, or source control.
 
-**Subscriber/admin platform note:** Identity, subscriber lifecycle, entitlement, billing-persistence, and guarded Stripe test-mode code are now part of the `main`/`development` baseline. The deployed runtime remains on `legacy_basic` unless an operator explicitly changes `AUTH_MODE`; Stripe Checkout/Portal switches remain off by default. Do not enable identity mode or billing in production based only on code availability. See [the development roadmap](roadmap.md), [the Stripe test-mode runbook](stripe-test-mode-acceptance.md), and [the subscription policy proposal](subscription-lifecycle-policy-proposal.md).
+**Subscriber/admin platform note:** Identity, subscriber lifecycle, entitlement, billing-persistence, and guarded Stripe test-mode code are now part of the `main`/`dev` baseline. The deployed runtime remains on `legacy_basic` unless an operator explicitly changes `AUTH_MODE`; Stripe Checkout/Portal switches remain off by default. Do not enable identity mode or billing in production based only on code availability. See [the development roadmap](roadmap.md), [the Stripe test-mode runbook](stripe-test-mode-acceptance.md), and [the subscription policy proposal](subscription-lifecycle-policy-proposal.md).
 
 Before remote access, place the service behind a maintained TLS reverse proxy, use HTTPS, restrict inbound ports, keep the host and Docker patched, and ensure proxy logs do not record Authorization headers. Use a unique long password. Do not expose the application directly to the public internet over plain HTTP.
 

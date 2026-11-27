@@ -4,7 +4,7 @@
 
 ## 0. Staging deployment scaffold
 
-The current `main`/`development` baseline includes a separate Compose file and a non-secret environment template:
+The current `main`/`dev` baseline includes a separate Compose file and a non-secret environment template:
 
 - `docker-compose.staging.yml` uses the isolated `admin-staging` GHCR image tag, a unique container name, a separate `./staging-data` bind mount, and host-loopback-only port `127.0.0.1:18765`.
 - `.env.staging.example` is a template only. Copy it to the untracked `.env.staging`, fill secrets using a private secret manager, and set `PUBLIC_BASE_URL` to the real HTTPS staging origin. Never commit `.env.staging`.

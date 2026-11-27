@@ -1,8 +1,8 @@
 # Admin Console, Subscribers & Commercial Platform Roadmap
 
-**Status:** Core subscriber/admin platform implementation merged into `main` and synchronized to `development` on 2026-11-27. Identity mode remains staged and default-off; no production authentication cutover or public commercial launch is authorized.  
-**Current baseline:** `main` and `development`.  
-**Previous implementation branch:** `feature/admin-panel-and-subscriptions` (promoted into the baseline and retained for traceability).  
+**Status:** Core subscriber/admin platform implementation merged into `main` and synchronized to `dev` on 2026-11-27. Identity mode remains staged and default-off; no production authentication cutover or public commercial launch is authorized.  
+**Current baseline:** `main` and `dev`.  
+**Previous implementation branch:** `feature/admin-panel-and-subscriptions` (promoted into the baseline; branch retirement is pending final repository cleanup).  
 **Production branch:** `main`.  
 **Document purpose:** Preserve the agreed product direction, requirements, safeguards, and implementation sequence.
 
@@ -281,7 +281,7 @@ The Environment Configuration manager remains a separate protected-admin workstr
 - Keep secrets out of Git, logs, browser responses, screenshots, and audit records.
 - Preserve case-sensitive API key values exactly.
 - Verify CI and image publication before asking the operator to pull an image.
-- Keep `:dev` associated with development and `:latest` with main/production.
+- Keep only `:latest` associated with `main` and `:dev` associated with `dev`.
 - Make small, reviewable changes and test each milestone.
 - Pause for explicit discussion where a decision affects security, data, deployment, or existing functionality.
 
@@ -364,6 +364,6 @@ The product is explicitly freemium:
 
 ## Current baseline — 2026-11-27
 
-The subscriber and administrator platform has been promoted into `main` and synchronized into `development`. The baseline includes the staged identity router, subscriber registration and verification, password recovery, separate subscriber/administrator sessions, administrator TOTP MFA, CSRF enforcement, route-level feature entitlements, the Admin Console subscriber/session/audit workflows, complimentary access, encrypted transactional email, billing persistence, and guarded Stripe test-mode Checkout/Customer Portal endpoints.
+The subscriber and administrator platform has been promoted into `main` and synchronized into `dev`. The baseline includes the staged identity router, subscriber registration and verification, password recovery, separate subscriber/administrator sessions, administrator TOTP MFA, CSRF enforcement, route-level feature entitlements, the Admin Console subscriber/session/audit workflows, complimentary access, encrypted transactional email, billing persistence, and guarded Stripe test-mode Checkout/Customer Portal endpoints.
 
-`AUTH_MODE` still defaults to `legacy_basic`; merging the code does not switch the running deployment to identity mode. Stripe checkout/portal activation remains guarded and default-off. Public subscriber launch remains blocked on isolated staging acceptance, reverse-proxy/TLS verification, backup/restore and key-recovery drills, provider licensing/data-isolation acceptance, approved subscription lifecycle policy, and remaining notification/operations gates. The standard `docker-compose.yml` consumes `local-release`; the image workflow now publishes that tag from `main` so it represents the merged baseline.
+`AUTH_MODE` still defaults to `legacy_basic`; merging the code does not switch the running deployment to identity mode. Stripe checkout/portal activation remains guarded and default-off. Public subscriber launch remains blocked on isolated staging acceptance, reverse-proxy/TLS verification, backup/restore and key-recovery drills, provider licensing/data-isolation acceptance, approved subscription lifecycle policy, and remaining notification/operations gates. The standard `docker-compose.yml` consumes `latest` from `main`. The `dev` branch publishes the separate `dev` image. No `local-release`, staging, recovery, semantic-version, or SHA aliases are published.
