@@ -1,7 +1,6 @@
 # Durable Transactional Email Queue
 
-**Status:** Implemented in identity schema v7; CI-tested with the isolated identity routes  
-**Working branch:** `feature/admin-panel-and-subscriptions`  
+**Status:** Durable encrypted queue and worker are implemented in the current identity schema and CI-tested with the staged identity routes. Reviewed 2026-11-27.  
 **Scope:** Subscriber verification, password recovery, and complimentary-account activation (activation uses the existing password-reset challenge purpose)  
 **Production impact:** None. This design does not enable public registration or change the live odds pipeline.
 
@@ -110,4 +109,4 @@ Keep the existing 90-day secret-free delivery history and circuit state. Queue r
 
 ## Rollout boundary
 
-The encrypted queue, worker, and account endpoints are now available only in staged `AUTH_MODE=identity`; default `legacy_basic` behavior remains unchanged. Existing product/dashboard routes still return 503 in identity mode until server-side subscriber/admin authorization and entitlements are integrated. Challenge creation and queue insertion are currently sequential rather than one SQLite transaction; a queue insert failure leaves the account/challenge in place and can be recovered by requesting a fresh verification/recovery email. Close this small reliability gap before public launch. The queue is not permission to switch production to identity mode. Keep product access fail-closed until all route authorization, entitlements, proxy trust, and rollback gates pass. Do not deploy, restart production, or change the operator's `.env` without explicit approval.
+The encrypted queue, worker, and account endpoints are available only in staged `AUTH_MODE=identity`; default `legacy_basic` behavior remains unchanged. Product/dashboard routes now have explicit subscriber/admin authorization and server-side entitlements in identity mode. Challenge creation and queue insertion remain sequential rather than one SQLite transaction; a queue insert failure leaves the account/challenge in place and can be recovered by requesting a fresh verification/recovery email. Close this reliability gap before public launch. The queue is not permission to switch production to identity mode. Keep the remaining proxy-trust, non-production acceptance, backup/restore, key-recovery, and rollback gates in force. Do not deploy, restart production, or change the operator's `.env` without explicit approval.
