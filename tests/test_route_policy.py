@@ -201,14 +201,15 @@ def test_every_subscriber_product_route_has_an_entitlement_mapping_and_dependenc
         assert require_product_entitlement in calls
 
 
-def test_admin_product_mutations_have_mode_aware_admin_and_csrf_dependencies():
-    from app.entitlements import require_product_administrator, require_product_csrf
+def test_shared_product_mutations_have_subscriber_entitlement_and_csrf_dependencies():
+    from app.entitlements import require_product_entitlement, require_product_subscriber, require_product_csrf
     from app import main
 
     for path in ("/api/limits/refresh", "/api/refresh", "/api/simulation/games/refresh"):
         route = next(route for route in main.app.routes if getattr(route, "path", None) == path)
         calls = {dependency.call for dependency in route.dependant.dependencies}
-        assert require_product_administrator in calls
+        assert require_product_subscriber in calls
+        assert require_product_entitlement in calls
         assert require_product_csrf in calls
 
 
