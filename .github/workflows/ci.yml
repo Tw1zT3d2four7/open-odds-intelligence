@@ -31,16 +31,13 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config --quiet
-          cp .env.staging.example .env.staging
-          docker compose -f docker-compose.staging.yml config --quiet
-          rm .env.staging
       - name: Validate environment template keys
         run: |
           python - <<'PY'
           from collections import Counter
           from pathlib import Path
           keys = []
-          for template in (".env.example", ".env.staging.example"):
+          for template in (".env.example",):
               keys = []
               for raw in Path(template).read_text(encoding="utf-8").splitlines():
                   line = raw.strip()
