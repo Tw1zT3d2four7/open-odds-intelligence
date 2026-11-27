@@ -383,9 +383,23 @@ class OddsService:
 
     def active_provider_names(self):
         if getattr(config, "ODDS_PROVIDERS_EXPLICIT", False):
+            # An explicit provider list is authoritative: do not silently enable
+            # integrations the operator deliberately left out.
             selected = config.ODDS_PROVIDERS
         else:
-            selected = [config.ODDS_PROVIDER] if config.ODDS_PROVIDER else []
+            legacy = str(config.ODDS_PROVIDER or "").strip().lower()
+            if legacy in self._provider_key_pools:
+                selected = [legacy]
+            elif legacy in {"", "none", "disabled", "off"}:
+                # The default is intentionally "none", but a populated .env
+                # should still work without requiring a second provider selector.
+                # Discover only providers with credentials actually loaded.
+                selected = [
+                    name for name, pool in self._provider_key_pools.items()
+                    if pool.configured
+                ]
+            else:
+                selected = []
         return list(dict.fromkeys(
             name for name in selected if name in self._provider_key_pools
         ))
