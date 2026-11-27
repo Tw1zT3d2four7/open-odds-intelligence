@@ -334,6 +334,12 @@ async def prevent_identity_response_caching(request: Request, call_next):
     return response
 
 
+@app.get("/admin/workspace", response_class=HTMLResponse, dependencies=dependencies_for_route("GET", "/admin/workspace", administrator_dependency=require_product_administrator))
+def administrator_sports_workspace():
+    """Serve the full odds workspace only to an MFA-authenticated administrator."""
+    return WEB.read_text(encoding="utf-8")
+
+
 @app.get("/", response_class=HTMLResponse, dependencies=dependencies_for_route("GET", "/", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def dashboard():
     return WEB.read_text(encoding="utf-8")
