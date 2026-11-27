@@ -1,9 +1,9 @@
 # Existing HTTP Route Inventory and Target Access Policy
 
-**Reviewed against:** `app/main.py` on `feature/admin-panel-and-subscriptions`  
+**Reviewed against:** `app/main.py` on `main` (2026-11-27)  
 **Purpose:** Define and verify the route-by-route authorization boundary for subscriber and administrator sessions.
 
-The policy is active in staged `AUTH_MODE=identity`. Default `legacy_basic` behavior remains unchanged; no production mode switch or deployment has occurred.
+The policy is active in staged `AUTH_MODE=identity` in the current `main`/`development` baseline. Default `legacy_basic` behavior remains unchanged. Merging the implementation does not switch the deployed environment or authorize public subscriber access.
 
 ## Authentication behavior by mode
 
