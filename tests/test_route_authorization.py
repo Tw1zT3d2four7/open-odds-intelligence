@@ -32,10 +32,13 @@ def test_subscriber_mutations_also_require_csrf():
     ) == [require_subscriber, require_entitlement, require_authenticated_csrf]
 
 
-def test_administrator_mutations_require_admin_session_and_csrf():
+def test_shared_refresh_mutations_require_subscriber_entitlement_and_csrf():
+    def require_entitlement():
+        return True
+
     assert _dependencies(
-        "POST", "/api/refresh"
-    ) == [require_administrator, require_authenticated_csrf]
+        "POST", "/api/refresh", require_entitlement
+    ) == [require_subscriber, require_entitlement, require_authenticated_csrf]
 
 
 def test_administrator_read_routes_require_admin_session_without_csrf():
