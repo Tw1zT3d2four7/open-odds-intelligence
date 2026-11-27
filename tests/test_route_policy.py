@@ -17,7 +17,7 @@ def _application_routes():
 
 def test_every_application_route_has_an_explicit_target_access_class():
     routes = _application_routes()
-    assert len(routes) == 70
+    assert len(routes) == 73
     assert unclassified_routes(routes) == []
     assert stale_policy_entries(routes) == []
 
@@ -55,7 +55,7 @@ def test_policy_inventory_covers_all_application_and_framework_http_routes():
         for method in (route.methods or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert len(actual) == 70
+    assert len(actual) == 73
     assert set(application_route_access_policy()) == actual
 
 
@@ -119,7 +119,7 @@ def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
         route for route in identity_router.routes
         if getattr(route, "methods", None)
     ]
-    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == 41
+    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == len(routes) + 3
     assert len(routes) == 41
     assert unclassified_routes(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
     assert stale_policy_entries(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
@@ -127,6 +127,9 @@ def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
 
 def test_identity_route_policy_distinguishes_public_mutations_and_session_logout():
     assert classify_route("GET", "/auth/csrf", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
+    assert classify_route("GET", "/favicon.svg", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
+    assert classify_route("GET", "/logo.svg", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
+    assert classify_route("GET", "/brand", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
     assert classify_route("GET", "/admin", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/admin/overview", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
     assert classify_route("GET", "/admin/workspace/status", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
