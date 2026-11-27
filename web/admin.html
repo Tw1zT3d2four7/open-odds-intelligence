@@ -87,7 +87,7 @@ tbody tr:last-child td{border-bottom:0}
     <button type="button" data-view="subscriptions">Feature Access</button>
     <button type="button" data-view="billing">Billing</button>
     <button type="button" data-view="notifications">Notifications <span class="tag">Planned</span></button>
-    <button type="button" data-view="platform">Platform <span class="tag">Planned</span></button>
+    <button type="button" data-view="platform">Platform</button>
     <button type="button" data-view="configuration">System Configuration <span class="tag">Planned</span></button>
     <button type="button" data-view="communications">Communications <span class="tag">Planned</span></button>
     <button type="button" data-view="security">Security</button>
@@ -265,7 +265,33 @@ tbody tr:last-child td{border-bottom:0}
       </div>
     </section>
     <section class="view" id="view-notifications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Notification operations</h2><p>Queue health, delivery history, channel status, retry controls, and global pause controls will be backed by dedicated administrative APIs.</p></div></section>
-    <section class="view" id="view-platform" hidden><span class="planned">Planned module</span><div class="panel"><h2>Platform operations</h2><p>Provider health, refresh scheduling, and operational diagnostics will be exposed only through reviewed administrator endpoints.</p></div></section>
+    <section class="view" id="view-platform" hidden>
+      <div class="welcome"><h2>Platform operations</h2><p>Live, read-only operational visibility for the odds platform. This page does not trigger provider requests, alter schedules, or change account configuration.</p></div>
+      <div class="cards">
+        <article class="card"><div class="card-label">Provider configuration</div><div class="card-value" id="platform-provider-count">—</div><div class="card-note" id="platform-provider-names">Waiting for diagnostics</div></article>
+        <article class="card"><div class="card-label">Stored odds events</div><div class="card-value" id="platform-event-count">—</div><div class="card-note" id="platform-snapshot-count">Snapshot count unavailable</div></article>
+        <article class="card"><div class="card-label">Data freshness</div><div class="card-value" id="platform-freshness">—</div><div class="card-note" id="platform-last-updated">Last update unavailable</div></article>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Platform health</h2>
+        <div class="audit-controls"><button id="platform-refresh" type="button">Refresh diagnostics</button></div>
+        <p class="audit-status" id="platform-status" role="status" aria-live="polite">Platform diagnostics have not been loaded.</p>
+        <div class="checks">
+          <div class="check"><strong id="platform-alert-state">Alerts —</strong><span id="platform-alert-detail">Alert telemetry unavailable.</span></div>
+          <div class="check"><strong id="platform-provider-error">Provider status —</strong><span>Provider error details are intentionally not exposed in this summary.</span></div>
+          <div class="check"><strong id="platform-alert-error">Alert processing —</strong><span>Alert error details are intentionally not exposed in this summary.</span></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Sport and league data freshness</h2>
+        <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Sport / League</th><th>Freshness</th><th>Events</th><th>Last update</th><th>Age (seconds)</th></tr></thead><tbody id="platform-sports"><tr><td colspan="5">Waiting for diagnostics.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h2>Provider account groups</h2>
+        <p>Quota and account-group telemetry is limited to safe operational fields. API keys and secret values are never returned.</p>
+        <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Provider</th><th>Account group</th><th>Access class</th><th>Status</th><th>Available keys</th><th>Quota telemetry</th></tr></thead><tbody id="platform-accounts"><tr><td colspan="6">Waiting for diagnostics.</td></tr></tbody></table></div>
+      </div>
+    </section>
     <section class="view" id="view-configuration" hidden><span class="planned">Planned module</span><div class="panel"><h2>System configuration</h2><p>Environment configuration remains disabled until its allowlist, validation, atomic apply, backup, rollback, and restart design is approved.</p></div></section>
     <section class="view" id="view-communications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Communications</h2><p>Platform announcements and subscriber communications will be introduced with consent, targeting, and delivery safeguards.</p></div></section>
     <section class="view" id="view-security" hidden>
@@ -570,6 +596,77 @@ tbody tr:last-child td{border-bottom:0}
       promoCreate.disabled = false;
     }
   });
+
+  let platformLoaded = false;
+  async function loadPlatform() {
+    const status = document.getElementById("platform-status");
+    status.textContent = "Loading protected platform diagnostics…";
+    try {
+      const response = await fetch("/admin/overview", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Platform diagnostics unavailable");
+      const data = await response.json();
+      const providers = Array.isArray(data.providers) ? data.providers : [];
+      const sports = Array.isArray(data.sports) ? data.sports : [];
+      const accounts = Array.isArray(data.provider_accounts) ? data.provider_accounts : [];
+      document.getElementById("platform-provider-count").textContent = providers.length.toLocaleString();
+      document.getElementById("platform-provider-names").textContent = providers.length ? providers.join(", ") : "No configured providers";
+      document.getElementById("platform-event-count").textContent = Number(data.stored_events || 0).toLocaleString();
+      document.getElementById("platform-snapshot-count").textContent = Number(data.stored_snapshots || 0).toLocaleString() + " stored snapshots";
+      document.getElementById("platform-freshness").textContent = String(data.data_freshness || "unknown").replaceAll("_"," ").toUpperCase();
+      document.getElementById("platform-last-updated").textContent = data.last_updated ? "Last update: " + data.last_updated : "No update timestamp reported";
+      document.getElementById("platform-alert-state").textContent = data.alerts && data.alerts.enabled ? "Alerts enabled" : "Alerts disabled";
+      document.getElementById("platform-alert-detail").textContent = data.alerts
+        ? Number(data.alerts.sent || 0).toLocaleString() + " recorded sends · last check: " + (data.alerts.last_check || "—")
+        : "Alert telemetry unavailable.";
+      document.getElementById("platform-provider-error").textContent = data.provider_error_present ? "Provider issue reported" : "No provider error reported";
+      document.getElementById("platform-alert-error").textContent = data.alert_error_present ? "Alert issue reported" : "No alert processing error reported";
+      status.textContent = "Diagnostics refreshed successfully · " + sports.length.toLocaleString() + " sport/league records · " +
+        accounts.length.toLocaleString() + " provider account groups · " +
+        Number(data.stored_bookmakers || 0).toLocaleString() + " stored bookmakers.";
+      const sportsRows = document.getElementById("platform-sports");
+      sportsRows.replaceChildren();
+      if (!sports.length) {
+        const row = document.createElement("tr"), empty = document.createElement("td");
+        empty.colSpan = 5; empty.textContent = "No sport or league freshness records are available."; row.appendChild(empty); sportsRows.appendChild(row);
+      } else {
+        sports.forEach(item => {
+          const row = document.createElement("tr");
+          cell(row, item.sport || "—"); cell(row, item.freshness || "unknown");
+          cell(row, Number(item.event_count || 0).toLocaleString()); cell(row, item.last_updated || "—");
+          cell(row, item.age_seconds === null || item.age_seconds === undefined ? "—" : Number(item.age_seconds).toLocaleString());
+          sportsRows.appendChild(row);
+        });
+      }
+      const accountRows = document.getElementById("platform-accounts");
+      accountRows.replaceChildren();
+      if (!accounts.length) {
+        const row = document.createElement("tr"), empty = document.createElement("td");
+        empty.colSpan = 6; empty.textContent = "No provider account groups are currently configured."; row.appendChild(empty); accountRows.appendChild(row);
+      } else {
+        accounts.forEach(account => {
+          const row = document.createElement("tr"), usage = account.usage || {};
+          const quota = [
+            ["credits",usage.credits_remaining],["datapoints",usage.datapoints_remaining],
+            ["requests",usage.requests_remaining],["remaining requests",usage.remaining_requests],
+            ["remaining credits",usage.remaining_credits],["remaining objects",usage.remaining_objects],
+            ["monthly objects",usage.monthly_objects_remaining]
+          ].filter(item => item[1] !== undefined && item[1] !== null)
+           .map(item => item[0] + ": " + String(item[1])).join(" · ") || "Not reported";
+          cell(row, account.provider || "—"); cell(row, account.account_group || "—");
+          cell(row, account.access_class || "restricted"); cell(row, account.status || "unknown");
+          cell(row, Number(account.available_keys || 0) + " / " + Number(account.configured_keys || 0));
+          cell(row, quota); accountRows.appendChild(row);
+        });
+      }
+      platformLoaded = true;
+    } catch (_error) {
+      status.textContent = "Platform diagnostics could not be loaded. Refresh or verify the administrator session.";
+      platformLoaded = false;
+    }
+  }
+  document.getElementById("platform-refresh").addEventListener("click", () => { platformLoaded = false; loadPlatform(); });
 
   let overviewLoaded = false;
   async function loadOverview() {
@@ -972,6 +1069,7 @@ tbody tr:last-child td{border-bottom:0}
     selectView(button.dataset.view);
     if (button.dataset.view === "overview" && !overviewLoaded) loadOverview();
     if (button.dataset.view === "billing" && !billingLoaded) loadBilling();
+    if (button.dataset.view === "platform" && !platformLoaded) loadPlatform();
     if (button.dataset.view === "security") { loadAuthenticationPolicy(); loadAdminSessions(); if (!auditLoaded) loadAudit(); }
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
   }));
