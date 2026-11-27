@@ -370,7 +370,7 @@ tbody tr:last-child td{border-bottom:0}
       const response = await fetch("/admin/billing", {
         credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
       });
-      if (!response.ok) throw new Error("Billing overview unavailable");
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
       const data = await response.json();
       document.getElementById("billing-customers").textContent = Number(data.customer_count || 0).toLocaleString();
       document.getElementById("billing-subscriptions").textContent = Number(data.subscription_count || 0).toLocaleString();
@@ -405,8 +405,8 @@ tbody tr:last-child td{border-bottom:0}
         ". Live billing: " + (data.live_billing_enabled ? "enabled" : "disabled") + ".";
       status.textContent = "Billing operations data refreshed. This view contains aggregate counts only; no subscriber identifiers or payment credentials are exposed.";
       billingLoaded = true;
-    } catch (_error) {
-      status.textContent = "Billing operations could not be loaded. Refresh the page or verify the administrator session.";
+    } catch (error) {
+      status.textContent = "Billing load failed: " + (error && error.message ? error.message : "unknown error") + ". Check administrator session and server logs.";
     }
   }
   document.getElementById("billing-refresh").addEventListener("click", () => { billingLoaded = false; loadBilling(); });
@@ -430,7 +430,7 @@ tbody tr:last-child td{border-bottom:0}
       const response = await fetch("/admin/subscribers?" + params.toString(), {
         credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
       });
-      if (!response.ok) throw new Error("Subscriber directory unavailable");
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
       const data = await response.json();
       subscriberTotal = Number(data.total) || 0;
       subscriberRows.replaceChildren();
@@ -492,8 +492,8 @@ tbody tr:last-child td{border-bottom:0}
       document.getElementById("subscriber-next").disabled = subscriberOffset + subscriberLimit >= subscriberTotal;
       subscriberStatus.textContent = `${subscriberTotal} subscriber(s)`;
       subscribersLoaded = true;
-    } catch (_error) {
-      subscriberStatus.textContent = "Subscriber directory could not be loaded. Refresh the page or sign in again.";
+    } catch (error) {
+      subscriberStatus.textContent = "Subscriber load failed: " + (error && error.message ? error.message : "unknown error") + ". Check administrator session and server logs.";
     }
   }
 
@@ -605,7 +605,7 @@ tbody tr:last-child td{border-bottom:0}
       const response = await fetch("/admin/overview", {
         credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
       });
-      if (!response.ok) throw new Error("Platform diagnostics unavailable");
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
       const data = await response.json();
       const providers = Array.isArray(data.providers) ? data.providers : [];
       const sports = Array.isArray(data.sports) ? data.sports : [];
@@ -661,8 +661,8 @@ tbody tr:last-child td{border-bottom:0}
         });
       }
       platformLoaded = true;
-    } catch (_error) {
-      status.textContent = "Platform diagnostics could not be loaded. Refresh or verify the administrator session.";
+    } catch (error) {
+      status.textContent = "Platform load failed: " + (error && error.message ? error.message : "unknown error") + ". Check administrator session and server logs.";
       platformLoaded = false;
     }
   }
@@ -676,7 +676,7 @@ tbody tr:last-child td{border-bottom:0}
       const response = await fetch("/admin/overview", {
         credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
       });
-      if (!response.ok) throw new Error("Overview unavailable");
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
       const data = await response.json();
       document.getElementById("overview-providers").textContent =
         data.configured && data.providers.length ? data.providers.join(", ") : "Not configured";
@@ -757,8 +757,8 @@ tbody tr:last-child td{border-bottom:0}
         "Premium provider polling: " + (data.premium_provider_polling_enabled ? "enabled" : "disabled") +
         ". Unknown account groups remain restricted; quota values are provider-reported and may vary by provider.";
       overviewLoaded = true;
-    } catch (_error) {
-      status.textContent = "Live platform diagnostics could not be loaded. Refresh the page or sign in again.";
+    } catch (error) {
+      status.textContent = "Overview load failed: " + (error && error.message ? error.message : "unknown error") + ". Check administrator session and server logs.";
     }
   }
 
