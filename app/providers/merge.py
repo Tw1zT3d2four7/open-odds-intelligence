@@ -101,7 +101,25 @@ def _quote_rank(outcome, provider_rank):
     return (updated if updated is not None else float("-inf"), -provider_rank)
 
 
-def merge_provider_events(provider_results, preferred_provider_names=None):
+def _account_merge_scope(provider_name, account_group, provider_account_access_classes):
+    if not (provider_account_access_classes or {}).get(provider_name):
+        return "", ""
+    return provider_name, str(account_group or "")
+
+
+def _provider_access_class(provider_name, account_group, provider_access_classes, provider_account_access_classes):
+    """Resolve tier by provider account; configured providers fail closed for unknown groups."""
+    normalized_group = str(account_group or "").strip()
+    if not normalized_group:
+        return "restricted"
+    account_classes = provider_account_access_classes or {}
+    if provider_name in account_classes:
+        return account_classes[provider_name].get(normalized_group, "restricted")
+    access_class = (provider_access_classes or {}).get(provider_name)
+    return access_class if access_class in {"free", "premium"} else "restricted"
+
+
+def merge_provider_events(provider_results, preferred_provider_names=None, provider_access_classes=None, provider_account_access_classes=None):
     """Merge normalized event lists in explicit source-priority order.
 
     Event identity is strict: sport, ordered home/away identities, and kickoff
@@ -177,24 +195,57 @@ def merge_provider_events(provider_results, preferred_provider_names=None):
                         market = {"key": market_key, "outcomes": []}
                         book["markets"].append(market)
                         market_map[market_key] = market
-                    outcome_map = {
-                        _outcome_identity(item): index
-                        for index, item in enumerate(market["outcomes"])
-                        if _outcome_identity(item) is not None
-                    }
+                    outcome_map = {}
+                    for index, item in enumerate(market["outcomes"]):
+                        outcome_identity = _outcome_identity(item)
+                        if outcome_identity is None:
+                            continue
+                        scoped_provider, scoped_group = _account_merge_scope(
+                            str(item.get("source_provider") or ""),
+                            item.get("source_account_group"),
+                            provider_account_access_classes,
+                        )
+                        outcome_map[(
+                            item.get("source_access_class") or "restricted",
+                            scoped_provider, scoped_group, outcome_identity,
+                        )] = index
                     for raw_outcome in raw_market.get("outcomes") or []:
                         if not isinstance(raw_outcome, dict):
                             continue
-                        identity_key = _outcome_identity(raw_outcome)
-                        if identity_key is None:
+                        outcome_identity = _outcome_identity(raw_outcome)
+                        if outcome_identity is None:
                             continue
                         candidate = dict(raw_outcome)
                         candidate["name"] = _canonical_outcome_name(
                             candidate, event, target
                         )
                         candidate["source_provider"] = provider_name
+                        candidate["source_account_group"] = str(candidate.get("source_account_group") or "")
+                        candidate["source_access_class"] = _provider_access_class(
+                            provider_name, candidate["source_account_group"],
+                            provider_access_classes, provider_account_access_classes,
+                        )
+                        scoped_provider, scoped_group = _account_merge_scope(
+                            provider_name, candidate["source_account_group"],
+                            provider_account_access_classes,
+                        )
+                        identity_key = (
+                            candidate["source_access_class"],
+                            scoped_provider, scoped_group, outcome_identity,
+                        )
                         if "size" in candidate:
                             candidate.setdefault("size_source_provider", provider_name)
+                            size_provider = str(candidate.get("size_source_provider") or provider_name)
+                            size_group = str(candidate.get("size_source_account_group") or candidate["source_account_group"])
+                            candidate["size_source_account_group"] = size_group
+                            candidate["size_source_access_class"] = (
+                                "restricted"
+                                if size_provider != provider_name and not size_group
+                                else _provider_access_class(
+                                    size_provider, size_group, provider_access_classes,
+                                    provider_account_access_classes,
+                                )
+                            )
                         existing_index = outcome_map.get(identity_key)
                         if existing_index is None:
                             outcome_map[identity_key] = len(market["outcomes"])
@@ -207,12 +258,12 @@ def merge_provider_events(provider_results, preferred_provider_names=None):
                         if _quote_rank(candidate, provider_rank.get(provider_name, 999)) > _quote_rank(
                             existing, provider_rank.get(existing_provider, 999)
                         ):
-                            for metadata in ("size", "size_source_provider", "main"):
+                            for metadata in ("size", "size_source_provider", "size_source_account_group", "size_source_access_class", "main"):
                                 if metadata not in candidate and metadata in existing:
                                     candidate[metadata] = existing[metadata]
                             market["outcomes"][existing_index] = candidate
                         else:
-                            for metadata in ("size", "size_source_provider", "main"):
+                            for metadata in ("size", "size_source_provider", "size_source_account_group", "main"):
                                 if metadata not in existing and metadata in candidate:
                                     existing[metadata] = candidate[metadata]
 
@@ -220,7 +271,7 @@ def merge_provider_events(provider_results, preferred_provider_names=None):
 
 
 
-def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provider_results):
+def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provider_results, provider_access_classes=None, provider_account_access_classes=None, refreshed_provider_account_groups=None):
     """Replace refreshed providers while retaining other providers' latest quotes.
 
     The database stores one current snapshot per sport. A provider-specific
@@ -245,7 +296,11 @@ def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provi
                     if not isinstance(raw_outcome, dict):
                         continue
                     provider = str(raw_outcome.get("source_provider") or "legacy")
-                    if provider in refreshed:
+                    account_group = str(raw_outcome.get("source_account_group") or "")
+                    refreshed_groups = (refreshed_provider_account_groups or {}).get(provider)
+                    if provider in refreshed and (
+                        refreshed_groups is None or account_group in set(refreshed_groups)
+                    ):
                         continue
                     book = by_provider.setdefault(provider, {}).setdefault(
                         str(raw_book.get("key") or ""),
@@ -274,6 +329,8 @@ def merge_provider_snapshot(existing_events, refreshed_provider_names, new_provi
     merged = merge_provider_events(
         retained_results + new_results,
         preferred_provider_names=refreshed,
+        provider_access_classes=provider_access_classes,
+        provider_account_access_classes=provider_account_access_classes,
     )
     provider_names = list(dict.fromkeys(
         [name for name, _ in retained_results] +

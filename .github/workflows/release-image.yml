@@ -2,15 +2,19 @@ name: Build and publish release image
 
 on:
   push:
-    branches: [main, recovery/pre-admin-performance, development]
+    branches: [main, recovery/pre-admin-performance, development, feature/admin-panel-and-subscriptions]
   release:
     types: [published]
   workflow_dispatch:
 
-# Keep branch image tags isolated; main publishes :latest and development publishes :dev.
+# Keep image tags isolated: main publishes :latest, development publishes :dev,
+# and the admin feature branch publishes :local-release. Only a GitHub release
+# event may publish the :release alias.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel a verified image build on every subsequent push. Newer commits
+  # wait as the single pending run, so the release tag is actually published.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -40,17 +44,22 @@ jobs:
           python - <<'PY'
           import re
           from pathlib import Path
-          html = Path("web/index.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S)
-          if not scripts:
-              raise SystemExit("No inline dashboard JavaScript found")
-          Path("/tmp/open-odds-dashboard.js").write_text("\n".join(scripts), encoding="utf-8")
+          for page in ("web/index.html", "web/admin.html", "web/auth.html", "web/account.html"):
+              html = Path(page).read_text(encoding="utf-8")
+              scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S)
+              if not scripts:
+                  raise SystemExit(f"No inline JavaScript found in {page}")
+              output = Path("/tmp") / (Path(page).stem + ".js")
+              output.write_text("\n".join(scripts), encoding="utf-8")
+              print(f"Checking {page}")
+              import subprocess
+              subprocess.run(["node", "--check", str(output)], check=True)
           PY
-          node --check /tmp/open-odds-dashboard.js
       - name: Validate Docker Compose configuration
         run: |
           cp .env.example .env
           docker compose config --quiet
+          docker compose -f docker-compose.local-release.yml config --quiet
       - name: Validate Docker build context exclusions
         run: |
           grep -Fxq '.env' .dockerignore
@@ -89,7 +98,9 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/development' }}
-            type=raw,value=recovery-test
+            type=raw,value=local-release,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/admin-panel-and-subscriptions' }}
+            type=raw,value=release,enable=${{ github.event_name == 'release' }}
+            type=raw,value=recovery-test,enable=${{ github.ref == 'refs/heads/recovery/pre-admin-performance' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha

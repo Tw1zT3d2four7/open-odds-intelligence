@@ -113,16 +113,16 @@ class OddsService:
             self._last_provider_results = {}
         self._provider_key_pools = {
             "the_odds_api": ProviderKeyPool(
-                "the_odds_api", parse_api_keys(config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY)
+                "the_odds_api", [config.THE_ODDS_API_KEYS, config.THE_ODDS_API_KEY]
             ),
             "oddize": ProviderKeyPool(
-                "oddize", parse_api_keys(config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY)
+                "oddize", [config.ODDIZE_API_KEYS, config.ODDIZE_API_KEY]
             ),
             "oddslink": ProviderKeyPool(
-                "oddslink", parse_api_keys(config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY)
+                "oddslink", [config.ODDSLINK_API_KEYS, config.ODDSLINK_API_KEY]
             ),
             "therundown": ProviderKeyPool(
-                "therundown", parse_api_keys(config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY)
+                "therundown", [config.THERUNDOWN_API_KEYS, config.THERUNDOWN_API_KEY]
             ),
         }
         for provider_name, pool in self._provider_key_pools.items():
@@ -132,7 +132,24 @@ class OddsService:
                 )
                 if saved:
                     try:
-                        pool.restore_usage(key_status["key_id"], json.loads(saved))
+                        pool.restore_usage(
+                            key_status["key_id"], json.loads(saved),
+                            minimum_remaining=config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.get(
+                                provider_name, {}
+                            ).get(key_status.get("account_group"), {}),
+                        )
+                        safe_usage = next(
+                            (
+                                item.get("usage", {})
+                                for item in pool.status().get("keys", [])
+                                if item.get("key_id") == key_status["key_id"]
+                            ),
+                            {},
+                        )
+                        self.db.set_state(
+                            f"provider_key_usage:{provider_name}:{key_status['key_id']}",
+                            json.dumps(safe_usage),
+                        )
                     except (TypeError, ValueError, json.JSONDecodeError):
                         continue
         self._simulation_results_status = {
@@ -168,7 +185,10 @@ class OddsService:
         if (saved_usage_provider == config.ODDS_PROVIDER and
             saved_usage_fingerprint in configured_fingerprints):
             try:
-                self._provider_usage = json.loads(self.db.get_state("provider_usage") or "{}")
+                self._provider_usage = self._safe_provider_usage(
+                    json.loads(self.db.get_state("provider_usage") or "{}")
+                )
+                self.db.set_state("provider_usage", json.dumps(self._provider_usage))
             except (TypeError, ValueError):
                 self._provider_usage = {}
         self._player_props_status = {"enabled": False, "reason": "Disabled by default."}
@@ -218,12 +238,36 @@ class OddsService:
         self._last_alert_sent = 0
         self._last_alert_error = None
 
+    @staticmethod
+    def _safe_provider_usage(usage):
+        if not isinstance(usage, dict):
+            return {}
+        safe = {}
+        for name, value in usage.items():
+            normalized = str(name).lower()
+            if any(secret in normalized for secret in ("key", "token", "secret", "email", "customer", "password", "authorization", "credential", "bearer")):
+                continue
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                safe[str(name)] = value
+        return safe
+
     def _record_provider_key_usage(self, provider_name, pool, lease, usage):
-        pool.record_usage(lease, usage)
+        minimum_remaining = config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.get(
+            provider_name, {}
+        ).get(lease.account_group, {})
+        pool.record_usage(lease, usage, minimum_remaining=minimum_remaining)
         if usage:
+            safe_usage = next(
+                (
+                    item.get("usage", {})
+                    for item in pool.status().get("keys", [])
+                    if item.get("key_id") == lease.fingerprint
+                ),
+                {},
+            )
             self.db.set_state(
                 f"provider_key_usage:{provider_name}:{lease.fingerprint}",
-                json.dumps(usage),
+                json.dumps(safe_usage),
             )
 
     def _current_provider_key_fingerprint(self, provider_name=None):
@@ -245,7 +289,7 @@ class OddsService:
         if not usage:
             return
         provider_name = provider_name or config.ODDS_PROVIDER
-        self._provider_usage = dict(usage)
+        self._provider_usage = self._safe_provider_usage(usage)
         self.db.set_state("provider_usage", json.dumps(self._provider_usage))
         self.db.set_state("provider_usage_provider", provider_name)
         self.db.set_state(
@@ -269,14 +313,44 @@ class OddsService:
             return OddsLinkProvider(api_key)
         raise ProviderError(f"Unsupported odds provider: {provider_name}")
 
+    def _eligible_provider_account_groups(self, provider_name):
+        """Return only account groups allowed to be polled under current tier controls."""
+        allowed_classes = {"free"}
+        if config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED:
+            allowed_classes.add("premium")
+        account_classes = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get(provider_name)
+        if account_classes is not None:
+            pool = self._provider_key_pools.get(provider_name)
+            configured_groups = {
+                item["account_group"] for item in (pool.status().get("keys", []) if pool else [])
+            }
+            return {
+                group for group, access_class in account_classes.items()
+                if group in configured_groups and access_class in allowed_classes
+            }
+        provider_class = config.ODDS_PROVIDER_ACCESS_CLASSES.get(provider_name, "restricted")
+        if provider_class not in allowed_classes:
+            return set()
+        pool = self._provider_key_pools.get(provider_name)
+        if pool is None:
+            return set()
+        return {
+            item["account_group"] for item in pool.status().get("keys", [])
+        }
+
     def _fetch_provider_odds_with_rotation(self, provider_name, sport):
         pool = self._provider_key_pools.get(provider_name)
         if pool is None or not pool.configured:
             raise ProviderError(f"No API keys configured for provider: {provider_name}")
+        allowed_account_groups = self._eligible_provider_account_groups(provider_name)
+        if not allowed_account_groups:
+            raise ProviderError(
+                f"No provider account groups are eligible for polling: {provider_name}"
+            )
         last_error = None
         for _ in range(pool.status()["configured_keys"]):
             try:
-                lease = pool.acquire()
+                lease = pool.acquire(allowed_account_groups=allowed_account_groups)
             except NoAvailableKeys as exc:
                 raise ProviderError(str(exc)) from exc
             provider = self._new_provider(provider_name, lease.key)
@@ -309,9 +383,23 @@ class OddsService:
 
     def active_provider_names(self):
         if getattr(config, "ODDS_PROVIDERS_EXPLICIT", False):
+            # An explicit provider list is authoritative: do not silently enable
+            # integrations the operator deliberately left out.
             selected = config.ODDS_PROVIDERS
         else:
-            selected = [config.ODDS_PROVIDER] if config.ODDS_PROVIDER else []
+            legacy = str(config.ODDS_PROVIDER or "").strip().lower()
+            if legacy in self._provider_key_pools:
+                selected = [legacy]
+            elif legacy in {"", "none", "disabled", "off"}:
+                # The default is intentionally "none", but a populated .env
+                # should still work without requiring a second provider selector.
+                # Discover only providers with credentials actually loaded.
+                selected = [
+                    name for name, pool in self._provider_key_pools.items()
+                    if pool.configured
+                ]
+            else:
+                selected = []
         return list(dict.fromkeys(
             name for name in selected if name in self._provider_key_pools
         ))
@@ -331,6 +419,7 @@ class OddsService:
             if name in selected
             and interval > 0
             and self._provider_key_pools[name].configured
+            and bool(self._eligible_provider_account_groups(name))
         }
 
     def auto_refresh_provider_names(self):
@@ -411,6 +500,19 @@ class OddsService:
             data_freshness = "current"
         alert_status = self.db.alert_status()
         return {"provider": config.ODDS_PROVIDER,
+                "provider_access_classes": dict(config.ODDS_PROVIDER_ACCESS_CLASSES),
+                "provider_account_access_classes": {
+                    provider: dict(groups)
+                    for provider, groups in config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.items()
+                },
+                "provider_account_quota_floors": {
+                    provider: {
+                        group: dict(metrics)
+                        for group, metrics in groups.items()
+                    }
+                    for provider, groups in config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.items()
+                },
+                "premium_provider_polling_enabled": config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED,
                 "providers": self.active_provider_names(),
                 "auto_refresh_providers": self.auto_refresh_provider_names(),
                 "configured": self.configured,
@@ -505,6 +607,10 @@ class OddsService:
 
     def _refresh_locked(self, sport=None, providers=None):
         provider_names = self.active_provider_names()
+        provider_names = [
+            name for name in provider_names
+            if self._eligible_provider_account_groups(name)
+        ]
         if providers is not None:
             requested_providers = set(providers)
             provider_names = [name for name in provider_names if name in requested_providers]
@@ -524,6 +630,7 @@ class OddsService:
             source_usages = {}
             source_coverage = {}
             successful_providers = []
+            successful_provider_account_groups = {}
             skipped_providers = []
             skipped_unconfigured = []
             for provider_name in provider_names:
@@ -675,8 +782,34 @@ class OddsService:
                         "quotes": quote_count,
                         "prop_quotes": prop_quote_count,
                     }
+                    # Preserve the non-secret account group on every quote so
+                    # mixed free/premium credentials under one provider stay isolated.
+                    for source_event in events or []:
+                        for source_book in source_event.get("bookmakers") or []:
+                            for source_market in source_book.get("markets") or []:
+                                for source_outcome in source_market.get("outcomes") or []:
+                                    if isinstance(source_outcome, dict):
+                                        source_outcome["source_account_group"] = lease.account_group
+                                        account_classes = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get(provider_name)
+                                        source_class = (
+                                            account_classes.get(lease.account_group, "restricted")
+                                            if account_classes is not None
+                                            else config.ODDS_PROVIDER_ACCESS_CLASSES.get(provider_name, "restricted")
+                                        )
+                                        source_outcome["source_access_class"] = (
+                                            source_class if source_class in {"free", "premium"} else "restricted"
+                                        )
+                                        if "size" in source_outcome:
+                                            size_provider = str(
+                                                source_outcome.get("size_source_provider") or provider_name
+                                            )
+                                            if size_provider == provider_name:
+                                                source_outcome["size_source_provider"] = provider_name
+                                                source_outcome["size_source_account_group"] = lease.account_group
+                                                source_outcome["size_source_access_class"] = source_outcome["source_access_class"]
                     source_results.append((provider_name, events))
                     successful_providers.append(provider_name)
+                    successful_provider_account_groups[provider_name] = {lease.account_group}
                     if provider_name == "oddize":
                         provider_results_summary.setdefault(sport_key, {}).update({
                             "oddize_props": oddize_props,
@@ -694,7 +827,10 @@ class OddsService:
             # the other providers' still-current sportsbook data.
             existing_events = self.db.latest_events(sport=sport_key)
             events, snapshot_providers = merge_provider_snapshot(
-                existing_events, successful_providers, source_results
+                existing_events, successful_providers, source_results,
+                provider_access_classes=config.ODDS_PROVIDER_ACCESS_CLASSES,
+                provider_account_access_classes=config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES,
+                refreshed_provider_account_groups=successful_provider_account_groups,
             )
             fetched_at = datetime.now(timezone.utc).isoformat()
             snapshot_provider = "+".join(snapshot_providers)
@@ -712,16 +848,63 @@ class OddsService:
                         observed_at=fetched_at,
                         usage=source_usages.get("oddslink"),
                         key_fingerprint=oddslink_keyset_fingerprint(),
+                        source_provider="oddslink",
+                        source_access_class=config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted"),
+                        source_capability="posted_market_limits",
                     )
                 except Exception as limits_error:
                     provider_results_summary.setdefault(sport_key, {})[
                         "limits_ingest_warning"
                     ] = str(limits_error)
-            clv_candidates = analyze_markets(
-                events, min_ev=config.CLV_MIN_EV_PERCENT,
+            # Keep CLV calculations inside one access tier. Premium consensus
+            # must never borrow free quotes (or vice versa), and the database
+            # stores the same exact selection separately for each tier.
+            free_clv_events = self.events(
+                sport_key, include_premium=False, preserve_account_groups=True
+            )
+            free_clv_candidates = analyze_markets(
+                free_clv_events, min_ev=config.CLV_MIN_EV_PERCENT,
                 min_consensus_books=2, best_only=False,
             )["opportunities"]
-            self.db.record_clv_candidates(clv_candidates, fetched_at)
+            free_clv_candidates = [
+                row for row in free_clv_candidates
+                if row.get("source_access_class") == "free"
+            ]
+            self.db.record_clv_candidates(free_clv_candidates, fetched_at)
+
+            premium_clv_events = self.events(
+                sport_key, include_premium=True, preserve_account_groups=True
+            )
+            premium_only_events = []
+            for source_event in premium_clv_events:
+                premium_event = dict(source_event)
+                premium_books = []
+                for source_book in source_event.get("bookmakers") or []:
+                    premium_book = dict(source_book)
+                    premium_markets = []
+                    for source_market in source_book.get("markets") or []:
+                        premium_market = dict(source_market)
+                        premium_market["outcomes"] = [
+                            outcome for outcome in source_market.get("outcomes") or []
+                            if outcome.get("source_access_class") == "premium"
+                        ]
+                        if premium_market["outcomes"]:
+                            premium_markets.append(premium_market)
+                    if premium_markets:
+                        premium_book["markets"] = premium_markets
+                        premium_books.append(premium_book)
+                premium_event["bookmakers"] = premium_books
+                if premium_books:
+                    premium_only_events.append(premium_event)
+            premium_clv_candidates = analyze_markets(
+                premium_only_events, min_ev=config.CLV_MIN_EV_PERCENT,
+                min_consensus_books=2, best_only=False,
+            )["opportunities"]
+            premium_clv_candidates = [
+                row for row in premium_clv_candidates
+                if row.get("source_access_class") == "premium"
+            ]
+            self.db.record_clv_candidates(premium_clv_candidates, fetched_at)
             count += len(events)
             successful_sports += 1
             # Report coverage from the complete merged snapshot, not only
@@ -797,15 +980,18 @@ class OddsService:
             and config.DISCORD_WEBHOOK_URL
             and "therundown" in self.active_provider_names()
             and pool is not None and pool.configured
+            and bool(self._eligible_provider_account_groups("therundown"))
         )
 
     def sync_simulation_results(self):
         """Collect verified final scores for archived games using the configured key pool."""
         discord_enabled = self.discord_results_sync_enabled()
+        eligible_account_groups = self._eligible_provider_account_groups("therundown")
         simulator_enabled = bool(
             config.SIMULATION_RESULTS_SYNC_ENABLED
             and "therundown" in self.active_provider_names()
             and self._provider_key_pools["therundown"].configured
+            and eligible_account_groups
         )
         if not (discord_enabled or simulator_enabled):
             self._simulation_results_status.update({
@@ -848,7 +1034,7 @@ class OddsService:
                 last_error = None
                 for _ in range(pool.status()["configured_keys"]):
                     try:
-                        lease = pool.acquire()
+                        lease = pool.acquire(allowed_account_groups=eligible_account_groups)
                     except NoAvailableKeys as exc:
                         last_error = ProviderError(str(exc))
                         break
@@ -1011,7 +1197,12 @@ class OddsService:
         sent = 0
         delivery_limit = config.DISCORD_ALERT_MAX_PER_CYCLE
         rate_limited = False
-        events = self.events()
+        # Global Discord delivery is not subscriber-scoped in identity mode;
+        # keep it on the public/free dataset while preserving legacy operator behavior.
+        events = (
+            self.events(include_premium=False)
+            if config.AUTH_MODE == "identity" else self.events()
+        )
         events_by_id = {
             str(event.get("id")): event for event in events
             if isinstance(event, dict) and event.get("id") is not None
@@ -1167,9 +1358,10 @@ class OddsService:
         with self._events_cache_lock:
             self._events_cache.clear()
 
-    def events(self, sport=None, limit=None, offset=0):
+    def events(self, sport=None, limit=None, offset=0, include_premium=None, preserve_account_groups=False):
         """Return a short-lived shared snapshot for concurrent dashboard reads."""
-        cache_key = (sport or "__all__") + f":{limit}:{offset}"
+        scope_key = "all" if include_premium is None else ("paid" if include_premium else "free")
+        cache_key = (sport or "__all__") + f":{limit}:{offset}:scope={scope_key}:groups={int(bool(preserve_account_groups))}"
         now = time.monotonic()
         cached = self._events_cache.get(cache_key)
         if cached and now - cached[0] < self._events_cache_ttl_seconds:
@@ -1179,33 +1371,103 @@ class OddsService:
             cached = self._events_cache.get(cache_key)
             if cached and now - cached[0] < self._events_cache_ttl_seconds:
                 return cached[1]
-            stored = self.db.latest_events(sport, limit=limit, offset=offset)
+            stored = self.db.latest_events(
+                sport,
+                limit=None if include_premium is not None else limit,
+                offset=0 if include_premium is not None else offset,
+            )
             if stored:
                 result = stored
             elif sport:
-                result = list(self._cache.get(sport, []))[offset:offset + limit if limit is not None else None]
+                result = list(self._cache.get(sport, []))
+                if limit is not None and include_premium is None:
+                    result = result[offset:offset + limit]
             else:
                 result = [event for group in self._cache.values() for event in group]
-                if limit is not None:
+                if limit is not None and include_premium is None:
                     result = result[offset:offset + limit]
-            self._events_cache[cache_key] = (time.monotonic(), result)
-            return result
+            scoped = []
+            for event in result:
+                event_copy = dict(event)
+                books = []
+                for book in event.get("bookmakers") or []:
+                    book_copy = dict(book)
+                    markets = []
+                    for market in book.get("markets") or []:
+                        market_copy = dict(market)
+                        outcome_map = {}
+                        for raw_outcome in market.get("outcomes") or []:
+                            if not (
+                                include_premium is None
+                                or raw_outcome.get("source_access_class") == "free"
+                                or (include_premium and raw_outcome.get("source_access_class") == "premium")
+                            ):
+                                continue
+                            outcome = dict(raw_outcome)
+                            size_class = outcome.get("size_source_access_class")
+                            if include_premium is not None and not (
+                                size_class == "free"
+                                or (include_premium and size_class == "premium")
+                            ):
+                                outcome.pop("size", None)
+                                outcome.pop("size_source_provider", None)
+                                outcome.pop("size_source_access_class", None)
+                            identity = (
+                                outcome.get("name"),
+                                outcome.get("description") or outcome.get("participant") or "",
+                                outcome.get("point"),
+                            )
+                            if preserve_account_groups:
+                                identity += (
+                                    outcome.get("source_provider") or "",
+                                    outcome.get("source_account_group") or "",
+                                    outcome.get("source_access_class") or "restricted",
+                                )
+                            updated = str(outcome.get("updated_at") or outcome.get("source_updated_at") or "")
+                            score = (updated, 1 if outcome.get("source_access_class") == "premium" else 0)
+                            previous = outcome_map.get(identity)
+                            if previous is None or score > previous[0]:
+                                outcome_map[identity] = (score, outcome)
+                        outcomes = [item[1] for item in outcome_map.values()]
+                        if outcomes:
+                            market_copy["outcomes"] = outcomes
+                            markets.append(market_copy)
+                    if markets:
+                        book_copy["markets"] = markets
+                        books.append(book_copy)
+                if books:
+                    visible_sources = sorted({
+                        str(outcome.get("source_provider"))
+                        for book in books
+                        for market in book.get("markets") or []
+                        for outcome in market.get("outcomes") or []
+                        if outcome.get("source_provider")
+                    })
+                    event_copy["bookmakers"] = books
+                    event_copy["sources"] = visible_sources
+                    event_copy["source"] = "+".join(visible_sources) if visible_sources else "stored"
+                    scoped.append(event_copy)
+            if limit is not None and include_premium is not None:
+                scoped = scoped[offset:offset + limit]
+            self._events_cache[cache_key] = (time.monotonic(), scoped)
+            return scoped
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None,
-                limit=100, outcome_description=None):
+                limit=100, outcome_description=None, include_premium=None):
         return self.db.history(event_id, market_key, outcome_name, bookmaker_key, point,
-                               limit, outcome_description)
+                               limit, outcome_description, include_premium)
 
-    def clv_report(self, sport=None, limit=500):
-        return self.db.clv_report(sport, limit)
+    def clv_report(self, sport=None, limit=500, include_premium=None):
+        return self.db.clv_report(sport, limit, include_premium)
 
-    def movement(self, sport=None, limit=200):
-        return self.db.movement(sport, limit)
+    def movement(self, sport=None, limit=200, include_premium=None):
+        return self.db.movement(sport, limit, include_premium)
 
     def movement_history(self, event_id, market_key, outcome_name,
-                         bookmaker_key, limit=500, outcome_description=None):
+                         bookmaker_key, limit=500, outcome_description=None, include_premium=None):
         return self.db.movement_history(
-            event_id, market_key, outcome_name, bookmaker_key, limit, outcome_description
+            event_id, market_key, outcome_name, bookmaker_key, limit, outcome_description,
+            include_premium
         )
 
 

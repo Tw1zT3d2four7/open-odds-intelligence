@@ -45,9 +45,13 @@ class OddsDatabase:
                     outcome_name TEXT NOT NULL, outcome_description TEXT NOT NULL DEFAULT '', point REAL, price INTEGER NOT NULL,
                     source_updated_at TEXT,
                     source_provider TEXT NOT NULL DEFAULT '',
+                    source_account_group TEXT NOT NULL DEFAULT '',
+                    source_access_class TEXT NOT NULL DEFAULT 'restricted',
                     is_main INTEGER,
                     size_json TEXT,
-                    size_source_provider TEXT NOT NULL DEFAULT ''
+                    size_source_provider TEXT NOT NULL DEFAULT '',
+                    size_source_account_group TEXT NOT NULL DEFAULT '',
+                    size_source_access_class TEXT NOT NULL DEFAULT 'restricted'
                 );
                 CREATE INDEX IF NOT EXISTS idx_quotes_lookup
                     ON quotes(event_id, market_key, outcome_name, point, bookmaker_key);
@@ -77,7 +81,10 @@ class OddsDatabase:
                     close_at TEXT, close_fair_probability REAL,
                     close_fair_american INTEGER, closing_books INTEGER,
                     clv_percent REAL,
-                    UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key)
+                    source_provider TEXT NOT NULL DEFAULT '',
+                    source_account_group TEXT NOT NULL DEFAULT '',
+                    source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                    UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_provider,source_account_group,source_access_class)
                 );
                 CREATE INDEX IF NOT EXISTS idx_clv_pending
                     ON clv_entries(status, commence_time);
@@ -111,19 +118,118 @@ class OddsDatabase:
                 if column not in alert_columns:
                     db.execute(f"ALTER TABLE sent_alerts ADD COLUMN {column} {declaration}")
             db.execute("CREATE INDEX IF NOT EXISTS idx_sent_alerts_event_lifecycle ON sent_alerts(event_id, lifecycle_status)")
+            clv_columns = {row["name"] for row in db.execute("PRAGMA table_info(clv_entries)")}
+            legacy_clv_account_provenance_missing = not {
+                "source_provider", "source_account_group"
+            }.issubset(clv_columns)
+            if "source_provider" not in clv_columns:
+                db.execute("ALTER TABLE clv_entries ADD COLUMN source_provider TEXT NOT NULL DEFAULT ''")
+            if "source_account_group" not in clv_columns:
+                db.execute("ALTER TABLE clv_entries ADD COLUMN source_account_group TEXT NOT NULL DEFAULT ''")
+            if "source_access_class" not in clv_columns:
+                db.execute("ALTER TABLE clv_entries ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
+            if legacy_clv_account_provenance_missing:
+                db.execute("UPDATE clv_entries SET source_access_class='restricted'")
+            db.execute(
+                "UPDATE clv_entries SET source_access_class='restricted' "
+                "WHERE source_provider='' OR source_account_group=''"
+            )
+            # Rebuild legacy CLV identity so free and premium observations of
+            # the same selection can coexist without overwriting one another.
+            clv_unique_indexes = db.execute("PRAGMA index_list(clv_entries)").fetchall()
+            scoped_unique = False
+            for index in clv_unique_indexes:
+                if not index["unique"]:
+                    continue
+                index_columns = [
+                    row["name"] for row in db.execute(
+                        f"PRAGMA index_info('{index['name']}')"
+                    ).fetchall()
+                ]
+                if index_columns == [
+                    "event_id", "market_key", "outcome_name",
+                    "point_key", "bookmaker_key", "source_provider",
+                    "source_account_group", "source_access_class",
+                ]:
+                    scoped_unique = True
+                    break
+            if not scoped_unique:
+                db.execute("DROP TABLE IF EXISTS clv_entries_scoped_migration")
+                db.execute("""
+                    CREATE TABLE clv_entries_scoped_migration (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_id TEXT NOT NULL, sport TEXT NOT NULL DEFAULT '',
+                        matchup TEXT NOT NULL DEFAULT '', commence_time TEXT NOT NULL,
+                        market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                        point REAL, point_key TEXT NOT NULL DEFAULT '',
+                        bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                        entry_price INTEGER NOT NULL, entry_fair_probability REAL NOT NULL,
+                        entry_ev_percent REAL NOT NULL, entry_at TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        close_at TEXT, close_fair_probability REAL,
+                        close_fair_american INTEGER, closing_books INTEGER,
+                        clv_percent REAL,
+                        source_provider TEXT NOT NULL DEFAULT '',
+                        source_account_group TEXT NOT NULL DEFAULT '',
+                        source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                        UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_provider,source_account_group,source_access_class)
+                    )
+                """)
+                db.execute("""
+                    INSERT INTO clv_entries_scoped_migration(
+                        id,event_id,sport,matchup,commence_time,market_key,outcome_name,
+                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                        entry_fair_probability,entry_ev_percent,entry_at,status,close_at,
+                        close_fair_probability,close_fair_american,closing_books,clv_percent,
+                        source_provider,source_account_group,source_access_class
+                    )
+                    SELECT id,event_id,sport,matchup,commence_time,market_key,outcome_name,
+                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                        entry_fair_probability,entry_ev_percent,entry_at,status,close_at,
+                        close_fair_probability,close_fair_american,closing_books,clv_percent,
+                        source_provider,source_account_group,
+                        CASE WHEN source_access_class IN ('free','premium')
+                             THEN source_access_class ELSE 'restricted' END
+                    FROM clv_entries
+                """)
+                db.execute("DROP TABLE clv_entries")
+                db.execute("ALTER TABLE clv_entries_scoped_migration RENAME TO clv_entries")
+                db.execute("CREATE INDEX IF NOT EXISTS idx_clv_pending ON clv_entries(status, commence_time)")
             quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
             if "source_updated_at" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_updated_at TEXT")
             if "outcome_description" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN outcome_description TEXT NOT NULL DEFAULT ''")
+            legacy_quote_account_group_missing = "source_account_group" not in quote_columns
+            legacy_size_account_group_missing = "size_source_account_group" not in quote_columns
             if "source_provider" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN source_provider TEXT NOT NULL DEFAULT ''")
+            if "source_account_group" not in quote_columns:
+                db.execute("ALTER TABLE quotes ADD COLUMN source_account_group TEXT NOT NULL DEFAULT ''")
+            if "source_access_class" not in quote_columns:
+                db.execute("ALTER TABLE quotes ADD COLUMN source_access_class TEXT NOT NULL DEFAULT 'restricted'")
             if "is_main" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN is_main INTEGER")
             if "size_json" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN size_json TEXT")
             if "size_source_provider" not in quote_columns:
                 db.execute("ALTER TABLE quotes ADD COLUMN size_source_provider TEXT NOT NULL DEFAULT ''")
+            if "size_source_account_group" not in quote_columns:
+                db.execute("ALTER TABLE quotes ADD COLUMN size_source_account_group TEXT NOT NULL DEFAULT ''")
+            if "size_source_access_class" not in quote_columns:
+                db.execute("ALTER TABLE quotes ADD COLUMN size_source_access_class TEXT NOT NULL DEFAULT 'restricted'")
+            if legacy_quote_account_group_missing:
+                db.execute("UPDATE quotes SET source_access_class='restricted'")
+            if legacy_size_account_group_missing:
+                db.execute("UPDATE quotes SET size_source_access_class='restricted'")
+            db.execute(
+                "UPDATE quotes SET source_access_class='restricted' "
+                "WHERE source_provider='' OR source_account_group=''"
+            )
+            db.execute(
+                "UPDATE quotes SET size_source_access_class='restricted' "
+                "WHERE size_source_provider='' OR size_source_account_group=''"
+            )
             # Older CLV rows stored the provider's display title instead of
             # the canonical sport key, which made sport-filtered reports miss them.
             # Recover the key from the immutable quote archive where possible.
@@ -477,15 +583,34 @@ class OddsDatabase:
                             book_title = book.get("title")
                             if not isinstance(book_title, str) or not book_title.strip():
                                 book_title = book_key
+                            source_provider = str(outcome.get("source_provider") or "")
+                            source_account_group = str(outcome.get("source_account_group") or "")
+                            source_access_class = (
+                                outcome.get("source_access_class")
+                                if outcome.get("source_access_class") in {"free", "premium"}
+                                else "restricted"
+                            )
+                            if not source_provider or not source_account_group:
+                                source_access_class = "restricted"
+                            size_source_provider = str(outcome.get("size_source_provider") or "")
+                            size_source_account_group = str(outcome.get("size_source_account_group") or "")
+                            size_source_access_class = (
+                                outcome.get("size_source_access_class")
+                                if outcome.get("size_source_access_class") in {"free", "premium"}
+                                else "restricted"
+                            )
+                            if not size_source_provider or not size_source_account_group:
+                                size_source_access_class = "restricted"
                             row = (snapshot_id, event_id, sport,
                                    *event_metadata, book_key, book_title, market_key,
                                    outcome_name, description, point, price, updated_at,
-                                   str(outcome.get("source_provider") or ""),
+                                   source_provider, source_account_group, source_access_class,
                                    (1 if outcome.get("main") else 0) if "main" in outcome else None,
                                    json.dumps(outcome.get("size"), sort_keys=True)
                                    if isinstance(outcome.get("size"), dict) else None,
-                                   str(outcome.get("size_source_provider") or ""))
-                            identity = (row[1], book_key, market_key, outcome_name, description, point)
+                                   size_source_provider, size_source_account_group,
+                                   size_source_access_class)
+                            identity = (row[1], book_key, market_key, outcome_name, description, point, row[15], row[16], row[17])
                             if identity in conflicted_quotes:
                                 continue
                             previous = rows_by_identity.get(identity)
@@ -504,8 +629,9 @@ class OddsDatabase:
             ]
             db.executemany("""INSERT INTO quotes(snapshot_id,event_id,sport,sport_title,commence_time,
                 home_team,away_team,bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,point,price,
-                source_updated_at,source_provider,is_main,size_json,size_source_provider)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
+                source_updated_at,source_provider,source_account_group,source_access_class,is_main,
+                size_json,size_source_provider,size_source_account_group,size_source_access_class)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
         return snapshot_id
 
     def latest_events(self, sport=None, limit=None, offset=0):
@@ -559,8 +685,9 @@ class OddsDatabase:
                 rows = db.execute(
                     """SELECT event_id,sport_title,commence_time,home_team,away_team,
                               bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,price,
-                              source_updated_at,source_provider,is_main,size_json,
-                              size_source_provider,point
+                              source_updated_at,source_provider,source_account_group,
+                              source_access_class,is_main,size_json,size_source_provider,
+                              size_source_account_group,size_source_access_class,point
                        FROM quotes WHERE snapshot_id=?""" + page_clause + """
                        ORDER BY commence_time,event_id,bookmaker_key,market_key,outcome_name""",
                     page_args,
@@ -606,6 +733,10 @@ class OddsDatabase:
                         outcome["updated_at"] = row["source_updated_at"]
                     if row["source_provider"]:
                         outcome["source_provider"] = row["source_provider"]
+                    if row["source_account_group"]:
+                        outcome["source_account_group"] = row["source_account_group"]
+                    if row["source_access_class"] in {"free", "premium"}:
+                        outcome["source_access_class"] = row["source_access_class"]
                     if row["is_main"] is not None:
                         outcome["main"] = bool(row["is_main"])
                     if row["size_json"]:
@@ -615,6 +746,10 @@ class OddsDatabase:
                             pass
                     if row["size_source_provider"]:
                         outcome["size_source_provider"] = row["size_source_provider"]
+                    if row["size_source_account_group"]:
+                        outcome["size_source_account_group"] = row["size_source_account_group"]
+                    if row["size_source_access_class"] in {"free", "premium"}:
+                        outcome["size_source_access_class"] = row["size_source_access_class"]
                     if row["point"] is not None:
                         outcome["point"] = row["point"]
                     market["outcomes"].append(outcome)
@@ -622,12 +757,16 @@ class OddsDatabase:
         return events
 
     def history(self, event_id, market_key, outcome_name, bookmaker_key=None, point=None,
-                limit=100, outcome_description=None):
+                limit=100, outcome_description=None, include_premium=None):
         sql = """SELECT s.fetched_at,q.bookmaker_key,q.bookmaker_title,q.market_key,
-                 q.outcome_name,q.outcome_description,q.point,q.price,q.source_updated_at FROM quotes q
+                 q.outcome_name,q.outcome_description,q.point,q.price,q.source_updated_at,
+                 q.source_provider,q.source_account_group,q.source_access_class FROM quotes q
                  JOIN snapshots s ON s.id=q.snapshot_id
                  WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?"""
         args = [event_id, market_key, outcome_name]
+        if include_premium is not None:
+            sql += " AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))"
+            args.append(1 if include_premium else 0)
         if bookmaker_key:
             sql += " AND q.bookmaker_key=?"
             args.append(bookmaker_key)
@@ -643,7 +782,7 @@ class OddsDatabase:
             return [dict(row) for row in db.execute(sql, args).fetchall()]
 
 
-    def movement(self, sport=None, limit=200):
+    def movement(self, sport=None, limit=200, include_premium=None):
         """Return one opening-to-latest movement summary per sportsbook selection.
 
         When a book offers a single line for a selection, line transitions are
@@ -656,19 +795,26 @@ class OddsDatabase:
                    q.event_id, q.sport,
                    q.sport_title, q.commence_time, q.home_team, q.away_team,
                    q.bookmaker_key, q.bookmaker_title, q.market_key,
-                   q.outcome_name, q.outcome_description, q.point, q.price
+                   q.outcome_name, q.outcome_description, q.point, q.price,
+                   q.source_provider, q.source_account_group, q.source_access_class
             FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
             WHERE (? IS NULL OR q.sport=?)
             ORDER BY s.id ASC, q.event_id, q.bookmaker_key,
                      q.market_key, q.outcome_name, q.point
         """
+        args = [sport, sport]
+        if include_premium is not None:
+            sql = sql.replace("ORDER BY s.id ASC", "AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium')) ORDER BY s.id ASC")
+            args.append(1 if include_premium else 0)
         with self.connect() as db:
-            rows = [dict(row) for row in db.execute(sql, (sport, sport)).fetchall()]
+            rows = [dict(row) for row in db.execute(sql, args).fetchall()]
 
         grouped = {}
         for row in rows:
             key = (row["event_id"], row["bookmaker_key"],
-                   row["market_key"], row["outcome_name"], row.get("outcome_description") or "")
+                   row["market_key"], row["outcome_name"], row.get("outcome_description") or "",
+                   row.get("source_provider") or "", row.get("source_account_group") or "",
+                   row.get("source_access_class") or "restricted")
             grouped.setdefault(key, {}).setdefault(row["snapshot_id"], {})[row["point"]] = row
 
         def implied(price):
@@ -729,6 +875,9 @@ class OddsDatabase:
                     "outcome": current["outcome_name"], "outcome_description": current.get("outcome_description") or "",
                     "bookmaker": current["bookmaker_title"],
                     "bookmaker_key": current["bookmaker_key"],
+                    "source_provider": current.get("source_provider") or "",
+                    "source_account_group": current.get("source_account_group") or "",
+                    "source_access_class": current.get("source_access_class") or "restricted",
                     "opening_point": opening["point"], "previous_point": previous["point"],
                     "point": current["point"], "opening_price": opening["price"],
                     "previous_price": previous["price"], "price": current["price"],
@@ -755,18 +904,22 @@ class OddsDatabase:
 
 
     def movement_history(self, event_id, market_key, outcome_name,
-                         bookmaker_key, limit=500, outcome_description=None):
+                         bookmaker_key, limit=500, outcome_description=None, include_premium=None):
         """Return a chronological quote timeline, including every observed line."""
+        sql = """SELECT s.fetched_at, q.source_updated_at, q.point, q.price,
+                        q.source_provider,q.source_account_group,q.source_access_class
+                 FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
+                 WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?
+                   AND q.bookmaker_key=? AND (? IS NULL OR q.outcome_description=?)"""
+        args = [event_id, market_key, outcome_name, bookmaker_key,
+                outcome_description, outcome_description]
+        if include_premium is not None:
+            sql += " AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))"
+            args.append(1 if include_premium else 0)
+        sql += " ORDER BY s.id DESC LIMIT ?"
+        args.append(max(1, min(int(limit), 1000)))
         with self.connect() as db:
-            rows = db.execute(
-                """SELECT s.fetched_at, q.source_updated_at, q.point, q.price
-                   FROM quotes q JOIN snapshots s ON s.id=q.snapshot_id
-                   WHERE q.event_id=? AND q.market_key=? AND q.outcome_name=?
-                     AND q.bookmaker_key=? AND (? IS NULL OR q.outcome_description=?)
-                   ORDER BY s.id DESC LIMIT ?""",
-                (event_id, market_key, outcome_name, bookmaker_key,
-                 outcome_description, outcome_description, max(1, min(int(limit), 1000))),
-            ).fetchall()
+            rows = db.execute(sql, args).fetchall()
         return [dict(row) for row in reversed(rows)]
 
 
@@ -841,6 +994,20 @@ class OddsDatabase:
                 sport = row.get("sport_key") or row.get("sport") or ""
                 matchup = row.get("matchup") or ""
                 title = row.get("bookmaker") or bookmaker_key
+                source_provider = (
+                    row.get("source_provider")
+                    if isinstance(row.get("source_provider"), str) else ""
+                )
+                source_account_group = (
+                    row.get("source_account_group")
+                    if isinstance(row.get("source_account_group"), str) else ""
+                )
+                source_access_class = (
+                    row.get("source_access_class")
+                    if row.get("source_access_class") in {"free", "premium"} else "restricted"
+                )
+                if not source_provider.strip() or not source_account_group.strip():
+                    source_access_class = "restricted"
                 if not all(isinstance(value, str) for value in (sport, matchup, title)):
                     continue
 
@@ -850,8 +1017,11 @@ class OddsDatabase:
                            WHERE event_id=? AND market_key='spreads'
                              AND outcome_name=? AND bookmaker_key=?
                              AND point IS NOT NULL AND ABS(point)=?
+                             AND source_provider=? AND source_account_group=?
+                             AND source_access_class=?
                            LIMIT 1""",
-                        (event_id, outcome, bookmaker_key, abs(point)),
+                        (event_id, outcome, bookmaker_key, abs(point),
+                         source_provider, source_account_group, source_access_class),
                     ).fetchone()
                     if legacy_or_current:
                         continue
@@ -859,11 +1029,13 @@ class OddsDatabase:
                     """INSERT OR IGNORE INTO clv_entries(
                        event_id,sport,matchup,commence_time,market_key,outcome_name,
                        point,point_key,bookmaker_key,bookmaker_title,entry_price,
-                       entry_fair_probability,entry_ev_percent,entry_at)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       entry_fair_probability,entry_ev_percent,entry_at,
+                       source_provider,source_account_group,source_access_class)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (event_id, sport, matchup, str(commence), market, outcome,
                      point, point_key, bookmaker_key, title, price,
-                     fair_probability, ev_percent, str(observed_at)))
+                     fair_probability, ev_percent, str(observed_at),
+                     source_provider, source_account_group, source_access_class))
                 inserted += max(0, cur.rowcount)
         return inserted
 
@@ -875,16 +1047,23 @@ class OddsDatabase:
         except (TypeError, ValueError):
             return None
 
-    def _closing_consensus(self, db, entry):
+    def _closing_consensus(self, db, entry, include_premium=None, source_access_class=None):
         start = self._as_utc(entry["commence_time"])
         entry_at = self._as_utc(entry["entry_at"])
         if start is None or entry_at is None:
             return None
-        snapshots = db.execute(
-            """SELECT DISTINCT s.id,s.fetched_at FROM snapshots s
-               JOIN quotes q ON q.snapshot_id=s.id
-               WHERE q.event_id=? ORDER BY s.id DESC""",
-            (entry["event_id"],)).fetchall()
+        snapshot_sql = """SELECT DISTINCT s.id,s.fetched_at FROM snapshots s
+                           JOIN quotes q ON q.snapshot_id=s.id
+                           WHERE q.event_id=?"""
+        snapshot_args = [entry["event_id"]]
+        if source_access_class in {"free", "premium"}:
+            snapshot_sql += " AND q.source_access_class=?"
+            snapshot_args.append(source_access_class)
+        if source_access_class not in {"free", "premium"} and include_premium is not None:
+            snapshot_sql += " AND (q.source_access_class='free' OR (?=1 AND q.source_access_class='premium'))"
+            snapshot_args.append(1 if include_premium else 0)
+        snapshot_sql += " ORDER BY s.id DESC"
+        snapshots = db.execute(snapshot_sql, snapshot_args).fetchall()
         earliest = datetime.min.replace(tzinfo=timezone.utc)
         snapshots = sorted(
             snapshots,
@@ -899,10 +1078,16 @@ class OddsDatabase:
             if (fetched is None or fetched <= entry_at or fetched >= start or
                 start - fetched > timedelta(minutes=config.CLV_MAX_CLOSE_AGE_MINUTES)):
                 continue
-            quotes = db.execute(
-                """SELECT bookmaker_key,market_key,outcome_name,point,price
-                   FROM quotes WHERE snapshot_id=? AND event_id=? AND market_key=?""",
-                (snapshot["id"], entry["event_id"], entry["market_key"])).fetchall()
+            quote_sql = """SELECT bookmaker_key,market_key,outcome_name,point,price
+                           FROM quotes WHERE snapshot_id=? AND event_id=? AND market_key=?"""
+            quote_args = [snapshot["id"], entry["event_id"], entry["market_key"]]
+            if source_access_class in {"free", "premium"}:
+                quote_sql += " AND source_access_class=?"
+                quote_args.append(source_access_class)
+            if source_access_class not in {"free", "premium"} and include_premium is not None:
+                quote_sql += " AND (source_access_class='free' OR (?=1 AND source_access_class='premium'))"
+                quote_args.append(1 if include_premium else 0)
+            quotes = db.execute(quote_sql, quote_args).fetchall()
             by_book_line = {}
             target_line = None if entry["point"] is None else abs(float(entry["point"])) if entry["market_key"] == "spreads" else float(entry["point"])
             for quote in quotes:
@@ -1001,7 +1186,7 @@ class OddsDatabase:
                             "clv_percent": clv}
         return None
 
-    def clv_report(self, sport=None, limit=500):
+    def clv_report(self, sport=None, limit=500, include_premium=None):
         """Resolve tracked entries against the last pregame no-vig peer consensus.
 
         Positive CLV means the captured entry price was longer than the fair
@@ -1010,8 +1195,13 @@ class OddsDatabase:
         """
         now = datetime.now(timezone.utc)
         with self.connect() as db:
-            pending_sql = "SELECT * FROM clv_entries WHERE status='pending'"
-            pending_args = []
+            scope_clause = ""
+            scope_args = []
+            if include_premium is not None:
+                scope_clause = " AND (source_access_class='free' OR (?=1 AND source_access_class='premium'))"
+                scope_args.append(1 if include_premium else 0)
+            pending_sql = "SELECT * FROM clv_entries WHERE status='pending'" + scope_clause
+            pending_args = list(scope_args)
             if sport:
                 pending_sql += " AND sport=?"
                 pending_args.append(sport)
@@ -1020,7 +1210,13 @@ class OddsDatabase:
                 start = self._as_utc(entry["commence_time"])
                 if start is None or now < start:
                     continue
-                close = self._closing_consensus(db, entry)
+                close = self._closing_consensus(
+                    db, entry, source_access_class=(
+                        entry["source_access_class"]
+                        if entry["source_access_class"] in {"free", "premium"}
+                        else None
+                    ),
+                )
                 if close:
                     db.execute(
                         """UPDATE clv_entries SET status='closed',close_at=?,
@@ -1040,10 +1236,10 @@ class OddsDatabase:
                             "UPDATE clv_entries SET status='insufficient_close_data' WHERE id=?",
                             (entry["id"],),
                         )
-            sql = "SELECT * FROM clv_entries"
-            args = []
+            sql = "SELECT * FROM clv_entries WHERE 1=1" + scope_clause
+            args = list(scope_args)
             if sport:
-                sql += " WHERE sport=?"
+                sql += " AND sport=?"
                 args.append(sport)
             sql += " ORDER BY entry_at DESC LIMIT ?"
             args.append(max(1, min(int(limit), 2000)))
@@ -1054,10 +1250,13 @@ class OddsDatabase:
                 AVG(CASE WHEN status='closed' THEN clv_percent END) average_clv_percent,
                 SUM(CASE WHEN status='closed' AND clv_percent>0 THEN 1 ELSE 0 END) positive_clv,
                 SUM(CASE WHEN status='closed' AND clv_percent<0 THEN 1 ELSE 0 END) negative_clv
-                FROM clv_entries"""
+                FROM clv_entries WHERE 1=1""" + scope_clause
             if sport:
-                summary_sql += " WHERE sport=?"
-            summary = db.execute(summary_sql, [sport] if sport else []).fetchone()
+                summary_sql += " AND sport=?"
+            summary_args = list(scope_args)
+            if sport:
+                summary_args.append(sport)
+            summary = db.execute(summary_sql, summary_args).fetchone()
         return {"entries": rows, "summary": dict(summary),
                 "method": "Entry American odds compared with last pregame no-vig consensus price from at least two other complete same-line sportsbooks. Positive means the entry price beat that consensus close; this is not betting profit or a win-rate measure."}
 

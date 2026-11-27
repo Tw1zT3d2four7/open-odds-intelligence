@@ -434,3 +434,368 @@ def test_standalone_limits_client_rotates_to_another_oddslink_account(monkeypatc
     assert client.fetch("nfl") == []
     assert [item[1] for item in calls if item[0] == "init"] == ["Key-One", "Key-Two"]
     assert client.usage["requests_remaining"] == 50
+
+
+def test_market_limit_provenance_is_persisted_and_scoped_for_current_and_history(tmp_path):
+    monitor = MarketLimitsMonitor(path=tmp_path / "scoped-limit-provenance.sqlite3")
+
+    def event(event_id, access_class, amount):
+        return [{
+            "id": event_id,
+            "sport_key": "americanfootball_nfl",
+            "commence_time": "2026-12-01T20:00:00Z",
+            "home_team": "Home",
+            "away_team": "Away",
+            "bookmakers": [{
+                "key": "book",
+                "title": "Book",
+                "markets": [{
+                    "key": "spreads",
+                    "outcomes": [{
+                        "name": "Home",
+                        "point": -3.5,
+                        "price": -110,
+                        "source_provider": "oddslink",
+                        "source_account_group": f"{access_class}-account",
+                        "source_access_class": access_class,
+                        "size": {"kind": "posted_limit", "amount": amount},
+                    }],
+                }],
+            }],
+        }]
+
+    monitor.ingest_events(
+        event("free-limit", "free", 10000),
+        observed_at="2026-11-25T10:00:00Z",
+        key_fingerprint="free-account-fingerprint",
+        source_access_class="free",
+    )
+    monitor.ingest_events(
+        event("premium-limit", "premium", 50000),
+        observed_at="2026-11-25T10:00:00Z",
+        key_fingerprint="premium-account-fingerprint",
+        source_access_class="premium",
+    )
+    monitor.ingest_events(
+        event("unknown-limit", "restricted", 90000),
+        observed_at="2026-11-25T10:00:00Z",
+        key_fingerprint="unknown-account-fingerprint",
+        source_access_class="restricted",
+    )
+
+    free_rows = monitor.current("americanfootball_nfl", 100, include_premium=False)
+    paid_rows = monitor.current("americanfootball_nfl", 100, include_premium=True)
+    assert {row["event_id"] for row in free_rows} == {"free-limit"}
+    assert {row["event_id"] for row in paid_rows} == {"free-limit", "premium-limit"}
+    assert all(row["source_provider"] == "oddslink" for row in paid_rows)
+    assert all(row["source_capability"] == "posted_market_limits" for row in paid_rows)
+    assert all(row["source_account_group"] for row in paid_rows)
+
+    assert len(monitor.history(
+        "free-limit", "book", "spreads", "Home", -3.5, include_premium=False
+    )) == 1
+    assert monitor.history(
+        "premium-limit", "book", "spreads", "Home", -3.5, include_premium=False
+    ) == []
+    assert len(monitor.history(
+        "premium-limit", "book", "spreads", "Home", -3.5, include_premium=True
+    )) == 1
+    assert monitor.history(
+        "unknown-limit", "book", "spreads", "Home", -3.5, include_premium=True
+    ) == []
+
+
+def test_market_limit_change_windows_are_scoped_before_aggregation(tmp_path):
+    monitor = MarketLimitsMonitor(path=tmp_path / "scoped-limit-changes.sqlite3")
+
+    def event(amount, access_class):
+        return [{
+            "id": "same-event",
+            "sport_key": "americanfootball_nfl",
+            "commence_time": "2026-12-01T20:00:00Z",
+            "home_team": "Home",
+            "away_team": "Away",
+            "bookmakers": [{
+                "key": "book",
+                "title": "Book",
+                "markets": [{
+                    "key": "spreads",
+                    "outcomes": [{
+                        "name": "Home",
+                        "point": -3.5,
+                        "price": -110,
+                        "source_provider": "oddslink",
+                        "source_account_group": f"{access_class}-group",
+                        "source_access_class": access_class,
+                        "size": {"kind": "posted_limit", "amount": amount},
+                    }],
+                }],
+            }],
+        }]
+
+    for timestamp, amount, access_class in (
+        ("2026-11-25T10:00:00Z", 10000, "free"),
+        ("2026-11-25T10:01:00Z", 50000, "premium"),
+        ("2026-11-25T10:02:00Z", 15000, "free"),
+        ("2026-11-25T10:03:00Z", 75000, "premium"),
+    ):
+        monitor.ingest_events(
+            event(amount, access_class),
+            observed_at=timestamp,
+            key_fingerprint=f"{access_class}-group",
+            source_access_class=access_class,
+        )
+
+    free_changes = monitor.changes(
+        direction="all", include_premium=False
+    )
+    paid_changes = monitor.changes(
+        direction="all", include_premium=True
+    )
+    assert len(free_changes) == 1
+    assert free_changes[0]["previous_limit"] == 10000
+    assert free_changes[0]["limit_amount"] == 15000
+    assert len(paid_changes) == 2
+    assert {row["source_access_class"] for row in paid_changes} == {"free", "premium"}
+
+
+
+def test_limit_extract_uses_quote_account_group_and_access_class():
+    events = fixture()
+    for outcome in events[0]["bookmakers"][0]["markets"][0]["outcomes"]:
+        outcome["source_provider"] = "oddslink"
+        outcome["source_account_group"] = "free-account"
+        outcome["source_access_class"] = "free"
+
+    rows = MarketLimitsMonitor._extract(
+        "americanfootball_nfl", events, "2026-11-19T12:00:00Z",
+        source_account_group="legacy-fingerprint",
+        source_access_class="premium",
+    )
+
+    assert len(rows) == 2
+    assert {row[14] for row in rows} == {"free-account"}
+    assert {row[15] for row in rows} == {"free"}
+
+
+def test_standalone_oddslink_limit_client_leases_only_free_account_groups(monkeypatch):
+    import app.limits as module
+
+    monkeypatch.setattr(
+        module.config, "ODDSLINK_API_KEYS",
+        "free-account|FreeCaseKey,premium-account|PremiumCaseKey",
+    )
+    monkeypatch.setattr(module.config, "ODDSLINK_API_KEY", "")
+    monkeypatch.setattr(module.config, "ODDS_PREMIUM_PROVIDER_POLLING_ENABLED", False)
+    monkeypatch.setattr(
+        module.config, "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES",
+        {"oddslink": {"free-account": "free", "premium-account": "premium"}},
+    )
+    calls = []
+
+    class FakeProvider:
+        usage = {"requests_remaining": "99"}
+
+        def __init__(self, key):
+            calls.append(key)
+
+        def fetch_usage(self):
+            return 99
+
+        def _request(self, path, params=None):
+            return {"events": fixture()}
+
+    monkeypatch.setattr(module, "OddsLinkProvider", FakeProvider)
+    client = module.OddsLinkClient()
+    events = client.fetch("nfl")
+
+    assert calls == ["FreeCaseKey"]
+    assert client.last_account_group == "free-account"
+    assert client.last_access_class == "free"
+    outcomes = events[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert {row["source_account_group"] for row in outcomes} == {"free-account"}
+    assert {row["source_access_class"] for row in outcomes} == {"free"}
+
+
+
+def test_market_limit_observations_from_same_tier_groups_coexist(tmp_path):
+    monitor = MarketLimitsMonitor(tmp_path / "limit-account-groups.sqlite3")
+    first = fixture()
+    second = fixture()
+    for events, group in ((first, "free-a"), (second, "free-b")):
+        for event in events:
+            event["sport_key"] = "americanfootball_nfl"
+            for book in event.get("bookmakers", []):
+                for market in book.get("markets", []):
+                    for outcome in market.get("outcomes", []):
+                        outcome["source_provider"] = "oddslink"
+                        outcome["source_account_group"] = group
+                        outcome["source_access_class"] = "free"
+        result = monitor.ingest_events(
+            events, observed_at="2026-11-26T01:00:00Z",
+            source_provider="oddslink", source_access_class="free",
+        )
+        assert result["ok"] is True
+
+    with monitor._connect() as db:
+        rows = db.execute(
+            "SELECT DISTINCT source_account_group FROM market_limit_quotes ORDER BY source_account_group"
+        ).fetchall()
+    assert [row["source_account_group"] for row in rows] == ["free-a", "free-b"]
+
+
+def test_market_limit_legacy_unique_index_migrates_with_restricted_rows(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-limit-identity.sqlite3"
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE market_limit_quotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                observed_at TEXT NOT NULL, sport TEXT NOT NULL, event_id TEXT NOT NULL,
+                commence_time TEXT NOT NULL DEFAULT '', home_team TEXT NOT NULL DEFAULT '',
+                away_team TEXT NOT NULL DEFAULT '', bookmaker_key TEXT NOT NULL,
+                bookmaker_title TEXT NOT NULL DEFAULT '', market_key TEXT NOT NULL,
+                outcome_name TEXT NOT NULL, point REAL, price REAL,
+                limit_amount REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'bookmaker_currency',
+                UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point)
+            )
+        """)
+        raw.execute("""
+            INSERT INTO market_limit_quotes(
+                observed_at,sport,event_id,bookmaker_key,bookmaker_title,market_key,
+                outcome_name,point,price,limit_amount
+            ) VALUES('2026-11-26T01:00:00Z','nfl','legacy-event','book','Book',
+                     'spreads','Home',2.5,-110,1000)
+        """)
+
+    monitor = MarketLimitsMonitor(path)
+    with monitor._connect() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(market_limit_quotes)")}
+        indexes = db.execute("PRAGMA index_list(market_limit_quotes)").fetchall()
+        unique_columns = [
+            [item["name"] for item in db.execute(
+                f"PRAGMA index_info('{index['name']}')"
+            ).fetchall()]
+            for index in indexes if index["unique"]
+        ]
+        legacy = db.execute(
+            "SELECT source_access_class,source_account_group FROM market_limit_quotes WHERE event_id='legacy-event'"
+        ).fetchone()
+        for group, access_class in (("free-a", "free"), ("premium-a", "premium")):
+            db.execute("""
+                INSERT INTO market_limit_quotes(
+                    observed_at,sport,event_id,bookmaker_key,bookmaker_title,market_key,
+                    outcome_name,point,price,limit_amount,source_provider,
+                    source_account_group,source_access_class,source_capability
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                "2026-11-26T01:00:00Z", "nfl", "legacy-event", "book", "Book",
+                "spreads", "Home", 2.5, -115, 1000, "oddslink", group,
+                access_class, "posted_market_limits",
+            ))
+        count = db.execute(
+            "SELECT COUNT(*) FROM market_limit_quotes WHERE event_id='legacy-event'"
+        ).fetchone()[0]
+
+    assert "source_account_group" in columns
+    assert "source_access_class" in columns
+    assert ["observed_at", "event_id", "bookmaker_key", "market_key",
+            "outcome_name", "point", "source_provider", "source_account_group",
+            "source_access_class", "source_capability"] in unique_columns
+    assert legacy["source_access_class"] == "restricted"
+    assert legacy["source_account_group"] == ""
+    assert count == 3
+
+
+
+def test_market_limit_migration_restricts_old_provider_level_tier_labels(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old-provider-tier-limits.sqlite3"
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE market_limit_quotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                observed_at TEXT NOT NULL, sport TEXT NOT NULL, event_id TEXT NOT NULL,
+                commence_time TEXT NOT NULL DEFAULT '', home_team TEXT NOT NULL DEFAULT '',
+                away_team TEXT NOT NULL DEFAULT '', bookmaker_key TEXT NOT NULL,
+                bookmaker_title TEXT NOT NULL DEFAULT '', market_key TEXT NOT NULL,
+                outcome_name TEXT NOT NULL, point REAL, price REAL,
+                limit_amount REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'bookmaker_currency',
+                source_provider TEXT NOT NULL DEFAULT '',
+                source_account_group TEXT NOT NULL DEFAULT '',
+                source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                source_capability TEXT NOT NULL DEFAULT 'posted_market_limits',
+                UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point)
+            )
+        """)
+        raw.execute("""
+            INSERT INTO market_limit_quotes(
+                observed_at,sport,event_id,bookmaker_key,bookmaker_title,market_key,
+                outcome_name,point,price,limit_amount,source_provider,
+                source_account_group,source_access_class
+            ) VALUES('2026-11-26T01:00:00Z','nfl','legacy-provider-tier','book','Book',
+                     'spreads','Home',2.5,-110,1000,'oddslink','old-keyset-fingerprint','free')
+        """)
+
+    monitor = MarketLimitsMonitor(path)
+    with monitor._connect() as db:
+        row = db.execute(
+            "SELECT source_account_group,source_access_class FROM market_limit_quotes WHERE event_id='legacy-provider-tier'"
+        ).fetchone()
+    assert row["source_account_group"] == "old-keyset-fingerprint"
+    assert row["source_access_class"] == "restricted"
+
+
+
+def test_market_limit_tier_follows_size_source_not_odds_source(tmp_path):
+    monitor = MarketLimitsMonitor(tmp_path / "size-source-tier.sqlite3")
+    events = fixture()
+    outcome = events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome.update({
+        "source_provider": "the_odds_api",
+        "source_account_group": "free-account",
+        "source_access_class": "free",
+        "size_source_provider": "oddize",
+        "size_source_account_group": "premium-account",
+        "size_source_access_class": "premium",
+    })
+
+    rows = monitor._extract(
+        "americanfootball_nfl", events,
+        "2026-11-26T01:00:00Z",
+        source_provider="the_odds_api",
+        source_access_class="free",
+    )
+    selected = next(row for row in rows if row[9] == outcome["name"])
+    assert selected[13] == "oddize"
+    assert selected[14] == "premium-account"
+    assert selected[15] == "premium"
+
+
+def test_market_limit_size_from_unknown_provider_group_is_restricted(tmp_path):
+    monitor = MarketLimitsMonitor(tmp_path / "size-source-unknown.sqlite3")
+    events = fixture()
+    outcome = events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome.update({
+        "source_provider": "the_odds_api",
+        "source_account_group": "free-account",
+        "source_access_class": "free",
+        "size_source_provider": "oddize",
+        "size_source_account_group": "",
+        "size_source_access_class": "premium",
+    })
+
+    rows = monitor._extract(
+        "americanfootball_nfl", events,
+        "2026-11-26T01:00:00Z",
+        source_provider="the_odds_api",
+        source_access_class="free",
+    )
+    selected = next(row for row in rows if row[9] == outcome["name"])
+    assert selected[13] == "oddize"
+    assert selected[14] == ""
+    assert selected[15] == "restricted"

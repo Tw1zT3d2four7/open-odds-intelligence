@@ -14,6 +14,8 @@ def _event(event_id, books, home="Home", away="Away", start="2026-11-23T20:00:00
 
 
 def _book(key, outcomes, market="h2h"):
+    for outcome in outcomes:
+        outcome.setdefault("source_account_group", "default")
     return {"key": key, "title": key.title(), "markets": [
         {"key": market, "outcomes": outcomes}
     ]}
@@ -211,3 +213,211 @@ def test_successful_empty_provider_refresh_removes_only_that_providers_old_quote
     assert len(merged) == 1
     assert [book["key"] for book in merged[0]["bookmakers"]] == ["bet365"]
     assert merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["source_provider"] == "oddize"
+
+
+
+def test_same_provider_account_groups_keep_free_and_premium_quotes_separate():
+    free_event = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "free-account"}
+    ])])
+    premium_event = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -125, "source_account_group": "premium-account"}
+    ])])
+
+    merged = merge_provider_events(
+        [("the_odds_api", [free_event]),
+         ("the_odds_api", [premium_event])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {
+                "free-account": "free",
+                "premium-account": "premium",
+            }
+        },
+    )
+
+    outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    by_class = {row["source_access_class"]: row for row in outcomes}
+    assert set(by_class) == {"free", "premium"}
+    assert by_class["free"]["price"] == -110
+    assert by_class["premium"]["price"] == -125
+    assert by_class["premium"]["source_account_group"] == "premium-account"
+
+
+def test_unlisted_account_group_is_restricted_when_provider_overrides_exist():
+    event = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "unexpected"}
+    ])])
+
+    merged = merge_provider_events(
+        [("the_odds_api", [event])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {"known-free": "free"}
+        },
+    )
+
+    outcome = merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert outcome["source_access_class"] == "restricted"
+
+    legacy_event = _event("legacy-event", [_book("book", [
+        {"name": "Home", "price": -110}
+    ])])
+    legacy_event["bookmakers"][0]["markets"][0]["outcomes"][0].pop("source_account_group", None)
+    legacy_merged = merge_provider_events(
+        [("the_odds_api", [legacy_event])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {"default": "free", "known-free": "free"}
+        },
+    )
+    legacy_outcome = legacy_merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert legacy_outcome["source_access_class"] == "restricted"
+
+
+
+def test_incremental_refresh_replaces_only_the_leased_account_group():
+    free = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "free-account"}
+    ])])
+    premium = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -125, "source_account_group": "premium-account"}
+    ])])
+    access = {
+        "the_odds_api": {"free-account": "free", "premium-account": "premium"}
+    }
+    existing = merge_provider_events(
+        [("the_odds_api", [free]), ("the_odds_api", [premium])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes=access,
+    )
+
+    refreshed_free = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -105, "source_account_group": "free-account"}
+    ])])
+    merged, _ = merge_provider_snapshot(
+        existing,
+        ["the_odds_api"],
+        [("the_odds_api", [refreshed_free])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes=access,
+        refreshed_provider_account_groups={"the_odds_api": {"free-account"}},
+    )
+    outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    by_class = {row["source_access_class"]: row for row in outcomes}
+    assert by_class["free"]["price"] == -105
+    assert by_class["premium"]["price"] == -125
+
+    # An empty successful free-account refresh removes only that account's old
+    # quotes; premium-account data remains available in the snapshot.
+    empty_refresh, _ = merge_provider_snapshot(
+        merged,
+        ["the_odds_api"],
+        [("the_odds_api", [])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes=access,
+        refreshed_provider_account_groups={"the_odds_api": {"free-account"}},
+    )
+    remaining = empty_refresh[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert [row["source_access_class"] for row in remaining] == ["premium"]
+    assert remaining[0]["price"] == -125
+
+
+
+def test_same_tier_account_groups_keep_duplicate_book_quotes_independent():
+    first = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "free-account-a"}
+    ])])
+    second = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -105, "source_account_group": "free-account-b"}
+    ])])
+
+    merged = merge_provider_events(
+        [("the_odds_api", [first]), ("the_odds_api", [second])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {
+                "free-account-a": "free",
+                "free-account-b": "free",
+            }
+        },
+    )
+
+    outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    assert {row["source_account_group"] for row in outcomes} == {
+        "free-account-a", "free-account-b"
+    }
+    assert {row["price"] for row in outcomes} == {-110, -105}
+
+
+
+def test_size_from_another_provider_without_its_account_group_is_restricted():
+    event = _event("size-source", [_book("book", [
+        {
+            "name": "Home", "price": -110,
+            "source_account_group": "free-account",
+            "size": {"stake": 10},
+            "size_source_provider": "oddize",
+        }
+    ])])
+
+    merged = merge_provider_events(
+        [("the_odds_api", [event])],
+        provider_access_classes={"the_odds_api": "free", "oddize": "free"},
+        provider_account_access_classes={
+            "the_odds_api": {"free-account": "free"},
+            "oddize": {"premium-account": "premium"},
+        },
+    )
+
+    outcome = merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert outcome["source_access_class"] == "free"
+    assert outcome["size_source_access_class"] == "restricted"
+
+
+
+def test_incremental_refresh_replaces_only_one_of_two_same_tier_groups():
+    first = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -110, "source_account_group": "free-a"}
+    ])])
+    second = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -120, "source_account_group": "free-b"}
+    ])])
+    access = {"the_odds_api": {"free-a": "free", "free-b": "free"}}
+    existing = merge_provider_events(
+        [("the_odds_api", [first]), ("the_odds_api", [second])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes=access,
+    )
+
+    refreshed = _event("same-event", [_book("book", [
+        {"name": "Home", "price": -105, "source_account_group": "free-a"}
+    ])])
+    merged, _ = merge_provider_snapshot(
+        existing,
+        ["the_odds_api"],
+        [("the_odds_api", [refreshed])],
+        provider_access_classes={"the_odds_api": "free"},
+        provider_account_access_classes=access,
+        refreshed_provider_account_groups={"the_odds_api": {"free-a"}},
+    )
+
+    outcomes = merged[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    prices = {row["source_account_group"]: row["price"] for row in outcomes}
+    assert prices == {"free-a": -105, "free-b": -120}
+
+
+
+def test_provider_level_fallback_does_not_classify_missing_account_group_as_free():
+    event = _event("legacy-without-group", [_book("book", [
+        {"name": "Home", "price": -110}
+    ])])
+    outcome = event["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome.pop("source_account_group", None)
+
+    merged = merge_provider_events(
+        [("the_odds_api", [event])],
+        provider_access_classes={"the_odds_api": "free"},
+    )
+
+    assert merged[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["source_access_class"] == "restricted"

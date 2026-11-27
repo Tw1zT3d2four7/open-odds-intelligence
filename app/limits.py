@@ -67,6 +67,24 @@ def oddslink_keyset_fingerprint():
     return hashlib.sha256(material.encode("utf-8")).hexdigest() if material else ""
 
 
+def _eligible_oddslink_account_groups(configured_groups=None):
+    allowed_classes = {"free"}
+    if config.ODDS_PREMIUM_PROVIDER_POLLING_ENABLED:
+        allowed_classes.add("premium")
+    if configured_groups is None:
+        configured_groups = {group for group, _ in oddslink_key_entries()}
+    overrides = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get("oddslink")
+    if overrides is not None:
+        return {
+            group for group, access_class in overrides.items()
+            if group in configured_groups and access_class in allowed_classes
+        }
+    provider_class = config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted")
+    if provider_class not in allowed_classes:
+        return set()
+    return set(configured_groups)
+
+
 class OddsLinkClient:
     """Quota-aware, multi-key wrapper for the standalone market-limit poller."""
 
@@ -89,15 +107,22 @@ class OddsLinkClient:
         self.pool = ProviderKeyPool(
             "oddslink_limits", [f"{group}|{key}" for group, key in unique]
         )
+        self.allowed_account_groups = _eligible_oddslink_account_groups(
+            {group for group, _ in unique}
+        )
         self.key_count = len(unique)
+        self.last_account_group = ""
+        self.last_access_class = "restricted"
         self.usage = {}
         self.last_key_fingerprint = ""
 
     def fetch(self, sport):
+        if not self.allowed_account_groups:
+            raise LimitsError("No OddsLink account groups are eligible for market-limit polling")
         last_error = None
         for _ in range(self.key_count):
             try:
-                lease = self.pool.acquire()
+                lease = self.pool.acquire(allowed_account_groups=self.allowed_account_groups)
             except NoAvailableKeys as exc:
                 last_error = exc
                 break
@@ -126,19 +151,49 @@ class OddsLinkClient:
                 last_error = exc
                 continue
             self.pool.mark_success(lease)
-            self.pool.record_usage(lease, provider.usage)
+            self.pool.record_usage(
+                lease, provider.usage,
+                minimum_remaining=config.ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.get(
+                    "oddslink", {}
+                ).get(lease.account_group, {}),
+            )
             self.usage = dict(provider.usage)
             self.last_key_fingerprint = lease.fingerprint
+            self.last_account_group = lease.account_group
+            account_classes = config.ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.get("oddslink")
+            self.last_access_class = (
+                account_classes.get(lease.account_group, "restricted")
+                if account_classes is not None
+                else config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted")
+            )
+            if self.last_access_class not in ("free", "premium"):
+                self.last_access_class = "restricted"
             if isinstance(payload, dict) and payload.get("error"):
                 error = payload["error"]
                 message = (error.get("message") or error.get("code") or str(error)
                            if isinstance(error, dict) else str(error))
                 raise LimitsError(f"OddsLink API error: {message}")
             if isinstance(payload, list):
-                return payload
-            if isinstance(payload, dict) and isinstance(payload.get("events"), list):
-                return payload["events"]
-            raise LimitsError("OddsLink returned an unexpected events response format")
+                events = payload
+            elif isinstance(payload, dict) and isinstance(payload.get("events"), list):
+                events = payload["events"]
+            else:
+                raise LimitsError("OddsLink returned an unexpected events response format")
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                for book in event.get("bookmakers") or []:
+                    if not isinstance(book, dict):
+                        continue
+                    for market in book.get("markets") or []:
+                        if not isinstance(market, dict):
+                            continue
+                        for outcome in market.get("outcomes") or []:
+                            if isinstance(outcome, dict):
+                                outcome["source_provider"] = "oddslink"
+                                outcome["source_account_group"] = lease.account_group
+                                outcome["source_access_class"] = self.last_access_class
+            return events
         raise LimitsError(str(last_error or "No available OddsLink API keys"))
 
 
@@ -202,7 +257,11 @@ class MarketLimitsMonitor:
                     price REAL,
                     limit_amount REAL NOT NULL,
                     currency TEXT NOT NULL DEFAULT 'bookmaker_currency',
-                    UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point)
+                    source_provider TEXT NOT NULL DEFAULT '',
+                    source_account_group TEXT NOT NULL DEFAULT '',
+                    source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                    source_capability TEXT NOT NULL DEFAULT 'posted_market_limits',
+                    UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point,source_provider,source_account_group,source_access_class,source_capability)
                 );
                 CREATE INDEX IF NOT EXISTS idx_limit_lookup
                 ON market_limit_quotes(event_id,bookmaker_key,market_key,outcome_name,point,id);
@@ -217,9 +276,86 @@ class MarketLimitsMonitor:
                     summary TEXT NOT NULL
                 );
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(market_limit_quotes)")}
+            for column, declaration in (
+                ("source_provider", "TEXT NOT NULL DEFAULT ''"),
+                ("source_account_group", "TEXT NOT NULL DEFAULT ''"),
+                ("source_access_class", "TEXT NOT NULL DEFAULT 'restricted'"),
+                ("source_capability", "TEXT NOT NULL DEFAULT 'posted_market_limits'"),
+            ):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE market_limit_quotes ADD COLUMN {column} {declaration}")
+
+            expected_unique = [
+                "observed_at", "event_id", "bookmaker_key", "market_key",
+                "outcome_name", "point", "source_provider",
+                "source_account_group", "source_access_class", "source_capability",
+            ]
+            scoped_unique = False
+            for index in db.execute("PRAGMA index_list(market_limit_quotes)").fetchall():
+                if not index["unique"]:
+                    continue
+                index_columns = [
+                    row["name"] for row in db.execute(
+                        f"PRAGMA index_info('{index['name']}')"
+                    ).fetchall()
+                ]
+                if index_columns == expected_unique:
+                    scoped_unique = True
+                    break
+            if not scoped_unique:
+                db.execute("DROP TABLE IF EXISTS market_limit_quotes_scoped_migration")
+                db.execute("""
+                    CREATE TABLE market_limit_quotes_scoped_migration (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        observed_at TEXT NOT NULL,
+                        sport TEXT NOT NULL,
+                        event_id TEXT NOT NULL,
+                        commence_time TEXT NOT NULL DEFAULT '',
+                        home_team TEXT NOT NULL DEFAULT '',
+                        away_team TEXT NOT NULL DEFAULT '',
+                        bookmaker_key TEXT NOT NULL,
+                        bookmaker_title TEXT NOT NULL DEFAULT '',
+                        market_key TEXT NOT NULL,
+                        outcome_name TEXT NOT NULL,
+                        point REAL,
+                        price REAL,
+                        limit_amount REAL NOT NULL,
+                        currency TEXT NOT NULL DEFAULT 'bookmaker_currency',
+                        source_provider TEXT NOT NULL DEFAULT '',
+                        source_account_group TEXT NOT NULL DEFAULT '',
+                        source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                        source_capability TEXT NOT NULL DEFAULT 'posted_market_limits',
+                        UNIQUE(observed_at,event_id,bookmaker_key,market_key,outcome_name,point,
+                               source_provider,source_account_group,source_access_class,source_capability)
+                    )
+                """)
+                db.execute("""
+                    INSERT OR IGNORE INTO market_limit_quotes_scoped_migration(
+                        id,observed_at,sport,event_id,commence_time,home_team,away_team,
+                        bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,
+                        limit_amount,currency,source_provider,source_account_group,
+                        source_access_class,source_capability
+                    )
+                    SELECT id,observed_at,sport,event_id,commence_time,home_team,away_team,
+                        bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,
+                        limit_amount,currency,source_provider,source_account_group,
+                        'restricted',source_capability
+                    FROM market_limit_quotes
+                """)
+                db.execute("DROP TABLE market_limit_quotes")
+                db.execute(
+                    "ALTER TABLE market_limit_quotes_scoped_migration RENAME TO market_limit_quotes"
+                )
+                db.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_limit_lookup
+                    ON market_limit_quotes(event_id,bookmaker_key,market_key,outcome_name,point,id)
+                """)
 
     @staticmethod
-    def _extract(sport, events, observed_at):
+    def _extract(sport, events, observed_at, *, source_provider="oddslink",
+                 source_account_group="", source_access_class="restricted",
+                 source_capability="posted_market_limits"):
         import math
 
         rows = []
@@ -304,10 +440,32 @@ class MarketLimitsMonitor:
                         title = book.get("title")
                         if not isinstance(title, str) or not title.strip():
                             title = book_key
+                        size_provider = str(outcome.get("size_source_provider") or "")
+                        odds_provider = str(outcome.get("source_provider") or source_provider or "")
+                        row_provider = size_provider or odds_provider
+                        # Limit amounts come from size metadata, so a different
+                        # size provider must supply its own group and tier.
+                        if size_provider and size_provider != odds_provider:
+                            row_group = str(outcome.get("size_source_account_group") or "")
+                            row_class = outcome.get("size_source_access_class") or "restricted"
+                        else:
+                            row_group = str(
+                                outcome.get("size_source_account_group")
+                                or outcome.get("source_account_group") or ""
+                            )
+                            row_class = (
+                                outcome.get("size_source_access_class")
+                                or outcome.get("source_access_class")
+                                or source_access_class
+                            )
+                        if not row_provider or not row_group or row_class not in ("free", "premium"):
+                            row_class = "restricted"
                         rows.append((
                             observed_at, sport, event_id,
                             *metadata, book_key, title, market_key, outcome_name,
-                            point, price, amount,
+                            point, price, amount, str(row_provider or ""),
+                            str(row_group or ""), row_class,
+                            str(source_capability or "posted_market_limits"),
                         ))
 
         # SQLite UNIQUE constraints treat NULL values as distinct. Deduplicate
@@ -316,7 +474,7 @@ class MarketLimitsMonitor:
         unique_rows = {}
         conflicting = set()
         for row in rows:
-            identity = (row[0], row[2], row[6], row[8], row[9], row[10])
+            identity = (row[0], row[2], row[6], row[8], row[9], row[10], row[13], row[14], row[15], row[16])
             previous = unique_rows.get(identity)
             if previous is not None and previous != row:
                 conflicting.add(identity)
@@ -331,14 +489,16 @@ class MarketLimitsMonitor:
                 previous = db.execute("""
                     SELECT limit_amount,observed_at FROM market_limit_quotes
                     WHERE event_id=? AND bookmaker_key=? AND market_key=?
-                      AND outcome_name=? AND point IS ?
+                      AND outcome_name=? AND point IS ? AND source_provider=?
+                      AND source_account_group=? AND source_access_class=? AND source_capability=?
                     ORDER BY id DESC LIMIT 1
-                """, (row[2], row[6], row[8], row[9], row[10])).fetchone()
+                """, (row[2], row[6], row[8], row[9], row[10], row[13], row[14], row[15], row[16])).fetchone()
                 db.execute("""
                     INSERT OR IGNORE INTO market_limit_quotes
                     (observed_at,sport,event_id,commence_time,home_team,away_team,
-                     bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,limit_amount)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,limit_amount,
+                     source_provider,source_account_group,source_access_class,source_capability)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, row)
                 if previous and float(previous["limit_amount"]) != row[12]:
                     old, new = float(previous["limit_amount"]), row[12]
@@ -358,7 +518,9 @@ class MarketLimitsMonitor:
         self._send_alerts(changes)
         return changes
 
-    def ingest_events(self, events, *, observed_at=None, usage=None, key_fingerprint=None):
+    def ingest_events(self, events, *, observed_at=None, usage=None, key_fingerprint=None,
+                      source_provider="oddslink", source_access_class="restricted",
+                      source_capability="posted_market_limits"):
         """Record posted limits from an already-fetched OddsLink odds snapshot."""
         if not self._refresh_lock.acquire(blocking=False):
             return {"ok": False, "skipped": True, "error": "A market-limits update is already running.", "observations": 0}
@@ -370,7 +532,13 @@ class MarketLimitsMonitor:
                     by_sport.setdefault(event["sport_key"], []).append(event)
             rows = []
             for sport, sport_events in by_sport.items():
-                rows.extend(self._extract(sport, sport_events, observed_at))
+                rows.extend(self._extract(
+                    sport, sport_events, observed_at,
+                    source_provider=source_provider,
+                    source_account_group=key_fingerprint or "",
+                    source_access_class=source_access_class,
+                    source_capability=source_capability,
+                ))
             changes = self._store_rows(rows)
             self.usage = dict(usage or self.usage)
             self.last_updated = observed_at
@@ -430,6 +598,9 @@ class MarketLimitsMonitor:
         api_key = oddslink_api_key()
         if not api_key:
             self.last_error = "Market limits feed is disabled. Add a free OddsLink API key as ODDSLINK_API_KEY or ODDSLINK_API_KEYS."
+            return {"ok": False, "error": self.last_error, "observations": 0}
+        if not _eligible_oddslink_account_groups():
+            self.last_error = "No OddsLink account groups are eligible for market-limit polling."
             return {"ok": False, "error": self.last_error, "observations": 0}
         now = datetime.now(timezone.utc)
         observed_at = now.isoformat()
@@ -512,7 +683,16 @@ class MarketLimitsMonitor:
                                 diagnostic["size_kinds_returned"][kind] = diagnostic["size_kinds_returned"].get(kind, 0) + 1
                                 if kind == "posted_limit":
                                     diagnostic["posted_limit_outcomes"] += 1
-                all_rows.extend(self._extract(configured_sport, events, observed_at))
+                all_rows.extend(self._extract(
+                    configured_sport, events, observed_at,
+                    source_provider="oddslink",
+                    source_account_group=getattr(client, "last_account_group", current_key_fingerprint),
+                    source_access_class=getattr(
+                        client, "last_access_class",
+                        config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink", "restricted"),
+                    ),
+                    source_capability="posted_market_limits",
+                ))
             except LimitsError as exc:
                 errors.append(f"{sport}: {exc}")
                 # Stop immediately for quota, authentication or rate-limit
@@ -530,14 +710,16 @@ class MarketLimitsMonitor:
                 previous = db.execute("""
                     SELECT limit_amount,observed_at FROM market_limit_quotes
                     WHERE event_id=? AND bookmaker_key=? AND market_key=?
-                      AND outcome_name=? AND point IS ?
+                      AND outcome_name=? AND point IS ? AND source_provider=?
+                      AND source_account_group=? AND source_access_class=?
                     ORDER BY id DESC LIMIT 1
-                """, (row[2], row[6], row[8], row[9], row[10])).fetchone()
+                """, (row[2], row[6], row[8], row[9], row[10], row[13], row[14], row[15])).fetchone()
                 db.execute("""
                     INSERT OR IGNORE INTO market_limit_quotes
                     (observed_at,sport,event_id,commence_time,home_team,away_team,
-                     bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,limit_amount)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     bookmaker_key,bookmaker_title,market_key,outcome_name,point,price,limit_amount,
+                     source_provider,source_account_group,source_access_class,source_capability)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, row)
                 if previous and float(previous["limit_amount"]) != row[12]:
                     old, new = float(previous["limit_amount"]), row[12]
@@ -701,12 +883,18 @@ class MarketLimitsMonitor:
             "diagnostic": self.last_diagnostic,
         }
 
-    def current(self, sport=None, limit=500):
+    def current(self, sport=None, limit=500, include_premium=None):
+        """Return latest limits after applying the caller's provider-data scope."""
         sql = """SELECT q.* FROM market_limit_quotes q JOIN (
-            SELECT event_id,bookmaker_key,market_key,outcome_name,point,MAX(id) id
-            FROM market_limit_quotes GROUP BY event_id,bookmaker_key,market_key,outcome_name,point
-        ) x ON x.id=q.id"""
+            SELECT event_id,bookmaker_key,market_key,outcome_name,point,
+                   source_provider,source_account_group,source_access_class,source_capability,MAX(id) id
+            FROM market_limit_quotes"""
         args = []
+        if include_premium is False:
+            sql += " WHERE source_access_class='free'"
+        elif include_premium is True:
+            sql += " WHERE source_access_class IN ('free','premium')"
+        sql += " GROUP BY event_id,bookmaker_key,market_key,outcome_name,point,source_provider,source_account_group,source_access_class,source_capability) x ON x.id=q.id"
         if sport:
             sql += " WHERE q.sport=?"
             args.append(sport)
@@ -715,19 +903,16 @@ class MarketLimitsMonitor:
         with self._connect() as db:
             return [dict(r) for r in db.execute(sql, args).fetchall()]
 
-    def changes(self, sport=None, direction="increased", limit=200):
-        """Return limit changes derived from successive persisted provider snapshots."""
-        sql = """WITH sequenced AS (
-            SELECT q.*,
-                   LAG(limit_amount) OVER (
-                       PARTITION BY event_id,bookmaker_key,market_key,outcome_name,point
-                       ORDER BY id
-                   ) AS previous_limit
-            FROM market_limit_quotes q
-        )
-        SELECT * FROM sequenced
-        WHERE previous_limit IS NOT NULL AND limit_amount != previous_limit"""
+    def changes(self, sport=None, direction="increased", limit=200, include_premium=None):
+        """Return changes within each provider source, scoped before window aggregation."""
+        sql = """WITH scoped AS (
+            SELECT * FROM market_limit_quotes"""
         args = []
+        if include_premium is False:
+            sql += " WHERE source_access_class='free'"
+        elif include_premium is True:
+            sql += " WHERE source_access_class IN ('free','premium')"
+        sql += "),\n        sequenced AS (\n            SELECT q.*,\n                   LAG(limit_amount) OVER (\n                       PARTITION BY event_id,bookmaker_key,market_key,outcome_name,point,\n                                    source_provider,source_account_group,source_access_class,source_capability\n                       ORDER BY id\n                   ) AS previous_limit\n            FROM scoped q\n        )\n        SELECT * FROM sequenced\n        WHERE previous_limit IS NOT NULL AND limit_amount != previous_limit"
         if sport:
             sql += " AND sport=?"
             args.append(sport)
@@ -753,10 +938,14 @@ class MarketLimitsMonitor:
                 break
         return results
 
-    def history(self, event_id, bookmaker, market, outcome, point=None, limit=500):
+    def history(self, event_id, bookmaker, market, outcome, point=None, limit=500, include_premium=None):
         sql = """SELECT * FROM market_limit_quotes
                  WHERE event_id=? AND bookmaker_key=? AND market_key=? AND outcome_name=?"""
         args = [event_id, bookmaker, market, outcome]
+        if include_premium is False:
+            sql += " AND source_access_class='free'"
+        elif include_premium is True:
+            sql += " AND source_access_class IN ('free','premium')"
         sql += " AND point IS NULL" if point is None else " AND point=?"
         if point is not None:
             args.append(point)
@@ -764,6 +953,5 @@ class MarketLimitsMonitor:
         args.append(limit)
         with self._connect() as db:
             return [dict(r) for r in db.execute(sql, args).fetchall()]
-
 
 limits_monitor = MarketLimitsMonitor()

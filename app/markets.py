@@ -183,9 +183,14 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
                     line = _line_group(market_key, outcome.get("point"))
                     if market_key != "h2h" and line is None:
                         continue
-                    groups[(line, player_scope)].append(outcome)
+                    groups[(
+                        line, player_scope,
+                        str(outcome.get("source_provider") or ""),
+                        str(outcome.get("source_account_group") or ""),
+                        str(outcome.get("source_access_class") or "restricted"),
+                    )].append(outcome)
 
-                for (line, player_scope), items in groups.items():
+                for (line, player_scope, _source_provider, _source_account_group, _source_access_class), items in groups.items():
                     if len(items) != expected_outcomes:
                         continue
                     # A valid spread pair must describe opposite sides of the
@@ -213,12 +218,19 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
                             "identity": identity, "probability": probability,
                         })
                     # One canonical complete set per book / market / line.
-                    candidate_sets[(market_key, line, player_scope)][signature][book_key] = quotes
+                    source_identity = (
+                        book_key,
+                        str(items[0].get("source_provider") or ""),
+                        str(items[0].get("source_account_group") or ""),
+                        str(items[0].get("source_access_class") or "restricted"),
+                    )
+                    candidate_sets[(market_key, line, player_scope)][signature][source_identity] = quotes
 
         # Exclude incomplete or mismatched sets. A tied modal signature is
         # ambiguous, so fail closed rather than mixing different market types.
         for market_line, signatures in candidate_sets.items():
-            counts = [(len(books), signature) for signature, books in signatures.items()]
+            counts = [(len({source[0] for source in sources}), signature)
+                      for signature, sources in signatures.items()]
             if not counts:
                 continue
             highest = max(count for count, _ in counts)
@@ -234,21 +246,39 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
             best = {}
             for (market_key, line, _player_scope), quotes in line_sets.items():
                 for quote in quotes:
-                    peers = [q["probability"] for q in quotes
-                             if q["book"].get("key") != quote["book"].get("key")
-                             and q["identity"] == quote["identity"]]
-                    peer_books = {q["book"].get("key") for q in quotes
-                                  if q["book"].get("key") != quote["book"].get("key")
-                                  and q["identity"] == quote["identity"]}
+                    peer_probabilities = defaultdict(list)
+                    for peer in quotes:
+                        peer_book_key = peer["book"].get("key")
+                        if (peer_book_key and peer_book_key != quote["book"].get("key")
+                                and peer["identity"] == quote["identity"]):
+                            peer_probabilities[peer_book_key].append(peer["probability"])
+                    peer_books = set(peer_probabilities)
                     if len(peer_books) < min_consensus_books:
                         continue
+                    # Multiple account groups may contain the same sportsbook.
+                    # Collapse that sportsbook to one peer probability so it is
+                    # never counted more than once in the consensus.
+                    peers = [median(values) for values in peer_probabilities.values()]
                     fair = median(peers)
                     price = quote["outcome"]["price"]
                     ev = (fair * american_to_decimal(price) - 1) * 100
                     if ev < min_ev:
                         continue
                     identity = (market_key, line, quote["identity"])
+                    identity_source_classes = [
+                        item["outcome"].get("source_access_class")
+                        for item in quotes if item["identity"] == quote["identity"]
+                    ]
+                    if any(value not in {"free", "premium"} for value in identity_source_classes):
+                        derived_access_class = "restricted"
+                    elif "premium" in identity_source_classes:
+                        derived_access_class = "premium"
+                    else:
+                        derived_access_class = "free"
                     row = {
+                        "source_access_class": derived_access_class,
+                        "source_provider": quote["outcome"].get("source_provider") or "",
+                        "source_account_group": quote["outcome"].get("source_account_group") or "",
                         "event_id": event_id, "sport": event.get("sport_title"),
                         "sport_key": event.get("sport_key") or event.get("sport"),
                         "matchup": f'{event.get("away_team", "")} @ {event.get("home_team", "")}',

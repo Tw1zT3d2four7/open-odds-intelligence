@@ -13,12 +13,39 @@ def fixture():
 
 def test_snapshot_round_trip_and_points(tmp_path):
     db = OddsDatabase(tmp_path / "history.sqlite3")
-    db.save_snapshot("basketball_nba", fixture(), "test", "2026-11-17T12:00:00Z")
+    events_to_save = fixture()
+    outcome = events_to_save[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome.update({
+        "source_provider": "the_odds_api",
+        "source_account_group": "free-account",
+        "source_access_class": "free",
+        "size": {"stake": 10},
+        "size_source_provider": "oddize",
+        "size_source_account_group": "props-account",
+        "size_source_access_class": "premium",
+    })
+    events_to_save[0]["bookmakers"][0]["markets"][0]["outcomes"].append({
+        "name": "Home", "price": -105, "point": -3.5,
+        "source_provider": "the_odds_api",
+        "source_account_group": "free-account-b",
+        "source_access_class": "free",
+    })
+    db.save_snapshot("basketball_nba", events_to_save, "test", "2026-11-17T12:00:00Z")
     events = db.latest_events("basketball_nba")
     assert len(events) == 1
     spread = next(m for m in events[0]["bookmakers"][0]["markets"] if m["key"] == "spreads")
     home = next(o for o in spread["outcomes"] if o["name"] == "Home")
     assert home["point"] == -3.5
+    assert home["source_provider"] == "the_odds_api"
+    assert home["source_account_group"] == "free-account"
+    assert home["source_access_class"] == "free"
+    assert home["size_source_provider"] == "oddize"
+    assert home["size_source_account_group"] == "props-account"
+    assert home["size_source_access_class"] == "premium"
+    assert {
+        item["source_account_group"]
+        for item in spread["outcomes"] if item["name"] == "Home"
+    } == {"free-account", "free-account-b"}
     assert db.snapshot_status()["snapshots"] == 1
 
 
@@ -1139,3 +1166,301 @@ def test_snapshot_status_counts_distinct_books_in_latest_snapshot_per_sport(tmp_
     db.save_snapshot("basketball_nba", newer, "test", "2026-11-17T12:05:00Z")
     status = db.snapshot_status()
     assert status["bookmakers"] == 1
+
+
+def test_clv_keeps_free_and_premium_entries_for_same_selection_separate(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-tier-scope.sqlite3")
+    now = datetime.now(timezone.utc)
+    candidate = {
+        "event_id": "tiered-clv-event", "sport": "basketball_nba",
+        "matchup": "Away @ Home",
+        "commence_time": (now + timedelta(hours=8)).isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Shared Book", "bookmaker_key": "shared-book",
+        "price": -110, "fair_probability": 0.51, "ev_percent": 2.0,
+    }
+    free = dict(candidate, source_access_class="free", source_provider="the_odds_api", source_account_group="free-account")
+    premium = dict(candidate, source_access_class="premium", source_provider="the_odds_api", source_account_group="premium-account", price=-115)
+    assert db.record_clv_candidates([free], now.isoformat()) == 1
+    assert db.record_clv_candidates([premium], now.isoformat()) == 1
+
+    free_report = db.clv_report("basketball_nba", include_premium=False)
+    paid_report = db.clv_report("basketball_nba", include_premium=True)
+    assert free_report["summary"]["total"] == 1
+    assert free_report["entries"][0]["source_access_class"] == "free"
+    assert paid_report["summary"]["total"] == 2
+    assert {row["source_access_class"] for row in paid_report["entries"]} == {
+        "free", "premium"
+    }
+    assert {row["entry_price"] for row in paid_report["entries"]} == {-110, -115}
+    assert {row["source_account_group"] for row in paid_report["entries"]} == {
+        "free-account", "premium-account"
+    }
+    assert {row["source_provider"] for row in paid_report["entries"]} == {"the_odds_api"}
+
+
+def test_clv_legacy_unique_index_is_migrated_without_losing_entries(tmp_path):
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    path = tmp_path / "clv-legacy-schema.sqlite3"
+    now = datetime.now(timezone.utc)
+    commence = (now + timedelta(hours=6)).isoformat()
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE clv_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL, sport TEXT NOT NULL DEFAULT '',
+                matchup TEXT NOT NULL DEFAULT '', commence_time TEXT NOT NULL,
+                market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                point REAL, point_key TEXT NOT NULL DEFAULT '',
+                bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                entry_price INTEGER NOT NULL, entry_fair_probability REAL NOT NULL,
+                entry_ev_percent REAL NOT NULL, entry_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                close_at TEXT, close_fair_probability REAL,
+                close_fair_american INTEGER, closing_books INTEGER, clv_percent REAL,
+                UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key)
+            )
+        """)
+        raw.execute("""
+            INSERT INTO clv_entries(
+                event_id,sport,matchup,commence_time,market_key,outcome_name,
+                point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                entry_fair_probability,entry_ev_percent,entry_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            "legacy-event", "basketball_nba", "Away @ Home", commence,
+            "h2h", "Home", None, "", "book", "Book", -110, 0.5, 1.0,
+            now.isoformat(),
+        ))
+
+    db = OddsDatabase(path)
+    with db.connect() as conn:
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(clv_entries)")]
+        unique_indexes = [
+            row for row in conn.execute("PRAGMA index_list(clv_entries)")
+            if row["unique"]
+        ]
+        unique_columns = [
+            [row["name"] for row in conn.execute(
+                f"PRAGMA index_info('{index['name']}')"
+            )]
+            for index in unique_indexes
+        ]
+        legacy = conn.execute(
+            "SELECT source_access_class,source_provider,source_account_group,entry_price FROM clv_entries WHERE event_id='legacy-event'"
+        ).fetchone()
+    assert "source_access_class" in columns
+    assert "source_provider" in columns
+    assert "source_account_group" in columns
+    assert ["event_id", "market_key", "outcome_name", "point_key",
+            "bookmaker_key", "source_provider", "source_account_group",
+            "source_access_class"] in unique_columns
+    assert legacy["source_access_class"] == "restricted"
+    assert legacy["source_provider"] == ""
+    assert legacy["source_account_group"] == ""
+    assert legacy["entry_price"] == -110
+
+
+
+def test_quote_account_group_columns_are_added_to_existing_database(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-quote-provenance.sqlite3"
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE quotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_id INTEGER NOT NULL,
+                event_id TEXT NOT NULL, sport TEXT NOT NULL,
+                sport_title TEXT NOT NULL DEFAULT '',
+                commence_time TEXT NOT NULL DEFAULT '',
+                home_team TEXT NOT NULL DEFAULT '', away_team TEXT NOT NULL DEFAULT '',
+                bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                outcome_description TEXT NOT NULL DEFAULT '', point REAL,
+                price INTEGER NOT NULL, source_updated_at TEXT,
+                source_provider TEXT NOT NULL DEFAULT '',
+                source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                is_main INTEGER, size_json TEXT,
+                size_source_provider TEXT NOT NULL DEFAULT '',
+                size_source_access_class TEXT NOT NULL DEFAULT 'restricted'
+            )
+        """)
+        raw.execute("""
+            INSERT INTO quotes(
+                snapshot_id,event_id,sport,sport_title,commence_time,home_team,away_team,
+                bookmaker_key,bookmaker_title,market_key,outcome_name,outcome_description,
+                point,price,source_provider,source_access_class,
+                size_source_provider,size_source_access_class
+            ) VALUES(1,'legacy-event','basketball_nba','Basketball','2026-11-26T00:00:00Z',
+                     'Home','Away','book','Book','h2h','Home','',NULL,-110,'the_odds_api','free','oddize','premium')
+        """)
+
+    db = OddsDatabase(path)
+    with db.connect() as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(quotes)")}
+        legacy = conn.execute(
+            "SELECT event_id,source_account_group,size_source_account_group,source_access_class,size_source_access_class FROM quotes"
+        ).fetchone()
+    assert "source_account_group" in columns
+    assert "size_source_account_group" in columns
+    assert legacy["event_id"] == "legacy-event"
+    assert legacy["source_account_group"] == ""
+    assert legacy["size_source_account_group"] == ""
+    assert legacy["source_access_class"] == "restricted"
+    assert legacy["size_source_access_class"] == "restricted"
+
+
+
+def test_clv_keeps_same_tier_account_group_entries_separate(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-account-groups.sqlite3")
+    now = datetime.now(timezone.utc)
+    base = {
+        "event_id": "same-tier-groups", "sport": "basketball_nba",
+        "matchup": "Away @ Home",
+        "commence_time": (now + timedelta(hours=4)).isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Shared Book", "bookmaker_key": "shared-book",
+        "price": -110, "fair_probability": 0.51, "ev_percent": 2.0,
+        "source_provider": "the_odds_api", "source_access_class": "free",
+    }
+    first = dict(base, source_account_group="free-account-a")
+    second = dict(base, source_account_group="free-account-b", price=-115)
+    assert db.record_clv_candidates([first], now.isoformat()) == 1
+    assert db.record_clv_candidates([second], now.isoformat()) == 1
+
+    report = db.clv_report("basketball_nba", include_premium=False)
+    assert report["summary"]["total"] == 2
+    assert {row["source_account_group"] for row in report["entries"]} == {
+        "free-account-a", "free-account-b"
+    }
+
+
+
+def test_movement_timelines_do_not_mix_same_tier_account_groups(tmp_path):
+    db = OddsDatabase(tmp_path / "movement-account-groups.sqlite3")
+
+    def snapshot(at, price_a, price_b):
+        return [{
+            "id": "movement-groups", "sport_key": "basketball_nba",
+            "sport_title": "NBA", "commence_time": "2026-12-01T00:00:00Z",
+            "home_team": "Home", "away_team": "Away",
+            "bookmakers": [{
+                "key": "book-a", "title": "Book A", "markets": [{
+                    "key": "h2h", "outcomes": [
+                        {"name": "Home", "price": price_a, "source_provider": "the_odds_api",
+                         "source_account_group": "free-a", "source_access_class": "free"},
+                        {"name": "Home", "price": price_b, "source_provider": "the_odds_api",
+                         "source_account_group": "free-b", "source_access_class": "free"},
+                    ],
+                }],
+            }],
+        }]
+
+    db.save_snapshot("basketball_nba", snapshot("2026-11-26T01:00:00Z", -110, -130),
+                     fetched_at="2026-11-26T01:00:00Z")
+    db.save_snapshot("basketball_nba", snapshot("2026-11-26T01:05:00Z", -115, -125),
+                     fetched_at="2026-11-26T01:05:00Z")
+
+    rows = db.movement("basketball_nba", include_premium=False)
+    by_group = {row["source_account_group"]: row for row in rows}
+    assert set(by_group) == {"free-a", "free-b"}
+    assert (by_group["free-a"]["previous_price"], by_group["free-a"]["price"]) == (-110, -115)
+    assert (by_group["free-b"]["previous_price"], by_group["free-b"]["price"]) == (-130, -125)
+    timeline = db.movement_history(
+        "movement-groups", "h2h", "Home", "book-a", include_premium=False
+    )
+    assert {row["source_account_group"] for row in timeline} == {"free-a", "free-b"}
+
+
+
+def test_clv_migration_restricts_old_provider_level_tier_labels(tmp_path):
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    path = tmp_path / "clv-provider-tier-legacy.sqlite3"
+    now = datetime.now(timezone.utc)
+    commence = (now + timedelta(hours=6)).isoformat()
+    with sqlite3.connect(path) as raw:
+        raw.execute("""
+            CREATE TABLE clv_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL, sport TEXT NOT NULL DEFAULT '',
+                matchup TEXT NOT NULL DEFAULT '', commence_time TEXT NOT NULL,
+                market_key TEXT NOT NULL, outcome_name TEXT NOT NULL,
+                point REAL, point_key TEXT NOT NULL DEFAULT '',
+                bookmaker_key TEXT NOT NULL, bookmaker_title TEXT NOT NULL DEFAULT '',
+                entry_price INTEGER NOT NULL, entry_fair_probability REAL NOT NULL,
+                entry_ev_percent REAL NOT NULL, entry_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                close_at TEXT, close_fair_probability REAL,
+                close_fair_american INTEGER, closing_books INTEGER, clv_percent REAL,
+                source_provider TEXT NOT NULL DEFAULT '',
+                source_access_class TEXT NOT NULL DEFAULT 'restricted',
+                UNIQUE(event_id,market_key,outcome_name,point_key,bookmaker_key,source_access_class)
+            )
+        """)
+        raw.execute("""
+            INSERT INTO clv_entries(
+                event_id,sport,matchup,commence_time,market_key,outcome_name,
+                point,point_key,bookmaker_key,bookmaker_title,entry_price,
+                entry_fair_probability,entry_ev_percent,entry_at,source_provider,
+                source_access_class
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            "legacy-provider-tier", "basketball_nba", "Away @ Home", commence,
+            "h2h", "Home", None, "", "book", "Book", -110, 0.5, 1.0,
+            now.isoformat(), "the_odds_api", "free",
+        ))
+
+    db = OddsDatabase(path)
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT source_provider,source_account_group,source_access_class FROM clv_entries"
+        ).fetchone()
+    assert row["source_provider"] == "the_odds_api"
+    assert row["source_account_group"] == ""
+    assert row["source_access_class"] == "restricted"
+
+
+
+def test_new_clv_candidate_without_account_provenance_is_restricted(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    db = OddsDatabase(tmp_path / "clv-missing-account.sqlite3")
+    now = datetime.now(timezone.utc)
+    candidate = {
+        "event_id": "missing-account", "sport": "basketball_nba",
+        "matchup": "Away @ Home", "commence_time": (now + timedelta(hours=2)).isoformat(),
+        "market": "h2h", "outcome": "Home", "point": None,
+        "bookmaker": "Book", "bookmaker_key": "book",
+        "price": -110, "fair_probability": 0.5, "ev_percent": 1.0,
+        "source_access_class": "free",
+    }
+    assert db.record_clv_candidates([candidate], now.isoformat()) == 1
+    assert db.clv_report("basketball_nba", include_premium=False)["summary"]["total"] == 0
+    report = db.clv_report("basketball_nba")
+    assert report["summary"]["total"] == 1
+    assert report["entries"][0]["source_access_class"] == "restricted"
+
+
+
+def test_new_quote_snapshot_without_account_group_is_restricted(tmp_path):
+    db = OddsDatabase(tmp_path / "quote-missing-account.sqlite3")
+    events = fixture()
+    outcome = events[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    outcome["source_provider"] = "the_odds_api"
+    outcome["source_access_class"] = "free"
+    outcome.pop("source_account_group", None)
+
+    db.save_snapshot("basketball_nba", events, "test")
+    restored = db.latest_events("basketball_nba")
+    saved = restored[0]["bookmakers"][0]["markets"][0]["outcomes"][0]
+    assert saved.get("source_access_class", "restricted") == "restricted"
+    assert "source_account_group" not in saved

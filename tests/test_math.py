@@ -62,9 +62,9 @@ def test_market_consensus_skips_books_with_boolean_prices():
 
 @pytest.mark.parametrize("price", [-99, -50, -1, 1, 50, 99])
 def test_market_odds_helpers_reject_prices_inside_invalid_range(price):
-    with pytest.raises(ValueError, match="\+100 or greater"):
+    with pytest.raises(ValueError, match=r"\+100 or greater"):
         american_to_decimal(price)
-    with pytest.raises(ValueError, match="\+100 or greater"):
+    with pytest.raises(ValueError, match=r"\+100 or greater"):
         american_implied_probability(price)
 
 

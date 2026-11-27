@@ -1,0 +1,1282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/favicon.svg">
+<title>Open Odds Intelligence Admin</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121d30;--panel2:#17263c;--line:#263750;--muted:#91a4bd;--text:#edf4ff;--accent:#57c7a5;--amber:#e8bd76;--red:#ed8585}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button{font:inherit}
+.layout{min-height:100vh;display:grid;grid-template-columns:252px minmax(0,1fr)}
+.sidebar{background:#0e1929;border-right:1px solid var(--line);padding:24px 16px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:11px;padding:0 10px 26px;color:var(--text);text-decoration:none;font-weight:850;letter-spacing:.1em;font-size:12px}
+.mark{width:36px;height:36px;border:1px solid #3d827a;border-radius:11px;display:grid;place-items:center;background:#10283a;color:var(--accent)}
+.mark svg{width:22px;height:22px}
+.brand small{display:block;color:var(--accent);font-size:9px;letter-spacing:.22em}
+.workspace-label{padding:8px 12px;color:#657a95;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+nav{display:grid;gap:5px}
+nav button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;border:1px solid transparent;border-radius:8px;padding:10px 12px;background:transparent;color:#aebed1;cursor:pointer}
+nav button:hover{background:#17263c;color:var(--text)}
+nav button[aria-current="page"]{background:#193449;border-color:#2e645e;color:#a8e7d2}
+nav button:focus-visible,.logout:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tag{font-size:9px;color:#8193aa;border:1px solid #344761;border-radius:20px;padding:2px 6px;white-space:nowrap}
+.sidebar-bottom{margin-top:auto;border-top:1px solid var(--line);padding:18px 10px 0}
+.admin-identity{display:flex;align-items:center;gap:10px;margin-bottom:14px;color:#b7c5d7;font-size:12px}
+.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#193449;color:var(--accent);font-weight:800}
+.logout{width:100%;padding:9px 11px;border:1px solid #40536b;border-radius:8px;background:transparent;color:#d3dfed;cursor:pointer}
+.logout:hover{border-color:var(--accent);color:var(--accent)}.topbar-logout{display:none;padding:9px 12px;border:1px solid #40536b;border-radius:8px;background:transparent;color:#d3dfed;cursor:pointer}.topbar-logout:hover{border-color:var(--accent);color:var(--accent)}
+main{min-width:0;padding:34px clamp(20px,4vw,56px) 60px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+.eyebrow{font-size:10px;font-weight:800;letter-spacing:.17em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:clamp(25px,3vw,34px);line-height:1.15;letter-spacing:-.035em;margin:5px 0}
+.subtitle{color:var(--muted);margin:5px 0 0}
+.secure-pill{display:flex;align-items:center;gap:8px;border:1px solid #315e58;border-radius:30px;padding:7px 11px;color:#a8e7d2;font-size:11px;white-space:nowrap}
+.secure-pill:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px #57c7a566}
+.workspace-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border:1px solid #3d827a;border-radius:8px;background:#10283a;color:#a8e7d2;text-decoration:none;font-weight:750;white-space:nowrap}
+.workspace-link:hover{background:#193449;border-color:var(--accent);color:#edf4ff}
+.topbar-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:650px){.topbar-actions{justify-content:flex-start}}
+.content{max-width:1120px;margin:30px auto 0}
+.welcome{padding:25px 27px;border:1px solid #2d4c5d;border-radius:14px;background:linear-gradient(115deg,#152d40,#142238 65%,#17243a);margin-bottom:20px}
+.welcome h2{font-size:21px;letter-spacing:-.025em;margin:0 0 7px}
+.welcome p{max-width:760px;color:#b2c3d6;margin:0}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0 24px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card-label{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.card-value{font-size:16px;font-weight:750;margin-top:8px}
+.card-note{color:#8094ad;font-size:11px;margin-top:3px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px}
+.panel h2{font-size:16px;margin:0 0 7px}
+.panel p{color:var(--muted);margin:0}
+.checks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}
+.check{padding:12px;border:1px solid #2a4653;border-radius:9px;color:#b8c9d9;font-size:12px}
+.check strong{display:block;color:#a8e7d2;margin-bottom:3px;font-size:12px}
+.view[hidden]{display:none}
+.planned{display:inline-block;margin-bottom:12px;padding:4px 8px;border-radius:20px;background:#342b1c;border:1px solid #655234;color:var(--amber);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.message{min-height:20px;color:#ffb9b9;font-size:12px;margin-top:10px}
+.audit-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:18px 0 10px}
+.audit-controls label{color:var(--muted);font-size:12px}
+.audit-controls input{min-width:220px;max-width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#0b1626;color:var(--text)}
+.audit-controls button,.audit-pagination button{padding:9px 12px;border:1px solid #40536b;border-radius:8px;background:#17263c;color:var(--text);cursor:pointer}
+.audit-controls button:hover,.audit-pagination button:hover:not(:disabled){border-color:var(--accent)}
+.audit-status{min-height:22px;color:var(--muted);font-size:12px;margin:8px 0}
+.table-wrap{width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:9px}
+table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}
+th,td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:#9fb2c9;background:#101b2b;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+td{color:#c7d4e3;max-width:300px;overflow-wrap:anywhere}
+tbody tr:last-child td{border-bottom:0}
+.audit-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:12px;color:var(--muted);font-size:12px}
+.audit-pagination button:disabled{opacity:.4;cursor:not-allowed}
+
+@media(max-width:900px){.layout{grid-template-columns:210px minmax(0,1fr)}.cards,.checks{grid-template-columns:1fr}}
+@media(max-width:650px){.topbar-logout{display:inline-flex}.layout{display:block}.sidebar{padding:14px;border-right:0;border-bottom:1px solid var(--line)}.brand{padding-bottom:12px}.workspace-label{display:none}.sidebar-bottom{display:none}nav{display:flex;overflow-x:auto;padding-bottom:3px}nav button{width:auto;white-space:nowrap}.tag{display:none}main{padding:22px 16px 40px}.topbar{align-items:flex-start;flex-direction:column}.secure-pill{align-self:flex-start}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <a class="brand" href="/admin" aria-label="Open Odds Intelligence Admin home">
+    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M12 3v9l6.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 16.5 9 13l2 1.5 6-6" stroke="#edf4ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span>OPEN ODDS<small>ADMIN CONSOLE</small></span>
+  </a>
+  <div class="workspace-label">Workspace</div>
+  <nav aria-label="Administrator sections">
+    <button type="button" data-view="overview" aria-current="page">Overview</button>
+    <button type="button" data-view="users">Users</button>
+    <button type="button" data-view="subscriptions">Feature Access</button>
+    <button type="button" data-view="billing">Billing</button>
+    <button type="button" data-view="notifications">Notifications</button>
+    <button type="button" data-view="platform">Platform</button>
+    <button type="button" data-view="configuration">System Configuration <span class="tag">Planned</span></button>
+    <button type="button" data-view="communications">Communications <span class="tag">Planned</span></button>
+    <button type="button" data-view="security">Security</button>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="admin-identity"><span class="avatar" aria-hidden="true">A</span><span>Administrator<br><strong>MFA session</strong></span></div>
+    <button class="logout" id="logout" type="button">Sign out</button>
+    <div class="message" id="message" role="status" aria-live="polite"></div>
+  </div>
+</aside>
+<main>
+  <header class="topbar">
+    <div><div class="eyebrow">Private workspace</div><h1 id="page-title">Overview</h1><p class="subtitle" id="page-subtitle">Platform administration and security operations.</p></div>
+    <div class="topbar-actions">
+      <a class="workspace-link" href="/admin/workspace">Open Sports Workspace <span aria-hidden="true">→</span></a>
+      <div class="secure-pill">Administrator session verified</div><button class="topbar-logout" id="topbar-logout" type="button">Sign out</button>
+    </div>
+  </header>
+  <div class="content">
+    <section class="view" id="view-overview">
+      <div class="welcome"><h2>Welcome to the control center.</h2><p>This is the private administration workspace for Open Odds Intelligence. Subscriber access, platform operations, and privileged settings will be managed here through dedicated, audited controls.</p></div>
+      <div class="cards">
+        <article class="card"><div class="card-label">Configured providers</div><div class="card-value" id="overview-providers">Loading…</div><div class="card-note">Selected odds data sources</div></article>
+        <article class="card"><div class="card-label">Data freshness</div><div class="card-value" id="overview-freshness">Loading…</div><div class="card-note">Based on stored provider snapshots</div></article>
+        <article class="card"><div class="card-label">Stored events</div><div class="card-value" id="overview-events">Loading…</div><div class="card-note">Events in the odds archive</div></article>
+      </div>
+      <div class="panel">
+        <h2>Operational snapshot</h2>
+        <div class="audit-controls"><button id="overview-refresh" type="button">Refresh diagnostics</button></div>
+        <p id="overview-status" class="audit-status" role="status" aria-live="polite">Loading live platform diagnostics…</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Sport / League</th><th>Freshness</th><th>Events</th><th>Last snapshot</th></tr></thead>
+          <tbody id="overview-sports"><tr><td colspan="4">Waiting for operational data.</td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="panel">
+        <h2>Provider account quotas</h2>
+        <p id="overview-provider-policy">Provider quota telemetry is restricted to this MFA-protected administrator view.</p>
+        <div class="table-wrap" style="margin-top:14px"><table>
+          <thead><tr><th>Provider</th><th>Account group</th><th>Tier</th><th>Status</th><th>Available keys</th><th>Quota remaining</th><th>Last usage update</th></tr></thead>
+          <tbody id="overview-provider-accounts"><tr><td colspan="7">Waiting for provider account telemetry.</td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="panel"><h2>Security baseline</h2><p>The console is served only after server-side administrator session validation. State-changing operations will require CSRF protection and will be recorded in the security audit trail.</p><div class="checks"><div class="check"><strong>✓ Separate admin session</strong>Subscriber cookies cannot authorize this workspace.</div><div class="check"><strong>✓ MFA-gated sign-in</strong>Administrator sessions require a fresh second factor.</div><div class="check"><strong>✓ Protected page response</strong>No-store, no-referrer, and frame-denial headers are applied.</div></div></div>
+    </section>
+    <section class="view" id="view-users" hidden>
+      <div class="panel">
+        <h2>Subscriber directory</h2>
+        <div class="panel" style="margin:16px 0">
+          <h3>Add complimentary subscriber</h3>
+          <p>Create a no-payment promotional account. The subscriber receives a single-use activation link to verify their email and set their own password. Access expires automatically; this does not create a Stripe customer or subscription.</p>
+          <div class="audit-controls">
+            <label for="promo-email">Subscriber email</label>
+            <input id="promo-email" type="email" maxlength="254" autocomplete="off" required placeholder="person@example.com">
+            <label for="promo-campaign">Campaign / promotion</label>
+            <input id="promo-campaign" type="text" maxlength="80" required placeholder="Giveaway name">
+            <label for="promo-duration">Access duration</label>
+            <select id="promo-duration">
+              <option value="7">7 days</option><option value="14">14 days</option>
+              <option value="30" selected>30 days</option><option value="90">90 days</option>
+              <option value="180">180 days</option><option value="365">365 days</option><option value="custom">Custom days</option>
+            </select>
+            <label for="promo-custom-days">Custom duration (1–366 days)</label>
+            <input id="promo-custom-days" type="number" min="1" max="366" step="1" value="30" disabled>
+            <label for="promo-reason">Grant reason</label>
+            <select id="promo-reason" required>
+              <option value="">Choose a reason</option>
+              <option value="giveaway_winner">Giveaway winner</option>
+              <option value="promotional_campaign">Promotional campaign</option>
+              <option value="sponsorship">Sponsorship</option>
+              <option value="service_recovery">Service recovery</option>
+              <option value="other">Other approved reason</option>
+            </select>
+          </div>
+          <div class="checks" id="promo-entitlements">
+            <label class="check"><input type="checkbox" value="dashboard"> <strong>Dashboard</strong></label>
+            <label class="check"><input type="checkbox" value="odds"> <strong>Odds</strong></label>
+            <label class="check"><input type="checkbox" value="market_limits"> <strong>Market limits</strong></label>
+            <label class="check"><input type="checkbox" value="market_board"> <strong>Market board</strong></label>
+            <label class="check"><input type="checkbox" value="simulation"> <strong>Simulation</strong></label>
+            <label class="check"><input type="checkbox" value="player_props"> <strong>Player props</strong></label>
+            <label class="check"><input type="checkbox" value="clv"> <strong>CLV</strong></label>
+            <label class="check"><input type="checkbox" value="market_movement"> <strong>Market movement</strong></label>
+            <label class="check"><input type="checkbox" value="history"> <strong>History</strong></label>
+            <label class="check"><input type="checkbox" value="opportunities"> <strong>Opportunities</strong></label>
+            <label class="check"><input type="checkbox" value="arbitrage"> <strong>Arbitrage</strong></label>
+          </div>
+          <div class="audit-controls">
+            <button id="promo-create" type="button">Create account and send activation</button>
+          </div>
+          <div class="audit-controls">
+            <label for="promo-existing-identity">Existing complimentary subscriber ID</label>
+            <input id="promo-existing-identity" type="text" maxlength="128" autocomplete="off" placeholder="Select Manage comp from the directory">
+            <button id="promo-update" type="button">Extend access and update features</button>
+          </div>
+          <p class="audit-status" id="promo-status" role="status" aria-live="polite">No complimentary account has been created.</p>
+        </div>
+        <p>Subscriber accounts, verification state, and entitlements. Suspend/reactivate actions require confirmation and an audited reason code.</p>
+        <div class="audit-controls">
+          <label for="subscriber-search">Email search</label>
+          <input id="subscriber-search" type="search" maxlength="254" placeholder="Search subscriber email">
+          <button id="subscriber-search-button" type="button">Search</button>
+          <label for="subscriber-access-filter">Access source</label>
+          <select id="subscriber-access-filter">
+            <option value="">All subscribers</option>
+            <option value="true">Complimentary access</option>
+            <option value="false">No active complimentary grant</option>
+          </select>
+        </div>
+        <div class="audit-status" id="subscriber-status" role="status" aria-live="polite">Subscriber directory has not been loaded.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Email</th><th>Status</th><th>Verified</th><th>Created</th><th>Entitlements</th><th>Complimentary access</th><th>Identity</th><th>Account action</th></tr></thead>
+          <tbody id="subscriber-rows"><tr><td colspan="8">Select Users to load subscribers.</td></tr></tbody>
+        </table></div>
+        <div class="audit-pagination"><button id="subscriber-previous" type="button" disabled>Previous</button><span id="subscriber-page">Page 1</span><button id="subscriber-next" type="button" disabled>Next</button></div>
+      </div>
+    </section>
+    <section class="view" id="view-subscriptions" hidden>
+      <div class="panel">
+        <h2>Manual feature access</h2>
+        <p>Grant or revoke individual feature entitlements for an active subscriber. Saving replaces the subscriber’s current feature grants; one optional expiration applies to every selected grant. These are operator-managed grants, not subscription plans or billing records.</p>
+        <div class="audit-controls">
+          <label for="entitlement-identity">Subscriber identity ID</label>
+          <input id="entitlement-identity" type="text" maxlength="128" autocomplete="off" placeholder="Copy from the Users directory">
+          <button id="entitlement-load" type="button">Load access</button>
+        </div>
+        <div class="audit-status" id="entitlement-status" role="status" aria-live="polite">Load a subscriber before editing feature access.</div>
+        <div class="checks" id="entitlement-options">
+          <label class="check"><input type="checkbox" value="dashboard"> <strong>Dashboard</strong>dashboard</label>
+          <label class="check"><input type="checkbox" value="odds"> <strong>Odds</strong>odds</label>
+          <label class="check"><input type="checkbox" value="market_limits"> <strong>Market limits</strong>market_limits</label>
+          <label class="check"><input type="checkbox" value="market_board"> <strong>Market board</strong>market_board</label>
+          <label class="check"><input type="checkbox" value="simulation"> <strong>Simulation</strong>simulation</label>
+          <label class="check"><input type="checkbox" value="player_props"> <strong>Player props</strong>player_props</label>
+          <label class="check"><input type="checkbox" value="clv"> <strong>Closing line value</strong>clv</label>
+          <label class="check"><input type="checkbox" value="market_movement"> <strong>Market movement</strong>market_movement</label>
+          <label class="check"><input type="checkbox" value="history"> <strong>History</strong>history</label>
+          <label class="check"><input type="checkbox" value="opportunities"> <strong>Opportunities</strong>opportunities</label>
+          <label class="check"><input type="checkbox" value="arbitrage"> <strong>Arbitrage</strong>arbitrage</label>
+        </div>
+        <div class="audit-controls">
+          <label for="entitlement-reason">Reason for access change</label>
+          <select id="entitlement-reason" required>
+            <option value="">Choose a reason</option>
+            <option value="support_request">Support request</option>
+            <option value="trial_grant">Trial grant</option>
+            <option value="promotional_access">Promotional access</option>
+            <option value="billing_adjustment">Billing adjustment</option>
+            <option value="other">Other</option>
+          </select>
+          <label for="entitlement-expiry">Optional expiration</label>
+          <input id="entitlement-expiry" type="datetime-local">
+          <button id="entitlement-save" type="button" disabled>Save feature access</button>
+        </div>
+      </div>
+    </section>
+    <section class="view" id="view-billing" hidden>
+      <div class="welcome"><h2>Billing operations</h2><p>Read-only visibility into Stripe customer links, subscription lifecycle, invoice payment failures, and webhook processing. Checkout, customer portal, and live charges remain disabled.</p></div>
+      <div class="cards">
+        <article class="card"><div class="card-label">Linked customers</div><div class="card-value" id="billing-customers">—</div><div class="card-note">Local subscriber-to-Stripe mappings</div></article>
+        <article class="card"><div class="card-label">Subscriptions</div><div class="card-value" id="billing-subscriptions">—</div><div class="card-note">Reconciled subscription snapshots</div></article>
+        <article class="card"><div class="card-label">Invoices</div><div class="card-value" id="billing-invoices">—</div><div class="card-note">Reconciled invoice snapshots</div></article>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Lifecycle breakdown</h2>
+        <div class="audit-controls"><button id="billing-refresh" type="button">Refresh billing status</button></div>
+        <p class="audit-status" id="billing-status" role="status" aria-live="polite">Billing overview has not been loaded.</p>
+        <div class="table-wrap"><table><thead><tr><th>Subscription status</th><th>Interval</th><th>Count</th></tr></thead><tbody id="billing-subscription-rows"><tr><td colspan="3">Select Billing to load.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Invoice health</h2>
+        <div class="table-wrap"><table><thead><tr><th>Invoice status</th><th>Count</th><th>Payment failures</th></tr></thead><tbody id="billing-invoice-rows"><tr><td colspan="3">Waiting for billing data.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h2>Webhook processing</h2>
+        <div class="table-wrap"><table><thead><tr><th>Processing state</th><th>Count</th><th>Last updated</th></tr></thead><tbody id="billing-webhook-rows"><tr><td colspan="3">Waiting for billing data.</td></tr></tbody></table></div>
+        <p class="audit-status" id="billing-boundary">Checkout and Customer Portal are disabled. No live billing actions are available.</p>
+      </div>
+    </section>
+    <section class="view" id="view-notifications" hidden>
+      <div class="welcome"><h2>Transactional email operations</h2><p>Read-only health for account verification and password-reset email processing. Subscriber addresses, message contents, activation links, and provider credentials are never displayed. General announcements are not part of this queue.</p></div>
+      <div class="cards">
+        <article class="card"><div class="card-label">Queued messages</div><div class="card-value" id="notification-queue-total">—</div><div class="card-note" id="notification-queue-due">Due messages unavailable</div></article>
+        <article class="card"><div class="card-label">Provider circuit</div><div class="card-value" id="notification-provider-state">—</div><div class="card-note" id="notification-provider-detail">Provider state unavailable</div></article>
+        <article class="card"><div class="card-label">Expired worker leases</div><div class="card-value" id="notification-expired-leases">—</div><div class="card-note">Leased messages whose worker lease expired</div></article>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Queue state</h2>
+        <div class="audit-controls"><button id="notifications-refresh" type="button">Refresh notification health</button></div>
+        <p class="audit-status" id="notifications-status" role="status" aria-live="polite">Notification operations have not been loaded.</p>
+        <div class="table-wrap"><table><thead><tr><th>Queue state</th><th>Messages</th></tr></thead><tbody id="notification-queue-rows"><tr><td colspan="2">Waiting for queue data.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h2>Delivery outcomes · last 30 days</h2>
+        <div class="table-wrap"><table><thead><tr><th>Purpose</th><th>Outcome</th><th>Count</th><th>Latest attempt</th></tr></thead><tbody id="notification-delivery-rows"><tr><td colspan="4">Waiting for delivery data.</td></tr></tbody></table></div>
+        <p class="audit-status" id="notification-boundary">Read-only diagnostics. Retry, pause, and send controls are intentionally unavailable.</p>
+      </div>
+    </section>
+    <section class="view" id="view-platform" hidden>
+      <div class="welcome"><h2>Platform operations</h2><p>Live, read-only operational visibility for the odds platform. This page does not trigger provider requests, alter schedules, or change account configuration.</p></div>
+      <div class="cards">
+        <article class="card"><div class="card-label">Provider configuration</div><div class="card-value" id="platform-provider-count">—</div><div class="card-note" id="platform-provider-names">Waiting for diagnostics</div></article>
+        <article class="card"><div class="card-label">Stored odds events</div><div class="card-value" id="platform-event-count">—</div><div class="card-note" id="platform-snapshot-count">Snapshot count unavailable</div></article>
+        <article class="card"><div class="card-label">Data freshness</div><div class="card-value" id="platform-freshness">—</div><div class="card-note" id="platform-last-updated">Last update unavailable</div></article>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Platform health</h2>
+        <div class="audit-controls"><button id="platform-refresh" type="button">Refresh diagnostics</button></div>
+        <p class="audit-status" id="platform-status" role="status" aria-live="polite">Platform diagnostics have not been loaded.</p>
+        <div class="checks">
+          <div class="check"><strong id="platform-alert-state">Alerts —</strong><span id="platform-alert-detail">Alert telemetry unavailable.</span></div>
+          <div class="check"><strong id="platform-provider-error">Provider status —</strong><span>Provider error details are intentionally not exposed in this summary.</span></div>
+          <div class="check"><strong id="platform-alert-error">Alert processing —</strong><span>Alert error details are intentionally not exposed in this summary.</span></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Sport and league data freshness</h2>
+        <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Sport / League</th><th>Freshness</th><th>Events</th><th>Last update</th><th>Age (seconds)</th></tr></thead><tbody id="platform-sports"><tr><td colspan="5">Waiting for diagnostics.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h2>Provider account groups</h2>
+        <p>Quota and account-group telemetry is limited to safe operational fields. API keys and secret values are never returned.</p>
+        <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Provider</th><th>Account group</th><th>Access class</th><th>Status</th><th>Available keys</th><th>Quota telemetry</th></tr></thead><tbody id="platform-accounts"><tr><td colspan="6">Waiting for diagnostics.</td></tr></tbody></table></div>
+      </div>
+    </section>
+    <section class="view" id="view-configuration" hidden><span class="planned">Planned module</span><div class="panel"><h2>System configuration</h2><p>Environment configuration remains disabled until its allowlist, validation, atomic apply, backup, rollback, and restart design is approved.</p></div></section>
+    <section class="view" id="view-communications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Communications</h2><p>Platform announcements and subscriber communications will be introduced with consent, targeting, and delivery safeguards.</p></div></section>
+    <section class="view" id="view-security" hidden>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Authentication policy</h2>
+        <p>Active environment controls. This view is read-only; policy changes are made through validated deployment configuration and require an application restart.</p>
+        <div class="audit-status" id="auth-policy-status" role="status" aria-live="polite">Authentication policy has not been loaded.</div>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Active value</th></tr></thead><tbody id="auth-policy-rows"><tr><td colspan="2">Select Security to load authentication policy.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Active account sessions</h2>
+        <p>Inspect active sessions across subscriber and administrator accounts. The current administrator session is intentionally hidden and cannot be revoked here. Bearer tokens and credential hashes are never displayed.</p>
+        <div class="audit-controls"><button id="sessions-refresh" type="button">Refresh sessions</button></div>
+        <div class="audit-status" id="sessions-status" role="status" aria-live="polite">Session inventory has not been loaded.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Account type</th><th>Identity</th><th>Created</th><th>Last activity</th><th>Expires</th><th>Action</th></tr></thead>
+          <tbody id="session-rows"><tr><td colspan="6">Select Security to load active sessions.</td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="panel">
+        <h2>Security audit history</h2>
+        <p>Recent authentication, account, MFA, and session events. Results are paginated and omit account email addresses and credential material.</p>
+        <div class="audit-controls">
+          <label for="audit-filter">Event type</label>
+          <input id="audit-filter" type="text" maxlength="128" placeholder="All event types">
+          <label for="audit-actor-filter">Actor identity</label>
+          <input id="audit-actor-filter" type="text" maxlength="128" placeholder="Any administrator">
+          <label for="audit-subject-filter">Subject identity</label>
+          <input id="audit-subject-filter" type="text" maxlength="128" placeholder="Any account">
+          <button id="audit-refresh" type="button">Refresh history</button>
+        </div>
+        <div class="audit-status" id="audit-status" role="status" aria-live="polite">Audit history has not been loaded.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Subject</th><th>Details</th></tr></thead>
+          <tbody id="audit-rows"><tr><td colspan="5">Select Security to load recent events.</td></tr></tbody>
+        </table></div>
+        <div class="audit-pagination"><button id="audit-previous" type="button" disabled>Previous</button><span id="audit-page">Page 1</span><button id="audit-next" type="button" disabled>Next</button></div>
+      </div>
+    </section>
+  </div>
+</main>
+</div>
+<script>
+(() => {
+  "use strict";
+  const labels = {
+    overview:["Overview","Platform administration and security operations."],
+    users:["Users","Subscriber account lifecycle and access."],
+    subscriptions:["Feature Access","Manual feature grants and expiration controls."],
+    billing:["Billing","Payments and subscription lifecycle."],
+    notifications:["Notifications","Transactional email queue and delivery health."],
+    notifications:["Notifications","Delivery operations and channel health."],
+    platform:["Platform","Provider status and operational controls."],
+    configuration:["System Configuration","Protected environment and provider configuration."],
+    communications:["Communications","Subscriber announcements and messaging."],
+    security:["Security","Administrator controls and audit history."]
+  };
+  const buttons = [...document.querySelectorAll("[data-view]")];
+  const views = [...document.querySelectorAll(".view")];
+  function selectView(name) {
+    if (!labels[name]) return;
+    buttons.forEach(button => {
+      if (button.dataset.view === name) button.setAttribute("aria-current","page");
+      else button.removeAttribute("aria-current");
+    });
+    views.forEach(view => { view.hidden = view.id !== "view-" + name; });
+    document.getElementById("page-title").textContent = labels[name][0];
+    document.getElementById("page-subtitle").textContent = labels[name][1];
+  }
+
+
+  let notificationsLoaded = false;
+  async function loadNotifications() {
+    const status = document.getElementById("notifications-status");
+    status.textContent = "Loading protected notification operations…";
+    try {
+      const response = await fetch("/admin/notifications", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
+      const data = await response.json();
+      const queue = data.queue || {};
+      const states = queue.states || {};
+      document.getElementById("notification-queue-total").textContent = Number(queue.total || 0).toLocaleString();
+      document.getElementById("notification-queue-due").textContent =
+        Number(queue.due_pending || 0).toLocaleString() + " due pending";
+      document.getElementById("notification-expired-leases").textContent =
+        Number(queue.expired_leases || 0).toLocaleString();
+      const circuit = data.provider_circuit || {};
+      document.getElementById("notification-provider-state").textContent =
+        String(circuit.state || "unknown").toUpperCase();
+      document.getElementById("notification-provider-detail").textContent =
+        Number(circuit.consecutive_failures || 0) + " consecutive failures" +
+        (circuit.probe_in_progress ? " · recovery probe in progress" : "");
+      const queueRows = document.getElementById("notification-queue-rows");
+      queueRows.replaceChildren();
+      ["pending","leased","sent","failed","expired"].forEach(name => {
+        const row = document.createElement("tr");
+        const label = document.createElement("td");
+        const count = document.createElement("td");
+        label.textContent = name;
+        count.textContent = Number(states[name] || 0).toLocaleString();
+        row.append(label,count);
+        queueRows.appendChild(row);
+      });
+      const deliveryRows = document.getElementById("notification-delivery-rows");
+      deliveryRows.replaceChildren();
+      const deliveries = Array.isArray(data.deliveries_last_30_days) ? data.deliveries_last_30_days : [];
+      if (!deliveries.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 4;
+        cell.textContent = "No delivery attempts recorded in the last 30 days.";
+        row.appendChild(cell);
+        deliveryRows.appendChild(row);
+      } else {
+        deliveries.forEach(item => {
+          const row = document.createElement("tr");
+          [item.purpose,item.status,Number(item.count || 0).toLocaleString(),item.latest_attempted || "—"].forEach(value => {
+            const cell = document.createElement("td");
+            cell.textContent = String(value ?? "—");
+            row.appendChild(cell);
+          });
+          deliveryRows.appendChild(row);
+        });
+      }
+      const opened = circuit.state === "open";
+      status.textContent = "Updated " + new Date().toLocaleTimeString() +
+        " · Resend circuit " + (opened ? "is open" : "is closed") +
+        " · " + deliveries.length + " delivery outcome groups returned.";
+      document.getElementById("notification-boundary").textContent =
+        "Read-only diagnostics · verification and password-reset messages only · no send, retry, pause, or subscriber messaging controls are enabled.";
+      notificationsLoaded = true;
+    } catch (error) {
+      status.textContent = "Notification operations could not load: " + (error?.message || "Unknown error");
+      notificationsLoaded = false;
+    }
+  }
+
+  let billingLoaded = false;
+  async function loadBilling() {
+    const status = document.getElementById("billing-status");
+    status.textContent = "Loading protected billing operations…";
+    try {
+      const response = await fetch("/admin/billing", {
+        credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
+      const data = await response.json();
+      document.getElementById("billing-customers").textContent = Number(data.customer_count || 0).toLocaleString();
+      document.getElementById("billing-subscriptions").textContent = Number(data.subscription_count || 0).toLocaleString();
+      document.getElementById("billing-invoices").textContent = Number(data.invoice_count || 0).toLocaleString();
+      const fill = (target, rows, fields, empty) => {
+        target.replaceChildren();
+        if (!rows.length) {
+          const row = document.createElement("tr");
+          const item = document.createElement("td");
+          item.colSpan = fields.length;
+          item.textContent = empty;
+          row.appendChild(item);
+          target.appendChild(row);
+          return;
+        }
+        rows.forEach(record => {
+          const row = document.createElement("tr");
+          fields.forEach(field => cell(row, record[field] == null ? "—" : String(record[field])));
+          target.appendChild(row);
+        });
+      };
+      fill(document.getElementById("billing-subscription-rows"), data.subscriptions_by_status_and_interval || [],
+        ["status","billing_interval","count"], "No subscription records.");
+      fill(document.getElementById("billing-invoice-rows"), data.invoices_by_status || [],
+        ["status","count","payment_failures"], "No invoice records.");
+      fill(document.getElementById("billing-webhook-rows"), data.webhook_events_by_state || [],
+        ["processing_state","count","latest_updated"], "No webhook events recorded.");
+      document.getElementById("billing-boundary").textContent =
+        "Webhook events in failed state: " + Number(data.failed_webhook_count || 0).toLocaleString() +
+        ". Test-mode Checkout: " + (data.checkout_available ? "enabled" : "disabled") +
+        ". Test-mode Customer Portal: " + (data.customer_portal_available ? "enabled" : "disabled") +
+        ". Live billing: " + (data.live_billing_enabled ? "enabled" : "disabled") + ".";
+      status.textContent = "Billing operations data refreshed. This view contains aggregate counts only; no subscriber identifiers or payment credentials are exposed.";
+      billingLoaded = true;
+    } catch (error) {
+      status.textContent = "Billing load failed: " + (error && error.message ? error.message : "unknown error") + ". Check administrator session and server logs.";
+    }
+  }
+  document.getElementById("billing-refresh").addEventListener("click", () => { billingLoaded = false; loadBilling(); });
+
+  let subscriberOffset = 0;
+  const subscriberLimit = 25;
+  let subscriberTotal = 0;
+  let subscribersLoaded = false;
+  const subscriberStatus = document.getElementById("subscriber-status");
+  const subscriberRows = document.getElementById("subscriber-rows");
+  const subscriberPage = document.getElementById("subscriber-page");
+  const subscriberSearch = document.getElementById("subscriber-search");
+  const subscriberAccessFilter = document.getElementById("subscriber-access-filter");
+  async function loadSubscribers() {
+    subscriberStatus.textContent = "Loading subscriber directory…";
+    const params = new URLSearchParams({limit:String(subscriberLimit),offset:String(subscriberOffset)});
+    const query = subscriberSearch.value.trim();
+    if (query) params.set("email_query", query);
+    if (subscriberAccessFilter.value !== "") params.set("complimentary_only", subscriberAccessFilter.value);
+    try {
+      const response = await fetch("/admin/subscribers?" + params.toString(), {
+        credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
+      const data = await response.json();
+      subscriberTotal = Number(data.total) || 0;
+      subscriberRows.replaceChildren();
+      if (!data.subscribers.length) {
+        const row = document.createElement("tr");
+        const empty = document.createElement("td");
+        empty.colSpan = 8;
+        empty.textContent = "No matching subscribers.";
+        row.appendChild(empty);
+        subscriberRows.appendChild(row);
+      } else {
+        data.subscribers.forEach(user => {
+          const row = document.createElement("tr");
+          cell(row, user.email);
+          cell(row, user.is_active ? "Active" : "Suspended");
+          cell(row, user.email_verified ? "Verified" : "Unverified");
+          cell(row, user.created_at);
+          cell(row, (user.entitlements || []).join(", ") || "None");
+          const promoExpiry = user.complimentary_expires_at ? Date.parse(user.complimentary_expires_at) : NaN;
+          const promoDaysLeft = Number.isFinite(promoExpiry)
+            ? Math.max(0, Math.ceil((promoExpiry - Date.now()) / 86400000)) : 0;
+          cell(row, user.complimentary_access_active
+            ? ((user.complimentary_campaign || "Complimentary") + " · " + promoDaysLeft + " day(s) left · until " + user.complimentary_expires_at)
+            : (user.complimentary_expires_at ? "Complimentary access expired" : "—"));
+          cell(row, user.identity_id);
+          const actionCell = document.createElement("td");
+          const action = document.createElement("button");
+          action.type = "button";
+          action.className = "subscriber-status-action";
+          action.dataset.identityId = user.identity_id;
+          action.dataset.nextActive = user.is_active ? "false" : "true";
+          action.textContent = user.is_active ? "Suspend" : "Reactivate";
+          action.setAttribute("aria-label", (user.is_active ? "Suspend " : "Reactivate ") + user.email);
+          actionCell.appendChild(action);
+          const sessionsAction = document.createElement("button");
+          sessionsAction.type = "button";
+          sessionsAction.textContent = "Revoke sessions";
+          sessionsAction.dataset.accountIdentityId = user.identity_id;
+          sessionsAction.style.marginLeft = "6px";
+          sessionsAction.setAttribute("aria-label", "Revoke all sessions for " + user.email);
+          actionCell.appendChild(sessionsAction);
+          if (user.complimentary_expires_at) {
+            const promoAction = document.createElement("button");
+            promoAction.type = "button";
+            promoAction.textContent = "Manage comp";
+            promoAction.dataset.complimentaryIdentityId = user.identity_id;
+            promoAction.dataset.campaign = user.complimentary_campaign || "";
+            promoAction.dataset.entitlements = (user.entitlements || []).join(",");
+            promoAction.style.marginLeft = "6px";
+            promoAction.setAttribute("aria-label", "Manage complimentary access for " + user.email);
+            actionCell.appendChild(promoAction);
+          }
+          row.appendChild(actionCell);
+          subscriberRows.appendChild(row);
+        });
+      }
+      subscriberPage.textContent = subscriberTotal ? `Page ${Math.floor(subscriberOffset / subscriberLimit) + 1} of ${Math.max(1, Math.ceil(subscriberTotal / subscriberLimit))}` : "Page 1";
+      document.getElementById("subscriber-previous").disabled = subscriberOffset === 0;
+      document.getElementById("subscriber-next").disabled = subscriberOffset + subscriberLimit >= subscriberTotal;
+      subscriberStatus.textContent = `${subscriberTotal} subscriber(s)`;
+      subscribersLoaded = true;
+    } catch (error) {
+      subscriberStatus.textContent = "Subscriber load failed: " + (error && error.message ? error.message : "unknown error") + ". Check administrator session and server logs.";
+    }
+  }
+
+  const promoCreate = document.getElementById("promo-create");
+  const promoDuration = document.getElementById("promo-duration");
+  const promoCustomDays = document.getElementById("promo-custom-days");
+  promoDuration.addEventListener("change", () => {
+    promoCustomDays.disabled = promoDuration.value !== "custom";
+  });
+  document.getElementById("promo-update").addEventListener("click", async () => {
+    const identityId = document.getElementById("promo-existing-identity").value.trim();
+    const campaign = document.getElementById("promo-campaign").value.trim();
+    const reasonCode = document.getElementById("promo-reason").value;
+    const additionalDays = promoDuration.value === "custom" ? Number(promoCustomDays.value) : Number(promoDuration.value);
+    const entitlements = [...document.querySelectorAll("#promo-entitlements input:checked")].map(input => input.value);
+    const status = document.getElementById("promo-status");
+    if (!identityId || identityId.length > 128 || !campaign || !reasonCode || !entitlements.length ||
+        !Number.isInteger(additionalDays) || additionalDays < 1 || additionalDays > 366) {
+      status.textContent = "Select a complimentary subscriber, campaign, reason, duration, and at least one feature.";
+      return;
+    }
+    if (!window.confirm("Add " + additionalDays + " days to this complimentary grant and replace its feature selection?")) return;
+    let token = "";
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      const updateButton = document.getElementById("promo-update");
+      updateButton.disabled = true;
+      status.textContent = "Updating complimentary access…";
+      const response = await fetch("/admin/subscribers/complimentary", {
+        method:"PUT",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({identity_id:identityId,entitlements,additional_days:additionalDays,campaign,reason_code:reasonCode})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Complimentary access update failed.");
+      status.textContent = "Complimentary access updated. New expiration: " + data.expires_at + ".";
+      subscriberAccessFilter.value = "true";
+      subscribersLoaded = false;
+      loadSubscribers();
+    } catch (error) {
+      status.textContent = error.message || "Complimentary access could not be updated.";
+    } finally {
+      document.getElementById("promo-update").disabled = false;
+    }
+  });
+  promoCreate.addEventListener("click", async () => {
+    const email = document.getElementById("promo-email").value.trim();
+    const campaign = document.getElementById("promo-campaign").value.trim();
+    const reasonCode = document.getElementById("promo-reason").value;
+    const durationDays = promoDuration.value === "custom" ? Number(promoCustomDays.value) : Number(promoDuration.value);
+    const entitlements = [...document.querySelectorAll("#promo-entitlements input:checked")].map(input => input.value);
+    const status = document.getElementById("promo-status");
+    if (!email || !campaign || !reasonCode || !entitlements.length || !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 366) {
+      status.textContent = "Enter an email, campaign, reason, duration, and at least one feature.";
+      return;
+    }
+    if (!window.confirm("Create a complimentary account for " + email + " with " + durationDays + " days of access? No payment method will be requested.")) return;
+    let token = "";
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      promoCreate.disabled = true;
+      status.textContent = "Creating complimentary subscriber and queueing activation email…";
+      const response = await fetch("/admin/subscribers/complimentary", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({email,entitlements,duration_days:durationDays,campaign,reason_code:reasonCode})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Complimentary account creation failed.");
+      status.textContent = "Created " + data.email + ". " +
+        (data.activation_email_queued
+          ? "Activation email queued."
+          : "IMPORTANT: account created, but activation email was not queued. Use the existing password-recovery flow to resend the activation link.") +
+        " Complimentary access expires " + data.expires_at + ". Identity: " + data.identity_id + ".";
+      document.getElementById("promo-email").value = "";
+      document.getElementById("promo-campaign").value = "";
+      document.getElementById("promo-reason").value = "";
+      subscriberAccessFilter.value = "true";
+      subscribersLoaded = false;
+      loadSubscribers();
+    } catch (error) {
+      status.textContent = error.message || "Complimentary subscriber could not be created.";
+    } finally {
+      promoCreate.disabled = false;
+    }
+  });
+
+  let platformLoaded = false;
+  async function loadPlatform() {
+    const status = document.getElementById("platform-status");
+    status.textContent = "Loading protected platform diagnostics…";
+    try {
+      const response = await fetch("/admin/overview", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
+      const data = await response.json();
+      const providers = Array.isArray(data.providers) ? data.providers : [];
+      const sports = Array.isArray(data.sports) ? data.sports : [];
+      const accounts = Array.isArray(data.provider_accounts) ? data.provider_accounts : [];
+      document.getElementById("platform-provider-count").textContent = providers.length.toLocaleString();
+      document.getElementById("platform-provider-names").textContent = providers.length ? providers.join(", ") : "No configured providers";
+      document.getElementById("platform-event-count").textContent = Number(data.stored_events || 0).toLocaleString();
+      document.getElementById("platform-snapshot-count").textContent = Number(data.stored_snapshots || 0).toLocaleString() + " stored snapshots";
+      document.getElementById("platform-freshness").textContent = String(data.data_freshness || "unknown").replaceAll("_"," ").toUpperCase();
+      document.getElementById("platform-last-updated").textContent = data.last_updated ? "Last update: " + data.last_updated : "No update timestamp reported";
+      document.getElementById("platform-alert-state").textContent = data.alerts && data.alerts.enabled ? "Alerts enabled" : "Alerts disabled";
+      document.getElementById("platform-alert-detail").textContent = data.alerts
+        ? Number(data.alerts.sent || 0).toLocaleString() + " recorded sends · last check: " + (data.alerts.last_check || "—")
+        : "Alert telemetry unavailable.";
+      document.getElementById("platform-provider-error").textContent = data.provider_error_present ? "Provider issue reported" : "No provider error reported";
+      document.getElementById("platform-alert-error").textContent = data.alert_error_present ? "Alert issue reported" : "No alert processing error reported";
+      status.textContent = "Diagnostics refreshed successfully · " + sports.length.toLocaleString() + " sport/league records · " +
+        accounts.length.toLocaleString() + " provider account groups · " +
+        Number(data.stored_bookmakers || 0).toLocaleString() + " stored bookmakers.";
+      const sportsRows = document.getElementById("platform-sports");
+      sportsRows.replaceChildren();
+      if (!sports.length) {
+        const row = document.createElement("tr"), empty = document.createElement("td");
+        empty.colSpan = 5; empty.textContent = "No sport or league freshness records are available."; row.appendChild(empty); sportsRows.appendChild(row);
+      } else {
+        sports.forEach(item => {
+          const row = document.createElement("tr");
+          cell(row, item.sport || "—"); cell(row, item.freshness || "unknown");
+          cell(row, Number(item.event_count || 0).toLocaleString()); cell(row, item.last_updated || "—");
+          cell(row, item.age_seconds === null || item.age_seconds === undefined ? "—" : Number(item.age_seconds).toLocaleString());
+          sportsRows.appendChild(row);
+        });
+      }
+      const accountRows = document.getElementById("platform-accounts");
+      accountRows.replaceChildren();
+      if (!accounts.length) {
+        const row = document.createElement("tr"), empty = document.createElement("td");
+        empty.colSpan = 6; empty.textContent = "No provider account groups are currently configured."; row.appendChild(empty); accountRows.appendChild(row);
+      } else {
+        accounts.forEach(account => {
+          const row = document.createElement("tr"), usage = account.usage || {};
+          const quota = [
+            ["credits",usage.credits_remaining],["datapoints",usage.datapoints_remaining],
+            ["requests",usage.requests_remaining],["remaining requests",usage.remaining_requests],
+            ["remaining credits",usage.remaining_credits],["remaining objects",usage.remaining_objects],
+            ["monthly objects",usage.monthly_objects_remaining]
+          ].filter(item => item[1] !== undefined && item[1] !== null)
+           .map(item => item[0] + ": " + String(item[1])).join(" · ") || "Not reported";
+          cell(row, account.provider || "—"); cell(row, account.account_group || "—");
+          cell(row, account.access_class || "restricted"); cell(row, account.status || "unknown");
+          cell(row, Number(account.available_keys || 0) + " / " + Number(account.configured_keys || 0));
+          cell(row, quota); accountRows.appendChild(row);
+        });
+      }
+      platformLoaded = true;
+    } catch (error) {
+      status.textContent = "Platform load failed: " + (error && error.message ? error.message : "unknown error") + ". Check administrator session and server logs.";
+      platformLoaded = false;
+    }
+  }
+  document.getElementById("platform-refresh").addEventListener("click", () => { platformLoaded = false; loadPlatform(); });
+
+  let overviewLoaded = false;
+  async function loadOverview() {
+    const status = document.getElementById("overview-status");
+    status.textContent = "Loading live platform diagnostics…";
+    try {
+      const response = await fetch("/admin/overview", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
+      const data = await response.json();
+      document.getElementById("overview-providers").textContent =
+        data.configured && data.providers.length ? data.providers.join(", ") : "Not configured";
+      document.getElementById("overview-freshness").textContent =
+        String(data.data_freshness || "unknown").replaceAll("_"," ").toUpperCase();
+      document.getElementById("overview-events").textContent = Number(data.stored_events || 0).toLocaleString();
+      const alertText = data.alerts.enabled
+        ? "Alerts enabled · " + Number(data.alerts.sent || 0).toLocaleString() + " recorded sends"
+        : "Alerts disabled";
+      status.textContent = Number(data.stored_snapshots || 0).toLocaleString() + " snapshots · " +
+        Number(data.stored_bookmakers || 0).toLocaleString() + " active bookmakers · " + alertText +
+        (data.provider_error_present ? " · Provider error recorded" : "") +
+        (data.alert_error_present ? " · Alert error recorded" : "") +
+        (data.last_updated ? " · Last data update: " + data.last_updated : "");
+      const rows = document.getElementById("overview-sports");
+      rows.replaceChildren();
+      if (!data.sports.length) {
+        const row = document.createElement("tr");
+        cell(row, "No configured sports.");
+        const filler = document.createElement("td");
+        filler.colSpan = 3;
+        row.appendChild(filler);
+        rows.appendChild(row);
+      } else {
+        data.sports.forEach(sport => {
+          const row = document.createElement("tr");
+          cell(row, sport.sport);
+          cell(row, sport.freshness);
+          cell(row, Number(sport.event_count || 0).toLocaleString());
+          cell(row, sport.last_updated);
+          rows.appendChild(row);
+        });
+      }
+      const accountRows = document.getElementById("overview-provider-accounts");
+      const accounts = Array.isArray(data.provider_accounts) ? data.provider_accounts : [];
+      accountRows.replaceChildren();
+      if (!accounts.length) {
+        const row = document.createElement("tr");
+        const empty = document.createElement("td");
+        empty.colSpan = 7;
+        empty.textContent = "No provider account groups are currently configured.";
+        row.appendChild(empty);
+        accountRows.appendChild(row);
+      } else {
+        accounts.forEach(account => {
+          const row = document.createElement("tr");
+          const usage = account.usage || {};
+          let quota = [
+            ["credits", usage.credits_remaining],
+            ["datapoints", usage.datapoints_remaining],
+            ["requests", usage.requests_remaining],
+            ["remaining requests", usage.remaining_requests],
+            ["remaining credits", usage.remaining_credits],
+            ["remaining objects", usage.remaining_objects],
+            ["monthly objects", usage.monthly_objects_remaining]
+          ].filter(item => item[1] !== undefined && item[1] !== null)
+           .map(item => item[0] + ": " + String(item[1])).join(" · ") || "Not reported";
+          if (usage.quota_floor_triggered) {
+            quota += " · reserve floor: " + usage.quota_floor_triggered +
+              " ≤ " + String(usage.quota_floor_threshold || "configured");
+          }
+          const floors = account.quota_floors || {};
+          const floorText = Object.entries(floors)
+            .map(([metric, value]) => metric + " ≤ " + String(value))
+            .join(", ");
+          if (floorText) quota += " · configured pause floor: " + floorText;
+          cell(row, account.provider);
+          cell(row, account.account_group);
+          cell(row, account.access_class);
+          cell(row, account.status);
+          cell(row, Number(account.available_keys || 0) + " / " + Number(account.configured_keys || 0));
+          cell(row, quota);
+          cell(row, usage.usage_observed_at || "—");
+          accountRows.appendChild(row);
+        });
+      }
+      document.getElementById("overview-provider-policy").textContent =
+        "Premium provider polling: " + (data.premium_provider_polling_enabled ? "enabled" : "disabled") +
+        ". Unknown account groups remain restricted; quota values are provider-reported and may vary by provider.";
+      overviewLoaded = true;
+    } catch (error) {
+      status.textContent = "Overview load failed: " + (error && error.message ? error.message : "unknown error") + ". Check administrator session and server logs.";
+    }
+  }
+
+  let entitlementLoadedIdentity = "";
+  const entitlementIdentity = document.getElementById("entitlement-identity");
+  const entitlementStatus = document.getElementById("entitlement-status");
+  const entitlementOptions = [...document.querySelectorAll("#entitlement-options input[type=checkbox]")];
+  const entitlementSave = document.getElementById("entitlement-save");
+  async function loadEntitlements() {
+    const identityId = entitlementIdentity.value.trim();
+    if (!identityId || identityId.length > 128) {
+      entitlementStatus.textContent = "Enter a valid subscriber identity ID.";
+      return;
+    }
+    entitlementStatus.textContent = "Loading feature access…";
+    entitlementSave.disabled = true;
+    try {
+      const params = new URLSearchParams({identity_id:identityId});
+      const response = await fetch("/admin/subscriber-entitlements?" + params.toString(), {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Feature access lookup failed");
+      const data = await response.json();
+      const active = new Set(data.entitlements || []);
+      document.getElementById("entitlement-expiry").value = "";
+      document.getElementById("entitlement-reason").value = "";
+      entitlementOptions.forEach(input => { input.checked = active.has(input.value); });
+      entitlementLoadedIdentity = identityId;
+      entitlementSave.disabled = false;
+      entitlementStatus.textContent = "Loaded " + active.size + " active feature grant(s).";
+    } catch (_error) {
+      entitlementLoadedIdentity = "";
+      entitlementOptions.forEach(input => { input.checked = false; });
+      entitlementStatus.textContent = "Feature access could not be loaded. Confirm the identity ID and account status.";
+    }
+  }
+  async function saveEntitlements() {
+    const identityId = entitlementIdentity.value.trim();
+    if (!identityId || identityId !== entitlementLoadedIdentity) {
+      entitlementStatus.textContent = "Load the current subscriber before saving changes.";
+      return;
+    }
+    const grants = entitlementOptions.filter(input => input.checked).map(input => input.value);
+    const reasonCode = document.getElementById("entitlement-reason").value;
+    if (!["support_request","trial_grant","promotional_access","billing_adjustment","other"].includes(reasonCode)) {
+      entitlementStatus.textContent = "Choose a supported reason for this feature-access change.";
+      return;
+    }
+    if (!window.confirm("Save " + grants.length + " feature grant(s) for this subscriber? An empty selection revokes all feature access.")) return;
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    let token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      entitlementSave.disabled = true;
+      const expiryValue = document.getElementById("entitlement-expiry").value;
+      const expiresAt = expiryValue ? new Date(expiryValue).toISOString() : null;
+      const response = await fetch("/admin/subscriber-entitlements", {
+        method:"PUT",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({identity_id:identityId,entitlements:grants,reason_code:reasonCode,expires_at:expiresAt})
+      });
+      if (!response.ok) throw new Error("Feature access update rejected");
+      entitlementLoadedIdentity = identityId;
+      document.getElementById("entitlement-reason").value = "";
+      entitlementStatus.textContent = "Feature access saved and recorded in the security audit history.";
+      subscribersLoaded = false;
+      auditLoaded = false;
+    } catch (_error) {
+      entitlementStatus.textContent = "Feature access could not be saved. Refresh and verify the subscriber session.";
+    } finally {
+      entitlementSave.disabled = false;
+    }
+  }
+  document.getElementById("overview-refresh").addEventListener("click", () => { overviewLoaded = false; loadOverview(); });
+  document.getElementById("notifications-refresh").addEventListener("click", () => { notificationsLoaded = false; loadNotifications(); });
+  document.getElementById("entitlement-load").addEventListener("click", loadEntitlements);
+  document.getElementById("entitlement-save").addEventListener("click", saveEntitlements);
+  entitlementIdentity.addEventListener("keydown", event => {
+    if (event.key === "Enter") loadEntitlements();
+  });
+  entitlementIdentity.addEventListener("input", () => {
+    if (entitlementIdentity.value.trim() !== entitlementLoadedIdentity) {
+      entitlementSave.disabled = true;
+      document.getElementById("entitlement-expiry").value = "";
+      document.getElementById("entitlement-reason").value = "";
+      entitlementOptions.forEach(input => { input.checked = false; });
+    }
+  });
+
+  let auditOffset = 0;
+  const auditLimit = 25;
+  let auditTotal = 0;
+  let auditLoaded = false;
+  const auditStatus = document.getElementById("audit-status");
+  const auditRows = document.getElementById("audit-rows");
+  const auditPage = document.getElementById("audit-page");
+  const auditFilter = document.getElementById("audit-filter");
+  const auditActorFilter = document.getElementById("audit-actor-filter");
+  const auditSubjectFilter = document.getElementById("audit-subject-filter");
+  const sessionsStatus = document.getElementById("sessions-status");
+  const sessionRows = document.getElementById("session-rows");
+  async function loadAuthenticationPolicy() {
+    const status = document.getElementById("auth-policy-status");
+    const rows = document.getElementById("auth-policy-rows");
+    status.textContent = "Loading active authentication policy…";
+    try {
+      const response = await fetch("/admin/authentication-policy", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Authentication policy unavailable");
+      const data = await response.json();
+      const labels = {
+        environment:"Environment", auth_mode:"Authentication mode",
+        identity_enabled:"Identity authentication", registration_enabled:"Subscriber registration",
+        subscriber_login_enabled:"Subscriber login",
+        email_verification_required:"Email verification required",
+        email_transport:"Email transport", password_recovery_enabled:"Password recovery",
+        administrator_mfa_required:"Administrator MFA required",
+        subscriber_mfa_required:"Subscriber MFA required",
+        rate_limiting_enabled:"Authentication rate limiting",
+        csrf_required:"CSRF protection",
+        subscriber_session_idle_seconds:"Subscriber idle timeout (seconds)",
+        administrator_session_idle_seconds:"Administrator idle timeout (seconds)"
+      };
+      rows.replaceChildren();
+      Object.entries(labels).forEach(([key,label]) => {
+        const row = document.createElement("tr");
+        cell(row, label);
+        const value = data[key];
+        cell(row, typeof value === "boolean" ? (value ? "Enabled" : "Disabled") : String(value));
+        rows.appendChild(row);
+      });
+      status.textContent = "Loaded active policy. Secret values are never returned.";
+    } catch (_error) {
+      status.textContent = "Authentication policy could not be loaded. Refresh or sign in again.";
+    }
+  }
+
+  async function loadAdminSessions() {
+    sessionsStatus.textContent = "Loading active account sessions…";
+    try {
+      const response = await fetch("/admin/sessions?limit=50&offset=0", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Session inventory unavailable");
+      const data = await response.json();
+      sessionRows.replaceChildren();
+      if (!data.sessions.length) {
+        const row = document.createElement("tr");
+        const empty = document.createElement("td");
+        empty.colSpan = 6;
+        empty.textContent = "No other active sessions.";
+        row.appendChild(empty);
+        sessionRows.appendChild(row);
+      } else {
+        data.sessions.forEach(item => {
+          const row = document.createElement("tr");
+          cell(row, item.account_type);
+          cell(row, item.identity_id);
+          cell(row, item.created_at);
+          cell(row, item.last_seen_at);
+          cell(row, item.expires_at);
+          const actionCell = document.createElement("td");
+          const action = document.createElement("button");
+          action.type = "button";
+          action.textContent = "Revoke";
+          action.dataset.sessionId = item.session_id;
+          actionCell.appendChild(action);
+          row.appendChild(actionCell);
+          sessionRows.appendChild(row);
+        });
+      }
+      sessionsStatus.textContent = String(data.total) + " active session(s) · current administrator session excluded";
+    } catch (_error) {
+      sessionsStatus.textContent = "Session inventory could not be loaded. Refresh or sign in again.";
+    }
+  }
+  async function revokeAdminVisibleSession(sessionId, button) {
+    if (!window.confirm("Revoke this account session immediately? The account will need to sign in again.")) return;
+    const reasonCode = window.prompt("Choose reason code: security_review, support_request, account_request, or other.");
+    if (reasonCode === null) return;
+    const allowed = ["security_review","support_request","account_request","other"];
+    if (!allowed.includes(reasonCode.trim())) {
+      sessionsStatus.textContent = "Choose one of the supported session revocation reason codes.";
+      return;
+    }
+    let token = "";
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      button.disabled = true;
+      const response = await fetch("/admin/sessions/" + encodeURIComponent(sessionId) + "/revoke", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({reason_code:reasonCode.trim()})
+      });
+      if (!response.ok) throw new Error("Session revocation rejected");
+      sessionsStatus.textContent = "Session revoked and recorded in the security audit history.";
+      auditLoaded = false;
+      await loadAdminSessions();
+    } catch (_error) {
+      sessionsStatus.textContent = "Session could not be revoked. Refresh and verify the administrator session.";
+      button.disabled = false;
+    }
+  }
+  async function revokeSubscriberSessions(identityId, button) {
+    if (!window.confirm("Revoke every active session for this subscriber? All of their devices will need to sign in again.")) return;
+    const reasonCode = window.prompt("Choose reason code: security_review, support_request, account_request, or other.");
+    if (reasonCode === null) return;
+    const allowed = ["security_review","support_request","account_request","other"];
+    if (!allowed.includes(reasonCode.trim())) { sessionsStatus.textContent = "Choose one of the supported session revocation reason codes."; return; }
+    try {
+      let token = "";
+      const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+      token = match ? decodeURIComponent(match[1]) : "";
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      button.disabled = true;
+      const response = await fetch("/admin/subscribers/" + encodeURIComponent(identityId) + "/sessions/revoke", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({reason_code:reasonCode.trim()})
+      });
+      if (!response.ok) throw new Error("Account session revocation rejected");
+      const data = await response.json();
+      sessionsStatus.textContent = String(data.revoked_sessions) + " session(s) revoked for subscriber and recorded in the security audit history.";
+      auditLoaded = false;
+      await loadAdminSessions();
+    } catch (_error) {
+      sessionsStatus.textContent = "Subscriber sessions could not be revoked. Refresh and verify the administrator session.";
+      button.disabled = false;
+    }
+  }
+  function cell(row, value) {
+    const td = document.createElement("td");
+    td.textContent = value == null || value === "" ? "—" : String(value);
+    row.appendChild(td);
+  }
+  async function loadAudit() {
+    auditStatus.textContent = "Loading security audit history…";
+    const params = new URLSearchParams({limit:String(auditLimit),offset:String(auditOffset)});
+    const eventType = auditFilter.value.trim();
+    if (eventType) params.set("event_type", eventType);
+    const actorId = auditActorFilter.value.trim();
+    const subjectId = auditSubjectFilter.value.trim();
+    if (actorId) params.set("actor_identity_id", actorId);
+    if (subjectId) params.set("subject_identity_id", subjectId);
+    try {
+      const response = await fetch("/admin/audit-events?" + params.toString(), {
+        credentials:"same-origin", cache:"no-store", headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("Audit history unavailable");
+      const data = await response.json();
+      auditTotal = Number(data.total) || 0;
+      auditRows.replaceChildren();
+      if (!data.events.length) {
+        const row = document.createElement("tr");
+        cell(row, "No matching audit events.");
+        const filler = document.createElement("td");
+        filler.colSpan = 4;
+        row.appendChild(filler);
+        auditRows.appendChild(row);
+      } else {
+        data.events.forEach(event => {
+          const row = document.createElement("tr");
+          cell(row, event.occurred_at);
+          cell(row, event.event_type);
+          cell(row, event.actor_identity_id);
+          cell(row, event.subject_identity_id);
+          cell(row, JSON.stringify(event.metadata || {}));
+          auditRows.appendChild(row);
+        });
+      }
+      auditPage.textContent = auditTotal ? `Page ${Math.floor(auditOffset / auditLimit) + 1} of ${Math.max(1, Math.ceil(auditTotal / auditLimit))}` : "Page 1";
+      document.getElementById("audit-previous").disabled = auditOffset === 0;
+      document.getElementById("audit-next").disabled = auditOffset + auditLimit >= auditTotal;
+      auditStatus.textContent = `${auditTotal} matching event(s)`;
+      auditLoaded = true;
+    } catch (_error) {
+      auditStatus.textContent = "Audit history could not be loaded. Refresh the page or sign in again.";
+    }
+  }
+  document.getElementById("sessions-refresh").addEventListener("click", loadAdminSessions);
+  sessionRows.addEventListener("click", event => {
+    const action = event.target.closest("button[data-session-id]");
+    if (action) revokeAdminVisibleSession(action.dataset.sessionId, action);
+    const accountAction = event.target.closest("button[data-account-identity-id]");
+    if (accountAction) revokeSubscriberSessions(accountAction.dataset.accountIdentityId, accountAction);
+  });
+  buttons.forEach(button => button.addEventListener("click", () => {
+    selectView(button.dataset.view);
+    if (button.dataset.view === "overview" && !overviewLoaded) loadOverview();
+    if (button.dataset.view === "billing" && !billingLoaded) loadBilling();
+    if (button.dataset.view === "notifications" && !notificationsLoaded) loadNotifications();
+    if (button.dataset.view === "platform" && !platformLoaded) loadPlatform();
+    if (button.dataset.view === "security") { loadAuthenticationPolicy(); loadAdminSessions(); if (!auditLoaded) loadAudit(); }
+    if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
+  }));
+  subscriberRows.addEventListener("click", event => {
+    const promoAction = event.target.closest("button[data-complimentary-identity-id]");
+    if (promoAction) {
+      document.getElementById("promo-existing-identity").value = promoAction.dataset.complimentaryIdentityId;
+      if (promoAction.dataset.campaign) document.getElementById("promo-campaign").value = promoAction.dataset.campaign;
+      const currentEntitlements = new Set((promoAction.dataset.entitlements || "").split(",").filter(Boolean));
+      document.querySelectorAll("#promo-entitlements input").forEach(input => {
+        input.checked = currentEntitlements.has(input.value);
+      });
+      document.getElementById("promo-status").textContent = "Selected complimentary subscriber. Adjust the added time, campaign, reason, or feature selection, then extend access.";
+    }
+  });
+  subscriberRows.addEventListener("click", event => {
+    const action = event.target.closest("button[data-account-identity-id]");
+    if (action) revokeSubscriberSessions(action.dataset.accountIdentityId, action);
+  });
+  subscriberRows.addEventListener("click", async event => {
+    const action = event.target.closest("button[data-identity-id]");
+    if (!action) return;
+    const identityId = action.dataset.identityId;
+    const nextActive = action.dataset.nextActive === "true";
+    const verb = nextActive ? "reactivate" : "suspend";
+    if (!window.confirm("Are you sure you want to " + verb + " this subscriber?")) return;
+    const reasonCode = window.prompt("Select reason code: support_request, policy_violation, security_concern, billing_issue, or other.");
+    if (reasonCode === null) return;
+    const allowedReasons = ["support_request","policy_violation","security_concern","billing_issue","other"];
+    if (!allowedReasons.includes(reasonCode.trim())) {
+      subscriberStatus.textContent = "Choose one of the supported administrative reason codes.";
+      return;
+    }
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    let token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Security token unavailable");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      action.disabled = true;
+      const response = await fetch("/admin/subscribers/" + encodeURIComponent(identityId) + "/status", {
+        method:"POST", credentials:"same-origin", cache:"no-store",
+        headers:{"Content-Type":"application/json","Accept":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({is_active:nextActive,reason_code:reasonCode.trim()})
+      });
+      if (!response.ok) throw new Error("Subscriber status change rejected");
+      subscriberStatus.textContent = "Subscriber account updated. Refreshing directory…";
+      auditLoaded = false;
+      await loadSubscribers();
+    } catch (_error) {
+      subscriberStatus.textContent = "Subscriber status could not be changed. Refresh the page or sign in again.";
+    } finally {
+      action.disabled = false;
+    }
+  });
+  document.getElementById("subscriber-search-button").addEventListener("click", () => { subscriberOffset = 0; loadSubscribers(); });
+  subscriberAccessFilter.addEventListener("change", () => { subscriberOffset = 0; loadSubscribers(); });
+  document.getElementById("subscriber-previous").addEventListener("click", () => { subscriberOffset = Math.max(0, subscriberOffset - subscriberLimit); loadSubscribers(); });
+  document.getElementById("subscriber-next").addEventListener("click", () => { subscriberOffset += subscriberLimit; loadSubscribers(); });
+  subscriberSearch.addEventListener("keydown", event => {
+    if (event.key === "Enter") { subscriberOffset = 0; loadSubscribers(); }
+  });
+  document.getElementById("audit-refresh").addEventListener("click", () => { auditOffset = 0; loadAudit(); });
+  document.getElementById("audit-previous").addEventListener("click", () => { auditOffset = Math.max(0, auditOffset - auditLimit); loadAudit(); });
+  document.getElementById("audit-next").addEventListener("click", () => { auditOffset += auditLimit; loadAudit(); });
+  [auditFilter, auditActorFilter, auditSubjectFilter].forEach(input => input.addEventListener("keydown", event => {
+    if (event.key === "Enter") { auditOffset = 0; loadAudit(); }
+  }));
+
+  // Prime every implemented Admin Console panel after the MFA-authenticated
+  // session is established. This avoids presenting empty tabs until each is
+  // manually opened and surfaces backend failures immediately in each panel.
+  loadOverview();
+  loadSubscribers();
+  loadBilling();
+  loadNotifications();
+  loadPlatform();
+  loadAuthenticationPolicy();
+  loadAdminSessions();
+  loadAudit();
+
+  document.getElementById("topbar-logout").addEventListener("click", () => document.getElementById("logout").click());
+  document.getElementById("logout").addEventListener("click", async () => {
+    const message = document.getElementById("message");
+    const match = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+    let token = match ? decodeURIComponent(match[1]) : "";
+    try {
+      if (!token) {
+        const csrf = await fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"});
+        if (!csrf.ok) throw new Error("Session check failed");
+        const refreshed = document.cookie.match(/(?:^|; )__Host-ooi_csrf=([^;]*)/);
+        token = refreshed ? decodeURIComponent(refreshed[1]) : "";
+      }
+      if (!token) throw new Error("Security token unavailable");
+      const response = await fetch("/admin/auth/logout", {
+        method:"POST", credentials:"same-origin",
+        headers:{"Content-Type":"application/json","X-Ooi-Csrf-Token":token},
+        body:"{}"
+      });
+      if (!response.ok) throw new Error("Sign out could not be completed");
+      window.location.assign("/admin/login");
+    } catch (_error) {
+      message.textContent = "Sign out could not be completed. Please reload and try again.";
+    }
+  });
+})();
+</script>
+</body>
+</html>

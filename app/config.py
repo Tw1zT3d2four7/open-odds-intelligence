@@ -10,6 +10,86 @@ ODDS_PROVIDERS = [
     item.strip().lower() for item in os.getenv("ODDS_PROVIDERS", "").split(",")
     if item.strip()
 ]
+# Source access classification is configured per provider account. Known free-tier
+# integrations remain free by default; unknown providers fail closed in the data layer.
+_raw_provider_access_classes = os.getenv("ODDS_PROVIDER_ACCESS_CLASSES", "")
+ODDS_PROVIDER_ACCESS_CLASSES = {
+    "therundown": "free",
+    "the_odds_api": "free",
+    "oddize": "free",
+    "oddslink": "free",
+}
+# Premium sources are never polled until an operator explicitly enables them.
+ODDS_PREMIUM_PROVIDER_POLLING_ENABLED = os.getenv(
+    "ODDS_PREMIUM_PROVIDER_POLLING_ENABLED", "false"
+).strip().lower() in ("1", "true", "yes", "on")
+for _entry in _raw_provider_access_classes.replace("\n", ",").split(","):
+    if not _entry.strip():
+        continue
+    if "=" not in _entry:
+        raise ValueError("ODDS_PROVIDER_ACCESS_CLASSES entries must use provider=free or provider=premium.")
+    _provider_name, _access_class = (part.strip().lower() for part in _entry.split("=", 1))
+    if not _provider_name or _access_class not in {"free", "premium"}:
+        raise ValueError("ODDS_PROVIDER_ACCESS_CLASSES supports only explicit free or premium classifications.")
+    ODDS_PROVIDER_ACCESS_CLASSES[_provider_name] = _access_class
+
+# Optional account-specific overrides use provider|group=free or =premium.
+# Once a provider has any account overrides, unlisted groups fail closed.
+_raw_provider_account_access_classes = os.getenv(
+    "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES", ""
+)
+ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES = {}
+for _entry in _raw_provider_account_access_classes.replace("\n", ",").split(","):
+    if not _entry.strip():
+        continue
+    if "=" not in _entry or "|" not in _entry.split("=", 1)[0]:
+        raise ValueError(
+            "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES entries must use provider|group=free or provider|group=premium."
+        )
+    _account_ref, _access_class = (part.strip() for part in _entry.split("=", 1))
+    _provider_name, _account_group = (
+        part.strip().lower() for part in _account_ref.split("|", 1)
+    )
+    _access_class = _access_class.lower()
+    if not _provider_name or not _account_group or _access_class not in {"free", "premium"}:
+        raise ValueError(
+            "ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES supports only named provider/account groups and explicit free or premium classifications."
+        )
+    ODDS_PROVIDER_ACCOUNT_ACCESS_CLASSES.setdefault(_provider_name, {})[_account_group] = _access_class
+
+# Optional provider quota reserve floors use provider|group=metric:minimum.
+# When a provider reports a remaining-quota metric at/below the floor, the
+# whole account group is paused until its reported reset (or 24h fallback).
+ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS = {}
+_allowed_quota_metrics = {
+    "requests_remaining", "credits_remaining", "monthly_objects_remaining",
+    "datapoints_remaining", "remaining_requests", "remaining_credits",
+    "remaining_objects",
+}
+_raw_provider_account_quota_floors = os.getenv("ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS", "")
+for _entry in _raw_provider_account_quota_floors.replace("\n", ",").split(","):
+    if not _entry.strip():
+        continue
+    if "=" not in _entry or "|" not in _entry.split("=", 1)[0] or ":" not in _entry.split("=", 1)[1]:
+        raise ValueError(
+            "ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS entries must use provider|group=metric:minimum."
+        )
+    _account_ref, _floor_spec = (part.strip() for part in _entry.split("=", 1))
+    _provider_name, _account_group = (part.strip().lower() for part in _account_ref.split("|", 1))
+    _metric, _minimum = (part.strip().lower() for part in _floor_spec.split(":", 1))
+    try:
+        _minimum = int(_minimum)
+    except (TypeError, ValueError):
+        raise ValueError("Provider account quota floors must be positive integers.") from None
+    if (not _provider_name or not _account_group or _metric not in _allowed_quota_metrics
+            or _minimum <= 0):
+        raise ValueError(
+            "Provider account quota floors require a supported remaining metric and a positive integer."
+        )
+    ODDS_PROVIDER_ACCOUNT_QUOTA_FLOORS.setdefault(_provider_name, {}).setdefault(
+        _account_group, {}
+    )[_metric] = _minimum
+
 # Do not normalize or change API key case: provider keys are case-sensitive.
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY", "")
 # TheRundown key is case-sensitive; preserve it exactly.
@@ -43,6 +123,9 @@ ODDS_FORMAT = os.getenv("ODDS_FORMAT", "american")
 RUNDOWN_REFRESH_INTERVAL_SECONDS = max(300, int(os.getenv("RUNDOWN_REFRESH_INTERVAL_SECONDS", "14400")))
 RUNDOWN_UTC_OFFSET_MINUTES = int(os.getenv("RUNDOWN_UTC_OFFSET_MINUTES", "0"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/odds_history.sqlite3")
+# Identity data is stored separately from the immutable odds-history database.
+ACCOUNTS_DATABASE_PATH = os.getenv("ACCOUNTS_DATABASE_PATH", "./data/accounts.sqlite3")
+SESSION_IDLE_TIMEOUT_SECONDS = max(60, int(os.getenv("SESSION_IDLE_TIMEOUT_SECONDS", "3600")))
 SIMULATION_MODEL_PATH = os.getenv("SIMULATION_MODEL_PATH", "./data/simulation_models.json")
 # Flag stale odds snapshots without implying a manual-refresh feed is continuously live.
 ODDS_DATA_STALE_AFTER_SECONDS = max(300, int(os.getenv("ODDS_DATA_STALE_AFTER_SECONDS", "21600")))
@@ -133,8 +216,15 @@ PLAYER_PROPS_MARKETS = os.getenv("PLAYER_PROPS_MARKETS", "").strip()
 PLAYER_PROPS_REFRESH_INTERVAL_SECONDS = max(3600, int(os.getenv("PLAYER_PROPS_REFRESH_INTERVAL_SECONDS", "14400")))
 PLAYER_PROPS_MAX_EVENTS = max(1, min(50, int(os.getenv("PLAYER_PROPS_MAX_EVENTS", "5"))))
 
-# Optional HTTP Basic authentication for the dashboard and all API routes except health.
-# Set BOTH values to enable; leave BOTH blank to preserve private-LAN development behavior.
+# Authentication migration is explicit. Identity mode activates staged identity
+# endpoints and product-route session/entitlement guards; legacy_basic remains
+# the default until the non-production cutover and rollback gates are approved.
+AUTH_MODE = os.getenv("AUTH_MODE", "legacy_basic").strip().lower()
+if AUTH_MODE not in {"legacy_basic", "identity"}:
+    raise ValueError("AUTH_MODE must be either 'legacy_basic' or 'identity'.")
+
+# Legacy HTTP Basic credentials remain unchanged throughout the compatibility phase.
+# Set BOTH values to enable; leave BOTH blank to preserve existing behavior in legacy_basic.
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")
 
@@ -142,3 +232,40 @@ AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")
 PROVIDER_RETRY_ATTEMPTS = max(0, min(3, int(os.getenv("PROVIDER_RETRY_ATTEMPTS", "2"))))
 PROVIDER_RETRY_BASE_DELAY_SECONDS = max(0.1, min(5.0, float(os.getenv("PROVIDER_RETRY_BASE_DELAY_SECONDS", "0.5"))))
 PROVIDER_RETRY_MAX_DELAY_SECONDS = max(PROVIDER_RETRY_BASE_DELAY_SECONDS, min(30.0, float(os.getenv("PROVIDER_RETRY_MAX_DELAY_SECONDS", "5"))))
+
+# Dedicated Fernet key for administrator TOTP seeds. Generate out of band;
+# never commit this value or reuse an odds-provider API key.
+MFA_ENCRYPTION_KEY = os.getenv("MFA_ENCRYPTION_KEY", "")
+
+# Required keyed-hash secret before persistent authentication rate limits are enabled.
+RATE_LIMIT_HASH_KEY = os.getenv("RATE_LIMIT_HASH_KEY", "")
+
+# Transactional email provider settings. API keys are case-sensitive; preserve exactly.
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "resend").strip().lower()
+if EMAIL_PROVIDER not in {"resend", "disabled"}:
+    raise ValueError("EMAIL_PROVIDER must be either 'resend' or 'disabled'.")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+# Dedicated Fernet key for encrypted retry payloads; never reuse the MFA key.
+EMAIL_QUEUE_ENCRYPTION_KEY = os.getenv("EMAIL_QUEUE_ENCRYPTION_KEY", "")
+# Separate encryption key for offline identity database backups.
+IDENTITY_BACKUP_ENCRYPTION_KEY = os.getenv("IDENTITY_BACKUP_ENCRYPTION_KEY", "")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+
+
+# Stripe webhook intake is inert until a dedicated signing secret is configured.
+# The signing secret must be supplied out-of-band and must never be committed.
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+# Dedicated Fernet key for encrypted durable Stripe webhook event bodies.
+STRIPE_WEBHOOK_ENCRYPTION_KEY = os.getenv("STRIPE_WEBHOOK_ENCRYPTION_KEY", "")
+STRIPE_WEBHOOK_LIVEMODE = os.getenv("STRIPE_WEBHOOK_LIVEMODE", "false").strip().lower() in ("1", "true", "yes", "on")
+STRIPE_TEST_MODE_ACKNOWLEDGED = os.getenv("STRIPE_TEST_MODE_ACKNOWLEDGED", "false").strip().lower() in ("1", "true", "yes", "on")
+# Stripe secret API key is case-sensitive; keep it out of logs and responses.
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+# Stripe recurring Price IDs are public identifiers, not secrets. Preserve them exactly.
+# Leave blank until the corresponding recurring Price objects exist in Stripe.
+STRIPE_PRICE_MONTHLY_ID = os.getenv("STRIPE_PRICE_MONTHLY_ID", "")
+STRIPE_PRICE_YEARLY_ID = os.getenv("STRIPE_PRICE_YEARLY_ID", "")
+# Hosted purchase and customer self-service remain explicitly disabled by default.
+STRIPE_CHECKOUT_ENABLED = os.getenv("STRIPE_CHECKOUT_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+STRIPE_CUSTOMER_PORTAL_ENABLED = os.getenv("STRIPE_CUSTOMER_PORTAL_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")

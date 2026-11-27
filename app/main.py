@@ -6,8 +6,9 @@ import asyncio
 import secrets
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from . import config
+from .auth_config import AUTHENTICATION_POLICY as AUTH_POLICY
 from .service import service
 
 # Reuse the monitor owned by the service so OddsLink odds refreshes and the
@@ -15,10 +16,64 @@ from .service import service
 limits_monitor = service.limits_monitor
 from .markets import market_board, analyze_markets
 from .simulation import load_fitted_models, run_game_simulation, TRIALS as SIMULATION_TRIALS
-from fastapi import HTTPException, Request
+from .route_policy import IDENTITY_ROUTE_ACCESS_POLICY, classify_route, matched_route_path
+from .route_policy import ROUTE_ACCESS_POLICY
+from .route_authorization import dependencies_for_route
+from .entitlements import (
+    require_product_administrator,
+    require_product_csrf,
+    require_product_entitlement,
+    require_product_subscriber,
+)
+from .dependencies import get_identity_store
+from .auth import resolve_session
+from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
+
+def _include_premium_data(request: Request) -> bool | None:
+    """Return True/False for identity subscribers; None preserves legacy operator scope."""
+    if config.AUTH_MODE == "legacy_basic":
+        return None
+    return bool(getattr(request.state, "include_premium_data", False))
+
+def _status_for_request(request: Request) -> dict:
+    """Return a subscriber-safe workspace summary; operational diagnostics stay admin-only."""
+    status = service.status()
+    include_premium = _include_premium_data(request)
+    if include_premium is False:
+        visible_events = service.events(include_premium=False)
+        visible_event_count = len(visible_events)
+        visible_books = {
+            book.get("key") for event in visible_events
+            for book in event.get("bookmakers") or [] if book.get("key")
+        }
+        visible_book_count = len(visible_books)
+    else:
+        visible_event_count = int(status.get("stored_events") or 0)
+        visible_book_count = int(status.get("stored_bookmakers") or 0)
+
+    # The subscriber workspace needs headline counts and sport selectors only.
+    # Do not serialize provider identities, key-pool state, quotas, refresh
+    # schedules, feed timestamps/errors, Discord, or automation diagnostics.
+    safe_sport_counts = [
+        {"sport": item.get("sport"), "event_count": int(item.get("event_count") or 0)}
+        for item in status.get("sport_freshness", [])
+        if isinstance(item, dict)
+    ]
+    return {
+        "configured": bool(status.get("configured")),
+        "sports": list(status.get("sports") or []),
+        "live_data_available": bool(visible_event_count),
+        "stored_events": visible_event_count,
+        "stored_bookmakers": visible_book_count,
+        "sport_freshness": safe_sport_counts,
+        "data_freshness": "available" if visible_event_count else "unavailable",
+        "player_props": {
+            "enabled": bool((status.get("player_props") or {}).get("enabled"))
+        },
+    }
 
 async def _limits_refresh_loop():
     while True:
@@ -92,6 +147,7 @@ async def lifespan(app: FastAPI):
     limits_task = None
     results_task = None
     alert_task = None
+    email_task = None
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
         and service._provider_key_pools["oddslink"].configured
@@ -107,6 +163,10 @@ async def lifespan(app: FastAPI):
             and "therundown" in service.active_provider_names()
             and service._provider_key_pools["therundown"].configured):
         results_task = asyncio.create_task(_simulation_results_loop())
+    if (config.AUTH_MODE == "identity" and config.EMAIL_PROVIDER == "resend"
+            and AUTH_POLICY.email_transport == "resend"):
+        from .email_queue_worker import email_delivery_loop
+        email_task = asyncio.create_task(email_delivery_loop())
     try:
         yield
     finally:
@@ -134,27 +194,102 @@ async def lifespan(app: FastAPI):
                 await results_task
             except asyncio.CancelledError:
                 pass
+        if email_task is not None:
+            email_task.cancel()
+            try:
+                await email_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title=config.APP_NAME, version="0.4.0",
               description="Self-hosted open-source odds comparison and market intelligence.",
               lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
+FAVICON = Path(__file__).resolve().parent.parent / "web" / "favicon.svg"
+LOGO = Path(__file__).resolve().parent.parent / "web" / "logo.svg"
+BRAND_PAGE = Path(__file__).resolve().parent.parent / "web" / "brand.html"
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon():
+    return Response(content=FAVICON.read_text(encoding="utf-8"), media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/logo.svg", include_in_schema=False)
+def brand_logo():
+    return Response(content=LOGO.read_text(encoding="utf-8"), media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/brand", response_class=HTMLResponse, include_in_schema=False)
+def brand_page():
+    return HTMLResponse(content=BRAND_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.middleware("http")
 async def optional_basic_auth(request: Request, call_next):
-    """Protect the dashboard and API when an operator configures credentials.
+    """Enforce the selected legacy Basic Auth or staged identity boundary.
 
-    /api/health remains public for Docker health checks and orchestrators.
-    Credentials are compared in constant time and are never logged.
+    Legacy mode preserves the original optional Basic Auth contract. Identity
+    mode admits only classified identity/product routes; product route
+    dependencies enforce subscriber entitlements, admin sessions, and CSRF.
+    The safe health probe remains independent of browser authentication.
     """
     username = config.AUTH_USERNAME
     password = config.AUTH_PASSWORD
-    # Keep the orchestrator health probe available even when operator auth is
-    # misconfigured; every application/data route still fails closed below.
-    if request.url.path == "/api/health":
+    # Keep the orchestrator health probe available in every authentication mode.
+    if request.url.path == "/api/health" and request.method in {"GET", "HEAD"}:
         return await call_next(request)
+
+    # Resolve parameterized route templates before policy lookup. Middleware
+    # executes before Starlette populates scope["route"], so exact URL lookup alone
+    # would reject valid subscriber/session-specific admin endpoints.
+    policy_path = matched_route_path(request.scope, request.app.router.routes) or request.url.path
+    # Stripe authenticates this transport with its signed raw-body header, not browser Basic Auth.
+    if classify_route(request.method, policy_path, ROUTE_ACCESS_POLICY) == "stripe_signature":
+        return await call_next(request)
+    identity_path_set = {path for _method, path in IDENTITY_ROUTE_ACCESS_POLICY}
+    if config.AUTH_MODE == "identity":
+        # Identity pages/endpoints are admitted by their separate policy. Existing
+        # product endpoints are admitted only because each APIRoute has explicit
+        # session/entitlement dependencies assembled from ROUTE_ACCESS_POLICY.
+        if classify_route(request.method, policy_path, IDENTITY_ROUTE_ACCESS_POLICY) is not None:
+            return await call_next(request)
+        product_access = classify_route(
+            request.method, policy_path, ROUTE_ACCESS_POLICY
+        )
+        if product_access in {"public_minimal", "stripe_signature"}:
+            # Stripe's route handler performs HMAC authentication against the exact raw body.
+            return await call_next(request)
+        if product_access in {"subscriber_entitled", "administrator_only"}:
+            # Framework-generated docs routes cannot receive APIRoute dependencies;
+            # protect those exact paths here with the same server-side admin session.
+            if policy_path in {
+                "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"
+            }:
+                try:
+                    resolve_session(request, get_identity_store(request), "administrator")
+                except HTTPException as exc:
+                    return JSONResponse(
+                        status_code=exc.status_code,
+                        content={"detail": exc.detail},
+                    )
+                except Exception:
+                    return JSONResponse(
+                        status_code=503,
+                        content={"detail": "Authentication services are temporarily unavailable."},
+                    )
+            return await call_next(request)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "This route has no enabled identity-mode access policy."},
+        )
+
+    # The identity endpoints are not part of the legacy self-hosted experience.
+    # Hide them in legacy mode even when legacy Basic Auth is intentionally unset.
+    if policy_path in identity_path_set:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+
     if bool(username) != bool(password):
         return JSONResponse(
             status_code=503,
@@ -186,20 +321,105 @@ async def optional_basic_auth(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def prevent_identity_response_caching(request: Request, call_next):
+    """Prevent browsers and intermediaries from caching auth/admin responses, including errors."""
+    response = await call_next(request)
+    path = request.url.path
+    identity_page_paths = {
+        "/", "/login", "/register", "/admin", "/admin/login", "/account",
+        "/forgot-password", "/verify-email", "/reset-password",
+    }
+    protected_product = False
+    if config.AUTH_MODE == "identity":
+        access_class = classify_route(request.method, path, ROUTE_ACCESS_POLICY)
+        protected_product = access_class in {"subscriber_entitled", "administrator_only"}
+    if (
+        path in identity_page_paths
+        or path.startswith(("/auth/", "/admin/"))
+        or protected_product
+    ):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
-def dashboard():
+def dashboard_entry(request: Request):
+    """Public front door in identity mode; authenticated users return to their home."""
+    if config.AUTH_MODE == "identity":
+        store = get_identity_store(request)
+        try:
+            resolve_session(request, store, "administrator")
+            return RedirectResponse("/admin", status_code=303)
+        except HTTPException:
+            pass
+        try:
+            resolve_session(request, store, "subscriber")
+            return RedirectResponse("/account", status_code=303)
+        except HTTPException:
+            return RedirectResponse("/login", status_code=303)
     return WEB.read_text(encoding="utf-8")
+
+
+@app.get(
+    "/workspace",
+    response_class=HTMLResponse,
+    dependencies=dependencies_for_route(
+        "GET", "/workspace",
+        entitlement_dependency=require_product_entitlement,
+        subscriber_dependency=require_product_subscriber,
+        administrator_dependency=require_product_administrator,
+        csrf_dependency=require_product_csrf,
+    ),
+)
+def subscriber_sports_workspace():
+    """Serve the full sportsbook workspace to entitled subscribers and administrators."""
+    return WEB.read_text(encoding="utf-8")
+
+
+@app.get(
+    "/admin/workspace",
+    response_class=HTMLResponse,
+    dependencies=dependencies_for_route(
+        "GET", "/admin/workspace",
+        administrator_dependency=require_product_administrator,
+        csrf_dependency=require_product_csrf,
+    ),
+)
+def administrator_sports_workspace():
+    """Serve the complete sports workspace to an MFA-authenticated administrator."""
+    return WEB.read_text(encoding="utf-8")
+
+
+@app.get("/api/workspace/status", dependencies=dependencies_for_route(
+    "GET", "/api/workspace/status",
+    entitlement_dependency=require_product_entitlement,
+    subscriber_dependency=require_product_subscriber,
+    administrator_dependency=require_product_administrator,
+    csrf_dependency=require_product_csrf,
+))
+def workspace_status(request: Request, response: Response):
+    """Return non-secret provider status to authenticated workspace users."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return _status_for_request(request)
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": config.APP_NAME, **service.status(),
-            "market_limits": limits_monitor.status()}
+    # This route is intentionally a liveness-only contract for Docker/Caddy.
+    # Provider, feed, quota, Discord, and refresh diagnostics are available
+    # only in the MFA-protected administrator workspace.
+    return {"status": "ok", "app": config.APP_NAME}
 
 
 
-@app.post("/api/limits/refresh")
-def refresh_limits():
+@app.post("/api/limits/refresh", dependencies=dependencies_for_route("POST", "/api/limits/refresh", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def refresh_limits(request: Request):
+    if (_include_premium_data(request) is False
+            and config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") != "free"):
+        return {"ok": False, "skipped": True, "error": "Market-limit source is not available in the free data tier."}
     oddslink_selected = (
         "oddslink" in service.active_provider_names()
         and service._provider_key_pools["oddslink"].configured
@@ -221,44 +441,54 @@ def refresh_limits():
     return service.limits_monitor.refresh()
 
 
-@app.get("/api/limits")
-def market_limits(sport: str | None = None,
+@app.get("/api/limits", dependencies=dependencies_for_route("GET", "/api/limits", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def market_limits(request: Request, sport: str | None = None,
                   limit: int = Query(25, ge=1, le=100),
                   offset: int = Query(0, ge=0)):
-    rows = limits_monitor.current(sport, 2000)
+    rows = limits_monitor.current(sport, 2000, include_premium=_include_premium_data(request))
     page = _page_results(rows, limit, offset)
+    status = limits_monitor.status()
+    if (_include_premium_data(request) is False
+            and config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") != "free"):
+        # Do not disclose premium-source quota, diagnostics, or refresh timing
+        # through a subscriber-facing response.
+        status = {"enabled": False, "provider": "Premium source status is restricted."}
     return {"limits": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
-            "status": limits_monitor.status(),
+            "status": status,
             "note": "Only provider-reported posted market limits are shown. Missing values are not inferred; limits are not account-specific betting caps."}
 
 
-@app.get("/api/limits/changes")
-def market_limits_changes(sport: str | None = None,
+@app.get("/api/limits/changes", dependencies=dependencies_for_route("GET", "/api/limits/changes", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def market_limits_changes(request: Request, sport: str | None = None,
                           direction: str = Query("increased", pattern="^(increased|decreased|all)$"),
                           limit: int = Query(25, ge=1, le=100),
                           offset: int = Query(0, ge=0)):
-    rows = limits_monitor.changes(sport, direction, 2000)
+    rows = limits_monitor.changes(
+        sport, direction, 2000, include_premium=_include_premium_data(request)
+    )
     page = _page_results(rows, limit, offset)
     return {"changes": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
             "note": "Changes are calculated from successive stored provider-reported posted-limit snapshots. Observation time is when this application received the snapshot, not a claimed sportsbook publication time."}
 
 
-@app.get("/api/limits/history")
-def market_limits_history(event_id: str, bookmaker: str, market: str,
+@app.get("/api/limits/history", dependencies=dependencies_for_route("GET", "/api/limits/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def market_limits_history(request: Request, event_id: str, bookmaker: str, market: str,
                           outcome: str, point: float | None = None,
                           limit: int = Query(500, ge=1, le=2000)):
-    return {"observations": limits_monitor.history(
-        event_id, bookmaker, market, outcome, point, limit
-    )}
+    observations = limits_monitor.history(
+        event_id, bookmaker, market, outcome, point, limit,
+        include_premium=_include_premium_data(request),
+    )
+    return {"observations": observations}
 
-@app.get("/api/odds")
-def odds(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    return {"events": service.events(sport, limit=limit, offset=offset), "limit": limit, "offset": offset, "status": service.status()}
+@app.get("/api/odds", dependencies=dependencies_for_route("GET", "/api/odds", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def odds(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return {"events": service.events(sport, limit=limit, offset=offset, include_premium=_include_premium_data(request)), "limit": limit, "offset": offset, "status": _status_for_request(request)}
 
 
-@app.post("/api/refresh")
+@app.post("/api/refresh", dependencies=dependencies_for_route("POST", "/api/refresh", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh(sport: str | None = None):
     if sport is not None and sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league or omit sport to refresh all configured leagues.")
@@ -274,22 +504,51 @@ def _page_results(items, limit, offset):
             "limit": size, "offset": start}
 
 
-@app.get("/api/market-board")
-def market_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    page = _page_results(market_board(service.events(sport)), limit, offset)
+def _current_market_events(request: Request, sport: str | None = None):
+    """Fail closed for live market views unless provider-backed snapshots are current."""
+    status = service.status()
+    if not status.get("configured"):
+        return [], "No configured odds provider. Live market analysis is disabled until a provider key is loaded."
+    freshness = status.get("sport_freshness", [])
+    current_sports = {
+        item.get("sport") for item in freshness
+        if isinstance(item, dict) and item.get("freshness") == "current"
+    }
+    events = service.events(sport, include_premium=_include_premium_data(request))
+    eligible = [
+        event for event in events
+        if isinstance(event, dict)
+        and (event.get("sport_key") or event.get("sport")) in current_sports
+    ]
+    if sport and sport not in current_sports:
+        return [], f"{sport} odds are not current. Refresh the league before viewing live market analysis."
+    if not eligible:
+        return [], "No current provider-backed odds snapshots are available."
+    return eligible, None
+
+
+@app.get("/api/market-board", dependencies=dependencies_for_route("GET", "/api/market-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def market_board_api(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    events, unavailable_reason = _current_market_events(request, sport)
+    page = _page_results(market_board(events), limit, offset)
     return {"quotes": page["items"], "total": page["total"],
-            "limit": page["limit"], "offset": page["offset"]}
+            "limit": page["limit"], "offset": page["offset"],
+            "data_status": "unavailable" if unavailable_reason else "current",
+            "status_message": unavailable_reason}
 
 
-@app.get("/api/bookmaker-board")
-def bookmaker_board_api(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+@app.get("/api/bookmaker-board", dependencies=dependencies_for_route("GET", "/api/bookmaker-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def bookmaker_board_api(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
     """Return every valid quote, paginated as 25 rendered sportsbook rows."""
-    page = _page_results(market_board(service.events(sport), best_only=False), limit, offset)
+    events, unavailable_reason = _current_market_events(request, sport)
+    page = _page_results(market_board(events, best_only=False), limit, offset)
     return {"quotes": page["items"], "total": page["total"],
-            "limit": page["limit"], "offset": page["offset"]}
+            "limit": page["limit"], "offset": page["offset"],
+            "data_status": "unavailable" if unavailable_reason else "current",
+            "status_message": unavailable_reason}
 
 
-@app.get("/api/simulation/leagues")
+@app.get("/api/simulation/leagues", dependencies=dependencies_for_route("GET", "/api/simulation/leagues", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def simulation_leagues():
     return {"leagues": [
         {"sport": sport, "label": sport.replace("_", " ").upper()}
@@ -307,7 +566,7 @@ def _simulation_snapshot_freshness(sport: str):
                  if isinstance(item, dict) and item.get("sport") == sport), None)
 
 
-def _simulation_games_for_sport(sport: str):
+def _simulation_games_for_sport(sport: str, include_premium: bool = False):
     games = []
     fitted_models = load_fitted_models(config.SIMULATION_MODEL_PATH)
     league_model = fitted_models.get(sport)
@@ -317,7 +576,7 @@ def _simulation_games_for_sport(sport: str):
         if isinstance(freshness, dict) else "unavailable"
     )
     freshness_age = freshness.get("age_seconds") if isinstance(freshness, dict) else None
-    for event in service.events(sport):
+    for event in service.events(sport, include_premium=include_premium):
         if not event.get("id") or not event.get("home_team") or not event.get("away_team"):
             continue
         from .simulation import market_readiness
@@ -347,23 +606,23 @@ def _simulation_games_for_sport(sport: str):
     return games
 
 
-@app.get("/api/simulation/games")
-def simulation_games(sport: str):
+@app.get("/api/simulation/games", dependencies=dependencies_for_route("GET", "/api/simulation/games", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def simulation_games(request: Request, sport: str):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
-    games = _simulation_games_for_sport(sport)
+    games = _simulation_games_for_sport(sport, _include_premium_data(request))
     return {"games": games, "note": "Games come from the latest locally stored odds snapshot; this read-only request makes no provider call."}
 
 
-@app.post("/api/simulation/games/refresh")
-def refresh_simulation_games(sport: str):
+@app.post("/api/simulation/games/refresh", dependencies=dependencies_for_route("POST", "/api/simulation/games/refresh", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def refresh_simulation_games(request: Request, sport: str):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
     result = service.refresh(sport)
     if not result.get("ok"):
         detail = result.get("error") or "The selected league could not be refreshed."
         raise HTTPException(status_code=502, detail=detail)
-    games = _simulation_games_for_sport(sport)
+    games = _simulation_games_for_sport(sport, _include_premium_data(request))
     return {
         "games": games,
         "refresh": result,
@@ -371,11 +630,11 @@ def refresh_simulation_games(sport: str):
     }
 
 
-@app.post("/api/simulation/run")
-def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
+@app.post("/api/simulation/run", dependencies=dependencies_for_route("POST", "/api/simulation/run", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def simulate_game(request: Request, sport: str, event_id: str, seed: int | None = Query(None, description="Optional integer seed for reproducible simulation runs.")):
     if sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league.")
-    event = next((item for item in service.events(sport) if str(item.get("id")) == event_id), None)
+    event = next((item for item in service.events(sport, include_premium=_include_premium_data(request)) if str(item.get("id")) == event_id), None)
     if event is None:
         raise HTTPException(status_code=404, detail="That game is not in the latest stored odds snapshot. Reload the game list.")
     from .simulation import _validate_upcoming_event
@@ -404,9 +663,9 @@ def simulate_game(sport: str, event_id: str, seed: int | None = Query(None, desc
     return result
 
 
-@app.get("/api/player-props")
-def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    events = service.events(sport)
+@app.get("/api/player-props", dependencies=dependencies_for_route("GET", "/api/player-props", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def player_props(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    events = service.events(sport, include_premium=_include_premium_data(request))
     quotes = []
     for event in events:
         for book in event.get("bookmakers", []):
@@ -432,67 +691,108 @@ def player_props(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
     page = _page_results(quotes, limit, offset)
     return {"quotes": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
-            "status": service.status()["player_props"],
+            "status": _status_for_request(request)["player_props"],
             "note": "Player props are fetched only when explicitly enabled and only from supported provider event-odds endpoints. Each event-level request can consume provider quota."}
 
 
-@app.get("/api/clv")
-def closing_line_value(sport: str | None = None,
+@app.get("/api/clv", dependencies=dependencies_for_route("GET", "/api/clv", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def closing_line_value(request: Request, sport: str | None = None,
                        limit: int = Query(25, ge=1, le=100),
                        offset: int = Query(0, ge=0)):
-    result = service.clv_report(sport, 2000)
+    result = service.clv_report(
+        sport, 2000, include_premium=_include_premium_data(request)
+    )
     page = _page_results(result.get("entries", []), limit, offset)
     return {**result, "entries": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"]}
 
 
-@app.get("/api/movement")
-def movement(sport: str | None = None, limit: int = Query(25, ge=1, le=100),
+@app.get("/api/movement", dependencies=dependencies_for_route("GET", "/api/movement", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def movement(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100),
              offset: int = Query(0, ge=0)):
-    rows = service.movement(sport, 1000)
+    rows = service.movement(sport, 1000, include_premium=_include_premium_data(request))
     page = _page_results(rows, limit, offset)
     return {"movements": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
             "note": "Movement reports meaningful changes across consecutive stored snapshots, with opening baselines at the first observed exact line. It is not proof of sharp-money activity."}
 
 
-@app.get("/api/movement/history")
-def movement_history(event_id: str, market: str, outcome: str, bookmaker: str,
+@app.get("/api/movement/history", dependencies=dependencies_for_route("GET", "/api/movement/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def movement_history(request: Request, event_id: str, market: str, outcome: str, bookmaker: str,
                      limit: int = Query(500, ge=1, le=1000),
                      description: str | None = None):
-    quotes = (service.movement_history(event_id, market, outcome, bookmaker, limit, description)
+    quotes = (service.movement_history(event_id, market, outcome, bookmaker, limit, description, _include_premium_data(request))
               if description is not None else
-              service.movement_history(event_id, market, outcome, bookmaker, limit))
+              service.movement_history(event_id, market, outcome, bookmaker, limit, include_premium=_include_premium_data(request)))
     return {"quotes": quotes}
 
 
-@app.get("/api/history")
-def history(event_id: str, market: str, outcome: str,
+@app.get("/api/history", dependencies=dependencies_for_route("GET", "/api/history", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def history(request: Request, event_id: str, market: str, outcome: str,
             bookmaker: str | None = None, point: float | None = None,
             limit: int = Query(100, ge=1, le=500),
             description: str | None = None):
-    quotes = (service.history(event_id, market, outcome, bookmaker, point, limit, description)
+    quotes = (service.history(event_id, market, outcome, bookmaker, point, limit, description, _include_premium_data(request))
               if description is not None else
-              service.history(event_id, market, outcome, bookmaker, point, limit))
+              service.history(event_id, market, outcome, bookmaker, point, limit, include_premium=_include_premium_data(request)))
     return {"quotes": quotes}
 
 
-@app.get("/api/opportunities")
-def opportunities(sport: str | None = None,
+@app.get("/api/opportunities", dependencies=dependencies_for_route("GET", "/api/opportunities", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def opportunities(request: Request, sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20),
                   limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport), min_ev, min_consensus_books)
+    events, unavailable_reason = _current_market_events(request, sport)
+    result = analyze_markets(events, min_ev, min_consensus_books)
     page = _page_results(result["opportunities"], limit, offset)
     return {"opportunities": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
+            "data_status": "unavailable" if unavailable_reason else "current",
+            "status_message": unavailable_reason,
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
 
-@app.get("/api/arbitrage")
-def arbitrage(sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport), min_ev=101, arbitrage_only=True)
+@app.get("/api/arbitrage", dependencies=dependencies_for_route("GET", "/api/arbitrage", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+def arbitrage(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    events, unavailable_reason = _current_market_events(request, sport)
+    result = analyze_markets(events, min_ev=101, arbitrage_only=True)
     page = _page_results(result["arbitrage"], limit, offset)
     return {"arbitrage": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
+            "data_status": "unavailable" if unavailable_reason else "current",
+            "status_message": unavailable_reason,
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
+
+
+
+# Import and mount after the product routes are declared. This keeps router
+# registration deterministic even when the identity modules are imported by
+# test harnesses or future application factories first.
+from .identity_routes import router as identity_router
+from .billing_routes import receive_stripe_webhook
+
+app.include_router(identity_router)
+# Register the signed webhook as a concrete application route. This keeps it
+# present in the runtime route inventory while remaining excluded from OpenAPI.
+app.add_api_route(
+    "/webhooks/stripe",
+    receive_stripe_webhook,
+    methods=["POST"],
+    include_in_schema=False,
+)
+_registered_identity_route_keys = {
+    (method, route.path)
+    for route in app.router.routes
+    for method in (getattr(route, "methods", None) or set())
+    if method not in {"HEAD", "OPTIONS"}
+}
+for _identity_route in identity_router.routes:
+    _identity_route_keys = {
+        (method, _identity_route.path)
+        for method in (_identity_route.methods or set())
+        if method not in {"HEAD", "OPTIONS"}
+    }
+    if not _identity_route_keys.issubset(_registered_identity_route_keys):
+        app.router.routes.append(_identity_route)
+        _registered_identity_route_keys.update(_identity_route_keys)
