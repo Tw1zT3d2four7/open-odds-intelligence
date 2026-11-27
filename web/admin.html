@@ -86,7 +86,7 @@ tbody tr:last-child td{border-bottom:0}
     <button type="button" data-view="users">Users</button>
     <button type="button" data-view="subscriptions">Feature Access</button>
     <button type="button" data-view="billing">Billing</button>
-    <button type="button" data-view="notifications">Notifications <span class="tag">Planned</span></button>
+    <button type="button" data-view="notifications">Notifications</button>
     <button type="button" data-view="platform">Platform</button>
     <button type="button" data-view="configuration">System Configuration <span class="tag">Planned</span></button>
     <button type="button" data-view="communications">Communications <span class="tag">Planned</span></button>
@@ -264,7 +264,25 @@ tbody tr:last-child td{border-bottom:0}
         <p class="audit-status" id="billing-boundary">Checkout and Customer Portal are disabled. No live billing actions are available.</p>
       </div>
     </section>
-    <section class="view" id="view-notifications" hidden><span class="planned">Planned module</span><div class="panel"><h2>Notification operations</h2><p>Queue health, delivery history, channel status, retry controls, and global pause controls will be backed by dedicated administrative APIs.</p></div></section>
+    <section class="view" id="view-notifications" hidden>
+      <div class="welcome"><h2>Transactional email operations</h2><p>Read-only health for account verification and password-reset email processing. Subscriber addresses, message contents, activation links, and provider credentials are never displayed. General announcements are not part of this queue.</p></div>
+      <div class="cards">
+        <article class="card"><div class="card-label">Queued messages</div><div class="card-value" id="notification-queue-total">—</div><div class="card-note" id="notification-queue-due">Due messages unavailable</div></article>
+        <article class="card"><div class="card-label">Provider circuit</div><div class="card-value" id="notification-provider-state">—</div><div class="card-note" id="notification-provider-detail">Provider state unavailable</div></article>
+        <article class="card"><div class="card-label">Expired worker leases</div><div class="card-value" id="notification-expired-leases">—</div><div class="card-note">Leased messages whose worker lease expired</div></article>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <h2>Queue state</h2>
+        <div class="audit-controls"><button id="notifications-refresh" type="button">Refresh notification health</button></div>
+        <p class="audit-status" id="notifications-status" role="status" aria-live="polite">Notification operations have not been loaded.</p>
+        <div class="table-wrap"><table><thead><tr><th>Queue state</th><th>Messages</th></tr></thead><tbody id="notification-queue-rows"><tr><td colspan="2">Waiting for queue data.</td></tr></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h2>Delivery outcomes · last 30 days</h2>
+        <div class="table-wrap"><table><thead><tr><th>Purpose</th><th>Outcome</th><th>Count</th><th>Latest attempt</th></tr></thead><tbody id="notification-delivery-rows"><tr><td colspan="4">Waiting for delivery data.</td></tr></tbody></table></div>
+        <p class="audit-status" id="notification-boundary">Read-only diagnostics. Retry, pause, and send controls are intentionally unavailable.</p>
+      </div>
+    </section>
     <section class="view" id="view-platform" hidden>
       <div class="welcome"><h2>Platform operations</h2><p>Live, read-only operational visibility for the odds platform. This page does not trigger provider requests, alter schedules, or change account configuration.</p></div>
       <div class="cards">
@@ -342,6 +360,7 @@ tbody tr:last-child td{border-bottom:0}
     users:["Users","Subscriber account lifecycle and access."],
     subscriptions:["Feature Access","Manual feature grants and expiration controls."],
     billing:["Billing","Payments and subscription lifecycle."],
+    notifications:["Notifications","Transactional email queue and delivery health."],
     notifications:["Notifications","Delivery operations and channel health."],
     platform:["Platform","Provider status and operational controls."],
     configuration:["System Configuration","Protected environment and provider configuration."],
@@ -361,6 +380,74 @@ tbody tr:last-child td{border-bottom:0}
     document.getElementById("page-subtitle").textContent = labels[name][1];
   }
 
+
+  let notificationsLoaded = false;
+  async function loadNotifications() {
+    const status = document.getElementById("notifications-status");
+    status.textContent = "Loading protected notification operations…";
+    try {
+      const response = await fetch("/admin/notifications", {
+        credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + response.statusText);
+      const data = await response.json();
+      const queue = data.queue || {};
+      const states = queue.states || {};
+      document.getElementById("notification-queue-total").textContent = Number(queue.total || 0).toLocaleString();
+      document.getElementById("notification-queue-due").textContent =
+        Number(queue.due_pending || 0).toLocaleString() + " due pending";
+      document.getElementById("notification-expired-leases").textContent =
+        Number(queue.expired_leases || 0).toLocaleString();
+      const circuit = data.provider_circuit || {};
+      document.getElementById("notification-provider-state").textContent =
+        String(circuit.state || "unknown").toUpperCase();
+      document.getElementById("notification-provider-detail").textContent =
+        Number(circuit.consecutive_failures || 0) + " consecutive failures" +
+        (circuit.probe_in_progress ? " · recovery probe in progress" : "");
+      const queueRows = document.getElementById("notification-queue-rows");
+      queueRows.replaceChildren();
+      ["pending","leased","sent","failed","expired"].forEach(name => {
+        const row = document.createElement("tr");
+        const label = document.createElement("td");
+        const count = document.createElement("td");
+        label.textContent = name;
+        count.textContent = Number(states[name] || 0).toLocaleString();
+        row.append(label,count);
+        queueRows.appendChild(row);
+      });
+      const deliveryRows = document.getElementById("notification-delivery-rows");
+      deliveryRows.replaceChildren();
+      const deliveries = Array.isArray(data.deliveries_last_30_days) ? data.deliveries_last_30_days : [];
+      if (!deliveries.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 4;
+        cell.textContent = "No delivery attempts recorded in the last 30 days.";
+        row.appendChild(cell);
+        deliveryRows.appendChild(row);
+      } else {
+        deliveries.forEach(item => {
+          const row = document.createElement("tr");
+          [item.purpose,item.status,Number(item.count || 0).toLocaleString(),item.latest_attempted || "—"].forEach(value => {
+            const cell = document.createElement("td");
+            cell.textContent = String(value ?? "—");
+            row.appendChild(cell);
+          });
+          deliveryRows.appendChild(row);
+        });
+      }
+      const opened = circuit.state === "open";
+      status.textContent = "Updated " + new Date().toLocaleTimeString() +
+        " · Resend circuit " + (opened ? "is open" : "is closed") +
+        " · " + deliveries.length + " delivery outcome groups returned.";
+      document.getElementById("notification-boundary").textContent =
+        "Read-only diagnostics · verification and password-reset messages only · no send, retry, pause, or subscriber messaging controls are enabled.";
+      notificationsLoaded = true;
+    } catch (error) {
+      status.textContent = "Notification operations could not load: " + (error?.message || "Unknown error");
+      notificationsLoaded = false;
+    }
+  }
 
   let billingLoaded = false;
   async function loadBilling() {
@@ -839,6 +926,7 @@ tbody tr:last-child td{border-bottom:0}
     }
   }
   document.getElementById("overview-refresh").addEventListener("click", () => { overviewLoaded = false; loadOverview(); });
+  document.getElementById("notifications-refresh").addEventListener("click", () => { notificationsLoaded = false; loadNotifications(); });
   document.getElementById("entitlement-load").addEventListener("click", loadEntitlements);
   document.getElementById("entitlement-save").addEventListener("click", saveEntitlements);
   entitlementIdentity.addEventListener("keydown", event => {
@@ -1069,6 +1157,7 @@ tbody tr:last-child td{border-bottom:0}
     selectView(button.dataset.view);
     if (button.dataset.view === "overview" && !overviewLoaded) loadOverview();
     if (button.dataset.view === "billing" && !billingLoaded) loadBilling();
+    if (button.dataset.view === "notifications" && !notificationsLoaded) loadNotifications();
     if (button.dataset.view === "platform" && !platformLoaded) loadPlatform();
     if (button.dataset.view === "security") { loadAuthenticationPolicy(); loadAdminSessions(); if (!auditLoaded) loadAudit(); }
     if (button.dataset.view === "users" && !subscribersLoaded) loadSubscribers();
@@ -1149,6 +1238,7 @@ tbody tr:last-child td{border-bottom:0}
   loadOverview();
   loadSubscribers();
   loadBilling();
+  loadNotifications();
   loadPlatform();
   loadAuthenticationPolicy();
   loadAdminSessions();
