@@ -20,6 +20,9 @@ ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     # Dedicated full-workspace entry point for MFA-authenticated administrators.
     ("GET", "/admin/workspace"): "administrator_only",
     ("GET", "/api/health"): "public_minimal",
+    ("GET", "/favicon.svg"): "public_minimal",
+    ("GET", "/logo.svg"): "public_minimal",
+    ("GET", "/brand"): "public_minimal",
     ("GET", "/api/workspace/status"): "subscriber_entitled",
     # Public transport endpoint, but the handler requires a valid Stripe HMAC signature.
     ("POST", "/webhooks/stripe"): "stripe_signature",
@@ -54,9 +57,6 @@ ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
 # the AUTH_MODE=identity middleware allowlist. Product route dependencies remain
 # a separate integration milestone.
 IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
-    ("GET", "/favicon.svg"): "public_minimal",
-    ("GET", "/logo.svg"): "public_minimal",
-    ("GET", "/brand"): "public_minimal",
     # Static authentication entry points are public safe reads; mutations
     # remain protected by the dedicated public_csrf class below.
     ("GET", "/login"): "public_minimal",
