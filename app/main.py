@@ -39,49 +39,32 @@ def _include_premium_data(request: Request) -> bool | None:
     return bool(getattr(request.state, "include_premium_data", False))
 
 def _status_for_request(request: Request) -> dict:
-    """Remove premium provider diagnostics and counts from free subscriber responses."""
+    """Return a subscriber-safe workspace summary; operational diagnostics stay admin-only."""
     status = service.status()
-    if _include_premium_data(request) is not False:
-        return status
-    free_providers = {
-        name for name, access_class in config.ODDS_PROVIDER_ACCESS_CLASSES.items()
-        if access_class == "free"
-    }
-    status["providers"] = [name for name in status.get("providers", []) if name in free_providers]
-    status["auto_refresh_providers"] = [
-        name for name in status.get("auto_refresh_providers", []) if name in free_providers
-    ]
-    status["auto_refresh_schedule"] = {
-        name: value for name, value in status.get("auto_refresh_schedule", {}).items()
-        if name in free_providers
-    }
-    status["provider"] = (
-        status.get("provider") if status.get("provider") in free_providers else "free_sources"
-    )
-    status.pop("provider_usage", None)
-    status.pop("provider_keys", None)
-    status.pop("provider_coverage", None)
-    status.pop("provider_access_classes", None)
-    status.pop("premium_provider_polling_enabled", None)
-    visible_events = service.events(include_premium=False)
-    status["live_data_available"] = bool(visible_events)
-    status["stored_events"] = len(visible_events)
-    status["stored_bookmakers"] = len({
+    include_premium = _include_premium_data(request)
+    visible_events = service.events(include_premium=include_premium)
+    visible_books = {
         book.get("key") for event in visible_events
         for book in event.get("bookmakers") or [] if book.get("key")
-    })
-    status["last_updated"] = None
-    status["last_error"] = None
-    status["sport_freshness"] = []
-    status["data_freshness"] = "partial" if visible_events else "unavailable"
-    status.pop("stored_snapshots", None)
-    status.pop("odds_bookmakers", None)
-    if config.ODDS_PROVIDER_ACCESS_CLASSES.get("the_odds_api") != "free":
-        status["player_props"] = {
-            "enabled": False, "reason": "Player props are not included in the free provider data scope."
-        }
-    return status
+    }
 
+    # The subscriber workspace needs headline counts and sport selectors only.
+    # Do not serialize provider identities, key-pool state, quotas, refresh
+    # schedules, feed timestamps/errors, Discord, or automation diagnostics.
+    safe_sport_counts = [
+        {"sport": item.get("sport"), "event_count": int(item.get("event_count") or 0)}
+        for item in status.get("sport_freshness", [])
+        if isinstance(item, dict)
+    ]
+    return {
+        "configured": bool(status.get("configured")),
+        "sports": list(status.get("sports") or []),
+        "live_data_available": bool(visible_events),
+        "stored_events": len(visible_events),
+        "stored_bookmakers": len(visible_books),
+        "sport_freshness": safe_sport_counts,
+        "data_freshness": "available" if visible_events else "unavailable",
+    }
 
 async def _limits_refresh_loop():
     while True:
