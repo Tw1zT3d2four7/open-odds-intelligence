@@ -1942,3 +1942,104 @@ def test_non_development_subscriber_remains_unverified(tmp_path, monkeypatch):
             "SELECT email_verified_at FROM identities WHERE id=?", (identity_id,)
         ).fetchone()
     assert row["email_verified_at"] is None
+
+def test_admin_mfa_recovery_rotates_seed_and_recovery_codes_atomically(tmp_path, monkeypatch):
+    import pyotp
+    from cryptography.fernet import Fernet
+    from app import config
+
+    monkeypatch.setattr(
+        config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
+    )
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator(
+        "mfa-recovery@example.test", "a strong administrator password"
+    )
+    old_uri = store.start_administrator_mfa_enrollment(admin_id)
+    old_totp = pyotp.parse_uri(old_uri)
+    old_recovery_codes = store.confirm_administrator_mfa_enrollment(
+        admin_id, old_totp.now()
+    )
+    new_secret = pyotp.random_base32()
+    new_totp = pyotp.TOTP(new_secret)
+
+    new_recovery_codes = store.replace_administrator_mfa_after_password_verification(
+        admin_id, new_secret, new_totp.now()
+    )
+
+    assert len(new_recovery_codes) == 10
+    assert len(set(new_recovery_codes)) == 10
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT encrypted_secret, enrolled_at FROM administrator_mfa WHERE identity_id=?",
+            (admin_id,),
+        ).fetchone()
+        saved_secret = store._mfa_cipher().decrypt(row["encrypted_secret"]).decode()
+        hashes = {
+            item["code_hash"] for item in db.execute(
+                "SELECT code_hash FROM administrator_mfa_recovery_codes WHERE identity_id=?",
+                (admin_id,),
+            ).fetchall()
+        }
+        audit = db.execute(
+            """SELECT event_type, metadata_json FROM security_audit_events
+               WHERE subject_identity_id=? AND event_type='administrator.mfa_recovered'""",
+            (admin_id,),
+        ).fetchone()
+
+    assert saved_secret == new_secret
+    assert row["enrolled_at"] is not None
+    assert {_token_digest(code) for code in new_recovery_codes} == hashes
+    assert not ({_token_digest(code) for code in old_recovery_codes} & hashes)
+    assert audit["event_type"] == "administrator.mfa_recovered"
+    assert new_secret not in audit["metadata_json"]
+    assert old_totp.secret != saved_secret
+
+
+def test_admin_mfa_recovery_invalid_code_preserves_existing_enrollment(tmp_path, monkeypatch):
+    import pyotp
+    from cryptography.fernet import Fernet
+    from app import config
+
+    monkeypatch.setattr(
+        config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
+    )
+    store = IdentityStore(tmp_path / "accounts.sqlite3")
+    admin_id = store.provision_administrator(
+        "mfa-recovery-deny@example.test", "another strong administrator password"
+    )
+    uri = store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.parse_uri(uri)
+    store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    new_secret = pyotp.random_base32()
+
+    with store.connect() as db:
+        before = dict(db.execute(
+            "SELECT encrypted_secret, enrolled_at, last_totp_counter FROM administrator_mfa WHERE identity_id=?",
+            (admin_id,),
+        ).fetchone())
+        before_codes = db.execute(
+            "SELECT code_hash FROM administrator_mfa_recovery_codes WHERE identity_id=? ORDER BY code_hash",
+            (admin_id,),
+        ).fetchall()
+
+    with pytest.raises(ValueError, match="invalid"):
+        store.replace_administrator_mfa_after_password_verification(
+            admin_id, new_secret, "000000"
+        )
+
+    with store.connect() as db:
+        after = dict(db.execute(
+            "SELECT encrypted_secret, enrolled_at, last_totp_counter FROM administrator_mfa WHERE identity_id=?",
+            (admin_id,),
+        ).fetchone())
+        after_codes = db.execute(
+            "SELECT code_hash FROM administrator_mfa_recovery_codes WHERE identity_id=? ORDER BY code_hash",
+            (admin_id,),
+        ).fetchall()
+
+    assert after == before
+    assert [row["code_hash"] for row in after_codes] == [
+        row["code_hash"] for row in before_codes
+    ]
+
