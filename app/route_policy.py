@@ -15,7 +15,7 @@ from starlette.routing import BaseRoute
 # FastAPI dependencies by route_authorization.py and protected by the identity
 # mode gate; they are never treated as authorization by themselves.
 ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
-    ("GET", "/"): "subscriber_entitled",
+    ("GET", "/"): "public_minimal",
     # Dedicated full-workspace entry point for MFA-authenticated administrators.
     ("GET", "/admin/workspace"): "administrator_only",
     ("GET", "/api/health"): "public_minimal",
@@ -53,8 +53,9 @@ ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
 # the AUTH_MODE=identity middleware allowlist. Product route dependencies remain
 # a separate integration milestone.
 IDENTITY_ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
-    # Static authentication entry points are public safe reads; mutations
-    # remain protected by the dedicated public_csrf class below.
+    # Static authentication entry points and the site front door are public safe reads;
+    # mutations remain protected by the dedicated public_csrf class below.
+    ("GET", "/"): "public_minimal",
     ("GET", "/login"): "public_minimal",
     ("GET", "/register"): "public_minimal",
     ("GET", "/admin/login"): "public_minimal",
