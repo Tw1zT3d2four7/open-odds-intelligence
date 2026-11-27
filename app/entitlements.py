@@ -51,6 +51,7 @@ def require_product_csrf(request: Request) -> None:
 
 
 ROUTE_ENTITLEMENTS = {
+    "/workspace": "dashboard",
     "/api/workspace/status": "dashboard",
     "/api/refresh": "dashboard",
     "/api/limits/refresh": "market_limits",
