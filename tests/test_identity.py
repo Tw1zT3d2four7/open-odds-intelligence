@@ -1925,7 +1925,7 @@ def test_only_local_no_verification_profile_preverifies_new_subscriber(tmp_path,
     ) == identity_id
 
 
-def test_non_development_subscriber_remains_unverified(tmp_path, monkeypatch):
+def test_subscriber_is_preverified_when_verification_is_disabled_outside_development(tmp_path, monkeypatch):
     from types import SimpleNamespace
     import app.identity as identity_module
 
@@ -1941,7 +1941,7 @@ def test_non_development_subscriber_remains_unverified(tmp_path, monkeypatch):
         row = db.execute(
             "SELECT email_verified_at FROM identities WHERE id=?", (identity_id,)
         ).fetchone()
-    assert row["email_verified_at"] is None
+    assert row["email_verified_at"] is not None
 
 def test_admin_mfa_recovery_rotates_seed_and_recovery_codes_atomically(tmp_path, monkeypatch):
     import pyotp
