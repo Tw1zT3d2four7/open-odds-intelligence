@@ -138,6 +138,10 @@ def test_market_board_endpoint_applies_sport_filter(monkeypatch):
         received["sport"] = sport
         return []
     monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "icehockey_nhl", "freshness": "current"}],
+    })
     with TestClient(main.app) as client:
         response = client.get("/api/market-board?sport=icehockey_nhl")
     assert response.status_code == 200
@@ -149,7 +153,7 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
     received = {}
     def fake_events(sport=None, **kwargs):
         received["sport"] = sport
-        return [{"id": "event"}]
+        return [{"id": "event", "sport_key": "basketball_nba"}]
     def fake_analysis(events, min_ev, min_consensus_books):
         received.update(events=events, min_ev=min_ev, min_consensus_books=min_consensus_books)
         return {"opportunities": [{"event_id": "event"}], "arbitrage": []}
