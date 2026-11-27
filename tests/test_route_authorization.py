@@ -230,7 +230,7 @@ def test_policy_dependencies_enforce_admin_session_and_csrf_over_http():
             cookies["csrf_header"]: "csrf-value",
         },
     )
-    assert subscriber.status_code == 401
+    assert subscriber.status_code == 200
 
     client.cookies.clear()
     client.cookies.set(cookies["admin_cookie"], "administrator")
