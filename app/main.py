@@ -339,6 +339,20 @@ def dashboard():
     return WEB.read_text(encoding="utf-8")
 
 
+@app.get(
+    "/admin/workspace",
+    response_class=HTMLResponse,
+    dependencies=dependencies_for_route(
+        "GET", "/admin/workspace",
+        administrator_dependency=require_product_administrator,
+        csrf_dependency=require_product_csrf,
+    ),
+)
+def administrator_sports_workspace():
+    """Serve the complete sports workspace to an MFA-authenticated administrator."""
+    return WEB.read_text(encoding="utf-8")
+
+
 @app.get("/api/health")
 def health():
     # Identity mode exposes only the liveness contract needed by Docker/Caddy.
