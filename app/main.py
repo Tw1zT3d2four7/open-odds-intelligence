@@ -207,11 +207,23 @@ app = FastAPI(title=config.APP_NAME, version="0.4.0",
               lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
 FAVICON = Path(__file__).resolve().parent.parent / "web" / "favicon.svg"
+LOGO = Path(__file__).resolve().parent.parent / "web" / "logo.svg"
+BRAND_PAGE = Path(__file__).resolve().parent.parent / "web" / "brand.html"
 
 
 @app.get("/favicon.svg", include_in_schema=False)
 def favicon():
     return Response(content=FAVICON.read_text(encoding="utf-8"), media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/logo.svg", include_in_schema=False)
+def brand_logo():
+    return Response(content=LOGO.read_text(encoding="utf-8"), media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/brand", response_class=HTMLResponse, include_in_schema=False)
+def brand_page():
+    return HTMLResponse(content=BRAND_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.middleware("http")
