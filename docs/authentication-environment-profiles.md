@@ -1,7 +1,6 @@
 # Authentication Environment Profiles
 
-**Branch:** `feature/admin-panel-and-subscriptions`  
-**Status:** Implementation specification; not a production switch.  
+**Status:** Implementation specification and staged policy boundary in the current `main`/`development` baseline; not a production switch. Reviewed 2026-11-27.  
 **Scope:** Centralized control of subscriber and administrator authentication, verification, MFA, rate limiting, and transactional email for local development, staging, and production.
 
 ## Goals
@@ -78,7 +77,7 @@ The Admin Console is not a mechanism to switch a public production deployment in
 4. Add protected read/update APIs and the Admin Console UI.
 5. Add tests for every profile, invalid combination, remote access to development-only routes, disabled email, outbox challenge expiry/consumption, and production fail-closed behavior.
 6. Verify with the existing identity, route-policy, CSRF, rate-limit, MFA, queue, and billing suites.
-7. Keep the live server on its current image until the feature-branch build and local acceptance tests pass. No production mode change, deployment, or restart is authorized by this specification.
+7. Keep the live server on its currently approved runtime configuration until the merged baseline has passed isolated non-production acceptance. No production mode change, deployment, or restart is authorized by this specification.
 
 ## Current implementation boundary
 
