@@ -106,27 +106,17 @@ def test_subscriber_workspace_status_exposes_metrics_without_operational_diagnos
     assert forbidden.isdisjoint(payload)
     assert "last_updated" not in payload["sport_freshness"][0]
 
-def test_health_endpoint_exposes_alert_delivery_diagnostics(monkeypatch):
-    monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "")
-    monkeypatch.setattr(main.service, "status", lambda: {
-        "alerts_enabled": True,
-        "alerts_sent": 5,
-        "last_alert_evaluated": 11,
-        "last_alert_qualified": 4,
-        "last_alert_sent": 3,
-        "last_alert_error": "temporary failure",
-    })
+def test_health_endpoint_exposes_liveness_only(monkeypatch):
+    def forbidden_status_call():
+        raise AssertionError("public health route must not load operational diagnostics")
+
+    monkeypatch.setattr(main.service, "status", forbidden_status_call)
 
     with TestClient(main.app) as client:
         response = client.get("/api/health")
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["last_alert_evaluated"] == 11
-    assert payload["last_alert_qualified"] == 4
-    assert payload["last_alert_sent"] == 3
-    assert payload["last_alert_error"] == "temporary failure"
+    assert response.json() == {"status": "ok", "app": main.config.APP_NAME}
 
 
 def test_movement_history_endpoint_returns_all_observed_lines(monkeypatch):
