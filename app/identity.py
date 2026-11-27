@@ -2190,6 +2190,77 @@ class IdentityStore:
             "customer_portal_available": False,
         }
 
+    def administrator_notification_overview(self) -> dict:
+        """Return aggregate transactional-email queue health without subscriber data."""
+        now = _timestamp(_now())
+        with self.connect() as db:
+            queue_rows = db.execute(
+                """SELECT state, COUNT(*) AS total,
+                          MAX(updated_at) AS latest_updated
+                   FROM transactional_email_queue
+                   GROUP BY state ORDER BY state"""
+            ).fetchall()
+            delivery_rows = db.execute(
+                """SELECT status, purpose, COUNT(*) AS total,
+                          MAX(attempted_at) AS latest_attempted
+                   FROM email_delivery_events
+                   WHERE attempted_at >= datetime('now', '-30 days')
+                   GROUP BY status, purpose ORDER BY status, purpose"""
+            ).fetchall()
+            circuit = db.execute(
+                """SELECT consecutive_failures, opened_until, last_failure_at,
+                          last_success_at, last_error_code, probe_until
+                   FROM email_provider_circuit WHERE provider='resend'"""
+            ).fetchone()
+            pending = db.execute(
+                """SELECT COUNT(*) AS total FROM transactional_email_queue
+                   WHERE state='pending' AND next_attempt_at<=?""",
+                (now,),
+            ).fetchone()["total"]
+            expired_leases = db.execute(
+                """SELECT COUNT(*) AS total FROM transactional_email_queue
+                   WHERE state='leased' AND lease_expires_at<=?""",
+                (now,),
+            ).fetchone()["total"]
+        queue = {row["state"]: int(row["total"]) for row in queue_rows}
+        deliveries = [
+            {
+                "status": row["status"],
+                "purpose": row["purpose"],
+                "count": int(row["total"]),
+                "latest_attempted": row["latest_attempted"],
+            }
+            for row in delivery_rows
+        ]
+        circuit_open = bool(circuit and circuit["opened_until"] and circuit["opened_until"] > now)
+        return {
+            "provider": "resend",
+            "queue": {
+                "states": queue,
+                "total": sum(queue.values()),
+                "due_pending": int(pending),
+                "expired_leases": int(expired_leases),
+                "latest_updated": max(
+                    (row["latest_updated"] for row in queue_rows if row["latest_updated"]),
+                    default=None,
+                ),
+            },
+            "deliveries_last_30_days": deliveries,
+            "provider_circuit": {
+                "state": "open" if circuit_open else "closed",
+                "consecutive_failures": int(circuit["consecutive_failures"]) if circuit else 0,
+                "opened_until": circuit["opened_until"] if circuit_open else None,
+                "last_failure_at": circuit["last_failure_at"] if circuit else None,
+                "last_success_at": circuit["last_success_at"] if circuit else None,
+                "last_error_code": circuit["last_error_code"] if circuit else None,
+                "probe_in_progress": bool(
+                    circuit and circuit["probe_until"] and circuit["probe_until"] > now
+                ),
+            },
+            "controls_available": False,
+            "scope": "verification_and_password_reset_only",
+        }
+
     def administrator_billing_overview(self) -> dict:
         """Return aggregate billing operations data without subscriber or provider secrets."""
         with self.connect() as db:
