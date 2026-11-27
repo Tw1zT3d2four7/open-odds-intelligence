@@ -353,6 +353,20 @@ def administrator_sports_workspace():
     return WEB.read_text(encoding="utf-8")
 
 
+@app.get("/api/workspace/status", dependencies=dependencies_for_route(
+    "GET", "/api/workspace/status",
+    entitlement_dependency=require_product_entitlement,
+    subscriber_dependency=require_product_subscriber,
+    administrator_dependency=require_product_administrator,
+    csrf_dependency=require_product_csrf,
+))
+def workspace_status(request: Request, response: Response):
+    """Return non-secret provider status to authenticated workspace users."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return _status_for_request(request)
+
+
 @app.get("/api/health")
 def health():
     # Identity mode exposes only the liveness contract needed by Docker/Caddy.
@@ -365,7 +379,7 @@ def health():
 
 
 
-@app.post("/api/limits/refresh", dependencies=dependencies_for_route("POST", "/api/limits/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+@app.post("/api/limits/refresh", dependencies=dependencies_for_route("POST", "/api/limits/refresh", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh_limits(request: Request):
     if (_include_premium_data(request) is False
             and config.ODDS_PROVIDER_ACCESS_CLASSES.get("oddslink") != "free"):
@@ -438,7 +452,7 @@ def odds(request: Request, sport: str | None = None, limit: int = Query(25, ge=1
     return {"events": service.events(sport, limit=limit, offset=offset, include_premium=_include_premium_data(request)), "limit": limit, "offset": offset, "status": _status_for_request(request)}
 
 
-@app.post("/api/refresh", dependencies=dependencies_for_route("POST", "/api/refresh", subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
+@app.post("/api/refresh", dependencies=dependencies_for_route("POST", "/api/refresh", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def refresh(sport: str | None = None):
     if sport is not None and sport not in config.ODDS_SPORTS:
         raise HTTPException(status_code=400, detail="Select a configured league or omit sport to refresh all configured leagues.")
