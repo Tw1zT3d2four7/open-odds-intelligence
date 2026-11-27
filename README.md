@@ -203,7 +203,7 @@ See [docs/PRODUCTION_OPERATIONS.md](docs/PRODUCTION_OPERATIONS.md) for safe SQLi
 
 ## Documentation
 
-The implementation and operations documentation is maintained under [docs/](docs/). Start with these references:
+See the [complete documentation index](docs/README.md) for all implementation, security, provider, billing, testing, and operational documents. The implementation and operations documentation is maintained under [docs/](docs/). Start with these references:
 
 - [Production operations runbook](docs/PRODUCTION_OPERATIONS.md) — deployment, backup/restore, image updates, health checks, and launch gates.
 - [Free provider API keys](docs/FREE_PROVIDER_KEYS.md) — free-tier provider setup, key handling, quota behavior, and source limits.
