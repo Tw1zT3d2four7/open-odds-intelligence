@@ -111,6 +111,7 @@ def test_subscriber_workspace_status_exposes_metrics_without_operational_diagnos
 def test_subscriber_status_uses_sql_counts_instead_of_rebuilding_all_quotes(monkeypatch):
     from types import SimpleNamespace
 
+    monkeypatch.setattr(main.config, "AUTH_MODE", "identity")
     monkeypatch.setattr(main.service, "status", lambda: {
         "configured": True,
         "sports": ["basketball_nba", "americanfootball_nfl"],
@@ -814,7 +815,11 @@ def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
 
 def test_arbitrage_paginates_result_rows_not_source_events(monkeypatch):
     generated = [{"row": index, "arb_percent": 1.0} for index in range(29)]
-    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [{"id": "event"}])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current"}],
+    })
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [{"id": "event", "sport_key": "basketball_nba"}])
     monkeypatch.setattr(main, "analyze_markets", lambda events, min_ev, arbitrage_only=False: {
         "opportunities": [], "arbitrage": generated,
     })
