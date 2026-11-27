@@ -1,4 +1,5 @@
 import time
+from dataclasses import replace
 
 import pytest
 import pyotp
@@ -12,6 +13,7 @@ from app.email_delivery import EmailDeliveryError
 from app.identity import IdentityStore
 from app.email_queue import TransactionalEmailQueue
 from app.rate_limit import SQLiteRateLimiter
+import app.identity_routes as identity_routes
 from app.identity_routes import get_email_sender, router
 
 
@@ -94,6 +96,40 @@ def test_registration_creates_unverified_subscriber_and_sends_one_time_link(tmp_
     assert row["email_verified_at"] is None
     assert delivery["status"] == "sent"
     assert delivery["provider_message_id"] == "email_test_id"
+
+
+def test_local_registration_skips_email_transport_and_allows_immediate_login(tmp_path, monkeypatch):
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        identity_routes,
+        "AUTH_POLICY",
+        replace(
+            identity_routes.AUTH_POLICY,
+            environment="development",
+            email_verification_required=False,
+            email_transport="disabled",
+            password_recovery_enabled=False,
+        ),
+    )
+
+    def unexpected_email_sender(_request):
+        raise AssertionError("Local no-verification signup must not initialize email delivery.")
+
+    monkeypatch.setattr(identity_routes, "get_email_sender", unexpected_email_sender)
+    response = harness.post("/auth/register", {
+        "email": "local@example.com",
+        "password": "a strong password 123",
+    })
+    assert response.status_code == 202
+    assert response.json()["message"] == "Account created. You can sign in."
+
+    login = harness.post("/auth/login", {
+        "email": "local@example.com",
+        "password": "a strong password 123",
+    })
+    assert login.status_code == 200
+    assert login.json()["ok"] is True
+    assert harness.sender.messages == []
 
 
 def test_duplicate_registration_returns_same_generic_response_without_resending(tmp_path, monkeypatch):
