@@ -6,7 +6,7 @@ import asyncio
 import secrets
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from . import config
 from .auth_config import AUTHENTICATION_POLICY as AUTH_POLICY
 from .service import service
@@ -334,8 +334,21 @@ async def prevent_identity_response_caching(request: Request, call_next):
     return response
 
 
-@app.get("/", response_class=HTMLResponse, dependencies=dependencies_for_route("GET", "/", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
-def dashboard():
+@app.get("/", response_class=HTMLResponse)
+def dashboard_entry(request: Request):
+    """Public front door in identity mode; authenticated users return to their home."""
+    if config.AUTH_MODE == "identity":
+        store = get_identity_store(request)
+        try:
+            resolve_session(request, store, "administrator")
+            return RedirectResponse("/admin", status_code=303)
+        except HTTPException:
+            pass
+        try:
+            resolve_session(request, store, "subscriber")
+            return RedirectResponse("/account", status_code=303)
+        except HTTPException:
+            return RedirectResponse("/login", status_code=303)
     return WEB.read_text(encoding="utf-8")
 
 
