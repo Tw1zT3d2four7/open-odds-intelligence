@@ -1,6 +1,6 @@
 services:
   open-odds-intelligence-admin-staging:
-    image: ghcr.io/tw1zT3d2four7/open-odds-intelligence:admin-staging
+    image: ghcr.io/tw1zT3d2four7/open-odds-intelligence:dev
     pull_policy: always
     container_name: open-odds-intelligence-admin-staging
     restart: unless-stopped
