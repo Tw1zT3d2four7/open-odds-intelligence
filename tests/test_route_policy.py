@@ -17,7 +17,7 @@ def _application_routes():
 
 def test_every_application_route_has_an_explicit_target_access_class():
     routes = _application_routes()
-    assert len(routes) == 66
+    assert len(routes) == 67
     assert unclassified_routes(routes) == []
     assert stale_policy_entries(routes) == []
 
@@ -30,11 +30,12 @@ def test_policy_inventory_covers_all_application_and_framework_http_routes():
         for method in (route.methods or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert len(actual) == 66
+    assert len(actual) == 67
     assert set(application_route_access_policy()) == actual
 
 
 def test_shared_provider_refresh_routes_require_administrator_access():
+    assert classify_route("GET", "/admin/workspace") == "administrator_only"
     assert classify_route("POST", "/api/refresh") == "administrator_only"
     assert classify_route("POST", "/api/limits/refresh") == "administrator_only"
     assert classify_route("POST", "/api/simulation/games/refresh") == "administrator_only"
