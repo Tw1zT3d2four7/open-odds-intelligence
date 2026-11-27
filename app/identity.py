@@ -2716,6 +2716,73 @@ class IdentityStore:
             db.commit()
         return recovery_codes
 
+    def replace_administrator_mfa_after_password_verification(
+        self, identity_id: str, secret: str, code: str
+    ) -> list[str]:
+        """Atomically replace an enrolled admin seed after password and new-code verification."""
+        if not isinstance(secret, str) or not re.fullmatch(r"[A-Z2-7]{16,64}", secret):
+            raise ValueError("A valid new authenticator seed is required.")
+        if not isinstance(code, str) or not code.isdigit() or len(code) != 6:
+            raise ValueError("A valid six-digit authenticator code is required.")
+        cipher = self._mfa_cipher()
+        totp = pyotp.TOTP(secret)
+        recovery_codes = [secrets.token_urlsafe(9) for _ in range(10)]
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            now_dt = _now()
+            now = _timestamp(now_dt)
+            identity = db.execute(
+                """SELECT email FROM identities
+                   WHERE id=? AND account_type='administrator' AND is_active=1""",
+                (identity_id,),
+            ).fetchone()
+            if identity is None:
+                db.rollback()
+                raise ValueError("An active administrator identity is required.")
+            existing = db.execute(
+                """SELECT enrolled_at FROM administrator_mfa
+                   WHERE identity_id=?""",
+                (identity_id,),
+            ).fetchone()
+            if existing is None or existing["enrolled_at"] is None:
+                db.rollback()
+                raise ValueError("An existing enrolled administrator MFA record is required.")
+            if not totp.verify(code, for_time=now_dt, valid_window=1):
+                db.rollback()
+                raise ValueError("Authenticator code is invalid.")
+            current_counter = totp.timecode(now_dt)
+            matched_counter = next(
+                counter for counter in (current_counter - 1, current_counter, current_counter + 1)
+                if totp.verify(code, for_time=counter * totp.interval)
+            )
+            db.execute(
+                """UPDATE administrator_mfa
+                   SET encrypted_secret=?, enrolled_at=?, last_verified_at=?,
+                       last_totp_counter=?, mfa_login_verified_at=NULL
+                   WHERE identity_id=?""",
+                (cipher.encrypt(secret.encode("utf-8")), now, now, matched_counter, identity_id),
+            )
+            db.execute(
+                "DELETE FROM administrator_mfa_recovery_codes WHERE identity_id=?",
+                (identity_id,),
+            )
+            db.executemany(
+                """INSERT INTO administrator_mfa_recovery_codes(
+                    id, identity_id, code_hash, created_at
+                ) VALUES (?, ?, ?, ?)""",
+                [
+                    (secrets.token_urlsafe(18), identity_id, _token_digest(item), now)
+                    for item in recovery_codes
+                ],
+            )
+            self._record_audit_event(
+                db, "administrator.mfa_recovered", identity_id, now,
+                metadata={"method": "password_and_new_totp"},
+                actor_identity_id=identity_id,
+            )
+            db.commit()
+        return recovery_codes
+
     def verify_administrator_mfa(self, identity_id: str, code: str) -> bool:
         """Verify a fresh TOTP time-step; previously accepted codes cannot replay."""
         if not isinstance(code, str) or not code.isdigit() or len(code) != 6:
