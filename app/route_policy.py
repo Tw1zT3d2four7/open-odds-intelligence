@@ -16,6 +16,8 @@ from starlette.routing import BaseRoute
 # mode gate; they are never treated as authorization by themselves.
 ROUTE_ACCESS_POLICY: dict[tuple[str, str], str] = {
     ("GET", "/"): "subscriber_entitled",
+    # Dedicated full-workspace entry point for MFA-authenticated administrators.
+    ("GET", "/admin/workspace"): "administrator_only",
     ("GET", "/api/health"): "public_minimal",
     # Public transport endpoint, but the handler requires a valid Stripe HMAC signature.
     ("POST", "/webhooks/stripe"): "stripe_signature",
