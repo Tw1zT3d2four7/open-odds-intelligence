@@ -87,7 +87,7 @@ def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
         if getattr(route, "methods", None)
     ]
     assert len(IDENTITY_ROUTE_ACCESS_POLICY) == 41
-    assert len(routes) == 40
+    assert len(routes) == 41
     assert unclassified_routes(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
     assert stale_policy_entries(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
 
