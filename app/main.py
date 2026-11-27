@@ -381,13 +381,10 @@ def workspace_status(request: Request, response: Response):
 
 @app.get("/api/health")
 def health():
-    # Identity mode exposes only the liveness contract needed by Docker/Caddy.
-    # Detailed provider and operational diagnostics are exposed only through
-    # the MFA-protected Admin Overview, never through the public health route.
-    if config.AUTH_MODE == "identity":
-        return {"status": "ok", "app": config.APP_NAME}
-    return {"status": "ok", "app": config.APP_NAME, **service.status(),
-            "market_limits": limits_monitor.status()}
+    # This route is intentionally a liveness-only contract for Docker/Caddy.
+    # Provider, feed, quota, Discord, and refresh diagnostics are available
+    # only in the MFA-protected administrator workspace.
+    return {"status": "ok", "app": config.APP_NAME}
 
 
 
