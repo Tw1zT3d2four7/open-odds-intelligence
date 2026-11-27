@@ -43,25 +43,30 @@ def _status_for_request(request: Request) -> dict:
     status = service.status()
     include_premium = _include_premium_data(request)
     if include_premium is False:
-        visible_events = service.events(include_premium=False)
-        visible_event_count = len(visible_events)
-        visible_books = {
-            book.get("key") for event in visible_events
-            for book in event.get("bookmakers") or [] if book.get("key")
-        }
-        visible_book_count = len(visible_books)
+        # Avoid materializing every event/book/market/outcome just to render
+        # headline counts. SQL counts are scoped to latest snapshots and the
+        # free-data entitlement.
+        visible = service.db.visible_snapshot_counts(access_classes=("free",))
+        visible_event_count = int(visible.get("events") or 0)
+        visible_book_count = int(visible.get("bookmakers") or 0)
+        visible_sports = visible.get("sports") or {}
+        safe_sport_counts = [
+            {"sport": item.get("sport"),
+             "event_count": int(visible_sports.get(item.get("sport"), 0))}
+            for item in status.get("sport_freshness", [])
+            if isinstance(item, dict)
+        ]
     else:
         visible_event_count = int(status.get("stored_events") or 0)
         visible_book_count = int(status.get("stored_bookmakers") or 0)
+        safe_sport_counts = [
+            {"sport": item.get("sport"), "event_count": int(item.get("event_count") or 0)}
+            for item in status.get("sport_freshness", [])
+            if isinstance(item, dict)
+        ]
 
-    # The subscriber workspace needs headline counts and sport selectors only.
     # Do not serialize provider identities, key-pool state, quotas, refresh
     # schedules, feed timestamps/errors, Discord, or automation diagnostics.
-    safe_sport_counts = [
-        {"sport": item.get("sport"), "event_count": int(item.get("event_count") or 0)}
-        for item in status.get("sport_freshness", [])
-        if isinstance(item, dict)
-    ]
     return {
         "configured": bool(status.get("configured")),
         "sports": list(status.get("sports") or []),
@@ -526,6 +531,50 @@ def _current_market_events(request: Request, sport: str | None = None):
         return [], "No current provider-backed odds snapshots are available."
     return eligible, None
 
+def _current_market_analysis(request: Request, sport: str | None, *, min_ev: float,
+                             min_consensus_books: int = 2,
+                             arbitrage_only: bool = False):
+    """Validate freshness, then reuse a generation-keyed market analysis result."""
+    status = service.status()
+    if not status.get("configured"):
+        return {"opportunities": [], "arbitrage": []}, (
+            "No configured odds provider. Live market analysis is disabled until a provider key is loaded."
+        )
+    current_sports = tuple(sorted(
+        item.get("sport") for item in status.get("sport_freshness", [])
+        if isinstance(item, dict) and item.get("freshness") == "current" and item.get("sport")
+    ))
+    if sport and sport not in current_sports:
+        return {"opportunities": [], "arbitrage": []}, (
+            f"{sport} odds are not current. Refresh the league before viewing live market analysis."
+        )
+    if not current_sports:
+        return {"opportunities": [], "arbitrage": []}, (
+            "No current provider-backed odds snapshots are available."
+        )
+    include_premium = _include_premium_data(request)
+    cache_key = (
+        "market-analysis", sport or "", float(min_ev), int(min_consensus_books),
+        bool(arbitrage_only), include_premium, current_sports,
+    )
+
+    def build():
+        events = service.events(sport, include_premium=include_premium)
+        eligible = [
+            event for event in events
+            if isinstance(event, dict)
+            and (event.get("sport_key") or event.get("sport")) in current_sports
+        ]
+        if not eligible:
+            return {"opportunities": [], "arbitrage": []}
+        if arbitrage_only:
+            return analyze_markets(eligible, min_ev=min_ev, arbitrage_only=True)
+        return analyze_markets(
+            eligible, min_ev=min_ev, min_consensus_books=min_consensus_books,
+        )
+
+    return service.cached_market_analysis(cache_key, build), None
+
 
 @app.get("/api/market-board", dependencies=dependencies_for_route("GET", "/api/market-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def market_board_api(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
@@ -743,9 +792,11 @@ def opportunities(request: Request, sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20),
                   limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    events, unavailable_reason = _current_market_events(request, sport)
-    result = analyze_markets(events, min_ev, min_consensus_books)
-    page = _page_results(result["opportunities"], limit, offset)
+    result, unavailable_reason = _current_market_analysis(
+        request, sport, min_ev=min_ev, min_consensus_books=min_consensus_books,
+    )
+    rows = result["opportunities"] if unavailable_reason is None else []
+    page = _page_results(rows, limit, offset)
     return {"opportunities": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
             "data_status": "unavailable" if unavailable_reason else "current",
@@ -755,9 +806,11 @@ def opportunities(request: Request, sport: str | None = None,
 
 @app.get("/api/arbitrage", dependencies=dependencies_for_route("GET", "/api/arbitrage", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def arbitrage(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    events, unavailable_reason = _current_market_events(request, sport)
-    result = analyze_markets(events, min_ev=101, arbitrage_only=True)
-    page = _page_results(result["arbitrage"], limit, offset)
+    result, unavailable_reason = _current_market_analysis(
+        request, sport, min_ev=101, min_consensus_books=2, arbitrage_only=True,
+    )
+    rows = result["arbitrage"] if unavailable_reason is None else []
+    page = _page_results(rows, limit, offset)
     return {"arbitrage": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
             "data_status": "unavailable" if unavailable_reason else "current",

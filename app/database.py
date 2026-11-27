@@ -58,6 +58,8 @@ class OddsDatabase:
                 CREATE INDEX IF NOT EXISTS idx_quotes_snapshot ON quotes(snapshot_id);
                 CREATE INDEX IF NOT EXISTS idx_quotes_snapshot_event_book_market
                     ON quotes(snapshot_id, event_id, bookmaker_key, market_key, outcome_name);
+                CREATE INDEX IF NOT EXISTS idx_quotes_snapshot_access_event_book
+                    ON quotes(snapshot_id, source_access_class, event_id, bookmaker_key);
                 CREATE TABLE IF NOT EXISTS sent_alerts (
                     fingerprint TEXT PRIMARY KEY, sent_at TEXT NOT NULL,
                     alert_type TEXT NOT NULL, summary TEXT NOT NULL,
@@ -1333,3 +1335,34 @@ class OddsDatabase:
                      ON latest.id=q.snapshot_id"""
             ).fetchone()[0]
             return result
+
+    def visible_snapshot_counts(self, access_classes=None):
+        """Count latest-snapshot events/books in SQL without rebuilding quote objects."""
+        where = ""
+        args = []
+        if access_classes is not None:
+            classes = tuple(dict.fromkeys(str(value) for value in access_classes))
+            if not classes:
+                return {"events": 0, "bookmakers": 0, "sports": {}}
+            where = " WHERE q.source_access_class IN (" + ",".join("?" for _ in classes) + ")"
+            args.extend(classes)
+        with self.connect() as db:
+            totals = db.execute(
+                "WITH latest AS (SELECT sport,MAX(id) AS snapshot_id FROM snapshots GROUP BY sport) "
+                "SELECT COUNT(DISTINCT q.event_id) AS events, "
+                "COUNT(DISTINCT q.bookmaker_key) AS bookmakers "
+                "FROM quotes q JOIN latest l ON l.snapshot_id=q.snapshot_id" + where,
+                args,
+            ).fetchone()
+            sports = db.execute(
+                "WITH latest AS (SELECT sport,MAX(id) AS snapshot_id FROM snapshots GROUP BY sport) "
+                "SELECT q.sport,COUNT(DISTINCT q.event_id) AS event_count "
+                "FROM quotes q JOIN latest l ON l.snapshot_id=q.snapshot_id" + where +
+                " GROUP BY q.sport",
+                args,
+            ).fetchall()
+        return {
+            "events": int(totals["events"] or 0),
+            "bookmakers": int(totals["bookmakers"] or 0),
+            "sports": {row["sport"]: int(row["event_count"] or 0) for row in sports},
+        }

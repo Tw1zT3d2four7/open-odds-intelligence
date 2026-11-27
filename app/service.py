@@ -102,7 +102,13 @@ class OddsService:
         # Share one assembled snapshot across concurrent dashboard endpoints.
         self._events_cache_lock = threading.Lock()
         self._events_cache = {}
-        self._events_cache_ttl_seconds = 3.0
+        # Snapshots change only after a provider refresh. Keep assembled reads
+        # warm between refreshes and invalidate immediately after a new write.
+        self._events_cache_ttl_seconds = 15.0
+        self._market_analysis_cache_lock = threading.Lock()
+        self._market_analysis_cache = {}
+        self._market_analysis_cache_ttl_seconds = 15.0
+        self._snapshot_generation = 0
         self._cache = {}
         self._last_error = None
         self._updated_at = None
@@ -1357,6 +1363,24 @@ class OddsService:
     def _invalidate_events_cache(self):
         with self._events_cache_lock:
             self._events_cache.clear()
+        with self._market_analysis_cache_lock:
+            self._snapshot_generation += 1
+            self._market_analysis_cache.clear()
+
+    def cached_market_analysis(self, cache_key, builder):
+        """Reuse expensive market calculations until a newer odds snapshot is saved."""
+        now = time.monotonic()
+        with self._market_analysis_cache_lock:
+            generation = self._snapshot_generation
+            key = (generation, *tuple(cache_key))
+            cached = self._market_analysis_cache.get(key)
+            if cached and now - cached[0] < self._market_analysis_cache_ttl_seconds:
+                return cached[1]
+        result = builder()
+        with self._market_analysis_cache_lock:
+            if generation == self._snapshot_generation:
+                self._market_analysis_cache[key] = (time.monotonic(), result)
+        return result
 
     def events(self, sport=None, limit=None, offset=0, include_premium=None, preserve_account_groups=False):
         """Return a short-lived shared snapshot for concurrent dashboard reads."""

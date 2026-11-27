@@ -270,3 +270,45 @@ def test_internal_clv_event_view_preserves_same_tier_account_groups(tmp_path):
         row["source_account_group"]
         for row in clv_view[0]["bookmakers"][0]["markets"][0]["outcomes"]
     } == {"free-a", "free-b"}
+
+
+
+def test_visible_snapshot_counts_only_count_latest_quotes_in_requested_access_tier(tmp_path):
+    db = OddsDatabase(tmp_path / "visible-counts.sqlite3")
+    db.save_snapshot("basketball_nba", [
+        _event("free-feed", "free", "free-event"),
+        _event("paid-feed", "premium", "paid-event"),
+    ], provider="combined")
+
+    free = db.visible_snapshot_counts(access_classes=("free",))
+    paid = db.visible_snapshot_counts(access_classes=("free", "premium"))
+    unrestricted = db.visible_snapshot_counts()
+
+    assert free == {
+        "events": 1, "bookmakers": 1, "sports": {"basketball_nba": 1},
+    }
+    assert paid == {
+        "events": 2, "bookmakers": 1, "sports": {"basketball_nba": 2},
+    }
+    assert unrestricted == paid
+
+
+def test_market_analysis_cache_reuses_results_until_snapshot_invalidation(tmp_path):
+    service = OddsService(OddsDatabase(tmp_path / "market-cache.sqlite3"))
+    calls = []
+
+    def build():
+        calls.append("built")
+        return {"opportunities": [{"event_id": "cached"}], "arbitrage": []}
+
+    first = service.cached_market_analysis(("ev", "basketball_nba", 1.0, 2), build)
+    second = service.cached_market_analysis(("ev", "basketball_nba", 1.0, 2), build)
+
+    assert first is second
+    assert len(calls) == 1
+
+    service._invalidate_events_cache()
+    third = service.cached_market_analysis(("ev", "basketball_nba", 1.0, 2), build)
+
+    assert third is not first
+    assert len(calls) == 2

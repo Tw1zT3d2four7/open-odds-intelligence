@@ -107,6 +107,38 @@ def test_subscriber_workspace_status_exposes_metrics_without_operational_diagnos
     assert forbidden.isdisjoint(payload)
     assert "last_updated" not in payload["sport_freshness"][0]
 
+
+def test_subscriber_status_uses_sql_counts_instead_of_rebuilding_all_quotes(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sports": ["basketball_nba", "americanfootball_nfl"],
+        "sport_freshness": [
+            {"sport": "basketball_nba", "event_count": 99},
+            {"sport": "americanfootball_nfl", "event_count": 88},
+        ],
+    })
+    monkeypatch.setattr(main.service.db, "visible_snapshot_counts", lambda access_classes: {
+        "events": 3, "bookmakers": 4,
+        "sports": {"basketball_nba": 2, "americanfootball_nfl": 1},
+    })
+    monkeypatch.setattr(
+        main.service, "events",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("status must not deserialize all odds")),
+    )
+    request = SimpleNamespace(state=SimpleNamespace(include_premium_data=False))
+
+    payload = main._status_for_request(request)
+
+    assert payload["stored_events"] == 3
+    assert payload["stored_bookmakers"] == 4
+    assert payload["sport_freshness"] == [
+        {"sport": "basketball_nba", "event_count": 2},
+        {"sport": "americanfootball_nfl", "event_count": 1},
+    ]
+
+
 def test_health_endpoint_exposes_liveness_only(monkeypatch):
     def forbidden_status_call():
         raise AssertionError("public health route must not load operational diagnostics")
