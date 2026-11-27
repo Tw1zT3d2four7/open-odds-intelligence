@@ -17,9 +17,22 @@ def _application_routes():
 
 def test_every_application_route_has_an_explicit_target_access_class():
     routes = _application_routes()
-    assert len(routes) == 69
+    assert len(routes) == 70
     assert unclassified_routes(routes) == []
     assert stale_policy_entries(routes) == []
+
+
+def test_subscriber_sports_workspace_is_a_real_entitled_route():
+    from app.entitlements import require_product_entitlement, require_product_subscriber
+
+    route = next(
+        route for route in main.app.routes
+        if getattr(route, "path", None) == "/workspace"
+        and "GET" in (getattr(route, "methods", None) or set())
+    )
+    calls = {dependency.call for dependency in route.dependant.dependencies}
+    assert require_product_subscriber in calls
+    assert require_product_entitlement in calls
 
 
 def test_administrator_sports_workspace_is_a_real_protected_route():
@@ -42,17 +55,19 @@ def test_policy_inventory_covers_all_application_and_framework_http_routes():
         for method in (route.methods or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert len(actual) == 69
+    assert len(actual) == 70
     assert set(application_route_access_policy()) == actual
 
 
 def test_shared_workspace_and_refresh_routes_are_subscriber_entitled():
     assert classify_route("GET", "/admin/workspace") == "administrator_only"
+    assert classify_route("GET", "/workspace") == "subscriber_entitled"
     assert classify_route("GET", "/api/workspace/status") == "subscriber_entitled"
     assert classify_route("POST", "/api/refresh") == "subscriber_entitled"
     assert classify_route("POST", "/api/limits/refresh") == "subscriber_entitled"
     assert classify_route("POST", "/api/simulation/games/refresh") == "subscriber_entitled"
     from app.entitlements import ROUTE_ENTITLEMENTS
+    assert ROUTE_ENTITLEMENTS["/workspace"] == "dashboard"
     assert ROUTE_ENTITLEMENTS["/api/workspace/status"] == "dashboard"
     assert ROUTE_ENTITLEMENTS["/api/refresh"] == "dashboard"
     assert ROUTE_ENTITLEMENTS["/api/limits/refresh"] == "market_limits"
