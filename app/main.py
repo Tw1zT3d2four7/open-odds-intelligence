@@ -65,7 +65,7 @@ def _status_for_request(request: Request) -> dict:
     return {
         "configured": bool(status.get("configured")),
         "sports": list(status.get("sports") or []),
-        "live_data_available": bool(visible_events),
+        "live_data_available": bool(visible_event_count),
         "stored_events": visible_event_count,
         "stored_bookmakers": visible_book_count,
         "sport_freshness": safe_sport_counts,
