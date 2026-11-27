@@ -13,6 +13,7 @@ from app.email_delivery import EmailDeliveryError
 from app.identity import IdentityStore
 from app.email_queue import TransactionalEmailQueue
 from app.rate_limit import SQLiteRateLimiter
+import app.identity as identity_module
 import app.identity_routes as identity_routes
 from app.identity_routes import get_email_sender, router
 
@@ -100,17 +101,15 @@ def test_registration_creates_unverified_subscriber_and_sends_one_time_link(tmp_
 
 def test_local_registration_skips_email_transport_and_allows_immediate_login(tmp_path, monkeypatch):
     harness = IdentityRouteHarness(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        identity_routes,
-        "AUTH_POLICY",
-        replace(
-            identity_routes.AUTH_POLICY,
-            environment="development",
-            email_verification_required=False,
-            email_transport="disabled",
-            password_recovery_enabled=False,
-        ),
+    local_policy = replace(
+        identity_routes.AUTH_POLICY,
+        environment="development",
+        email_verification_required=False,
+        email_transport="disabled",
+        password_recovery_enabled=False,
     )
+    monkeypatch.setattr(identity_routes, "AUTH_POLICY", local_policy)
+    monkeypatch.setattr(identity_module, "AUTH_POLICY", local_policy)
 
     def unexpected_email_sender(_request):
         raise AssertionError("Local no-verification signup must not initialize email delivery.")
