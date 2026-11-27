@@ -119,6 +119,7 @@ def _make_policy_integration_app():
         CSRF_HEADER,
         SUBSCRIBER_COOKIE,
     )
+    from fastapi import Request
 
     class SessionStore:
         sessions = {
@@ -141,8 +142,16 @@ def _make_policy_integration_app():
     app = FastAPI()
     app.state.identity_store = SessionStore()
 
-    def entitlement_guard(session=Depends(require_subscriber)):
-        if not session.get("entitled"):
+    def product_session(request: Request):
+        admin_token = request.cookies.get(ADMINISTRATOR_COOKIE)
+        subscriber_token = request.cookies.get(SUBSCRIBER_COOKIE)
+        session = app.state.identity_store.get_session(admin_token or subscriber_token)
+        if not session:
+            raise HTTPException(status_code=401, detail="Authentication required.")
+        return session
+
+    def entitlement_guard(session=Depends(product_session)):
+        if session.get("account_type") == "subscriber" and not session.get("entitled"):
             raise HTTPException(status_code=403, detail="Feature not included in plan.")
 
     @app.get(
@@ -165,7 +174,11 @@ def _make_policy_integration_app():
 
     @app.post(
         "/api/refresh",
-        dependencies=dependencies_for_route("POST", "/api/refresh"),
+        dependencies=dependencies_for_route(
+            "POST", "/api/refresh",
+            entitlement_dependency=entitlement_guard,
+            subscriber_dependency=product_session,
+        ),
     )
     def refresh_endpoint():
         return {"ok": True}
