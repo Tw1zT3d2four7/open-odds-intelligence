@@ -27,7 +27,7 @@ from .entitlements import (
 )
 from .dependencies import get_identity_store
 from .auth import resolve_session
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
