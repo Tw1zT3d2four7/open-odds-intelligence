@@ -511,7 +511,11 @@ $("simGame").addEventListener("change",()=>{
 });
 $("runSimulation").addEventListener("click",runSelectedSimulation);
 
-if(window.location.pathname === "/admin/workspace") document.getElementById("accountLink").href = "/admin";
+if(window.location.pathname === "/admin/workspace") {
+  const adminLink = document.getElementById("accountLink");
+  adminLink.href = "/admin";
+  adminLink.innerHTML = 'Admin Console <span aria-hidden="true">↗</span>';
+}
 setTab("ev");
 load();
 </script></body></html>
