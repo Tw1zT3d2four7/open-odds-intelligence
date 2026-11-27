@@ -42,11 +42,17 @@ def _status_for_request(request: Request) -> dict:
     """Return a subscriber-safe workspace summary; operational diagnostics stay admin-only."""
     status = service.status()
     include_premium = _include_premium_data(request)
-    visible_events = service.events(include_premium=include_premium)
-    visible_books = {
-        book.get("key") for event in visible_events
-        for book in event.get("bookmakers") or [] if book.get("key")
-    }
+    if include_premium is False:
+        visible_events = service.events(include_premium=False)
+        visible_event_count = len(visible_events)
+        visible_books = {
+            book.get("key") for event in visible_events
+            for book in event.get("bookmakers") or [] if book.get("key")
+        }
+        visible_book_count = len(visible_books)
+    else:
+        visible_event_count = int(status.get("stored_events") or 0)
+        visible_book_count = int(status.get("stored_bookmakers") or 0)
 
     # The subscriber workspace needs headline counts and sport selectors only.
     # Do not serialize provider identities, key-pool state, quotas, refresh
@@ -60,10 +66,13 @@ def _status_for_request(request: Request) -> dict:
         "configured": bool(status.get("configured")),
         "sports": list(status.get("sports") or []),
         "live_data_available": bool(visible_events),
-        "stored_events": len(visible_events),
-        "stored_bookmakers": len(visible_books),
+        "stored_events": visible_event_count,
+        "stored_bookmakers": visible_book_count,
         "sport_freshness": safe_sport_counts,
-        "data_freshness": "available" if visible_events else "unavailable",
+        "data_freshness": "available" if visible_event_count else "unavailable",
+        "player_props": {
+            "enabled": bool((status.get("player_props") or {}).get("enabled"))
+        },
     }
 
 async def _limits_refresh_loop():
