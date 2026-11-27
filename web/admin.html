@@ -36,6 +36,10 @@ h1{font-size:clamp(25px,3vw,34px);line-height:1.15;letter-spacing:-.035em;margin
 .subtitle{color:var(--muted);margin:5px 0 0}
 .secure-pill{display:flex;align-items:center;gap:8px;border:1px solid #315e58;border-radius:30px;padding:7px 11px;color:#a8e7d2;font-size:11px;white-space:nowrap}
 .secure-pill:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px #57c7a566}
+.workspace-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border:1px solid #3d827a;border-radius:8px;background:#10283a;color:#a8e7d2;text-decoration:none;font-weight:750;white-space:nowrap}
+.workspace-link:hover{background:#193449;border-color:var(--accent);color:#edf4ff}
+.topbar-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:650px){.topbar-actions{justify-content:flex-start}}
 .content{max-width:1120px;margin:30px auto 0}
 .welcome{padding:25px 27px;border:1px solid #2d4c5d;border-radius:14px;background:linear-gradient(115deg,#152d40,#142238 65%,#17243a);margin-bottom:20px}
 .welcome h2{font-size:21px;letter-spacing:-.025em;margin:0 0 7px}
@@ -101,7 +105,10 @@ tbody tr:last-child td{border-bottom:0}
 <main>
   <header class="topbar">
     <div><div class="eyebrow">Private workspace</div><h1 id="page-title">Overview</h1><p class="subtitle" id="page-subtitle">Platform administration and security operations.</p></div>
-    <div class="secure-pill">Administrator session verified</div>
+    <div class="topbar-actions">
+      <a class="workspace-link" href="/admin/workspace">Open Sports Workspace <span aria-hidden="true">→</span></a>
+      <div class="secure-pill">Administrator session verified</div>
+    </div>
   </header>
   <div class="content">
     <section class="view" id="view-overview">
