@@ -60,8 +60,8 @@ def test_shared_workspace_and_refresh_routes_are_subscriber_entitled():
 
 
 def test_read_and_simulation_routes_require_subscriber_entitlement():
+    assert classify_route("GET", "/") == "public_minimal"
     for method, path in (
-        ("GET", "/"),
         ("GET", "/api/odds"),
         ("GET", "/api/opportunities"),
         ("GET", "/api/arbitrage"),
@@ -70,12 +70,12 @@ def test_read_and_simulation_routes_require_subscriber_entitlement():
         assert classify_route(method, path) == "subscriber_entitled"
 
 
-def test_health_is_the_only_public_minimal_route():
+def test_site_entry_and_health_are_the_only_public_minimal_routes():
     public = [
         key for key, access_class in ROUTE_ACCESS_POLICY.items()
         if access_class == "public_minimal"
     ]
-    assert public == [("GET", "/api/health")]
+    assert public == [("GET", "/"), ("GET", "/api/health")]
     assert classify_route("POST", "/webhooks/stripe") == "stripe_signature"
 
 
