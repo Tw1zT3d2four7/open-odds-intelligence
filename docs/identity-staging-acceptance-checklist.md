@@ -4,13 +4,13 @@
 
 ## 0. Staging deployment scaffold
 
-The feature branch now includes a separate Compose file and a non-secret environment template:
+The current `main`/`development` baseline includes a separate Compose file and a non-secret environment template:
 
 - `docker-compose.staging.yml` uses the isolated `admin-staging` GHCR image tag, a unique container name, a separate `./staging-data` bind mount, and host-loopback-only port `127.0.0.1:18765`.
 - `.env.staging.example` is a template only. Copy it to the untracked `.env.staging`, fill secrets using a private secret manager, and set `PUBLIC_BASE_URL` to the real HTTPS staging origin. Never commit `.env.staging`.
 - The staging Compose project does not reuse the production `data/` directory, production container name, or production port. Staging data is excluded from Docker build context.
 
-After the feature-branch image publication workflow succeeds and the isolation/configuration checks below are complete, an operator can start the staging container with:
+After the merged-baseline image publication workflow succeeds and the isolation/configuration checks below are complete, an operator can start the staging container with:
 
 ```bash
 cp .env.staging.example .env.staging
