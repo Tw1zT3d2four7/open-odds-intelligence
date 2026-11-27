@@ -167,7 +167,7 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
         response = client.get("/api/opportunities?sport=basketball_nba&min_ev=2.5&min_consensus_books=3")
     assert response.status_code == 200
     assert received == {
-        "sport": "basketball_nba", "events": [{"id": "event"}],
+        "sport": "basketball_nba", "events": [{"id": "event", "sport_key": "basketball_nba"}],
         "min_ev": 2.5, "min_consensus_books": 3,
     }
     assert response.json()["opportunities"] == [{"event_id": "event"}]
@@ -187,7 +187,7 @@ def test_arbitrage_endpoint_requests_arbitrage_analysis(monkeypatch):
     with TestClient(main.app) as client:
         response = client.get("/api/arbitrage?sport=baseball_mlb")
     assert response.status_code == 200
-    assert received == {"events": [{"id": "baseball_mlb"}], "min_ev": 101, "arbitrage_only": True}
+    assert received == {"events": [{"id": "baseball_mlb", "sport_key": "baseball_mlb"}], "min_ev": 101, "arbitrage_only": True}
     assert response.json()["arbitrage"][0]["arb_percent"] == 1.2
 
 
@@ -666,7 +666,7 @@ def test_score_based_simulator_runs_through_api_for_each_supported_family(
 def test_all_bookmaker_quotes_endpoint_returns_every_book_and_respects_sport_filter(monkeypatch):
     received = {}
     events = [{
-        "id": "evt", "sport_title": "Football", "home_team": "Home", "away_team": "Away",
+        "id": "evt", "sport_key": "americanfootball_nfl", "sport_title": "Football", "home_team": "Home", "away_team": "Away",
         "bookmakers": [
             {"key": "book-a", "title": "Book A", "markets": [{
                 "key": "h2h", "outcomes": [{"name": "Home", "price": -110}, {"name": "Away", "price": -110}]
@@ -680,6 +680,10 @@ def test_all_bookmaker_quotes_endpoint_returns_every_book_and_respects_sport_fil
         received["sport"] = sport
         return events
     monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "americanfootball_nfl", "freshness": "current"}],
+    })
     with TestClient(main.app) as client:
         response = client.get("/api/bookmaker-board?sport=americanfootball_nfl")
     assert response.status_code == 200
@@ -711,7 +715,7 @@ def test_odds_endpoint_returns_only_requested_event_page(monkeypatch):
 
 
 def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
-    events = [{"id": "event-1"}, {"id": "event-2"}]
+    events = [{"id": "event-1", "sport_key": "basketball_nba"}, {"id": "event-2", "sport_key": "basketball_nba"}]
     generated = [{"row": index} for index in range(31)]
     received = {}
 
@@ -725,6 +729,10 @@ def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
         return {"opportunities": generated, "arbitrage": []}
 
     monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current"}],
+    })
     monkeypatch.setattr(main, "analyze_markets", fake_analysis)
     with TestClient(main.app) as client:
         response = client.get("/api/opportunities?limit=25&offset=25")
