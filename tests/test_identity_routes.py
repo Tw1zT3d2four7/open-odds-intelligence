@@ -1632,3 +1632,91 @@ def test_local_no_email_registration_creates_verified_account_without_queue(tmp_
         "password": "a strong local password 123",
     })
     assert login.status_code == 200
+
+
+def test_admin_notification_overview_is_mfa_protected_and_aggregate_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    harness = IdentityRouteHarness(tmp_path, monkeypatch)
+    subscriber_id = harness.store.create_subscriber(
+        "private-notification-user@example.test", "a strong notification password"
+    )
+    assert harness.client.get("/admin/notifications").status_code == 401
+
+    now = "2026-11-27T12:00:00+00:00"
+    with harness.store.connect() as db:
+        db.execute(
+            """INSERT INTO transactional_email_queue(
+                id, provider, identity_id, purpose, encrypted_payload,
+                idempotency_key, state, attempt_count, max_attempts,
+                next_attempt_at, lease_token_hash, lease_expires_at,
+                challenge_expires_at, idempotency_expires_at,
+                last_failure_code, created_at, updated_at, sent_at
+            ) VALUES (?, 'resend', ?, 'verification', ?, ?, 'pending', 0, 8,
+                      ?, NULL, NULL, ?, ?, NULL, ?, ?, NULL)""",
+            ("queue-pending", subscriber_id, b"encrypted-secret-payload",
+             "idempotency-pending", now, now, now, now, now),
+        )
+        db.execute(
+            """INSERT INTO transactional_email_queue(
+                id, provider, identity_id, purpose, encrypted_payload,
+                idempotency_key, state, attempt_count, max_attempts,
+                next_attempt_at, lease_token_hash, lease_expires_at,
+                challenge_expires_at, idempotency_expires_at,
+                last_failure_code, created_at, updated_at, sent_at
+            ) VALUES (?, 'resend', ?, 'password_reset', ?, ?, 'leased', 1, 8,
+                      ?, ?, ?, ?, ?, NULL, ?, ?, NULL)""",
+            ("queue-leased", subscriber_id, b"another-encrypted-payload",
+             "idempotency-leased", now, "lease-hash-never-return", "2020-01-01T00:00:00+00:00",
+             now, now, now, now),
+        )
+        db.execute(
+            """INSERT INTO email_delivery_events(
+                id, provider, identity_id, purpose, status,
+                provider_message_id, failure_code, attempted_at
+            ) VALUES (?, 'resend', ?, 'verification', 'failed', NULL, 'provider_unavailable', ?)""",
+            ("delivery-failed", subscriber_id, now),
+        )
+        db.execute(
+            """INSERT INTO email_provider_circuit(
+                provider, consecutive_failures, opened_until, last_failure_at,
+                last_success_at, last_error_code, updated_at, probe_until
+            ) VALUES ('resend', 5, '2099-01-01T00:00:00+00:00', ?, NULL,
+                      'provider_unavailable', ?, NULL)""",
+            (now, now),
+        )
+
+    admin_id = harness.store.provision_administrator(
+        "notification-admin@example.test", "a strong notification admin password"
+    )
+    uri = harness.store.start_administrator_mfa_enrollment(admin_id)
+    totp = pyotp.TOTP(pyotp.parse_uri(uri).secret)
+    harness.store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
+    login = harness.post("/admin/auth/login", {
+        "email": "notification-admin@example.test",
+        "password": "a strong notification admin password",
+        "totp_code": totp.at(int(time.time()) + 30),
+    })
+    assert login.status_code == 200
+
+    response = harness.client.get("/admin/notifications")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["provider"] == "resend"
+    assert payload["queue"]["total"] == 2
+    assert payload["queue"]["states"] == {"leased": 1, "pending": 1}
+    assert payload["queue"]["expired_leases"] == 1
+    assert payload["provider_circuit"]["state"] == "open"
+    assert payload["provider_circuit"]["consecutive_failures"] == 5
+    assert payload["deliveries_last_30_days"] == [{
+        "status": "failed",
+        "purpose": "verification",
+        "count": 1,
+        "latest_attempted": now,
+    }]
+    assert payload["controls_available"] is False
+    assert "private-notification-user@example.test" not in response.text
+    assert "encrypted-secret-payload" not in response.text
+    assert "lease-hash-never-return" not in response.text
+    assert "idempotency-pending" not in response.text
+    assert "provider_message_id" not in response.text
