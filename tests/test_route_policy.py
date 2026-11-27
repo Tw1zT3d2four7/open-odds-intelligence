@@ -90,7 +90,7 @@ def test_site_entry_and_health_are_the_only_public_minimal_routes():
         key for key, access_class in ROUTE_ACCESS_POLICY.items()
         if access_class == "public_minimal"
     ]
-    assert public == [("GET", "/"), ("GET", "/api/health")]
+    assert set(public) == {("GET", "/"), ("GET", "/api/health"), ("GET", "/favicon.svg"), ("GET", "/logo.svg"), ("GET", "/brand")}
     assert classify_route("POST", "/webhooks/stripe") == "stripe_signature"
 
 
