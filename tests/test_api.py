@@ -3,6 +3,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+@pytest.fixture(autouse=True)
+def isolate_api_route_authorization(monkeypatch):
+    # Keep local .env credentials from leaking into endpoint tests.
+    # Dedicated Basic Auth tests set their own credentials explicitly.
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
+    monkeypatch.setattr(main, "_odds_refresh_interval_seconds", lambda: 0)
 
 
 def _api_independent_models(sport_key, home="Home", away="Away"):
