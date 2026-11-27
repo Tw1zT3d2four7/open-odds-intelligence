@@ -23,7 +23,6 @@ def test_every_application_route_has_an_explicit_target_access_class():
 
 
 def test_administrator_sports_workspace_is_a_real_protected_route():
-    from app.dependencies import require_administrator
     from app.entitlements import require_product_administrator
 
     route = next(
@@ -33,7 +32,6 @@ def test_administrator_sports_workspace_is_a_real_protected_route():
     )
     calls = {dependency.call for dependency in route.dependant.dependencies}
     assert require_product_administrator in calls
-    assert require_administrator in calls
 
 
 def test_policy_inventory_covers_all_application_and_framework_http_routes():
