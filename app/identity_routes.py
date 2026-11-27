@@ -1270,6 +1270,27 @@ def administrator_overview(
 
 
 @router.get(
+    "/admin/workspace/status",
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_workspace_status(
+    response: Response,
+    _session: dict = Depends(require_administrator),
+    odds_service=Depends(get_odds_service),
+):
+    """Return full non-secret odds-service diagnostics to the MFA-protected sports workspace."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    status = odds_service.status()
+    if not isinstance(status, dict):
+        raise HTTPException(
+            status_code=503,
+            detail="Sports workspace diagnostics are temporarily unavailable.",
+        )
+    return status
+
+
+@router.get(
     "/admin/subscribers",
     dependencies=[Depends(require_administrator)],
 )
