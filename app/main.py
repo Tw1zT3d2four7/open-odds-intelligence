@@ -454,19 +454,48 @@ def _page_results(items, limit, offset):
             "limit": size, "offset": start}
 
 
+def _current_market_events(request: Request, sport: str | None = None):
+    """Fail closed for live market views unless provider-backed snapshots are current."""
+    status = service.status()
+    if not status.get("configured"):
+        return [], "No configured odds provider. Live market analysis is disabled until a provider key is loaded."
+    freshness = status.get("sport_freshness", [])
+    current_sports = {
+        item.get("sport") for item in freshness
+        if isinstance(item, dict) and item.get("freshness") == "current"
+    }
+    events = service.events(sport, include_premium=_include_premium_data(request))
+    eligible = [
+        event for event in events
+        if isinstance(event, dict)
+        and (event.get("sport_key") or event.get("sport")) in current_sports
+    ]
+    if sport and sport not in current_sports:
+        return [], f"{sport} odds are not current. Refresh the league before viewing live market analysis."
+    if not eligible:
+        return [], "No current provider-backed odds snapshots are available."
+    return eligible, None
+
+
 @app.get("/api/market-board", dependencies=dependencies_for_route("GET", "/api/market-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def market_board_api(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    page = _page_results(market_board(service.events(sport, include_premium=_include_premium_data(request))), limit, offset)
+    events, unavailable_reason = _current_market_events(request, sport)
+    page = _page_results(market_board(events), limit, offset)
     return {"quotes": page["items"], "total": page["total"],
-            "limit": page["limit"], "offset": page["offset"]}
+            "limit": page["limit"], "offset": page["offset"],
+            "data_status": "unavailable" if unavailable_reason else "current",
+            "status_message": unavailable_reason}
 
 
 @app.get("/api/bookmaker-board", dependencies=dependencies_for_route("GET", "/api/bookmaker-board", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def bookmaker_board_api(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
     """Return every valid quote, paginated as 25 rendered sportsbook rows."""
-    page = _page_results(market_board(service.events(sport, include_premium=_include_premium_data(request)), best_only=False), limit, offset)
+    events, unavailable_reason = _current_market_events(request, sport)
+    page = _page_results(market_board(events, best_only=False), limit, offset)
     return {"quotes": page["items"], "total": page["total"],
-            "limit": page["limit"], "offset": page["offset"]}
+            "limit": page["limit"], "offset": page["offset"],
+            "data_status": "unavailable" if unavailable_reason else "current",
+            "status_message": unavailable_reason}
 
 
 @app.get("/api/simulation/leagues", dependencies=dependencies_for_route("GET", "/api/simulation/leagues", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
@@ -664,19 +693,25 @@ def opportunities(request: Request, sport: str | None = None,
                   min_ev: float = Query(1.0, ge=-100, le=100),
                   min_consensus_books: int = Query(2, ge=1, le=20),
                   limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport, include_premium=_include_premium_data(request)), min_ev, min_consensus_books)
+    events, unavailable_reason = _current_market_events(request, sport)
+    result = analyze_markets(events, min_ev, min_consensus_books)
     page = _page_results(result["opportunities"], limit, offset)
     return {"opportunities": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
+            "data_status": "unavailable" if unavailable_reason else "current",
+            "status_message": unavailable_reason,
             "note": "Estimated EV uses median no-vig probabilities from other sportsbooks at the same market line; it is not guaranteed."}
 
 
 @app.get("/api/arbitrage", dependencies=dependencies_for_route("GET", "/api/arbitrage", entitlement_dependency=require_product_entitlement, subscriber_dependency=require_product_subscriber, administrator_dependency=require_product_administrator, csrf_dependency=require_product_csrf))
 def arbitrage(request: Request, sport: str | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
-    result = analyze_markets(service.events(sport, include_premium=_include_premium_data(request)), min_ev=101, arbitrage_only=True)
+    events, unavailable_reason = _current_market_events(request, sport)
+    result = analyze_markets(events, min_ev=101, arbitrage_only=True)
     page = _page_results(result["arbitrage"], limit, offset)
     return {"arbitrage": page["items"], "total": page["total"],
             "limit": page["limit"], "offset": page["offset"],
+            "data_status": "unavailable" if unavailable_reason else "current",
+            "status_message": unavailable_reason,
             "note": "Two-outcome mathematical price discrepancies only. Confirm both prices, limits, rules and availability before acting."}
 
 
