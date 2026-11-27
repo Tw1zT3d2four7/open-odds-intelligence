@@ -52,7 +52,6 @@ jobs:
         run: |
           grep -Fxq '.env' .dockerignore
           grep -Fxq 'data/' .dockerignore
-          grep -Fxq 'staging-data/' .dockerignore
           grep -Fxq '*.sqlite3' .dockerignore
           rm .env
       - name: Validate simulator CLIs
