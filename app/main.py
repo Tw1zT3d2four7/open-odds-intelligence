@@ -206,6 +206,12 @@ app = FastAPI(title=config.APP_NAME, version="0.4.0",
               description="Self-hosted open-source odds comparison and market intelligence.",
               lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
+FAVICON = Path(__file__).resolve().parent.parent / "web" / "favicon.svg"
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon():
+    return Response(content=FAVICON.read_text(encoding="utf-8"), media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.middleware("http")
