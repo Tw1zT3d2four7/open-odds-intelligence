@@ -69,6 +69,7 @@ def test_subscriber_workspace_status_exposes_metrics_without_operational_diagnos
 
     monkeypatch.setattr(main.service, "status", lambda: {
         "configured": True, "sports": ["basketball_nba"],
+        "stored_events": 1, "stored_bookmakers": 2,
         "sport_freshness": [{
             "sport": "basketball_nba", "event_count": 12,
             "last_updated": "2026-11-27T12:00:00Z", "age_seconds": 30,
