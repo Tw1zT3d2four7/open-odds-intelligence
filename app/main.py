@@ -353,6 +353,22 @@ def dashboard_entry(request: Request):
 
 
 @app.get(
+    "/workspace",
+    response_class=HTMLResponse,
+    dependencies=dependencies_for_route(
+        "GET", "/workspace",
+        entitlement_dependency=require_product_entitlement,
+        subscriber_dependency=require_product_subscriber,
+        administrator_dependency=require_product_administrator,
+        csrf_dependency=require_product_csrf,
+    ),
+)
+def subscriber_sports_workspace():
+    """Serve the full sportsbook workspace to entitled subscribers and administrators."""
+    return WEB.read_text(encoding="utf-8")
+
+
+@app.get(
     "/admin/workspace",
     response_class=HTMLResponse,
     dependencies=dependencies_for_route(
