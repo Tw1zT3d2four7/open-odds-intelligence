@@ -6,16 +6,18 @@ This phase validates data quality, market calculations, alert delivery and opera
 
 ## Current test scope
 
-- Live odds from the one active provider selected in `.env` (The Odds API or TheRundown), limited to the configured sports, regions and supported markets.
+- Live odds from one or more configured providers (The Odds API, TheRundown, Oddize, and OddsLink), limited to configured sports, regions, supported markets, account quotas, and provider licensing.
 - Moneyline, spreads and totals where complete market quotes are supplied.
 - Best available prices, leave-one-book-out no-vig EV estimates and two-outcome cross-book arbitrage calculations.
 - SQLite quote history and basic price/line movement.
 - Optional OddsLink posted-limit snapshots, limit-change history and Discord increase alerts.
 - First-qualified-quote CLV tracking against a pregame consensus close.
 - Discord alerts for qualifying EV and arbitrage candidates.
-- Manual provider refresh, independent provider polling, and Discord alert evaluation against locally stored quotes.
+- Manual provider refresh, independent multi-provider polling, source-attributed quote merging, account-group quota protection, and Discord alert evaluation against locally stored quotes.
+- Subscriber/admin identity routes in opt-in `AUTH_MODE=identity`: registration, verification, recovery, session separation, MFA, CSRF, rate limits, route policy, entitlements, subscriber lifecycle, and audit behavior.
+- Encrypted transactional email queue/worker, identity backup/restore tooling, billing persistence, and guarded Stripe test-mode routes.
 
-Full historical strategy backtesting, injury/news context, subscriber billing and simultaneous multi-provider comparison are not yet part of this test scope. Optional HTTP Basic authentication is now included and must be validated before any remote deployment. Only one odds provider is active at a time. Player props are an optional, provider-quota-sensitive extension.
+Full historical strategy backtesting and injury/news context are not yet complete. Subscriber authentication, billing persistence, and test-mode billing paths are included in automated CI, but public subscriber launch and live billing remain disabled pending staging acceptance and explicit policy approval. The default runtime remains `legacy_basic`; identity mode is an opt-in staged test mode. Player props remain an optional, provider-quota-sensitive extension.
 
 ## Calculator validation
 
