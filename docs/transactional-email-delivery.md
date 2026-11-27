@@ -3,7 +3,7 @@
 **Initial provider:** Resend  
 **Implementation:** `app/email_delivery.py`  
 **Scope:** Verification and password-recovery messages  
-**Status:** Resend adapter, encrypted durable queue, leased worker, bounded idempotent retry, and isolated-route enqueueing implemented; identity mode now enforces product sessions and default-deny entitlements; production remains on legacy_basic.
+**Status:** Resend adapter, encrypted durable queue, leased worker, bounded idempotent retry, and identity-route enqueueing are implemented in the current `main`/`development` baseline. Identity mode enforces product sessions and default-deny entitlements; `legacy_basic` remains the default runtime mode. Reviewed 2026-11-27.
 
 ## Provider decision
 

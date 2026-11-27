@@ -1,10 +1,12 @@
 # Admin Console, Subscribers & Commercial Platform Roadmap
 
-**Status:** Feature implementation and isolated staging preparation in progress  
-**Working branch:** `feature/admin-panel-and-subscriptions`  
-**Base branch:** `development`  
-**Production branch:** `main`  
-**Document purpose:** Preserve the agreed product direction, requirements, safeguards, and implementation sequence before feature development begins.
+**Status:** Core subscriber/admin platform implementation merged into `main` and synchronized to `development` on 2026-11-27. Identity mode remains staged and default-off; no production authentication cutover or public commercial launch is authorized.  
+**Current baseline:** `main` and `development`.  
+**Previous implementation branch:** `feature/admin-panel-and-subscriptions` (promoted into the baseline and retained for traceability).  
+**Production branch:** `main`.  
+**Document purpose:** Preserve the agreed product direction, requirements, safeguards, and implementation sequence.
+
+> **Current-state note:** Historical implementation notes below are chronological snapshots. Old branch names, CI run IDs, and statements that work was not yet merged describe the state when those notes were written. Use this status and the latest dated implementation update for the current state.
 
 > This roadmap is a planning document, not authorization to implement every item immediately. Work proceeds milestone by milestone, with design review, tests, and explicit approval before risky changes or promotion.
 
@@ -358,3 +360,10 @@ The product is explicitly freemium:
 
 **Implementation status (feature branch):** Provider-tier enforcement is implemented across provider ingestion, account-group-aware merges, quote snapshots/history, subscriber event caches, market analysis, CLV, market limits, movement timelines, and TheRundown score synchronization. Free and premium account groups are independently polled and stored; same-tier groups remain distinct for refresh, CLV, and movement, while subscriber-facing quote views deduplicate the same sportsbook selection. Market calculations do not combine incomplete outcomes from different account groups. Free subscribers receive free-only data; paid subscribers receive free plus premium data. Unknown groups and rows without provider/account-group provenance fail closed. Legacy quote and CLV rows with missing account provenance are migrated to restricted; legacy market-limit rows with keyset fingerprints are also restricted. Premium polling remains disabled by default. Provider quota telemetry is shown in the private Admin Overview, secret-like usage values are scrubbed from new and legacy persisted state, and configurable per-account quota reserve floors pause whole groups before reported quota exhaustion. Global Discord alerts remain free-dataset-only in identity mode. CI run 45760810581 at commit 0d89337bf3d45be5360ffe7f99cd0e08a10544da passed 1,025 tests with one non-blocking warning. Remaining work in this area is provider-specific monetary cost modeling and isolated HTTPS staging acceptance; per-subscriber notification routing and end-to-end staging lifecycle acceptance remain separate roadmap gates. No provider purchases, premium polling activation, production deployment, merge, or live billing have been authorized.
 
+
+
+## Current baseline — 2026-11-27
+
+The subscriber and administrator platform has been promoted into `main` and synchronized into `development`. The baseline includes the staged identity router, subscriber registration and verification, password recovery, separate subscriber/administrator sessions, administrator TOTP MFA, CSRF enforcement, route-level feature entitlements, the Admin Console subscriber/session/audit workflows, complimentary access, encrypted transactional email, billing persistence, and guarded Stripe test-mode Checkout/Customer Portal endpoints.
+
+`AUTH_MODE` still defaults to `legacy_basic`; merging the code does not switch the running deployment to identity mode. Stripe checkout/portal activation remains guarded and default-off. Public subscriber launch remains blocked on isolated staging acceptance, reverse-proxy/TLS verification, backup/restore and key-recovery drills, provider licensing/data-isolation acceptance, approved subscription lifecycle policy, and remaining notification/operations gates. The standard `docker-compose.yml` consumes `local-release`; the image workflow now publishes that tag from `main` so it represents the merged baseline.

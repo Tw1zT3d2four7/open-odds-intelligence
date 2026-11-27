@@ -1,7 +1,6 @@
 # Legacy Basic Auth Transition and Rollback Plan
 
-**Status:** Implemented as an explicit staged mode boundary; production remains on the unchanged legacy_basic behavior.  
-**Working branch:** `feature/admin-panel-and-subscriptions`
+**Status:** Explicit staged mode boundary and identity implementation are part of the current `main`/`development` baseline. Production remains on the default `legacy_basic` behavior. Reviewed 2026-11-27.
 
 ## Goals
 
@@ -18,12 +17,12 @@ This behavior is part of the current deployment contract and must remain unchang
 
 ## Required rollout modes
 
-The application now uses an explicit, validated `AUTH_MODE` setting rather than silently inferring a migration state from whether credentials happen to be present. The default is `legacy_basic`. The recognized `identity` value currently fails closed with HTTP 503 for every non-health route; it is a migration guard, not an activated identity implementation. This prevents an early configuration change from opening routes before authorization is wired.
+The application uses an explicit, validated `AUTH_MODE` setting rather than inferring migration state from credential presence. The default is `legacy_basic`. The `identity` mode exposes the implemented subscriber/admin router and activates session, CSRF, administrator MFA, route-policy, and feature-entitlement enforcement. It is an explicit staged opt-in, not the production default. Do not enable it publicly until the non-production acceptance and rollback gates below are complete.
 
 | Mode | Intended behavior | Availability |
 |---|---|---|
 | `legacy_basic` | Preserve the exact existing Basic Auth behavior, including its current fail-closed handling of partial configuration. Identity routes are not activated. | Initial/default compatibility mode |
-| `identity` | Staged identity mode exposes only the CSRF bootstrap and subscriber/admin authentication endpoints. Product/dashboard/API routes return HTTP 503; the public health endpoint is reduced to minimal liveness. Full subscriber/admin product access is not enabled. | Authentication-only staging is implemented; production cutover still requires every gate below |
+| `identity` | Exposes subscriber/admin authentication and account workflows; product routes use explicit server-side dependencies and subscriber feature entitlements. Administrator-only operations require an MFA-backed session; cookie-authenticated mutations require CSRF. The health endpoint is minimal. | Implemented and CI-verified; still an opt-in staging mode, not the production default |
 
 No implicit `open`, `hybrid`, or Basic-Auth-bypass mode should be introduced. In particular, a partially configured Basic Auth setup must never cause the app to become public.
 
@@ -77,4 +76,4 @@ The mode switch must be an explicit operator action. It must not be triggered by
 
 ## Current implementation boundary
 
-The subscriber/administrator router in `app/identity_routes.py` is registered with FastAPI, but middleware controls its exposure. In `legacy_basic`, the new identity paths return 404 and the existing Basic Auth behavior is unchanged. In staged `identity` mode, the eighteen classified identity routes are exposed; all 21 product application routes have explicit dependencies. Subscriber routes require an active subscriber session and matching server-side feature entitlement; manual refresh routes require an MFA-backed administrator session; state-changing cookie requests require CSRF. Missing sessions return 401 and missing entitlements return 403. The public health response contains only minimal liveness fields. The identity router implements account entry pages, registration, email verification/resend, password recovery, subscriber login/logout, administrator password-plus-MFA login/logout, and protected subscriber-entitlement management. Its route inventory is documented in `docs/identity-http-routes.md`. Identity mode remains staged until the non-production flow, proxy topology, queue recovery, backup/restore, key rotation, and rollback gates pass.
+The subscriber/administrator router in `app/identity_routes.py` is registered with FastAPI, but `AUTH_MODE` controls its exposure. In `legacy_basic`, identity paths remain hidden and the existing Basic Auth behavior is unchanged. In staged `identity` mode, subscriber registration, email verification/resend, password recovery, subscriber login/logout, administrator password-plus-MFA login/logout, account/session workflows, and protected Admin Console operations are available. Product routes have explicit dependencies: subscriber routes require an active subscriber session and matching server-side feature entitlement; administrator-only operations require an MFA-backed administrator session; state-changing cookie requests require CSRF. Missing sessions return 401 and missing entitlements return 403. The public health response contains only minimal liveness fields. The route inventory is documented in `docs/identity-http-routes.md`. Identity mode remains staged until the non-production flow, proxy topology, queue recovery, backup/restore, key rotation, and rollback gates pass.

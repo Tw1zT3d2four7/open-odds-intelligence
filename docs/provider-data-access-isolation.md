@@ -1,7 +1,6 @@
 # Free and Premium Provider Data Isolation
 
-**Status:** Approved product architecture; implementation required before external subscriber testing.  
-**Working branch:** `feature/admin-panel-and-subscriptions`
+**Status:** Approved architecture with core source provenance, provider-account scoping, and subscriber query enforcement implemented in the current `main`/`development` baseline. Remaining cross-surface acceptance and staging gates are required before external subscriber testing. Reviewed 2026-11-27.
 
 ## Product rule
 
@@ -114,7 +113,7 @@ Before external subscriber testing, add automated coverage proving:
 
 - This design does not authorize purchasing provider subscriptions, entering premium credentials, changing provider contracts, enabling premium polling, enabling live Stripe billing, deploying production, or merging branches.
 - Do not promise a specific league, book, market, prop, refresh interval, or historical depth until verified against the actual provider plan and observed response.
-- Keep all implementation on `feature/admin-panel-and-subscriptions`. No changes to `main` or production without explicit approval.
+- Continue implementation and maintenance from the promoted `main`/`development` baseline. Code promotion does not authorize production provider changes, premium polling, or commercial activation.
 
 
 ## Implementation update — 2026-11-26
@@ -192,3 +191,8 @@ Run this checklist only in the dedicated non-production staging environment desc
 9. Export the staging database and configuration backup, perform the documented restore/rollback drill, then disable provider polling and stop staging workers.
 
 Acceptance requires captured evidence for each check, no leaked credentials, no cross-tier data, and explicit operator sign-off. Passing automated CI is not a substitute for this live staging exercise.
+
+
+## Current baseline status — 2026-11-27
+
+The baseline now includes source-provider and account-group provenance for quotes and posted market limits, free/premium/restricted classification, free-versus-paid subscriber scoping for market-limit current/history/change queries, restricted handling for legacy rows without trustworthy provenance, premium-specific CLV tracking, provider quota telemetry, and tests for source-scoped results and diagnostic redaction. This does not mean every derived-data, cache, notification, export, and historical-data path has passed external acceptance. Keep the remaining acceptance tests above as launch gates; unknown provenance must continue to fail closed.
