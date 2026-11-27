@@ -225,6 +225,15 @@ async function load(){
    request("clv","/api/clv"+pageQuery(),{entries:[],total:0,summary:{},method:"CLV endpoint unavailable in this server version."}),
    request("props","/api/player-props"+pageQuery(),{quotes:[],status:{enabled:false,reason:"Player props endpoint unavailable in this server version."}})
   ]);
+  // Never render cached/stored market calculations as live opportunities when
+  // the provider configuration is empty. The API is fail-closed too; this is a
+  // second presentation-layer guard against stale browser/API responses.
+  if(health.configured!==true){
+   ev.opportunities=[];ev.total=0;
+   arb.arbitrage=[];arb.total=0;
+   board.quotes=[];board.total=0;
+   allBooks.quotes=[];allBooks.total=0;
+  }
   renderProviderStatus(health);
   const freshness=health.sport_freshness||[];const selectedFreshness=state.sport?freshness.find(item=>item.sport===state.sport):null;const events=selectedFreshness?Number(selectedFreshness.event_count||0):freshness.reduce((total,item)=>total+Number(item.event_count||0),0);const pageData={ev,arb,board,allbooks:allBooks,movement,clv,props:playerProps}[activeTab]||{};const pagedTabs=["ev","arb","board","allbooks","movement","clv","props"];if(pagedTabs.includes(activeTab)){const resultTotal=Number(pageData.total??0),pages=Math.max(1,Math.ceil(resultTotal/state.pageSize));if(state.page>=pages){state.page=pages-1;return load()}$("pageLabel").textContent="Page "+(state.page+1)+" of "+pages+" · "+resultTotal+" results";$("pagePrev").disabled=state.page===0;$("pageNext").disabled=state.page+1>=pages}if(activeTab==="limits"){const cp=Math.max(1,Math.ceil(Number(limitChanges.total||0)/state.pageSize)),lp=Math.max(1,Math.ceil(Number(limits.total||0)/state.pageSize));if(state.limitChangesPage>=cp){state.limitChangesPage=cp-1;return load()}if(state.limitsPage>=lp){state.limitsPage=lp-1;return load()}$("limitChangesPageLabel").textContent="Page "+(state.limitChangesPage+1)+" of "+cp+" · "+Number(limitChanges.total||0)+" changes";$("limitChangesPrev").disabled=state.limitChangesPage===0;$("limitChangesNext").disabled=state.limitChangesPage+1>=cp;$("limitsPageLabel").textContent="Page "+(state.limitsPage+1)+" of "+lp+" · "+Number(limits.total||0)+" posted limits";$("limitsPrev").disabled=state.limitsPage===0;$("limitsNext").disabled=state.limitsPage+1>=lp}
   const books=new Set();
