@@ -1,9 +1,8 @@
 # Identity & Access Architecture
 
-**Status:** Staged implementation baseline; identity endpoints and product-route authorization are implemented on the feature branch.  
-**Working branch:** `feature/admin-panel-and-subscriptions`  
+**Status:** Staged implementation baseline; identity endpoints and product-route authorization are implemented in the current `main`/`development` baseline. Reviewed 2026-11-27.  
 **Scope:** Authentication, account storage, sessions, authorization, and route protection  
-**Production impact:** None. Production remains on the unchanged `legacy_basic` mode; no deployment or mode switch has occurred.
+**Production impact:** Code promotion does not change runtime configuration. `legacy_basic` remains the default; no identity-mode production cutover or public subscriber launch is authorized.
 
 ## 1. Existing application constraints
 
