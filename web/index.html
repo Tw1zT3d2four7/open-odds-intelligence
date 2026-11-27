@@ -169,6 +169,8 @@ const cell=(tr,value,cls="")=>{const td=document.createElement("td");td.textCont
 const row=(body,values)=>{const tr=document.createElement("tr");values.forEach(v=>Array.isArray(v)?cell(tr,v[0],v[1]):cell(tr,v));body.appendChild(tr)};
 const empty=(body,cols,msg)=>body.innerHTML='<tr><td class="empty" colspan="'+cols+'">'+msg+'</td></tr>';
 async function get(path){const r=await fetch(path);if(!r.ok)throw Error("API "+r.status+" for "+path);return r.json()}
+function csrfHeaders(){const match=document.cookie.match(/(?:^|;\\s*)__Host-ooi_csrf=([^;]+)/);return match?{"x-ooi-csrf-token":decodeURIComponent(match[1])}:{}}
+function post(path){return fetch(path,{method:"POST",headers:csrfHeaders()})}
 async function getSafe(path,fallback,failures){try{return await get(path)}catch(err){failures.push(err.message);return fallback}}
 function query(extra={}){const p=new URLSearchParams();if(state.sport)p.set("sport",state.sport);Object.entries(extra).forEach(([k,v])=>p.set(k,v));return p.toString()?"?"+p.toString():""}
 function pageQuery(extra={}){return query({limit:state.pageSize,offset:state.page*state.pageSize,...extra})}
@@ -320,7 +322,7 @@ async function showHistory(q){
  }catch(e){$("historyMeta").textContent="Could not load price history: "+e.message}
 }
 function sellist(sel,sports,current){sel.innerHTML="";const all=document.createElement("option");all.value="";all.textContent="All configured sports";sel.appendChild(all);sports.forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s;sel.appendChild(o)});sel.value=current}
-async function refresh(){const btn=$("refresh");btn.disabled=true;btn.textContent="Refreshing…";$("notice").textContent="Requesting a provider refresh…";try{const r=await fetch("/api/refresh"+query(),{method:"POST"}).then(x=>x.json());$("notice").textContent=r.ok?"Refresh complete: "+r.events+" events · Discord "+(r.alerts_enabled?"enabled":"disabled")+" · "+r.alerts_evaluated+" evaluated · "+r.alerts_qualified+" qualified · "+r.alerts_sent+" sent"+(r.alert_error?" · ALERT ERROR: "+r.alert_error:""):"Refresh failed: "+(r.error||"unknown error");}catch(e){$("notice").textContent="Refresh request failed: "+e.message}finally{btn.disabled=false;btn.textContent="Refresh odds";await load()}}
+async function refresh(){const btn=$("refresh");btn.disabled=true;btn.textContent="Refreshing…";$("notice").textContent="Requesting a provider refresh…";try{const r=await post("/api/refresh"+query()).then(x=>x.json());$("notice").textContent=r.ok?"Refresh complete: "+r.events+" events · Discord "+(r.alerts_enabled?"enabled":"disabled")+" · "+r.alerts_evaluated+" evaluated · "+r.alerts_qualified+" qualified · "+r.alerts_sent+" sent"+(r.alert_error?" · ALERT ERROR: "+r.alert_error:""):"Refresh failed: "+(r.error||r.detail||"unknown error");}catch(e){$("notice").textContent="Refresh request failed: "+e.message}finally{btn.disabled=false;btn.textContent="Refresh odds";await load()}}
 $("sport").addEventListener("change",e=>{state.sport=e.target.value;state.page=0;state.limitChangesPage=0;state.limitsPage=0;load()});
 $("pagePrev").addEventListener("click",()=>{if(state.page>0){state.page--;load()}});
 $("pageNext").addEventListener("click",()=>{state.page++;load()});
@@ -330,7 +332,7 @@ $("pageNext").addEventListener("click",()=>{state.page++;load()});
  $("limitsNext").addEventListener("click",()=>{state.limitsPage++;load()});
 $("refresh").addEventListener("click",refresh);$("reload").addEventListener("click",load);
 $("limitsDirection").addEventListener("change",()=>{state.limitChangesPage=0;load()});$("refreshClv").addEventListener("click",load);$("closeLimitHistory").addEventListener("click",()=>$("limitHistoryPanel").classList.add("hidden"));
-$("refreshLimits").addEventListener("click",async()=>{const b=$("refreshLimits");b.disabled=true;b.textContent="Checking…";try{const r=await fetch("/api/limits/refresh",{method:"POST"}).then(x=>x.json());$("limitsStatus").textContent=(r.ok?"Limits refreshed":"Limits refresh failed") +" · "+r.observations+" posted-limit observations · "+(r.diagnostic?.events_returned||0)+" fixtures · "+(r.diagnostic?.posted_limit_outcomes||0)+" posted-limit outcomes"+(r.error?" · "+r.error:"");}catch(e){$("limitsStatus").textContent="Limits refresh failed: "+e.message}finally{b.disabled=false;b.textContent="Refresh limits";await load()}});
+$("refreshLimits").addEventListener("click",async()=>{const b=$("refreshLimits");b.disabled=true;b.textContent="Checking…";try{const r=await post("/api/limits/refresh").then(x=>x.json());$("limitsStatus").textContent=(r.ok?"Limits refreshed":"Limits refresh failed") +" · "+r.observations+" posted-limit observations · "+(r.diagnostic?.events_returned||0)+" fixtures · "+(r.diagnostic?.posted_limit_outcomes||0)+" posted-limit outcomes"+(r.error?" · "+r.error:"");}catch(e){$("limitsStatus").textContent="Limits refresh failed: "+e.message}finally{b.disabled=false;b.textContent="Refresh limits";await load()}});
 $("apply").addEventListener("click",()=>{state.minEv=Math.max(-100,Math.min(100,Number($("minEv").value)||0));state.consensus=Number($("consensus").value)||2;state.page=0;load()});
 document.querySelectorAll('nav[aria-label="Market views"] .tab').forEach(b=>b.addEventListener("click",()=>{state.page=0;state.limitChangesPage=0;state.limitsPage=0;setTab(b.dataset.tab);load()}));
 
@@ -391,7 +393,7 @@ async function loadSimulationGames(refreshSelected=false){
  try{
   const url="/api/simulation/games?sport="+encodeURIComponent(sport);
   const data=refreshSelected
-   ?await (async()=>{const response=await fetch("/api/simulation/games/refresh?sport="+encodeURIComponent(sport),{method:"POST"});const payload=await response.json();if(!response.ok)throw Error(payload.detail||"Selected league refresh failed");return payload})()
+   ?await (async()=>{const response=await post("/api/simulation/games/refresh?sport="+encodeURIComponent(sport));const payload=await response.json();if(!response.ok)throw Error(payload.detail||"Selected league refresh failed");return payload})()
    :await get(url);
   simulationGames=data.games||[];
   game.innerHTML='<option value="">Select a game</option>';
@@ -442,7 +444,7 @@ async function runSelectedSimulation(){
  if(!sport||!eventId)return;
  btn.disabled=true;btn.textContent="Running 10,000…";$("simStatus").textContent="Running 10,000 trials for the selected game only…";
  try{
-  const r=await fetch("/api/simulation/run?sport="+encodeURIComponent(sport)+"&event_id="+encodeURIComponent(eventId),{method:"POST"});
+  const r=await post("/api/simulation/run?sport="+encodeURIComponent(sport)+"&event_id="+encodeURIComponent(eventId));
   const data=await r.json();if(!r.ok)throw Error(data.detail||"Simulation failed");
   $("simHomeWin").textContent=data.win_probabilities.home.toFixed(2)+"%";$("simAwayWin").textContent=data.win_probabilities.away.toFixed(2)+"%";
   $("simHomeTeam").textContent=data.home_team;$("simAwayTeam").textContent=data.away_team;
