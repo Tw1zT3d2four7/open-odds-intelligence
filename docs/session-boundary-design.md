@@ -1,7 +1,6 @@
 # HTTP Session and CSRF Boundary
 
-**Status:** Isolated helpers implemented; not wired into FastAPI routes or middleware.  
-**Branch:** `feature/admin-panel-and-subscriptions`
+**Status:** Session and CSRF helpers are integrated into the staged identity router and route dependencies in the current `main`/`development` baseline. Reviewed 2026-11-27.
 
 ## Session cookies
 
@@ -31,8 +30,8 @@ The reverse proxy must preserve the original Host header and must not allow untr
 
 ## Current scope and limitations
 
-- Helpers are unit-tested in isolation.
-- No endpoint, middleware, dashboard, Basic Auth behavior, or production deployment has been changed.
-- No login, registration, verification, reset, or admin routes are wired yet.
-- The helpers are not a complete authentication system by themselves.
-- Route dependencies, cookie issuance/revocation, rate limiting, login CSRF coverage, trusted-proxy behavior, and full route-level authorization still require integration tests before activation.
+- Subscriber and administrator session cookies are issued, resolved, revoked, and cleared through the staged identity routes; the server stores only token digests.
+- Same-origin CSRF checks are enforced on cookie-authenticated state-changing routes in identity mode.
+- Subscriber and administrator sessions remain non-interchangeable; administrator access requires MFA.
+- The default `legacy_basic` mode preserves the existing Basic Auth contract and does not activate the identity router.
+- Identity mode is CI-tested but remains opt-in. Reverse-proxy/TLS topology, non-production end-to-end acceptance, backup/restore, key recovery, and rollback must be completed before public production activation.
