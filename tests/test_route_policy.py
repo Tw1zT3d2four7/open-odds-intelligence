@@ -17,7 +17,7 @@ def _application_routes():
 
 def test_every_application_route_has_an_explicit_target_access_class():
     routes = _application_routes()
-    assert len(routes) == 68
+    assert len(routes) == 69
     assert unclassified_routes(routes) == []
     assert stale_policy_entries(routes) == []
 
@@ -42,7 +42,7 @@ def test_policy_inventory_covers_all_application_and_framework_http_routes():
         for method in (route.methods or set())
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert len(actual) == 68
+    assert len(actual) == 69
     assert set(application_route_access_policy()) == actual
 
 
