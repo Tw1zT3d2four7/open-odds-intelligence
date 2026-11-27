@@ -1989,8 +1989,8 @@ def test_admin_mfa_recovery_rotates_seed_and_recovery_codes_atomically(tmp_path,
 
     assert saved_secret == new_secret
     assert row["enrolled_at"] is not None
-    assert {_token_digest(code) for code in new_recovery_codes} == hashes
-    assert not ({_token_digest(code) for code in old_recovery_codes} & hashes)
+    assert {hashlib.sha256(code.encode()).hexdigest() for code in new_recovery_codes} == hashes
+    assert not ({hashlib.sha256(code.encode()).hexdigest() for code in old_recovery_codes} & hashes)
     assert audit["event_type"] == "administrator.mfa_recovered"
     assert new_secret not in audit["metadata_json"]
     assert old_totp.secret != saved_secret
@@ -2012,6 +2012,10 @@ def test_admin_mfa_recovery_invalid_code_preserves_existing_enrollment(tmp_path,
     totp = pyotp.parse_uri(uri)
     store.confirm_administrator_mfa_enrollment(admin_id, totp.now())
     new_secret = pyotp.random_base32()
+    invalid_code = next(
+        f"{candidate:06d}" for candidate in range(10)
+        if not pyotp.TOTP(new_secret).verify(f"{candidate:06d}", valid_window=1)
+    )
 
     with store.connect() as db:
         before = dict(db.execute(
@@ -2025,7 +2029,7 @@ def test_admin_mfa_recovery_invalid_code_preserves_existing_enrollment(tmp_path,
 
     with pytest.raises(ValueError, match="invalid"):
         store.replace_administrator_mfa_after_password_verification(
-            admin_id, new_secret, "000000"
+            admin_id, new_secret, invalid_code
         )
 
     with store.connect() as db:
