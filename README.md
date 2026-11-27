@@ -102,7 +102,7 @@ docker compose pull
 docker compose up -d
 ```
 
-The default `docker-compose.yml` pulls `ghcr.io/tw1zt3d2four7/open-odds-intelligence:latest` from `main`. The `dev` branch publishes the separate `:dev` image for testing. Open http://localhost:8765. SQLite data persists in `./data/odds_history.sqlite3` through the Compose data volume. Do not use `docker compose down -v` for updates.
+The repository uses exactly one Compose file, `docker-compose.yml`, and one private runtime environment file, `.env`. The Compose file selects `ghcr.io/tw1zt3d2four7/open-odds-intelligence:latest` by default; the `:dev` image line is directly below it as a commented alternative. To switch channels, edit those two image lines and run the same `docker compose pull && docker compose up -d --force-recreate` command. Both images use the same `.env`, container name, ports and persistent `./data` volume; run only one image at a time against that data directory. `.env.example` is the single safe template for creating the private `.env`; never commit the real `.env`. There are no separate local or staging Compose files or environment templates. Open http://localhost:8765. Do not use `docker compose down -v` for updates.
 
 Local install:
 

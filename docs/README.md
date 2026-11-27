@@ -56,3 +56,7 @@ The codebase contains the subscriber/admin identity and billing implementation, 
 ## Container image channels
 
 The repository publishes exactly two rolling image tags: `ghcr.io/tw1zt3d2four7/open-odds-intelligence:latest` from `main`, and `ghcr.io/tw1zt3d2four7/open-odds-intelligence:dev` from `dev`. The standard `docker-compose.yml` uses `latest`. Feature branches do not publish images.
+
+## Single deployment configuration
+
+The repository intentionally has one deployment definition: root `docker-compose.yml`. It defaults to the `:latest` image, with the `:dev` image retained as a commented alternative in that same file. Both channels use the same container/service definition, private root `.env`, port mapping, and persistent `./data` volume; operate only one channel at a time. `.env.example` is the only committed environment template. Copy it once to the private `.env` on the host and keep real credentials out of Git. Do not add separate local/staging Compose files or `.env` variants.

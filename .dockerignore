@@ -4,7 +4,6 @@
 .env.*
 !.env.example
 data/
-staging-data/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
