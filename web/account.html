@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/favicon.svg">
+<title>Open Odds Intelligence · Your Account</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121d30;--line:#263750;--muted:#91a4bd;--text:#edf4ff;--accent:#57c7a5}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -15%,#1b3850 0,transparent 48%),var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{height:76px;padding:0 clamp(18px,5vw,64px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(145,164,189,.14)}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);font-weight:800;letter-spacing:.09em;font-size:13px}
+.mark{width:36px;height:36px;border:1px solid #3d827a;border-radius:50%;display:grid;place-items:center;background:#10283a;color:var(--accent)}
+.mark svg{width:22px;height:22px}.brand span span{display:block;color:var(--accent);font-size:10px;letter-spacing:.24em}
+.header-actions{display:flex;align-items:center;gap:18px}.header-note{font-size:12px;color:var(--muted)}
+button{border:1px solid #38536d;border-radius:8px;background:#17283e;color:var(--text);font:inherit;font-weight:700;padding:9px 14px;cursor:pointer}
+button:hover{border-color:var(--accent)}button:disabled{opacity:.55;cursor:wait}
+input{width:100%;border:1px solid #344761;border-radius:8px;background:#0c1727;color:var(--text);padding:11px 12px;font:inherit;outline:none}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px #57c7a51c}
+label{display:block;color:#c5d2e3;font-size:12px;font-weight:700}
+main{width:min(920px,100% - 36px);margin:58px auto}.eyebrow{color:var(--accent);font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;margin-bottom:12px}
+h1{font-size:clamp(30px,5vw,42px);line-height:1.1;letter-spacing:-.04em;margin:0 0 10px}.lede{color:var(--muted);margin:0 0 30px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:linear-gradient(155deg,rgba(22,36,58,.98),rgba(16,27,44,.98));border:1px solid var(--line);border-radius:15px;padding:24px;box-shadow:0 20px 70px #0004}
+.card h2{font-size:17px;margin:0 0 18px}.label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.12em;font-weight:800;margin:16px 0 4px}
+.value{font-size:15px;font-weight:650;overflow-wrap:anywhere}.status{display:inline-flex;align-items:center;gap:7px;border:1px solid #3d827a;border-radius:20px;padding:4px 10px;color:var(--accent);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.status:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.feature-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}.feature-list li{padding:10px 12px;border:1px solid #2b4059;border-radius:8px;background:#0c1727;color:#d9e5f4}
+.session-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}.session-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;border:1px solid #2b4059;border-radius:8px;background:#0c1727}.session-meta{min-width:0}.session-meta strong{display:block;font-size:13px}.session-meta small{display:block;color:var(--muted);font-size:11px;overflow-wrap:anywhere}.session-current{color:var(--accent);font-size:10px;font-weight:800;text-transform:uppercase}.session-row button{flex-shrink:0;padding:6px 9px;font-size:12px}
+.empty{color:var(--muted);font-size:13px}.notice{display:none;margin:0 0 18px;padding:11px 13px;border:1px solid #78494c;border-radius:8px;color:#ffb9b9;background:#401d2433}
+.notice.show{display:block}#billing-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}#billing-actions[hidden]{display:none}.card-footer{margin-top:18px;color:var(--muted);font-size:12px}.workspace-link{display:none;margin-top:20px}
+.workspace-link a{display:inline-flex;align-items:center;gap:10px;padding:14px 20px;border:1px solid #22d3c5;border-radius:10px;background:linear-gradient(135deg,#123c4a,#10283a);color:#b8fff5;text-decoration:none;font-weight:800;box-shadow:0 8px 24px #0003}.workspace-link a:hover{background:#17495a;transform:translateY(-1px)}
+footer{padding:28px 18px;text-align:center;color:#6f829b;font-size:11px}
+@media(max-width:680px){main{margin:38px auto}.grid{grid-template-columns:1fr}.header-note{display:none}.card{padding:20px}}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/account" aria-label="Open Odds Intelligence account">
+    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M12 3v9l6.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 16.5 9 13l2 1.5 6-6" stroke="#edf4ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span>OPEN ODDS<span>INTELLIGENCE</span></span>
+  </a>
+  <div class="header-actions"><span class="header-note">Subscriber account</span><button id="sign-out" type="button" disabled>Sign out</button></div>
+</header>
+<main>
+  <div class="eyebrow">Your account</div><h1>Account overview</h1>
+  <p class="lede">Review your secure account status and the features currently enabled for you.</p>
+  <div id="notice" class="notice" role="alert"></div>
+  <div class="grid">
+    <section class="card" aria-labelledby="account-heading">
+      <h2 id="account-heading">Account details</h2>
+      <div class="label">Email address</div><div class="value" id="email">Loading…</div>
+      <div class="label">Account status</div><div class="value"><span class="status" id="account-status">Checking</span></div>
+      <div class="label">Email verification</div><div class="value" id="verification">Checking</div>
+      <p class="card-footer">Your account is protected by a secure, server-managed session.</p>
+    </section>
+    <section class="card" aria-labelledby="features-heading">
+      <h2 id="features-heading">Enabled feature access</h2>
+      <ul class="feature-list" id="feature-list"><li class="empty">Loading feature access…</li></ul>
+      <div class="workspace-link" id="workspace-link"><a href="/workspace">Open Sportsbook Dashboard →</a></div>
+      <p class="card-footer">Feature access is managed separately from billing. No paid plan or subscription status is implied here.</p>
+    </section>
+    <section class="card" aria-labelledby="billing-heading">
+      <h2 id="billing-heading">Subscription &amp; billing</h2>
+      <div id="billing-subscriptions"><p class="empty">Loading subscription details…</p></div>
+      <div class="label">Invoices</div>
+      <ul class="feature-list" id="billing-invoices"><li class="empty">Loading invoices…</li></ul>
+      <div class="feature-list" id="billing-price-catalog" aria-label="Subscription prices"><p>Loading subscription prices…</p></div>
+      <div class="actions" id="billing-actions" hidden>
+        <button id="checkout-monthly" type="button">Subscribe monthly</button>
+        <button id="checkout-annual" type="button">Subscribe yearly</button>
+        <button id="billing-portal" type="button" hidden>Manage billing</button>
+      </div>
+      <p class="card-footer" id="billing-availability" role="status" aria-live="polite">Hosted billing is disabled until Stripe test-mode acceptance and access rules are complete.</p>
+      <p class="card-footer">Payments are processed by Stripe. This account page never collects or stores card details.</p>
+    </section>
+    <section class="card" aria-labelledby="password-heading">
+      <h2 id="password-heading">Change password</h2>
+      <form id="password-change-form">
+        <div class="label"><label for="current-password">Current password</label></div>
+        <input id="current-password" type="password" autocomplete="current-password" maxlength="1024" required>
+        <div class="label"><label for="new-password">New password</label></div>
+        <input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <div class="label"><label for="confirm-new-password">Confirm new password</label></div>
+        <input id="confirm-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <p class="card-footer">Use at least 12 characters. Changing your password signs out all active sessions.</p>
+        <button id="password-submit" type="submit">Update password</button>
+      </form>
+      <p id="password-message" class="card-footer" role="status" aria-live="polite"></p>
+    </section>
+    <section class="card" aria-labelledby="sessions-heading">
+      <h2 id="sessions-heading">Active sessions</h2>
+      <p class="card-footer">Review where your account is signed in. You can revoke any session you do not recognize.</p>
+      <ul class="session-list" id="session-list"><li class="empty">Loading active sessions…</li></ul>
+      <p id="session-count" class="card-footer" aria-live="polite"></p>
+      <button id="sessions-load-more" type="button" hidden>Load more sessions</button>
+      <button id="sign-out-everywhere" type="button">Sign out all devices</button>
+      <p id="session-message" class="card-footer" role="status" aria-live="polite"></p>
+    </section>
+  </div>
+</main>
+<footer>Open Odds Intelligence · Secure subscriber account</footer>
+<script>
+(() => {
+  "use strict";
+  const el = id => document.getElementById(id);
+  const notice = message => { el("notice").textContent = message; el("notice").classList.add("show"); };
+  const labels = {dashboard:"Market dashboard",market_limits:"Market limits",odds:"Odds data",market_board:"Market board",simulation:"Game simulation",player_props:"Player props",clv:"Closing-line value",market_movement:"Market movement",history:"Historical data",opportunities:"Odds opportunities",arbitrage:"Arbitrage"};
+  function csrfToken() {
+    const prefix = "__Host-ooi_csrf=";
+    const part = document.cookie.split("; ").find(item => item.startsWith(prefix));
+    return part ? decodeURIComponent(part.slice(prefix.length)) : "";
+  }
+  function money(amount, currency) {
+    if (!Number.isSafeInteger(amount) || typeof currency !== "string") return "Amount unavailable";
+    try { return new Intl.NumberFormat(undefined, {style:"currency",currency:currency.toUpperCase()}).format(amount / 100); }
+    catch (_) { return (amount / 100).toFixed(2) + " " + currency.toUpperCase(); }
+  }
+  function displayDate(value) {
+    if (!value) return "Not available";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleDateString();
+  }
+  async function loadBilling() {
+    const response = await fetch("/auth/billing", {credentials:"same-origin",cache:"no-store"});
+    if (response.status === 401) { window.location.replace("/login"); return; }
+    if (!response.ok) throw new Error("Billing information is temporarily unavailable.");
+    const data = await response.json();
+    const catalog = data.price_catalog || {};
+    const monthly = catalog.monthly;
+    const annual = catalog.annual;
+    const priceList = el("billing-price-catalog");
+    priceList.replaceChildren();
+    const formatPrice = cents => new Intl.NumberFormat("en-US", {
+      style:"currency", currency:String(catalog.currency || "usd").toUpperCase()
+    }).format(Number(cents || 0) / 100);
+    if (monthly && annual) {
+      const monthlyRow = document.createElement("p");
+      monthlyRow.textContent = "Monthly: " + formatPrice(monthly.amount_cents) + " per month, automatically recurring.";
+      const annualRow = document.createElement("p");
+      annualRow.textContent = "Yearly: " + formatPrice(annual.amount_cents) + " per year, automatically recurring.";
+      const savings = document.createElement("p");
+      savings.textContent = "Save " + formatPrice(Number(monthly.amount_cents) * 12 - Number(annual.amount_cents)) + " compared with 12 monthly payments.";
+      priceList.append(monthlyRow, annualRow, savings);
+      const disclosure = document.createElement("p");
+      disclosure.className = "card-footer";
+      disclosure.textContent = "Displayed subscription prices include an allowance for standard payment-processing and subscription-billing costs. The total price is shown before checkout; no separate processing surcharge will be added. Subscriptions renew automatically at the selected interval. Cancellation terms will be shown before purchase.";
+      priceList.appendChild(disclosure);
+    } else {
+      const unavailable = document.createElement("p");
+      unavailable.textContent = "Subscription prices are temporarily unavailable.";
+      priceList.appendChild(unavailable);
+    }
+    const subscriptions = el("billing-subscriptions");
+    subscriptions.replaceChildren();
+    if (!Array.isArray(data.subscriptions) || data.subscriptions.length === 0) {
+      const empty = document.createElement("p"); empty.className = "empty";
+      empty.textContent = "No subscription is currently linked to this account.";
+      subscriptions.appendChild(empty);
+    } else {
+      data.subscriptions.forEach(item => {
+        const panel = document.createElement("div"); panel.className = "feature-list";
+        const title = document.createElement("strong");
+        title.textContent = (item.plan_code || "Subscription") + " · " + (item.billing_interval === "year" ? "Annual" : item.billing_interval === "month" ? "Monthly" : "Billing interval pending");
+        const status = document.createElement("div"); status.className = "value";
+        status.textContent = "Status: " + String(item.status || "unknown").replaceAll("_", " ");
+        const period = document.createElement("div"); period.className = "card-footer";
+        period.textContent = "Current period: " + displayDate(item.current_period_start) + " – " + displayDate(item.current_period_end);
+        const cancellation = document.createElement("div"); cancellation.className = "card-footer";
+        cancellation.textContent = item.cancel_at_period_end ? "Cancellation scheduled at the end of this billing period." : "No end-of-period cancellation is scheduled.";
+        panel.append(title,status,period,cancellation); subscriptions.appendChild(panel);
+      });
+    }
+    const invoices = el("billing-invoices"); invoices.replaceChildren();
+    if (!Array.isArray(data.invoices) || data.invoices.length === 0) {
+      const empty = document.createElement("li"); empty.className = "empty";
+      empty.textContent = "No invoice history is available yet."; invoices.appendChild(empty);
+    } else {
+      data.invoices.forEach(item => {
+        const row = document.createElement("li");
+        const amount = item.amount_paid === null ? "Amount pending" : money(item.amount_paid, item.currency);
+        const failure = item.payment_failed_at ? " · Payment failed " + displayDate(item.payment_failed_at) : "";
+        row.textContent = amount + " · " + String(item.status || "unknown").replaceAll("_", " ") + failure + " · " + displayDate(item.updated_at);
+        invoices.appendChild(row);
+      });
+    }
+    el("billing-actions").hidden = !data.checkout_available && !data.customer_portal_available;
+    el("checkout-monthly").hidden = !data.checkout_available;
+    el("checkout-annual").hidden = !data.checkout_available;
+    el("billing-portal").hidden = !data.customer_portal_available;
+    el("billing-availability").textContent = data.checkout_pending
+      ? "A Checkout session is already pending for this account. Complete that session or wait for its 35-minute expiry before starting another."
+      : data.subscription_exists
+        ? "A subscription is already linked to this account. Use Manage Billing to review or change it."
+        : data.checkout_available
+          ? "Hosted checkout is available in the configured Stripe test environment. A completed payment does not itself grant paid feature access."
+          : "The approved monthly and yearly prices are shown above. Hosted purchases remain disabled until Stripe test-mode acceptance and the access rules are complete.";
+  }
+
+  async function startCheckout(interval) {
+    const button = el(interval === "year" ? "checkout-annual" : "checkout-monthly");
+    button.disabled = true;
+    el("billing-availability").textContent = "Opening secure Stripe Checkout…";
+    try {
+      const response = await fetch("/auth/billing/checkout", {
+        method:"POST", credentials:"same-origin", cache:"no-store",
+        headers:{"Content-Type":"application/json","X-Ooi-Csrf-Token":csrfToken(),"Idempotency-Key":crypto.randomUUID()},
+        body:JSON.stringify({interval})
+      });
+      const data = await response.json();
+      if (!response.ok || typeof data.url !== "string" || !data.url.startsWith("https://checkout.stripe.com/")) {
+        throw new Error(data.detail || "Checkout is temporarily unavailable.");
+      }
+      window.location.assign(data.url);
+    } catch (error) {
+      el("billing-availability").textContent = error.message || "Checkout is temporarily unavailable.";
+      button.disabled = false;
+    }
+  }
+
+  async function openBillingPortal() {
+    const button = el("billing-portal");
+    button.disabled = true;
+    el("billing-availability").textContent = "Opening secure Stripe billing…";
+    try {
+      const response = await fetch("/auth/billing/portal", {
+        method:"POST", credentials:"same-origin", cache:"no-store",
+        headers:{"X-Ooi-Csrf-Token":csrfToken()}
+      });
+      const data = await response.json();
+      if (!response.ok || typeof data.url !== "string" || !data.url.startsWith("https://billing.stripe.com/")) {
+        throw new Error(data.detail || "Billing management is temporarily unavailable.");
+      }
+      window.location.assign(data.url);
+    } catch (error) {
+      el("billing-availability").textContent = error.message || "Billing management is temporarily unavailable.";
+      button.disabled = false;
+    }
+  }
+  async function loadAccount() {
+    const response = await fetch("/auth/account", {credentials:"same-origin",cache:"no-store"});
+    if (response.status === 401) { window.location.replace("/login"); return false; }
+    if (!response.ok) throw new Error("Your account information is temporarily unavailable.");
+    const data = await response.json();
+    el("email").textContent = data.email;
+    el("account-status").textContent = data.account_status;
+    el("verification").textContent = data.email_verified ? "Verified" : "Not verified";
+    const list = el("feature-list"); list.replaceChildren();
+    if (!Array.isArray(data.feature_access) || data.feature_access.length === 0) {
+      const item = document.createElement("li"); item.className = "empty";
+      item.textContent = "No feature access has been assigned yet."; list.appendChild(item);
+    } else {
+      data.feature_access.forEach(key => {
+        const item = document.createElement("li"); item.textContent = labels[key] || key.replaceAll("_", " ");
+        list.appendChild(item);
+      });
+    }
+    if (Array.isArray(data.feature_access) && data.feature_access.includes("dashboard")) el("workspace-link").style.display = "block";
+    return true;
+  }
+  el("password-change-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = el("password-submit"), message = el("password-message");
+    button.disabled = true; message.textContent = "";
+    try {
+      if (el("new-password").value !== el("confirm-new-password").value) {
+        throw new Error("The new passwords do not match.");
+      }
+      const token = csrfToken();
+      if (!token) throw new Error("Secure form initialization failed. Reload the page.");
+      const response = await fetch("/auth/password/change", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json","X-Ooi-Csrf-Token":token},
+        body:JSON.stringify({
+          current_password:el("current-password").value,
+          new_password:el("new-password").value
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Password change could not be completed.");
+      message.textContent = data.message || "Password updated. Please sign in again.";
+      el("current-password").value = ""; el("new-password").value = ""; el("confirm-new-password").value = "";
+      window.location.replace("/login");
+    } catch (error) {
+      message.textContent = error.message || "Password change could not be completed.";
+      button.disabled = false;
+    }
+  });
+  function formatSessionDate(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
+  }
+  let loadedSessionCount = 0;
+  let totalSessionCount = 0;
+  async function loadSessions({append = false} = {}) {
+    const offset = append ? loadedSessionCount : 0;
+    const response = await fetch("/auth/sessions?limit=25&offset=" + offset, {credentials:"same-origin",cache:"no-store"});
+    if (response.status === 401) { window.location.replace("/login"); return; }
+    if (!response.ok) throw new Error("Active sessions are temporarily unavailable.");
+    const data = await response.json();
+    const list = el("session-list");
+    if (!append) { list.replaceChildren(); loadedSessionCount = 0; }
+    totalSessionCount = Number.isSafeInteger(data.total) ? data.total : 0;
+    if (!append && (!Array.isArray(data.sessions) || data.sessions.length === 0)) {
+      const item = document.createElement("li"); item.className = "empty";
+      item.textContent = "No active sessions were found."; list.appendChild(item);
+    }
+    (Array.isArray(data.sessions) ? data.sessions : []).forEach(item => {
+      const row = document.createElement("li"); row.className = "session-row";
+      const meta = document.createElement("div"); meta.className = "session-meta";
+      const title = document.createElement("strong");
+      title.textContent = item.is_current ? "This device" : "Signed-in session";
+      const detail = document.createElement("small");
+      detail.textContent = "Last active: " + formatSessionDate(item.last_seen_at) +
+        " · Expires: " + formatSessionDate(item.expires_at);
+      meta.append(title, detail);
+      if (item.is_current) {
+        const badge = document.createElement("span"); badge.className = "session-current";
+        badge.textContent = "Current"; meta.appendChild(badge);
+      }
+      const button = document.createElement("button"); button.type = "button";
+      button.textContent = "Revoke"; button.dataset.sessionId = item.session_id;
+      button.setAttribute("aria-label", item.is_current ? "Sign out this device" : "Revoke this session");
+      row.append(meta, button); list.appendChild(row);
+    });
+    loadedSessionCount += Array.isArray(data.sessions) ? data.sessions.length : 0;
+    el("session-count").textContent = totalSessionCount
+      ? "Showing " + loadedSessionCount + " of " + totalSessionCount + " active sessions."
+      : "No active sessions.";
+    const more = el("sessions-load-more");
+    more.hidden = loadedSessionCount >= totalSessionCount;
+    more.disabled = false;
+  }
+  el("sign-out-everywhere").addEventListener("click", async () => {
+    if (!window.confirm("Sign out every device, including this one? You will need to sign in again.")) return;
+    const button = el("sign-out-everywhere"); button.disabled = true;
+    try {
+      const token = csrfToken();
+      if (!token) throw new Error("Secure sign-out could not be initialized. Reload the page.");
+      const response = await fetch("/auth/sessions/revoke-all", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"X-Ooi-Csrf-Token":token}
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "All sessions could not be revoked.");
+      el("session-message").textContent = "Signed out of " + data.revoked_sessions + " active session(s).";
+      window.location.replace("/login");
+    } catch (error) {
+      el("session-message").textContent = error.message || "All sessions could not be revoked.";
+      button.disabled = false;
+    }
+  });
+  el("sessions-load-more").addEventListener("click", async () => {
+    const button = el("sessions-load-more"); button.disabled = true;
+    try { await loadSessions({append:true}); }
+    catch (error) {
+      el("session-message").textContent = error.message || "More sessions could not be loaded.";
+      button.disabled = false;
+    }
+  });
+  el("session-list").addEventListener("click", async event => {
+    const button = event.target.closest("button[data-session-id]");
+    if (!button) return;
+    if (!window.confirm("Revoke this session? If it is the current device, you will be signed out.")) return;
+    button.disabled = true;
+    try {
+      const token = csrfToken();
+      if (!token) throw new Error("Secure session initialization failed. Reload the page.");
+      const response = await fetch("/auth/sessions/" + encodeURIComponent(button.dataset.sessionId) + "/revoke", {
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"X-Ooi-Csrf-Token":token}
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Session could not be revoked.");
+      if (data.current_session) { window.location.replace("/login"); return; }
+      el("session-message").textContent = "Session revoked.";
+      await loadSessions();
+    } catch (error) {
+      el("session-message").textContent = error.message || "Session could not be revoked.";
+      button.disabled = false;
+    }
+  });
+  el("sign-out").addEventListener("click", async () => {
+    const button = el("sign-out"); button.disabled = true;
+    try {
+      const token = csrfToken();
+      if (!token) throw new Error("Secure sign-out could not be initialized. Reload the page.");
+      const response = await fetch("/auth/logout", {method:"POST",credentials:"same-origin",cache:"no-store",headers:{"X-Ooi-Csrf-Token":token}});
+      if (!response.ok) throw new Error("Sign-out could not be completed. Please try again.");
+      window.location.replace("/login");
+    } catch (error) { notice(error.message || "Sign-out could not be completed."); button.disabled = false; }
+  });
+  el("checkout-monthly").addEventListener("click", () => startCheckout("month"));
+  el("checkout-annual").addEventListener("click", () => startCheckout("year"));
+  el("billing-portal").addEventListener("click", openBillingPortal);
+  Promise.all([
+    fetch("/auth/csrf", {credentials:"same-origin",cache:"no-store"}).then(response => { if (!response.ok) throw new Error("Secure session initialization failed."); }),
+    loadAccount(),
+    loadSessions(),
+    loadBilling()
+  ]).then(results => { if (results[1]) el("sign-out").disabled = false; })
+    .catch(error => notice(error.message || "Your account could not be loaded."));
+})();
+</script>
+</body>
+</html>

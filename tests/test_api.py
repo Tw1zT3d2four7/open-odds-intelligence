@@ -3,6 +3,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+@pytest.fixture(autouse=True)
+def isolate_api_route_authorization(monkeypatch):
+    # Keep local .env credentials from leaking into endpoint tests.
+    # Dedicated Basic Auth tests set their own credentials explicitly.
+    monkeypatch.setattr(main.config, "AUTH_USERNAME", "")
+    monkeypatch.setattr(main.config, "AUTH_PASSWORD", "")
+    monkeypatch.setattr(main, "_odds_refresh_interval_seconds", lambda: 0)
 
 
 def _api_independent_models(sport_key, home="Home", away="Away"):
@@ -56,33 +63,67 @@ def test_manual_refresh_endpoint_passes_sport_and_returns_alert_diagnostics(monk
     assert response.json()["alerts_qualified"] == 3
 
 
-def test_health_endpoint_exposes_alert_delivery_diagnostics(monkeypatch):
-    monkeypatch.setattr(main.config, "ODDS_REFRESH_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(main.config, "DISCORD_WEBHOOK_URL", "")
+
+def test_subscriber_workspace_status_exposes_metrics_without_operational_diagnostics(monkeypatch):
+    from types import SimpleNamespace
+
     monkeypatch.setattr(main.service, "status", lambda: {
-        "alerts_enabled": True,
-        "alerts_sent": 5,
-        "last_alert_evaluated": 11,
-        "last_alert_qualified": 4,
-        "last_alert_sent": 3,
-        "last_alert_error": "temporary failure",
+        "configured": True, "sports": ["basketball_nba"],
+        "stored_events": 1, "stored_bookmakers": 2,
+        "sport_freshness": [{
+            "sport": "basketball_nba", "event_count": 12,
+            "last_updated": "2026-11-27T12:00:00Z", "age_seconds": 30,
+            "freshness": "current",
+        }],
+        "provider": "therundown", "providers": ["therundown"],
+        "provider_keys": {"therundown": {"keys": [{"key_id": "secret"}]}},
+        "provider_usage": {"requests_remaining": 999},
+        "provider_coverage": {"basketball_nba": {}},
+        "auto_refresh_schedule": {"therundown": 300},
+        "refresh_interval_seconds": 300,
+        "last_updated": "2026-11-27T12:00:00Z",
+        "last_error": "provider diagnostic",
+        "alerts_enabled": True, "alert_error": "discord diagnostic",
+        "simulation_results": {"last_error": "score sync diagnostic"},
     })
+    monkeypatch.setattr(main.service, "events", lambda **kwargs: [{
+        "bookmakers": [{"key": "book-a"}, {"key": "book-b"}]
+    }])
+    request = SimpleNamespace(state=SimpleNamespace(include_premium_data=True))
+
+    payload = main._status_for_request(request)
+
+    assert payload["stored_events"] == 1
+    assert payload["stored_bookmakers"] == 2
+    assert payload["sport_freshness"] == [
+        {"sport": "basketball_nba", "event_count": 12}
+    ]
+    forbidden = {
+        "provider", "providers", "provider_keys", "provider_usage",
+        "provider_coverage", "auto_refresh_schedule", "refresh_interval_seconds",
+        "last_updated", "last_error", "alerts_enabled", "alert_error",
+        "simulation_results",
+    }
+    assert forbidden.isdisjoint(payload)
+    assert "last_updated" not in payload["sport_freshness"][0]
+
+def test_health_endpoint_exposes_liveness_only(monkeypatch):
+    def forbidden_status_call():
+        raise AssertionError("public health route must not load operational diagnostics")
+
+    monkeypatch.setattr(main.service, "status", forbidden_status_call)
 
     with TestClient(main.app) as client:
         response = client.get("/api/health")
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["last_alert_evaluated"] == 11
-    assert payload["last_alert_qualified"] == 4
-    assert payload["last_alert_sent"] == 3
-    assert payload["last_alert_error"] == "temporary failure"
+    assert response.json() == {"status": "ok", "app": main.config.APP_NAME}
 
 
 def test_movement_history_endpoint_returns_all_observed_lines(monkeypatch):
     received = {}
 
-    def fake_history(event_id, market, outcome, bookmaker, limit):
+    def fake_history(event_id, market, outcome, bookmaker, limit, **kwargs):
         received.update(event_id=event_id, market=market, outcome=outcome,
                         bookmaker=bookmaker, limit=limit)
         return [
@@ -131,6 +172,10 @@ def test_market_board_endpoint_applies_sport_filter(monkeypatch):
         received["sport"] = sport
         return []
     monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "icehockey_nhl", "freshness": "current"}],
+    })
     with TestClient(main.app) as client:
         response = client.get("/api/market-board?sport=icehockey_nhl")
     assert response.status_code == 200
@@ -142,17 +187,21 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
     received = {}
     def fake_events(sport=None, **kwargs):
         received["sport"] = sport
-        return [{"id": "event"}]
+        return [{"id": "event", "sport_key": "basketball_nba"}]
     def fake_analysis(events, min_ev, min_consensus_books):
         received.update(events=events, min_ev=min_ev, min_consensus_books=min_consensus_books)
         return {"opportunities": [{"event_id": "event"}], "arbitrage": []}
     monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current"}],
+    })
     monkeypatch.setattr(main, "analyze_markets", fake_analysis)
     with TestClient(main.app) as client:
         response = client.get("/api/opportunities?sport=basketball_nba&min_ev=2.5&min_consensus_books=3")
     assert response.status_code == 200
     assert received == {
-        "sport": "basketball_nba", "events": [{"id": "event"}],
+        "sport": "basketball_nba", "events": [{"id": "event", "sport_key": "basketball_nba"}],
         "min_ev": 2.5, "min_consensus_books": 3,
     }
     assert response.json()["opportunities"] == [{"event_id": "event"}]
@@ -160,7 +209,11 @@ def test_opportunities_endpoint_passes_screening_controls(monkeypatch):
 
 def test_arbitrage_endpoint_requests_arbitrage_analysis(monkeypatch):
     received = {}
-    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [{"id": sport}])
+    monkeypatch.setattr(main.service, "events", lambda sport=None, **kwargs: [{"id": sport, "sport_key": sport}])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "baseball_mlb", "freshness": "current"}],
+    })
     def fake_analysis(events, min_ev, arbitrage_only=False):
         received.update(events=events, min_ev=min_ev, arbitrage_only=arbitrage_only)
         return {"opportunities": [], "arbitrage": [{"event_id": "event", "arb_percent": 1.2}]}
@@ -168,14 +221,50 @@ def test_arbitrage_endpoint_requests_arbitrage_analysis(monkeypatch):
     with TestClient(main.app) as client:
         response = client.get("/api/arbitrage?sport=baseball_mlb")
     assert response.status_code == 200
-    assert received == {"events": [{"id": "baseball_mlb"}], "min_ev": 101, "arbitrage_only": True}
+    assert received == {"events": [{"id": "baseball_mlb", "sport_key": "baseball_mlb"}], "min_ev": 101, "arbitrage_only": True}
     assert response.json()["arbitrage"][0]["arb_percent"] == 1.2
+
+
+def test_opportunities_and_arbitrage_fail_closed_without_configured_provider(monkeypatch):
+    monkeypatch.setattr(main.service, "events", lambda *args, **kwargs: [{
+        "id": "stale-event", "sport_key": "basketball_nba"
+    }])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": False,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current"}],
+    })
+    with TestClient(main.app) as client:
+        opportunities = client.get("/api/opportunities?sport=basketball_nba")
+        arbitrage = client.get("/api/arbitrage?sport=basketball_nba")
+    assert opportunities.status_code == 200
+    assert opportunities.json()["opportunities"] == []
+    assert opportunities.json()["total"] == 0
+    assert opportunities.json()["data_status"] == "unavailable"
+    assert arbitrage.status_code == 200
+    assert arbitrage.json()["arbitrage"] == []
+    assert arbitrage.json()["total"] == 0
+    assert arbitrage.json()["data_status"] == "unavailable"
+
+
+def test_market_analysis_excludes_stale_sport_snapshots(monkeypatch):
+    monkeypatch.setattr(main.service, "events", lambda *args, **kwargs: [{
+        "id": "stale-event", "sport_key": "basketball_nba"
+    }])
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "stale"}],
+    })
+    with TestClient(main.app) as client:
+        response = client.get("/api/opportunities?sport=basketball_nba")
+    assert response.status_code == 200
+    assert response.json()["opportunities"] == []
+    assert response.json()["data_status"] == "unavailable"
 
 
 def test_clv_endpoint_paginates_entries_and_preserves_summary(monkeypatch):
     received = {}
     entries = [{"id": index} for index in range(61)]
-    def fake_report(sport, limit):
+    def fake_report(sport, limit, **kwargs):
         received.update(sport=sport, limit=limit)
         return {"entries": entries, "summary": {"total": 61}}
     monkeypatch.setattr(main.service, "clv_report", fake_report)
@@ -199,7 +288,7 @@ def test_clv_endpoint_rejects_out_of_range_limit():
 def test_movement_endpoint_paginates_result_rows(monkeypatch):
     rows = [{"row": index} for index in range(31)]
     received = {}
-    def fake_movement(sport, limit):
+    def fake_movement(sport, limit, **kwargs):
         received.update(sport=sport, limit=limit)
         return rows
     monkeypatch.setattr(main.service, "movement", fake_movement)
@@ -214,12 +303,12 @@ def test_movement_endpoint_paginates_result_rows(monkeypatch):
 
 
 def test_limits_endpoints_expose_observations_and_changes(monkeypatch):
-    monkeypatch.setattr(main.limits_monitor, "current", lambda sport, limit: [{"sport": sport, "limit": limit}])
+    monkeypatch.setattr(main.limits_monitor, "current", lambda sport, limit, **kwargs: [{"sport": sport, "limit": limit}])
     monkeypatch.setattr(main.limits_monitor, "status", lambda: {"enabled": True})
-    monkeypatch.setattr(main.limits_monitor, "changes", lambda sport, direction, limit: [
+    monkeypatch.setattr(main.limits_monitor, "changes", lambda sport, direction, limit, **kwargs: [
         {"sport": sport, "direction": direction, "limit": limit}
     ])
-    monkeypatch.setattr(main.limits_monitor, "history", lambda event_id, bookmaker, market, outcome, point, limit: [
+    monkeypatch.setattr(main.limits_monitor, "history", lambda event_id, bookmaker, market, outcome, point, limit, **kwargs: [
         {"event_id": event_id, "bookmaker": bookmaker, "market": market, "outcome": outcome,
          "point": point, "limit": limit}
     ])
@@ -611,7 +700,7 @@ def test_score_based_simulator_runs_through_api_for_each_supported_family(
 def test_all_bookmaker_quotes_endpoint_returns_every_book_and_respects_sport_filter(monkeypatch):
     received = {}
     events = [{
-        "id": "evt", "sport_title": "Football", "home_team": "Home", "away_team": "Away",
+        "id": "evt", "sport_key": "americanfootball_nfl", "sport_title": "Football", "home_team": "Home", "away_team": "Away",
         "bookmakers": [
             {"key": "book-a", "title": "Book A", "markets": [{
                 "key": "h2h", "outcomes": [{"name": "Home", "price": -110}, {"name": "Away", "price": -110}]
@@ -625,6 +714,10 @@ def test_all_bookmaker_quotes_endpoint_returns_every_book_and_respects_sport_fil
         received["sport"] = sport
         return events
     monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "americanfootball_nfl", "freshness": "current"}],
+    })
     with TestClient(main.app) as client:
         response = client.get("/api/bookmaker-board?sport=americanfootball_nfl")
     assert response.status_code == 200
@@ -638,7 +731,7 @@ def test_odds_endpoint_returns_only_requested_event_page(monkeypatch):
     received = {}
     events = [{"id": f"event-{index}"} for index in range(25)]
 
-    def fake_events(sport=None, limit=None, offset=0):
+    def fake_events(sport=None, limit=None, offset=0, **kwargs):
         received.update(sport=sport, limit=limit, offset=offset)
         return events
 
@@ -656,7 +749,7 @@ def test_odds_endpoint_returns_only_requested_event_page(monkeypatch):
 
 
 def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
-    events = [{"id": "event-1"}, {"id": "event-2"}]
+    events = [{"id": "event-1", "sport_key": "basketball_nba"}, {"id": "event-2", "sport_key": "basketball_nba"}]
     generated = [{"row": index} for index in range(31)]
     received = {}
 
@@ -670,6 +763,10 @@ def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
         return {"opportunities": generated, "arbitrage": []}
 
     monkeypatch.setattr(main.service, "events", fake_events)
+    monkeypatch.setattr(main.service, "status", lambda: {
+        "configured": True,
+        "sport_freshness": [{"sport": "basketball_nba", "freshness": "current"}],
+    })
     monkeypatch.setattr(main, "analyze_markets", fake_analysis)
     with TestClient(main.app) as client:
         response = client.get("/api/opportunities?limit=25&offset=25")
@@ -680,7 +777,7 @@ def test_opportunities_paginates_result_rows_not_source_events(monkeypatch):
     assert payload["total"] == 31
     assert payload["offset"] == 25
     assert received["events"] == events
-    assert received["kwargs"] == {}
+    assert received["kwargs"] == {"include_premium": None}
 
 
 def test_arbitrage_paginates_result_rows_not_source_events(monkeypatch):
@@ -758,3 +855,26 @@ def test_simulation_run_works_without_fitted_model_when_market_is_ready(monkeypa
     assert payload["data_quality"]["model_source"] == "broad_league_prior"
     assert payload["spread_market"]["consensus_home_spread"] == -3.5
     assert payload["total_market"]["consensus_line"] == 220.5
+
+
+def test_free_market_limits_response_hides_premium_provider_diagnostics(monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(main, "_include_premium_data", lambda request: False)
+    monkeypatch.setitem(config.ODDS_PROVIDER_ACCESS_CLASSES, "oddslink", "premium")
+    monkeypatch.setattr(main.limits_monitor, "current", lambda sport, limit, **kwargs: [])
+    monkeypatch.setattr(main.limits_monitor, "status", lambda: {
+        "enabled": True,
+        "requests_remaining": 999,
+        "diagnostic": {"premium_account": "configured"},
+    })
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/limits")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == {
+        "enabled": False,
+        "provider": "Premium source status is restricted.",
+    }
+    assert "requests_remaining" not in response.json()["status"]

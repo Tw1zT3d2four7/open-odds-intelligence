@@ -1,0 +1,145 @@
+# Identity & Access Architecture
+
+**Status:** Staged implementation baseline; identity endpoints and product-route authorization are implemented on the feature branch.  
+**Working branch:** `feature/admin-panel-and-subscriptions`  
+**Scope:** Authentication, account storage, sessions, authorization, and route protection  
+**Production impact:** None. Production remains on the unchanged `legacy_basic` mode; no deployment or mode switch has occurred.
+
+## 1. Existing application constraints
+
+The current application is a FastAPI service with a single HTML dashboard at `web/index.html`. Authentication is currently optional HTTP Basic authentication controlled by `AUTH_USERNAME` and `AUTH_PASSWORD`. When both are blank, the middleware allows application routes through; `/api/health` is always public for the container health check.
+
+The current Compose configuration mounts `./data` at `/app/data`, and the existing odds database defaults to `./data/odds_history.sqlite3`. The odds database contains historical snapshots, quotes, alerts, application state, CLV records, and simulation settlements. It must remain intact.
+
+The existing production operations runbook explicitly describes the release as single-owner/self-hosted and not yet suitable for multi-tenant commercial use. Authentication work must not be represented as commercial readiness by itself.
+
+## 2. Identity model
+
+Use one authentication service and a shared identity schema, but enforce two non-interchangeable account classes:
+
+- **Subscriber:** created only through the public subscriber registration flow after email verification.
+- **Administrator:** created only through a private, operator-controlled provisioning command or equivalent one-time bootstrap process. Public registration, account APIs, and subscriber profile updates cannot create or promote an administrator.
+
+The identity record has an immutable account class. Application code must never accept an account class, role, entitlement, or MFA status from a browser request as authoritative.
+
+The subscriber login endpoint accepts only subscriber identities. The administrator login endpoint accepts only administrator identities and requires successful MFA. A subscriber session must never satisfy an administrator authorization check.
+
+## 3. Same-domain, separate experiences
+
+Keep one domain and serve distinct experiences:
+
+- `/login`, `/register`, `/account` — subscriber experience.
+- `/admin/login`, `/admin` — separate administrator experience.
+
+The administrator frontend has its own layout, navigation, and protected API namespace. It is not a hidden tab in the subscriber dashboard. Knowing or visiting an administrator URL does not confer access.
+
+## 4. Account database boundary
+
+Create a separate SQLite database at `/app/data/accounts.sqlite3` (configurable by a dedicated path setting) for identity and commercial-platform data.
+
+Initial tables should cover:
+
+- identities and immutable account class;
+- password credential hashes and password-change timestamps;
+- email verification challenges;
+- password-reset challenges;
+- sessions and session revocation/expiry;
+- administrator MFA enrollment and recovery-code hashes;
+- security and administrative audit events for provisioning, registration, verification, MFA, password reset, and session lifecycle.
+
+Later milestones may add organizations/tenants, notification destinations, preferences, plans, entitlements, subscriptions, billing references, and delivery records. Those should be introduced with explicit migrations and ownership rules.
+
+Do not add subscriber identity data to the odds-history tables. Do not replace, truncate, or rebuild `odds_history.sqlite3`. SQLite foreign keys cannot span separate database files, so relationships between account and odds data must be handled by application-level identifiers and explicit ownership checks.
+
+Security audit events record the actor and subject identity separately where applicable. Self-service registration/session events identify the account itself; cross-account session revocation requires an active MFA-enrolled administrator actor. Event metadata is restricted to reviewed, non-secret values and never includes passwords, raw session tokens, MFA seeds, recovery codes, or email addresses. A bounded, paginated storage query supports the future administrator audit view with event-type, actor, and subject filters; it returns identity references and parsed metadata, not email addresses.
+
+Create or tighten the accounts database file to mode 0600 before SQLite opens it, and reject symlink paths. This prevents a newly created database or an existing overly-permissive file from being briefly opened with default permissions during schema initialization. Restrict SQLite WAL/SHM sidecars as well. Use versioned, transactional migrations for the account database. Migrations must be additive where possible, tested against a fresh database and a copy of a prior-version account database, and must fail closed on unexpected schema state.
+
+## 5. Passwords and sessions
+
+- Store passwords using a maintained Argon2id password-hashing implementation with parameters selected for the deployment and revisited periodically.
+- Never store plaintext passwords or reversible password values.
+- Use high-entropy, opaque server-side session tokens. Store only a cryptographic hash of each token in the database.
+- Use separate cookie names for subscriber and administrator sessions.
+- Cookies must be `HttpOnly`, `Secure`, and `SameSite=Lax`, with host-only scope and `Path=/`. Production must use HTTPS.
+- Rotate session identifiers after authentication and privilege-sensitive events.
+- Enforce server-side idle and absolute session expiry, logout/revocation, and revocation after password reset or account suspension.
+- Resolve sessions inside a write transaction serialized with revocation and account deactivation. Evaluate session expiry, MFA windows, and one-time challenge expiry only after acquiring the transaction lock so database contention cannot make stale time checks authorize a request.
+- Protect cookie-authenticated state-changing requests with CSRF tokens and origin checks.
+- Apply rate limits and generic authentication errors to reduce brute-force and account-enumeration risk.
+- A subscriber must have a successfully verified email before password authentication can succeed or a session can be created. Enforce this in the identity-store methods themselves, not only in registration/login routes; session resolution also rejects a subscriber whose verification state is no longer valid.
+- Never log passwords, raw session tokens, MFA secrets, recovery codes, or reset/verification tokens.
+
+The exact session lifetimes and rate limits should be configuration-backed, documented, and tested before launch.
+
+## 6. Administrator MFA and provisioning
+
+Administrator MFA is mandatory, not optional. The isolated identity foundation now implements TOTP enrollment, encrypted seed storage, one-time verification, replay protection by accepted time-step, and ten single-use recovery codes stored only as hashes. The seed is encrypted using Fernet with the dedicated `MFA_ENCRYPTION_KEY`; this key must be generated out of band and supplied through the deployment's secret-management mechanism. It must never be committed, logged, or reused from an odds-provider key.
+
+The first administrator can be created only through the private interactive command `python -m scripts.bootstrap_admin`. It reads the password through a no-echo prompt, atomically refuses bootstrap if an administrator already exists, starts MFA enrollment, and displays the provisioning URI and recovery codes only in the interactive terminal. Do not run it with output redirected or captured. It is not an HTTP endpoint. The administrator must complete enrollment before any administrator login/session route is introduced. The session primitive also enforces this boundary: an administrator session cannot be created until a fresh TOTP or single-use recovery code has produced a short-lived MFA proof, and that proof is consumed atomically when the session is created. A subscriber session cannot satisfy this check.
+
+Generate a Fernet key in a trusted environment with:
+`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+Store the result as `MFA_ENCRYPTION_KEY` outside Git, in the deployment secret store or protected host environment. Losing this key makes enrolled TOTP seeds undecryptable; maintain a secure backup and a documented rotation/re-enrollment procedure.
+
+Administrator bootstrap must be a private operator action, not an HTTP endpoint exposed to the public internet. The bootstrap process must prevent accidental creation of multiple initial administrators and must not print credentials or MFA secrets into logs. Additional administrator creation and role changes must be explicit, authenticated, audited administrative actions.
+
+Consider WebAuthn/passkeys as a later hardening milestone.
+
+## 7. Authorization and route inventory
+
+Replace the current all-or-nothing Basic Auth middleware only after a complete route inventory and access matrix exist.
+
+Every route must be classified as one of:
+
+- public: registration, login, verification/reset initiation, and health probe;
+- subscriber-authenticated: account/profile/preferences and entitled subscriber features;
+- administrator-only: all Admin Console pages and APIs;
+- internal/service-only: narrowly scoped machine-to-machine or operational endpoints.
+
+Authorization must be enforced server-side at the route/dependency/service boundary, not by hiding frontend controls. Default policy is deny. A route added later must not become public by omission.
+
+The health endpoint must expose only minimal liveness information. It must not disclose provider credentials, environment values, internal paths, subscriber information, or operational secrets. Readiness and detailed diagnostics should be separately protected if needed.
+
+Existing odds APIs need explicit product decisions: which information is public, subscriber-only, plan-gated, or administrator-only. Until that policy is implemented and tested, do not expose the application as a commercial multi-tenant service.
+
+## 8. Tenant isolation
+
+Every subscriber-owned record introduced in later phases must carry an explicit owner/tenant identifier. All reads, updates, deletes, exports, and notification delivery lookups must scope by the authenticated principal on the server. Never trust a user-supplied owner ID.
+
+Add negative tests proving that subscriber A cannot read or mutate subscriber B's records, that a subscriber cannot call administrator APIs, and that an administrator session is not accidentally accepted as a subscriber session unless a specific, documented administrative workflow requires it.
+
+## 9. Compatibility and migration from Basic Auth
+
+The existing Basic Auth behavior remains the default compatibility mode. The explicit `identity` mode is staged and uses the new session/entitlement boundary. A production transition still requires a controlled operator-approved process:
+
+1. Identify current deployments and how Basic Auth is configured.
+2. Define an explicit migration/compatibility period and operator bootstrap procedure.
+3. Add the new routes and test coverage without weakening protection on existing routes. (Implemented on the feature branch.)
+4. Apply explicit session, administrator, CSRF, and entitlement dependencies to product routes only in `identity` mode. (Implemented; feature grants default to deny.)
+5. Keep a safe operator recovery path that does not expose a public privilege-escalation endpoint.
+6. Remove legacy Basic Auth only in a separately reviewed change after the new authentication boundary is proven.
+
+No production restart, Compose change, or deployment action is part of this design document.
+
+## 10. Required tests before the first production-facing milestone
+
+- Fresh and pre-existing account database files are mode 0600 before SQLite opens them; symlink paths are rejected, and WAL/SHM sidecars remain private.
+- Fresh account database initializes with the expected schema and restrictive file permissions.
+- Migrations are transactional and safe on a prior-version account database.
+- Subscriber registration cannot set administrator status or roles.
+- Subscriber login rejects administrator identities; administrator login rejects subscriber identities.
+- Administrator login cannot complete without MFA.
+- Invalid, expired, revoked, and rotated sessions are rejected.
+- CSRF and origin protections reject forged state-changing requests.
+- Rate limiting works without revealing whether an account exists.
+- Password reset revokes existing sessions.
+- Every route matches the access matrix; unknown/unclassified routes fail closed.
+- Health checks remain compatible and reveal only minimal liveness.
+- Existing API tests and odds database tests continue to pass unchanged.
+- A pre-existing odds database remains readable and its record counts/content remain unchanged by account initialization and migration tests.
+
+## 11. Explicit non-goals for the first milestone
+
+The current identity milestone does not include billing, the full Admin Console workspace, the environment editor, public subscriber launch, or production migration. Subscriber/admin entry pages, account endpoints, encrypted email queueing, and default-deny feature entitlement enforcement are implemented on the feature branch. Remaining launch gates include proxy-topology verification, non-production end-to-end testing, queue/database recovery, key rotation, and rollback rehearsal.
+

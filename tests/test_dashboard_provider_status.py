@@ -22,3 +22,15 @@ def test_dashboard_paginates_at_bottom_and_hides_card_for_credit_card_provider()
     assert 'const allNames=["therundown","the_odds_api","oddize","oddslink"]' in html
     assert "sports_game_odds" not in html
     assert 'health.stored_bookmakers' in html
+
+
+
+def test_private_admin_overview_renders_account_group_quota_telemetry():
+    html = (Path(__file__).resolve().parents[1] / "web" / "admin.html").read_text()
+    assert 'id="overview-provider-accounts"' in html
+    assert 'id="overview-provider-policy"' in html
+    assert "data.provider_accounts" in html
+    assert "credits_remaining" in html
+    assert "quota_floor_triggered" in html
+    assert "quota_floors" in html
+    assert "premium_provider_polling_enabled" in html

@@ -48,7 +48,7 @@ def parse_api_key_entries(*values: str | None) -> list[tuple[str, str]]:
                 continue
             if "|" in item:
                 group, key = item.split("|", 1)
-                group, key = group.strip(), key.strip()
+                group, key = group.strip().lower(), key.strip()
                 if not group or not key:
                     continue
             else:
@@ -98,7 +98,7 @@ class ProviderKeyPool:
     def _fingerprint(key: str) -> str:
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
 
-    def acquire(self) -> KeyLease:
+    def acquire(self, allowed_account_groups: set[str] | None = None) -> KeyLease:
         with self._lock:
             if not self._keys:
                 raise NoAvailableKeys(self.provider)
@@ -108,6 +108,8 @@ class ProviderKeyPool:
             for offset in range(len(self._keys)):
                 index = (self._cursor + offset) % len(self._keys)
                 if index in self._disabled:
+                    continue
+                if allowed_account_groups is not None and self._groups[index] not in allowed_account_groups:
                     continue
                 blocked_until = self._blocked_until.get(index, 0.0)
                 if blocked_until > now:
@@ -123,14 +125,14 @@ class ProviderKeyPool:
             key = self._keys[index]
             return KeyLease(index, key, self._fingerprint(key), self._groups[index])
 
-    def record_usage(self, lease: KeyLease, usage: dict | None) -> None:
+    def record_usage(self, lease: KeyLease, usage: dict | None, minimum_remaining: dict | None = None) -> None:
         """Attach non-secret quota counters to the exact key that made the call."""
         if not isinstance(usage, dict):
             return
         safe = {}
         for name, value in usage.items():
             normalized = str(name).lower()
-            if any(secret in normalized for secret in ("key", "token", "secret", "email", "customer")):
+            if any(secret in normalized for secret in ("key", "token", "secret", "email", "customer", "password", "authorization", "credential", "bearer")):
                 continue
             if isinstance(value, (str, int, float, bool)) or value is None:
                 safe[str(name)] = value
@@ -146,6 +148,16 @@ class ProviderKeyPool:
                     exhausted = exhausted or float(safe[name]) <= 0
                 except (TypeError, ValueError):
                     pass
+        for name, threshold in (minimum_remaining or {}).items():
+            if name not in safe or safe[name] is None:
+                continue
+            try:
+                if float(safe[name]) <= float(threshold):
+                    exhausted = True
+                    safe["quota_floor_triggered"] = name
+                    safe["quota_floor_threshold"] = int(threshold)
+            except (TypeError, ValueError, OverflowError):
+                continue
         if exhausted:
             delay = None
             now_utc = datetime.now(timezone.utc)
@@ -198,7 +210,7 @@ class ProviderKeyPool:
                     "Provider quota exhausted; key group paused until its quota resets."
                 )
 
-    def restore_usage(self, key_id: str, usage: dict | None) -> None:
+    def restore_usage(self, key_id: str, usage: dict | None, minimum_remaining: dict | None = None) -> None:
         """Restore last known non-secret quota counters for a configured key."""
         with self._lock:
             for index, key in enumerate(self._keys):
@@ -207,12 +219,26 @@ class ProviderKeyPool:
                     break
             else:
                 return
-        self.record_usage(lease, usage)
+        self.record_usage(lease, usage, minimum_remaining=minimum_remaining)
 
     def mark_success(self, lease: KeyLease) -> None:
         with self._lock:
-            self._blocked_until.pop(lease.index, None)
-            self._last_error.pop(lease.index, None)
+            usage = self._usage.get(lease.index, {})
+            exhausted = bool(usage.get("quota_floor_triggered"))
+            for name in (
+                "requests_remaining", "credits_remaining", "monthly_objects_remaining",
+                "datapoints_remaining", "remaining_requests", "remaining_credits",
+                "remaining_objects",
+            ):
+                try:
+                    exhausted = exhausted or (
+                        usage.get(name) is not None and float(usage[name]) <= 0
+                    )
+                except (TypeError, ValueError):
+                    continue
+            if not exhausted:
+                self._blocked_until.pop(lease.index, None)
+                self._last_error.pop(lease.index, None)
 
     def mark_failure(
         self,
@@ -278,9 +304,32 @@ class ProviderKeyPool:
                     "last_error": self._last_error.get(index),
                     "usage": self._usage.get(index, {}),
                 })
+            groups = {}
+            for item in keys:
+                group = item["account_group"]
+                summary = groups.setdefault(group, {
+                    "account_group": group,
+                    "configured_keys": 0,
+                    "available_keys": 0,
+                    "quota_cooldown_keys": 0,
+                    "disabled_keys": 0,
+                    "usage": {},
+                })
+                summary["configured_keys"] += 1
+                if item["status"] == "available":
+                    summary["available_keys"] += 1
+                elif item["status"] == "quota_cooldown":
+                    summary["quota_cooldown_keys"] += 1
+                else:
+                    summary["disabled_keys"] += 1
+                observed = str(item.get("usage", {}).get("usage_observed_at") or "")
+                previous = str(summary["usage"].get("usage_observed_at") or "")
+                if item.get("usage") and observed >= previous:
+                    summary["usage"] = dict(item["usage"])
             return {
                 "provider": self.provider,
                 "configured_keys": len(self._keys),
                 "available_keys": sum(item["status"] == "available" for item in keys),
+                "account_groups": [groups[name] for name in sorted(groups)],
                 "keys": keys,
             }

@@ -1,0 +1,247 @@
+
+from app import main
+from app.route_policy import (
+    IDENTITY_ROUTE_ACCESS_POLICY,
+    ROUTE_ACCESS_POLICY,
+    application_route_access_policy,
+    classify_route,
+    stale_policy_entries,
+    unclassified_routes,
+)
+
+
+def _application_routes():
+    # Include framework-generated docs/schema routes, not only APIRoute objects.
+    return [route for route in main.app.routes if getattr(route, "methods", None)]
+
+
+def test_every_application_route_has_an_explicit_target_access_class():
+    routes = _application_routes()
+    assert len(routes) == 73
+    assert unclassified_routes(routes) == []
+    assert stale_policy_entries(routes) == []
+
+
+def test_subscriber_sports_workspace_is_a_real_entitled_route():
+    from app.entitlements import require_product_entitlement, require_product_subscriber
+
+    route = next(
+        route for route in main.app.routes
+        if getattr(route, "path", None) == "/workspace"
+        and "GET" in (getattr(route, "methods", None) or set())
+    )
+    calls = {dependency.call for dependency in route.dependant.dependencies}
+    assert require_product_subscriber in calls
+    assert require_product_entitlement in calls
+
+
+def test_administrator_sports_workspace_is_a_real_protected_route():
+    from app.entitlements import require_product_administrator
+
+    route = next(
+        route for route in main.app.routes
+        if getattr(route, "path", None) == "/admin/workspace"
+        and "GET" in (getattr(route, "methods", None) or set())
+    )
+    calls = {dependency.call for dependency in route.dependant.dependencies}
+    assert require_product_administrator in calls
+
+
+def test_policy_inventory_covers_all_application_and_framework_http_routes():
+    routes = _application_routes()
+    actual = {
+        (method, route.path)
+        for route in routes
+        for method in (route.methods or set())
+        if method not in {"HEAD", "OPTIONS"}
+    }
+    assert len(actual) == 73
+    assert set(application_route_access_policy()) == actual
+
+
+def test_shared_workspace_and_refresh_routes_are_subscriber_entitled():
+    assert classify_route("GET", "/admin/workspace") == "administrator_only"
+    assert classify_route("GET", "/workspace") == "subscriber_entitled"
+    assert classify_route("GET", "/api/workspace/status") == "subscriber_entitled"
+    assert classify_route("POST", "/api/refresh") == "subscriber_entitled"
+    assert classify_route("POST", "/api/limits/refresh") == "subscriber_entitled"
+    assert classify_route("POST", "/api/simulation/games/refresh") == "subscriber_entitled"
+    from app.entitlements import ROUTE_ENTITLEMENTS
+    assert ROUTE_ENTITLEMENTS["/workspace"] == "dashboard"
+    assert ROUTE_ENTITLEMENTS["/api/workspace/status"] == "dashboard"
+    assert ROUTE_ENTITLEMENTS["/api/refresh"] == "dashboard"
+    assert ROUTE_ENTITLEMENTS["/api/limits/refresh"] == "market_limits"
+    assert ROUTE_ENTITLEMENTS["/api/simulation/games/refresh"] == "simulation"
+
+
+def test_read_and_simulation_routes_require_subscriber_entitlement():
+    assert classify_route("GET", "/") == "public_minimal"
+    for method, path in (
+        ("GET", "/api/odds"),
+        ("GET", "/api/opportunities"),
+        ("GET", "/api/arbitrage"),
+        ("POST", "/api/simulation/run"),
+    ):
+        assert classify_route(method, path) == "subscriber_entitled"
+
+
+def test_site_entry_and_health_are_the_only_public_minimal_routes():
+    public = [
+        key for key, access_class in ROUTE_ACCESS_POLICY.items()
+        if access_class == "public_minimal"
+    ]
+    assert set(public) == {("GET", "/"), ("GET", "/api/health"), ("GET", "/favicon.svg"), ("GET", "/logo.svg"), ("GET", "/brand")}
+    assert classify_route("POST", "/webhooks/stripe") == "stripe_signature"
+
+
+def test_framework_schema_and_interactive_docs_are_not_implicitly_public():
+    for path in ("/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"):
+        assert classify_route("GET", path) == "administrator_only"
+
+
+def test_unknown_route_is_unclassified_not_implicitly_public():
+    assert classify_route("GET", "/api/new-endpoint") is None
+    assert classify_route("POST", "/api/odds") is None
+
+
+
+def test_head_requests_inherit_the_get_route_access_class():
+    assert classify_route("HEAD", "/api/odds") == "subscriber_entitled"
+    assert classify_route("HEAD", "/api/health") == "public_minimal"
+    assert classify_route("HEAD", "/docs") == "administrator_only"
+
+
+
+def test_every_isolated_identity_router_route_has_an_explicit_access_policy():
+    from app.identity_routes import router as identity_router
+
+    routes = [
+        route for route in identity_router.routes
+        if getattr(route, "methods", None)
+    ]
+    assert len(IDENTITY_ROUTE_ACCESS_POLICY) == len(routes)
+    assert len(routes) == 41
+    assert unclassified_routes(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
+    assert stale_policy_entries(routes, IDENTITY_ROUTE_ACCESS_POLICY) == []
+
+
+def test_identity_route_policy_distinguishes_public_mutations_and_session_logout():
+    assert classify_route("GET", "/auth/csrf", IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"
+    assert classify_route("GET", "/favicon.svg") == "public_minimal"
+    assert classify_route("GET", "/logo.svg") == "public_minimal"
+    assert classify_route("GET", "/brand") == "public_minimal"
+    assert classify_route("GET", "/admin", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("GET", "/admin/overview", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("GET", "/admin/workspace/status", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("GET", "/account", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("GET", "/auth/account", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("GET", "/auth/billing", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("POST", "/auth/password/change", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("GET", "/auth/sessions", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("POST", "/auth/sessions/{session_id}/revoke", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("POST", "/auth/sessions/revoke-all", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("GET", "/admin/audit-events", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("GET", "/admin/subscribers", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("POST", "/admin/subscribers/complimentary", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("PUT", "/admin/subscribers/complimentary", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("GET", "/admin/subscribers", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("GET", "/admin/billing", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("GET", "/admin/notifications", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    assert classify_route("POST", "/admin/subscribers/{identity_id}/status", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+    for path in (
+        "/auth/register",
+        "/auth/verification/resend",
+        "/auth/verify-email",
+        "/auth/password-reset/request",
+        "/auth/password-reset/consume",
+        "/auth/login",
+        "/admin/auth/login",
+    ):
+        assert classify_route("POST", path, IDENTITY_ROUTE_ACCESS_POLICY) == "public_csrf"
+    assert classify_route("POST", "/auth/logout", IDENTITY_ROUTE_ACCESS_POLICY) == "subscriber_only"
+    assert classify_route("POST", "/admin/auth/logout", IDENTITY_ROUTE_ACCESS_POLICY) == "administrator_only"
+
+
+
+def test_identity_router_security_dependencies_match_its_policy_manifest():
+    from app.dependencies import (
+        require_administrator,
+        require_authenticated_csrf,
+        require_subscriber,
+    )
+    from app.identity_routes import router as identity_router
+    from app.route_authorization import dependencies_for_route
+
+    security_dependencies = {
+        require_administrator,
+        require_authenticated_csrf,
+        require_subscriber,
+    }
+    for route in identity_router.routes:
+        for method in (getattr(route, "methods", None) or set()):
+            if method in {"HEAD", "OPTIONS"}:
+                continue
+            expected = {
+                item.dependency
+                for item in dependencies_for_route(
+                    method, route.path, policy=IDENTITY_ROUTE_ACCESS_POLICY
+                )
+            }
+            actual = {
+                item.call for item in route.dependant.dependencies
+                if item.call in security_dependencies
+            }
+            assert actual == expected, (method, route.path, actual, expected)
+
+
+
+def test_identity_auth_endpoints_are_excluded_from_general_openapi_schema():
+    paths = main.app.openapi()["paths"]
+    assert all(path not in paths for _method, path in IDENTITY_ROUTE_ACCESS_POLICY)
+
+
+
+def test_every_subscriber_product_route_has_an_entitlement_mapping_and_dependency():
+    from app.entitlements import ROUTE_ENTITLEMENTS, require_product_entitlement, require_product_subscriber
+    from app import main
+
+    subscriber_paths = {
+        path for (method, path), access in ROUTE_ACCESS_POLICY.items()
+        if access == "subscriber_entitled"
+    }
+    assert set(ROUTE_ENTITLEMENTS) == subscriber_paths
+
+    for route in main.app.routes:
+        if getattr(route, "path", None) not in subscriber_paths:
+            continue
+        calls = {dependency.call for dependency in route.dependant.dependencies}
+        assert require_product_subscriber in calls
+        assert require_product_entitlement in calls
+
+
+def test_shared_product_mutations_have_subscriber_entitlement_and_csrf_dependencies():
+    from app.entitlements import require_product_entitlement, require_product_subscriber, require_product_csrf
+    from app import main
+
+    for path in ("/api/limits/refresh", "/api/refresh", "/api/simulation/games/refresh"):
+        route = next(route for route in main.app.routes if getattr(route, "path", None) == path)
+        calls = {dependency.call for dependency in route.dependant.dependencies}
+        assert require_product_subscriber in calls
+        assert require_product_entitlement in calls
+        assert require_product_csrf in calls
+
+
+def test_head_request_resolves_to_get_route_template_for_policy_lookup():
+    from app.route_policy import matched_route_path
+
+    path = "/login"
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "HEAD", "scheme": "https", "path": path,
+        "raw_path": path.encode(), "query_string": b"", "root_path": "",
+        "headers": [], "client": ("127.0.0.1", 12345),
+        "server": ("example.test", 443),
+    }
+    matched = matched_route_path(scope, _application_routes())
+    assert matched == "/login"
+    assert classify_route("HEAD", matched, IDENTITY_ROUTE_ACCESS_POLICY) == "public_minimal"

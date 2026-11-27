@@ -114,6 +114,8 @@ Optional HTTP Basic authentication protects routes with one configured username/
 - `/api/health` is intentionally unauthenticated for container health checks; restrict exposure at the reverse proxy or network layer if needed.
 - Provider credentials and database files belong only on the server. Never expose them in browser code, logs, screenshots, support tickets, or source control.
 
+**Unmerged feature-branch note:** individual subscriber/admin identity, session controls, billing persistence, and guarded Stripe test-mode Checkout/Customer Portal are being developed on `feature/admin-panel-and-subscriptions`. These changes have not been merged or deployed; they do not describe the currently running single-owner release. The feature branch keeps live billing rejected and hosted-billing switches off by default. See [the development roadmap](roadmap.md), [the Stripe test-mode runbook](stripe-test-mode-acceptance.md), and [the subscription policy proposal](subscription-lifecycle-policy-proposal.md). Do not enable the feature branch's billing switches in a production environment.
+
 Before remote access, place the service behind a maintained TLS reverse proxy, use HTTPS, restrict inbound ports, keep the host and Docker patched, and ensure proxy logs do not record Authorization headers. Use a unique long password. Do not expose the application directly to the public internet over plain HTTP.
 
 ## 8. Commercial launch gates

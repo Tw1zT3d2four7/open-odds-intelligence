@@ -17,21 +17,45 @@ jobs:
           python - <<'PY'
           import re
           from pathlib import Path
-          html = Path("web/index.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S)
-          if not scripts:
-              raise SystemExit("No inline dashboard JavaScript found")
-          Path("/tmp/open-odds-dashboard.js").write_text("\n".join(scripts), encoding="utf-8")
+          for page in ("index", "admin", "auth", "account"):
+              html = Path(f"web/{page}.html").read_text(encoding="utf-8")
+              scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S)
+              if not scripts:
+                  raise SystemExit(f"No inline JavaScript found in web/{page}.html")
+              Path(f"/tmp/open-odds-{page}.js").write_text("\n".join(scripts), encoding="utf-8")
           PY
-          node --check /tmp/open-odds-dashboard.js
+          for page in index admin auth account; do
+            node --check "/tmp/open-odds-$page.js"
+          done
       - name: Validate Docker Compose configuration
         run: |
           cp .env.example .env
           docker compose config --quiet
+          cp .env.staging.example .env.staging
+          docker compose -f docker-compose.staging.yml config --quiet
+          rm .env.staging
+      - name: Validate environment template keys
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          keys = []
+          for template in (".env.example", ".env.staging.example"):
+              keys = []
+              for raw in Path(template).read_text(encoding="utf-8").splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  keys.append(line.split("=", 1)[0].strip())
+              duplicates = sorted(key for key, count in Counter(keys).items() if count > 1)
+              if duplicates:
+                  raise SystemExit(f"Duplicate keys in {template}: " + ", ".join(duplicates))
+          PY
       - name: Validate Docker build context exclusions
         run: |
           grep -Fxq '.env' .dockerignore
           grep -Fxq 'data/' .dockerignore
+          grep -Fxq 'staging-data/' .dockerignore
           grep -Fxq '*.sqlite3' .dockerignore
           rm .env
       - name: Validate simulator CLIs

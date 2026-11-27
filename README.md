@@ -56,7 +56,7 @@ The dashboard and API support optional HTTP Basic authentication. Set both `AUTH
 
 ## Not implemented yet
 
-This is an active development build, not a feature-complete OddsLogic replacement. Additional provider integrations, subscriber billing and full historical strategy backtesting remain future work. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. The backtesting implementation plan is documented in [docs/BACKTESTING_DESIGN.md](docs/BACKTESTING_DESIGN.md); it requires prospective quote history and trustworthy settlement data, and will not fabricate missing results. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
+This is an active development build, not a feature-complete OddsLogic replacement. Additional provider integrations and full historical strategy backtesting remain future work. Subscriber authentication, billing persistence, guarded test-mode Stripe Checkout/Customer Portal, and the private billing operations view are implemented on the `feature/admin-panel-and-subscriptions` branch; they are not enabled by default and are not ready for public commercial access. CLV tracking is now implemented, but it requires new observations after installation and enough complete pregame snapshots to calculate valid closes. The backtesting implementation plan is documented in [docs/BACKTESTING_DESIGN.md](docs/BACKTESTING_DESIGN.md); it requires prospective quote history and trustworthy settlement data, and will not fabricate missing results. Sharp-money activity cannot be established from public line movement alone; any future movement labels will be described as market-movement signals.
 
 No fabricated odds or limits are generated. Live quotes remain unavailable until a supported provider is configured. The application does not scrape sportsbook websites.
 
@@ -173,9 +173,17 @@ Before enabling public subscriber access, confirm that the selected odds provide
 ### Remaining platform work
 11. Optional player props are implemented for The Odds API; expand provider coverage and add player-specific CLV only after identity and settlement validation.
 12. Harden the core with deeper operational monitoring, retention/backup guidance and additional provider diagnostics.
-13. Add application authentication, subscriber access tiers and recurring billing before any public commercial launch; add further licensed providers and injury/news feeds only where reliable data is available.
+13. ~~Add application authentication, subscriber access tiers and recurring billing foundations.~~ Complete isolated Stripe test-mode acceptance, approve paid-plan entitlements and payment-failure/cancellation/refund policies, then complete the notification engine and subscriber preferences before any public commercial launch. Add further licensed providers and injury/news feeds only where reliable data is available.
 
 A successful CI run confirms code and test behavior; it does not replace real historical validation. No simulator image is considered ready for deployment solely because its automated tests pass.
+
+## Subscriber billing development
+
+- [Development roadmap](docs/roadmap.md)
+- [Stripe test-mode acceptance runbook](docs/stripe-test-mode-acceptance.md)
+- [Subscription lifecycle policy proposal (not approved)](docs/subscription-lifecycle-policy-proposal.md)
+
+Stripe Checkout and Customer Portal are guarded by independent default-off switches, an explicit test-mode acknowledgement, test credentials, durable signed webhook configuration, and server-side recurring Price validation. Live billing and public subscriber activation remain disabled.
 
 ## License
 

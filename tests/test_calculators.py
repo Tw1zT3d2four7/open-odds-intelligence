@@ -146,7 +146,7 @@ def test_run_line_minus_one_rejects_boolean_margin():
 
 @pytest.mark.parametrize("odds", [-99, -50, -1, 1, 50, 99])
 def test_american_odds_reject_values_between_minus_and_plus_100(odds):
-    with pytest.raises(ValueError, match="\+100 or greater"):
+    with pytest.raises(ValueError, match=r"\+100 or greater"):
         american_to_decimal(odds)
 
 
