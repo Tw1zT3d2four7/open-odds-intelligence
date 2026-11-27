@@ -46,11 +46,17 @@ def test_policy_inventory_covers_all_application_and_framework_http_routes():
     assert set(application_route_access_policy()) == actual
 
 
-def test_shared_provider_refresh_routes_require_administrator_access():
+def test_shared_workspace_and_refresh_routes_are_subscriber_entitled():
     assert classify_route("GET", "/admin/workspace") == "administrator_only"
-    assert classify_route("POST", "/api/refresh") == "administrator_only"
-    assert classify_route("POST", "/api/limits/refresh") == "administrator_only"
-    assert classify_route("POST", "/api/simulation/games/refresh") == "administrator_only"
+    assert classify_route("GET", "/api/workspace/status") == "subscriber_entitled"
+    assert classify_route("POST", "/api/refresh") == "subscriber_entitled"
+    assert classify_route("POST", "/api/limits/refresh") == "subscriber_entitled"
+    assert classify_route("POST", "/api/simulation/games/refresh") == "subscriber_entitled"
+    from app.entitlements import ROUTE_ENTITLEMENTS
+    assert ROUTE_ENTITLEMENTS["/api/workspace/status"] == "dashboard"
+    assert ROUTE_ENTITLEMENTS["/api/refresh"] == "dashboard"
+    assert ROUTE_ENTITLEMENTS["/api/limits/refresh"] == "market_limits"
+    assert ROUTE_ENTITLEMENTS["/api/simulation/games/refresh"] == "simulation"
 
 
 def test_read_and_simulation_routes_require_subscriber_entitlement():
