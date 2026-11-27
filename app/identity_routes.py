@@ -1419,6 +1419,28 @@ def administrator_billing_overview(
         ) from None
 
 
+@router.get(
+    "/admin/notifications",
+    dependencies=[Depends(require_administrator)],
+)
+def administrator_notification_overview(
+    response: Response,
+    _session: dict = Depends(require_administrator),
+    store: IdentityStore = Depends(get_identity_store),
+):
+    """Return aggregate transactional-email queue health to an MFA administrator."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        return store.administrator_notification_overview()
+    except Exception:
+        logger.exception("Administrator notification overview query failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Notification operations information is temporarily unavailable.",
+        ) from None
+
+
 @router.post(
     "/admin/subscribers/{identity_id}/status",
     dependencies=[
