@@ -1395,10 +1395,16 @@ class OddsService:
             cached = self._events_cache.get(cache_key)
             if cached and now - cached[0] < self._events_cache_ttl_seconds:
                 return cached[1]
+            access_classes = (
+                ("free",) if include_premium is False
+                else ("free", "premium") if include_premium is True
+                else None
+            )
             stored = self.db.latest_events(
                 sport,
                 limit=None if include_premium is not None else limit,
                 offset=0 if include_premium is not None else offset,
+                access_classes=access_classes,
             )
             if stored:
                 result = stored
