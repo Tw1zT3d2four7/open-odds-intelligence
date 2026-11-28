@@ -328,3 +328,39 @@ def test_latest_events_filters_access_classes_in_sqlite(tmp_path):
     assert [event["id"] for event in free] == ["event-free"]
     assert [event["id"] for event in paid] == ["event-premium"]
     assert {event["id"] for event in all_quotes} == {"event-free", "event-premium"}
+
+def test_market_analysis_cache_collapses_concurrent_cold_misses(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+
+    service = OddsService(OddsDatabase(tmp_path / "market-single-flight.sqlite3"))
+    calls = []
+
+    def build():
+        calls.append("built")
+        time.sleep(0.05)
+        return {"opportunities": [], "arbitrage": []}
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(
+            lambda _: service.cached_market_analysis(("same-cold-key",), build),
+            range(8),
+        ))
+
+    assert len(calls) == 1
+    assert all(result is results[0] for result in results)
+
+
+def test_visible_snapshot_counts_do_not_merge_same_event_id_across_sports(tmp_path):
+    db = OddsDatabase(tmp_path / "cross-sport-event-counts.sqlite3")
+    db.save_snapshot("basketball_nba", [_event(event_id="shared-event-id")])
+    db.save_snapshot("americanfootball_nfl", [_event(event_id="shared-event-id")])
+
+    counts = db.visible_snapshot_counts()
+
+    assert counts["events"] == 2
+    assert counts["bookmakers"] == 1
+    assert counts["sports"] == {
+        "basketball_nba": 1,
+        "americanfootball_nfl": 1,
+    }
