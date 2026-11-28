@@ -168,7 +168,8 @@ async def lifespan(app: FastAPI):
             and "therundown" in service.active_provider_names()
             and service._provider_key_pools["therundown"].configured):
         results_task = asyncio.create_task(_simulation_results_loop())
-    if (config.AUTH_MODE == "identity" and config.EMAIL_PROVIDER == "resend"
+    if (config.EMAIL_DELIVERY_WORKER_ENABLED and config.AUTH_MODE == "identity"
+            and config.EMAIL_PROVIDER == "resend"
             and AUTH_POLICY.email_transport == "resend"):
         from .email_queue_worker import email_delivery_loop
         email_task = asyncio.create_task(email_delivery_loop())
