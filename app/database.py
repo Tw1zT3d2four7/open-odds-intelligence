@@ -1354,10 +1354,12 @@ class OddsDatabase:
             args.extend(classes)
         with self.connect() as db:
             totals = db.execute(
-                "WITH latest AS (SELECT sport,MAX(id) AS snapshot_id FROM snapshots GROUP BY sport) "
-                "SELECT COUNT(DISTINCT q.event_id) AS events, "
-                "COUNT(DISTINCT q.bookmaker_key) AS bookmakers "
-                "FROM quotes q JOIN latest l ON l.snapshot_id=q.snapshot_id" + where,
+                "WITH latest AS (SELECT sport,MAX(id) AS snapshot_id FROM snapshots GROUP BY sport), "
+                "visible_quotes AS (SELECT q.sport,q.event_id,q.bookmaker_key FROM quotes q "
+                "JOIN latest l ON l.snapshot_id=q.snapshot_id" + where + ") "
+                "SELECT (SELECT COUNT(*) FROM "
+                "(SELECT DISTINCT sport,event_id FROM visible_quotes)) AS events, "
+                "COUNT(DISTINCT bookmaker_key) AS bookmakers FROM visible_quotes",
                 args,
             ).fetchone()
             sports = db.execute(
