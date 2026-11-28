@@ -245,36 +245,48 @@ def analyze_markets(events, min_ev=1.0, min_consensus_books=2, best_only=True, a
             # EV: median of other books' no-vig probabilities for the same outcome/line.
             best = {}
             for (market_key, line, _player_scope), quotes in line_sets.items():
+                # Index peer probabilities once per selection. The previous
+                # implementation rescanned every quote for every quote,
+                # making large multi-book markets quadratic in quote count.
+                peer_index = defaultdict(lambda: defaultdict(list))
+                identity_access = defaultdict(set)
+                for item in quotes:
+                    book_key = item["book"].get("key")
+                    if book_key:
+                        peer_index[item["identity"]][book_key].append(item["probability"])
+                    identity_access[item["identity"]].add(
+                        item["outcome"].get("source_access_class")
+                    )
+                peer_medians = {
+                    identity: {book_key: median(values) for book_key, values in books.items()}
+                    for identity, books in peer_index.items()
+                }
+                derived_access = {}
+                for identity, access_classes in identity_access.items():
+                    if any(value not in {"free", "premium"} for value in access_classes):
+                        derived_access[identity] = "restricted"
+                    elif "premium" in access_classes:
+                        derived_access[identity] = "premium"
+                    else:
+                        derived_access[identity] = "free"
+
                 for quote in quotes:
-                    peer_probabilities = defaultdict(list)
-                    for peer in quotes:
-                        peer_book_key = peer["book"].get("key")
-                        if (peer_book_key and peer_book_key != quote["book"].get("key")
-                                and peer["identity"] == quote["identity"]):
-                            peer_probabilities[peer_book_key].append(peer["probability"])
-                    peer_books = set(peer_probabilities)
-                    if len(peer_books) < min_consensus_books:
+                    own_book = quote["book"].get("key")
+                    peers = [
+                        probability for book_key, probability in peer_medians.get(quote["identity"], {}).items()
+                        if book_key != own_book
+                    ]
+                    if len(peers) < min_consensus_books:
                         continue
-                    # Multiple account groups may contain the same sportsbook.
-                    # Collapse that sportsbook to one peer probability so it is
-                    # never counted more than once in the consensus.
-                    peers = [median(values) for values in peer_probabilities.values()]
+                    # Each sportsbook contributes once, regardless of the
+                    # number of account groups it has in the source feed.
                     fair = median(peers)
                     price = quote["outcome"]["price"]
                     ev = (fair * american_to_decimal(price) - 1) * 100
                     if ev < min_ev:
                         continue
                     identity = (market_key, line, quote["identity"])
-                    identity_source_classes = [
-                        item["outcome"].get("source_access_class")
-                        for item in quotes if item["identity"] == quote["identity"]
-                    ]
-                    if any(value not in {"free", "premium"} for value in identity_source_classes):
-                        derived_access_class = "restricted"
-                    elif "premium" in identity_source_classes:
-                        derived_access_class = "premium"
-                    else:
-                        derived_access_class = "free"
+                    derived_access_class = derived_access.get(quote["identity"], "restricted")
                     row = {
                         "source_access_class": derived_access_class,
                         "source_provider": quote["outcome"].get("source_provider") or "",
