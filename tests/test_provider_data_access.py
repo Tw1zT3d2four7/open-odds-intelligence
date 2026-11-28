@@ -312,3 +312,19 @@ def test_market_analysis_cache_reuses_results_until_snapshot_invalidation(tmp_pa
 
     assert third is not first
     assert len(calls) == 2
+
+
+def test_latest_events_filters_access_classes_in_sqlite(tmp_path):
+    db = OddsDatabase(tmp_path / "odds.sqlite3")
+    db.save_snapshot("basketball_nba", [
+        _event("free-feed", "free", "event-free"),
+        _event("paid-feed", "premium", "event-premium"),
+    ])
+
+    free = db.latest_events("basketball_nba", access_classes=("free",))
+    paid = db.latest_events("basketball_nba", access_classes=("premium",))
+    all_quotes = db.latest_events("basketball_nba")
+
+    assert [event["id"] for event in free] == ["event-free"]
+    assert [event["id"] for event in paid] == ["event-premium"]
+    assert {event["id"] for event in all_quotes} == {"event-free", "event-premium"}
