@@ -636,13 +636,18 @@ class OddsDatabase:
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
         return snapshot_id
 
-    def latest_events(self, sport=None, limit=None, offset=0):
-        """Load the latest stored event snapshots with linear-time grouping.
+    def latest_events(self, sport=None, limit=None, offset=0, access_classes=None):
+        """Load latest stored events, optionally filtering quote access in SQLite.
 
         Keep lookup maps while assembling each event. Rebuilding bookmaker and
         market dictionaries for every quote made this hot public read quadratic
         for large multi-book snapshots.
         """
+        classes = None if access_classes is None else tuple(dict.fromkeys(str(value) for value in access_classes))
+        if classes == ():
+            return []
+        access_sql = (" AND source_access_class IN (" + ",".join("?" for _ in classes) + ")") if classes is not None else ""
+        access_args = list(classes or ())
         with self.connect() as db:
             if sport:
                 snapshots = db.execute(
@@ -659,10 +664,11 @@ class OddsDatabase:
                        FROM quotes q
                        JOIN (SELECT MAX(id) id FROM snapshots GROUP BY sport) latest
                          ON latest.id=q.snapshot_id
+                       WHERE 1=1""" + access_sql + """
                        GROUP BY q.snapshot_id,q.event_id
                        ORDER BY MIN(q.commence_time),q.event_id
                        LIMIT ? OFFSET ?""",
-                    (max(1, min(int(limit), 100)), max(0, int(offset))),
+                    [*access_args, max(1, min(int(limit), 100)), max(0, int(offset))],
                 ).fetchall()
                 for item in selected:
                     page_ids_by_snapshot.setdefault(item["snapshot_id"], []).append(item["event_id"])
@@ -673,11 +679,11 @@ class OddsDatabase:
                 if limit is not None:
                     if sport:
                         page_clause = """ AND event_id IN (
-                            SELECT event_id FROM quotes WHERE snapshot_id=?
+                            SELECT event_id FROM quotes WHERE snapshot_id=?""" + access_sql + """
                             GROUP BY event_id ORDER BY MIN(commence_time),event_id
                             LIMIT ? OFFSET ?
                         )"""
-                        page_args.extend([snap["id"], max(1, min(int(limit), 100)), max(0, int(offset))])
+                        page_args.extend([snap["id"], *access_args, max(1, min(int(limit), 100)), max(0, int(offset))])
                     else:
                         selected_ids = page_ids_by_snapshot.get(snap["id"], [])
                         if not selected_ids:
@@ -690,9 +696,9 @@ class OddsDatabase:
                               source_updated_at,source_provider,source_account_group,
                               source_access_class,is_main,size_json,size_source_provider,
                               size_source_account_group,size_source_access_class,point
-                       FROM quotes WHERE snapshot_id=?""" + page_clause + """
+                       FROM quotes WHERE snapshot_id=?""" + page_clause + access_sql + """
                        ORDER BY commence_time,event_id,bookmaker_key,market_key,outcome_name""",
-                    page_args,
+                    [*page_args, *access_args],
                 ).fetchall()
                 grouped = {}
                 bookmaker_maps = {}
